@@ -58,21 +58,21 @@ A team of a few founders and sellers runs several outbound motions at once: serv
 
 ### 3.2 Tables
 
-All tables follow Orbit's conventions: singular snake_case names, text UUIDv7 ids from `randomUUIDv7()`, `workspace_id` with cascade, `sync_id bigint` for realtime catch-up, `created_at` and `updated_at` timestamptz, `archived_at` where records can be archived.
+All tables follow Orbit's conventions: singular snake_case names, text UUIDv7 ids from `randomUUIDv7()`, `organization_id` with cascade, `sync_id bigint` for realtime catch-up, `created_at` and `updated_at` timestamptz, `archived_at` where records can be archived.
 
 | Table | Key columns | Constraints and notes |
 | --- | --- | --- |
-| `workspace` | name, slug, settings jsonb (contact policy) | |
+| `organization` | name, slug, settings jsonb (contact policy) | named for better-auth's organization plugin; shown as Workspace |
 | `member` | workspace, user, role, is_agent | unique (workspace, user) |
 | `brand` | name, domain, color, signature | |
 | `playbook_version` | brand, version, body (markdown), variables jsonb | unique (brand, version); brand points at its current version |
-| `pipeline` | brand, name, kind | |
+| `pipeline` | brand, name, key, kind, lead_counter | unique (organization, key) where not archived; key is 2 to 5 uppercase letters |
 | `stage` | pipeline, name, category, sort_order | |
 | `field_definition` | object (`person`, `company`, `lead`, `deal`), pipeline nullable, key, type, options, description, example | unique (workspace, object, pipeline, key) |
 | `company` | name, domains text[], size, revenue jsonb (per source), segment, location, fields jsonb, fields_meta jsonb | unique (workspace, primary domain) |
 | `person` | name, emails text[], primary_email, phones, linkedin_url, linkedin_provider_id, location, timezone, do_not_contact, fields, fields_meta | unique (workspace, primary_email), unique (workspace, linkedin_provider_id) |
 | `employment` | person, company, title, started_at, ended_at, is_current | |
-| `lead` | person, pipeline, owner, stage, source, priority, hold_reason, hold_until, next_action, next_action_at, owed_by, last_inbound_at, last_outbound_at, unanswered_streak, fields, fields_meta, deal nullable | partial unique (person, pipeline) where stage category is open or hold |
+| `lead` | person, pipeline, number, owner, stage, source, priority, hold_reason, hold_until, next_action, next_action_at, owed_by, last_inbound_at, last_outbound_at, unanswered_streak, fields, fields_meta, deal nullable | partial unique (person, pipeline) where stage category is open or hold; unique (pipeline, number); shown as `KEY-number`, for example `YOD-142` |
 | `deal` | company, pipeline, owner, stage, amount, currency, close_date, fields, fields_meta | |
 | `deal_participant` | deal, person, role | |
 | `fact` | subject_type, subject_id, kind, claim, source_url, observed_at, expires_at, confidence, is_signal, author actor | |
@@ -181,7 +181,7 @@ Claims use `SELECT ... FOR UPDATE SKIP LOCKED`. Cap counters in `sender_usage` a
 
 ## 6. User interface
 
-The visual language and interaction model come from Orbit: sidebar, dense virtualized lists, a peek panel, a command palette, single-key verbs, light and dark themes from CSS custom properties, motion limited to transform and opacity under 200ms.
+The visual language and interaction model come from Orbit, and `2026-10-03-gravity-ui.md` is the detailed interface spec: sidebar, dense virtualized lists, a peek panel, a command palette, single-key verbs, light and dark themes from CSS custom properties, motion limited to transform and opacity under 200ms.
 
 ### 6.1 Navigation
 

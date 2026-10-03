@@ -65,6 +65,15 @@ describe('fieldValuesSchema', () => {
     expect(fieldValuesSchema(definitions).safeParse({ tags: ['a', 'a'] }).success).toBe(false);
   });
 
+  test('url fields accept only http and https', () => {
+    const schema = fieldValuesSchema(definitions);
+    expect(schema.safeParse({ site: 'https://acme.com/about' }).success).toBe(true);
+    expect(schema.safeParse({ site: 'http://acme.com' }).success).toBe(true);
+    expect(schema.safeParse({ site: 'javascript:alert(1)' }).success).toBe(false);
+    expect(schema.safeParse({ site: 'data:text/html,<b>x</b>' }).success).toBe(false);
+    expect(schema.safeParse({ site: 'ftp://acme.com' }).success).toBe(false);
+  });
+
   test('ignores archived definitions', () => {
     const archived = [
       { key: 'old', type: 'text' as const, options: [], archivedAt: '2026-01-01T00:00:00.000Z' },

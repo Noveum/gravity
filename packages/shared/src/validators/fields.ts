@@ -37,7 +37,10 @@ export function fieldValueSchema(definition: FieldDefinitionLike): z.ZodType<Fie
     case 'date':
       return z.string().refine(isCalendarDay, 'Use a calendar day like 2031-03-04.').nullable();
     case 'url':
-      return z.url().max(2000).nullable();
+      return z
+        .url({ protocol: /^https?$/ })
+        .max(2000)
+        .nullable();
     case 'email':
       return emailSchema.nullable();
     case 'select':

@@ -71,12 +71,34 @@ export const companyPatchSchema = z
     'Change at least one property.',
   );
 
-export const companyRefSchema = z.union([
-  z.object({ id: idSchema }),
-  z.object({ domain: domainSchema, name: recordNameSchema.optional() }),
-  z.object({ name: recordNameSchema }),
-]);
-export type CompanyRef = z.infer<typeof companyRefSchema>;
+export type CompanyRef =
+  | { id: string }
+  | { domain: string; name?: string | undefined }
+  | { name: string };
+
+export const companyRefSchema = z
+  .strictObject({
+    id: idSchema.optional(),
+    domain: domainSchema.optional(),
+    name: recordNameSchema.optional(),
+  })
+  .transform((value, ctx): CompanyRef => {
+    if (value.id !== undefined) {
+      if (value.domain !== undefined || value.name !== undefined) {
+        ctx.addIssue({ code: 'custom', message: 'Name a company by id alone.' });
+        return z.NEVER;
+      }
+      return { id: value.id };
+    }
+    if (value.domain !== undefined) {
+      return value.name === undefined
+        ? { domain: value.domain }
+        : { domain: value.domain, name: value.name };
+    }
+    if (value.name !== undefined) return { name: value.name };
+    ctx.addIssue({ code: 'custom', message: 'Name the company by id, domain or name.' });
+    return z.NEVER;
+  });
 
 export const personInputSchema = z.object({
   name: recordNameSchema,

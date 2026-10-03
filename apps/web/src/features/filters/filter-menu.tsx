@@ -102,7 +102,10 @@ function TextStep<T>({ property, filter, onCommit }: StepProps<T>) {
         onCommit(
           value.length === 0
             ? withoutCondition(filter, existing)
-            : replaceCondition(filter, containsCondition(property.key, value)),
+            : replaceCondition(
+                filter,
+                containsCondition(property.key, value, existing?.negate ?? false),
+              ),
           true,
         );
       }}
@@ -131,7 +134,7 @@ function ValueStep<T>({ property, sources, filter, onCommit }: StepProps<T>) {
     onCommit(
       values.length === 0
         ? withoutCondition(filter, existing)
-        : replaceCondition(filter, inCondition(property.key, values)),
+        : replaceCondition(filter, inCondition(property.key, values, existing?.negate ?? false)),
       false,
     );
   };
@@ -195,10 +198,13 @@ export function FilterMenu<T>({
 }: FilterMenuProps<T>) {
   const [property, setProperty] = useState<FilterProperty<T> | null>(null);
   const openedByKey = useRef(false);
+  const focusBefore = useRef<HTMLElement | null>(null);
   useHotkey(
     'f',
     () => {
       openedByKey.current = true;
+      focusBefore.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       onOpenChange(true);
     },
     { label: 'Filter', section: 'Records', scope: 'filters', enabled: !open },
@@ -239,7 +245,11 @@ export function FilterMenu<T>({
           setProperty(null);
         }}
         onCloseAutoFocus={(event) => {
-          if (openedByKey.current) event.preventDefault();
+          if (!openedByKey.current) return;
+          event.preventDefault();
+          const before = focusBefore.current;
+          focusBefore.current = null;
+          if (before?.isConnected === true) before.focus({ preventScroll: true });
         }}
       >
         {body()}

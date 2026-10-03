@@ -10,7 +10,7 @@ import {
 import type { SavedViewRow } from '@gravity/shared/records';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { resolveListQuery, safeFilter } from './list-query.ts';
+import { cappedSearch, resolveListQuery, safeFilter } from './list-query.ts';
 
 export interface ListQueryState {
   readonly query: ListQuery;
@@ -56,16 +56,19 @@ export function useListQuery<T>(
     (filter: FilterGroup) =>
       write((search) => {
         const encoded = encodeFilter(safeFilter(filter, registry));
-        if (encoded.length === 0 && !search.has('view')) search.delete('filter');
-        else search.set('filter', encoded);
+        if (encoded.length === 0) {
+          search.delete('filter');
+          search.delete('view');
+        } else search.set('filter', encoded);
       }),
     [write, registry],
   );
   const setQ = useCallback(
     (q: string) =>
       write((search) => {
-        if (q.trim().length === 0) search.delete('q');
-        else search.set('q', q.trim());
+        const capped = cappedSearch(q);
+        if (capped.length === 0) search.delete('q');
+        else search.set('q', capped);
       }),
     [write],
   );

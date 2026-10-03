@@ -94,4 +94,18 @@ describe('useListQuery', () => {
     act(() => result.current.clear());
     expect(replaced).toHaveBeenLastCalledWith('/leads/YOD');
   });
+
+  test('removing the last condition of an open view closes the view and keeps the search', () => {
+    navigation.search = 'view=v1&q=ada';
+    const { result } = renderHook(() => useListQuery(registry, [view]));
+    act(() => result.current.setFilter(emptyFilterGroup()));
+    expect(replaced).toHaveBeenLastCalledWith('/leads/YOD?q=ada');
+  });
+
+  test('the search term is capped at 200 characters', () => {
+    navigation.search = '';
+    const { result } = renderHook(() => useListQuery(registry, []));
+    act(() => result.current.setQ('a'.repeat(300)));
+    expect(replaced).toHaveBeenLastCalledWith(`/leads/YOD?q=${'a'.repeat(200)}`);
+  });
 });

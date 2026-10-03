@@ -52,7 +52,7 @@ function swallowSpaceRelease(event: KeyboardEvent<HTMLElement>): void {
   if (event.key === ' ') event.preventDefault();
 }
 
-function RowOwner({ owner }: { readonly owner: MemberRow | undefined }) {
+export function RowOwner({ owner }: { readonly owner: MemberRow | undefined }) {
   if (owner === undefined) {
     return (
       <span

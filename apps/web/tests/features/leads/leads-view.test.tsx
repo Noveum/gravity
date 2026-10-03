@@ -8,11 +8,12 @@ import {
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { restoreModulesAfterThisFile } from '../../../tests-support.ts';
+import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
 import { stubLayoutSize } from '../../support/layout-size.ts';
 import { leadFixture } from '../../support/lead-fixture.ts';
 import { mockNavigation, watchHistoryReplace } from '../../support/navigation.ts';
 import { renderWithClient } from '../../support/render.tsx';
-import { setViewport } from '../../support/viewport.ts';
+import { setViewport, setViewportWidth } from '../../support/viewport.ts';
 
 await restoreModulesAfterThisFile(['next/navigation']);
 const navigation = mockNavigation('/leads/YOD');
@@ -249,6 +250,16 @@ describe('LeadsView filters', () => {
     expect(replaced).toHaveBeenLastCalledWith('/leads/YOD');
   });
 
+  test('Shift+F on an unfiltered list neither clears nor opens the filter menu', async () => {
+    serve(200, { leads: [leadFixture()], nextCursor: null });
+    renderView();
+    await screen.findByTestId('lead-row-YOD-1');
+    replaced.mockClear();
+    await userEvent.keyboard('{Shift>}F{/Shift}');
+    expect(screen.queryByPlaceholderText('Filter by')).not.toBeInTheDocument();
+    expect(replaced).not.toHaveBeenCalled();
+  });
+
   test('the list asks the server for the filter and the search term', async () => {
     const filter = replaceCondition(emptyFilterGroup(), inCondition('owner', ['me']));
     navigation.search = new URLSearchParams({ filter: encodeFilter(filter), q: 'ada' }).toString();
@@ -266,5 +277,138 @@ describe('LeadsView filters', () => {
     expect(params.get('q')).toBe('ada');
     expect(params.get('filter')).toBe(encodeFilter(filter));
     expect(params.get('pipelineId')).toBe('p1');
+  });
+});
+
+describe('LeadsView board', () => {
+  interface Call {
+    readonly url: string;
+    readonly method: string;
+    readonly body: unknown;
+  }
+
+  function serveLeads(rows: readonly ReturnType<typeof leadFixture>[]): Call[] {
+    const calls: Call[] = [];
+    globalThis.fetch = mock((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      const body = init?.body === undefined ? null : (JSON.parse(String(init.body)) as unknown);
+      calls.push({ url, method, body });
+      const payload = url.startsWith('/api/view-preferences')
+        ? { preference: body }
+        : { leads: rows, nextCursor: null };
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    }) as unknown as typeof fetch;
+    return calls;
+  }
+
+  function renderBoardView() {
+    return renderWithClient(
+      <ContextPanelProvider>
+        <LeadsView pipelineKey="YOD" />
+        <ContextPanel />
+      </ContextPanelProvider>,
+      {
+        bootstrap: bootstrapFixture({
+          viewPreferences: [{ page: 'leads', scope: 'p1', layout: 'board', display: {} }],
+        }),
+      },
+    );
+  }
+
+  test('V switches to the board and back, and saves the layout for this pipeline', async () => {
+    const calls = serveLeads([leadFixture()]);
+    renderView();
+    await screen.findByTestId('lead-row-YOD-1');
+    await userEvent.keyboard('v');
+    expect(await screen.findByTestId('board-card-YOD-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('lead-list')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(calls.filter((call) => call.method === 'PUT').map((call) => call.body)).toEqual([
+        { page: 'leads', scope: 'p1', layout: 'board', display: {} },
+      ]),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Show as list' }));
+    expect(await screen.findByTestId('lead-row-YOD-1')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(calls.filter((call) => call.method === 'PUT').at(-1)?.body).toEqual({
+        page: 'leads',
+        scope: 'p1',
+        layout: 'list',
+        display: {},
+      }),
+    );
+  });
+
+  test('a saved board layout opens on the board, empty columns included', async () => {
+    serveLeads([leadFixture()]);
+    renderBoardView();
+    expect(await screen.findByTestId('board-card-YOD-1')).toBeInTheDocument();
+    expect(screen.getAllByTestId(/^board-column-/)).toHaveLength(13);
+  });
+
+  test('a teammate moving a lead to another stage moves its card', async () => {
+    serveLeads([leadFixture()]);
+    const { client } = renderBoardView();
+    const card = await screen.findByTestId('board-card-YOD-1');
+    expect(screen.getByTestId('board-column-New')).toContainElement(card);
+    act(() => placeLead(client, leadFixture({ stageId: 'stage-contacted', syncId: 50 })));
+    await waitFor(() =>
+      expect(screen.getByTestId('board-column-Contacted')).toContainElement(
+        screen.getByTestId('board-card-YOD-1'),
+      ),
+    );
+    expect(screen.getByTestId('board-card-YOD-1')).toHaveAttribute('data-active', 'true');
+  });
+
+  test('a filter that matches nothing still shows the board columns', async () => {
+    const filter = replaceCondition(emptyFilterGroup(), inCondition('stage', ['ready']));
+    navigation.search = new URLSearchParams({ filter: encodeFilter(filter) }).toString();
+    serveLeads([]);
+    renderBoardView();
+    expect(await screen.findAllByTestId(/^board-column-/)).toHaveLength(13);
+    expect(screen.queryByText('No leads match these filters.')).not.toBeInTheDocument();
+  });
+});
+
+describe('LeadsView narrow peek', () => {
+  test('list keys keep working while focus is inside the peek dialog', async () => {
+    const rows = [1, 2].map((number) =>
+      leadFixture({
+        id: `l${number}`,
+        key: `YOD-${number}`,
+        number,
+        personId: `per${number}`,
+        personName: `Person ${number}`,
+      }),
+    );
+    globalThis.fetch = mock((input: RequestInfo | URL) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify(
+            String(input).startsWith('/api/timeline')
+              ? { activities: [], nextCursor: null }
+              : { leads: rows, nextCursor: null },
+          ),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      ),
+    ) as unknown as typeof fetch;
+    setViewportWidth(600);
+    renderView();
+    await screen.findByTestId('lead-row-YOD-2');
+    await userEvent.keyboard(' ');
+    const dialog = await screen.findByRole('dialog', { name: 'Lead YOD-2' });
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    await userEvent.keyboard('j');
+    expect(screen.getByTestId('lead-row-YOD-1')).toHaveAttribute('data-active', 'true');
+    expect(await screen.findByRole('dialog', { name: 'Lead YOD-1' })).toBeInTheDocument();
+    await userEvent.keyboard('x');
+    expect(screen.getByTestId('lead-row-YOD-1')).toHaveAttribute('data-selected', 'true');
   });
 });

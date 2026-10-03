@@ -55,7 +55,11 @@ export function SaveViewDialog({
   const nameInput = useRef<HTMLInputElement | null>(null);
   const form = useRef<HTMLFormElement | null>(null);
   const owned = workspace.savedViews.find(
-    (view) => view.id === viewId && view.ownerId === workspace.userId,
+    (view) =>
+      view.id === viewId &&
+      view.ownerId === workspace.userId &&
+      view.object === object &&
+      view.pipelineId === pipelineId,
   );
   const save = useBootstrapMutation<SaveInput, SavedViewRow>({
     mutationFn: async ({ view, create }) =>

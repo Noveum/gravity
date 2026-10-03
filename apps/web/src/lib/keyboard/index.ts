@@ -7,6 +7,7 @@ export {
   type HotkeyStep,
   isEditableTarget,
   isModifierKey,
+  KEYBOARD_PASSTHROUGH,
   type KeyEventLike,
   normalizeKey,
   ownsKeyboardLayer,

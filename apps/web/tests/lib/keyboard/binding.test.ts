@@ -330,4 +330,18 @@ describe('activatesFocusedControl', () => {
     expect(ownsKeyboardLayer(document.body)).toBe(false);
     expect(ownsKeyboardLayer(null)).toBe(false);
   });
+
+  it('lets a surface dialog marked as a keyboard passthrough keep the surface hotkeys', () => {
+    const peek = node('div', { role: 'dialog', 'data-keyboard-passthrough': '' });
+    const inside = document.createElement('a');
+    peek.append(inside);
+    expect(ownsKeyboardLayer(peek)).toBe(false);
+    expect(ownsKeyboardLayer(inside)).toBe(false);
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    const item = document.createElement('span');
+    menu.append(item);
+    peek.append(menu);
+    expect(ownsKeyboardLayer(item)).toBe(true);
+  });
 });

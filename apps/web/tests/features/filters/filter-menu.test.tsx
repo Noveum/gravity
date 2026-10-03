@@ -1,5 +1,12 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { emptyFilterGroup, type FilterGroup, leadFilterRegistry } from '@gravity/shared/filters';
+import {
+  containsCondition,
+  emptyFilterGroup,
+  type FilterGroup,
+  inCondition,
+  leadFilterRegistry,
+  replaceCondition,
+} from '@gravity/shared/filters';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
@@ -9,9 +16,15 @@ import { renderWithClient } from '../../support/render.tsx';
 
 const bootstrap = bootstrapFixture();
 
-function Harness({ onChange }: { readonly onChange: (filter: FilterGroup) => void }) {
+function Harness({
+  onChange,
+  initial = emptyFilterGroup(),
+}: {
+  readonly onChange: (filter: FilterGroup) => void;
+  readonly initial?: FilterGroup;
+}) {
   const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState(emptyFilterGroup());
+  const [filter, setFilter] = useState(initial);
   return (
     <FilterMenu
       registry={leadFilterRegistry()}
@@ -112,5 +125,50 @@ describe('FilterMenu', () => {
     await userEvent.click(screen.getByRole('option', { name: 'New' }));
     await userEvent.click(screen.getByRole('option', { name: 'Ready' }));
     expect(onChange).toHaveBeenLastCalledWith(emptyFilterGroup());
+  });
+
+  test('editing a negated condition keeps it negated', async () => {
+    const onChange = mock<(filter: FilterGroup) => void>();
+    const initial = replaceCondition(
+      replaceCondition(emptyFilterGroup(), inCondition('stage', ['ready'], true)),
+      containsCondition('company', 'acme', true),
+    );
+    renderWithClient(<Harness onChange={onChange} initial={initial} />);
+    await userEvent.keyboard('f');
+    await userEvent.type(await screen.findByPlaceholderText('Filter by'), 'stage');
+    await userEvent.keyboard('{Enter}');
+    await userEvent.type(await screen.findByPlaceholderText('Stage'), 'contacted');
+    await userEvent.keyboard('{Enter}');
+    expect(onChange).toHaveBeenLastCalledWith(
+      replaceCondition(initial, inCondition('stage', ['ready', 'stage-contacted'], true)),
+    );
+    await userEvent.keyboard('{Escape}');
+    await userEvent.type(await screen.findByPlaceholderText('Filter by'), 'company');
+    await userEvent.keyboard('{Enter}');
+    const box = await screen.findByPlaceholderText('Company contains');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'beta{Enter}');
+    expect(onChange.mock.lastCall?.[0]).toMatchObject({
+      children: [
+        { property: 'stage', negate: true },
+        { property: 'company', operator: 'contains', value: 'beta', negate: true },
+      ],
+    });
+  });
+
+  test('closing a menu opened with F gives the focus back to where it was', async () => {
+    renderWithClient(
+      <>
+        <button type="button">Before</button>
+        <Harness onChange={mock()} />
+      </>,
+    );
+    const before = screen.getByRole('button', { name: 'Before' });
+    before.focus();
+    await userEvent.keyboard('f');
+    expect(await screen.findByPlaceholderText('Filter by')).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByPlaceholderText('Filter by')).not.toBeInTheDocument());
+    expect(before).toHaveFocus();
   });
 });

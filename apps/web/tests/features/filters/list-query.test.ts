@@ -73,4 +73,9 @@ describe('list query', () => {
     ];
     expect(leadViewsFor(views, 'p1').map((entry) => entry.id)).toEqual(['v1', 'v2']);
   });
+
+  test('a search term longer than 200 characters is cut to 200', () => {
+    const long = 'a'.repeat(300);
+    expect(resolveListQuery(`q=${long}`, [], registry).q).toBe('a'.repeat(200));
+  });
 });

@@ -17,25 +17,14 @@ import type { LeadChange } from '@gravity/shared/validators';
 import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from '@/components/ui/avatar.tsx';
 import { Button } from '@/components/ui/button.tsx';
-import { useToast } from '@/components/ui/toast.tsx';
 import { useWorkspace } from '@/features/workspace/use-workspace.ts';
 import { HOTKEY_PRIORITY, useHotkey } from '@/lib/keyboard/index.ts';
-import { useChangeLeads } from '@/lib/query/use-lead-mutations.ts';
 import { PriorityGlyph, StageGlyph } from './lead-glyphs.tsx';
-import type { LeadListSelection } from './lead-list.tsx';
-import {
-  type ChangeNames,
-  describeLeadChange,
-  forgetLeadChange,
-  isLeadChangeRecorded,
-  leadsLabel,
-  nextUndoSequence,
-  recordLeadChange,
-  type UndoEntry,
-  useLeadUndo,
-} from './lead-undo.ts';
 import { VERB_ITEMS, type VerbMode } from './lead-verb-menu.tsx';
+import { stageChangeFor } from './stage-change.ts';
 import { HoldPicker, NextActionPicker } from './text-pickers.tsx';
+import { useCommitLeadChange } from './use-commit-lead-change.ts';
+import type { LeadListSelection } from './use-lead-cursor.tsx';
 import {
   anchorFocusTarget,
   type FocusTarget,
@@ -69,11 +58,6 @@ interface Subject {
 interface Pending {
   readonly key: string;
   readonly notice: string;
-}
-
-function subjectOf(leads: readonly LeadRow[]): string {
-  const [only] = leads;
-  return leads.length === 1 && only !== undefined ? only.key : leadsLabel(leads.length);
 }
 
 function changingCount(
@@ -110,9 +94,7 @@ export function LeadVerbs({
   verbs = ALL_VERBS,
 }: LeadVerbsProps) {
   const workspace = useWorkspace();
-  const changeLeads = useChangeLeads();
-  const { undoEntry } = useLeadUndo();
-  const { toast } = useToast();
+  const commit = useCommitLeadChange();
   const [mode, setMode] = useState<VerbMode | null>(null);
   const [subject, setSubject] = useState<Subject | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -128,10 +110,6 @@ export function LeadVerbs({
     const firstHold = stages.find((stage) => stage.category === 'hold');
     return stages.filter((stage) => stage.category !== 'hold' || stage === firstHold);
   }, [stages]);
-  const names: ChangeNames = {
-    stageName: (id) => workspace.stageById.get(id)?.name,
-    memberName: (id) => workspace.memberByUserId.get(id)?.name,
-  };
   const overLimit = targets.length > MAX_BULK_LEADS;
   const notice = overLimit ? limitNotice(targets.length) : (pending?.notice ?? null);
 
@@ -161,32 +139,24 @@ export function LeadVerbs({
     const before = [...targets];
     const announce = hasSelection || selectionLeft || subject?.fromMenu === true;
     close();
-    const label = describeLeadChange(change, names, subjectOf(before));
-    const after = changeLeads.mutateAsync({ leads: before, change });
-    const entry: UndoEntry = { sequence: nextUndoSequence(), before, after, label };
-    recordLeadChange(entry);
-    after
-      .then(() => {
-        if (!(announce && isLeadChangeRecorded(entry))) return;
-        toast({ title: label, action: { label: 'Undo', onSelect: () => undoEntry(entry) } });
-      })
-      .catch(() => forgetLeadChange(entry));
+    commit(before, change, announce);
   };
 
   const pickStage = (id: string) => {
     const stage = stages.find((candidate) => candidate.id === id);
     if (stage === undefined) return;
-    const again = `Choose ${stage.name} again to confirm.`;
-    if (stage.category === 'hold') {
+    const moves = targets.map((lead) => stageChangeFor(lead, stage));
+    if (moves.some((move) => move.kind === 'hold')) {
       setPending(null);
       setMode('hold');
       return;
     }
-    if (stage.category === 'won' || stage.category === 'lost') {
-      apply({ type: 'close', stageId: id }, again);
+    const move = moves.find((candidate) => candidate.kind === 'change');
+    if (move?.kind !== 'change') {
+      close();
       return;
     }
-    apply({ type: 'update', patch: { stageId: id } }, again);
+    apply(move.change, `Choose ${stage.name} again to confirm.`);
   };
 
   const openFrom = (next: VerbMode, from: HTMLElement | null) => {

@@ -12,7 +12,7 @@ import {
   CONTEXT_PANEL_MIN_WIDTH,
   useContextPanel,
 } from '@/lib/context-panel.tsx';
-import { ownsKeyboardLayer, useHotkey } from '@/lib/keyboard/index.ts';
+import { KEYBOARD_PASSTHROUGH, ownsKeyboardLayer, useHotkey } from '@/lib/keyboard/index.ts';
 import { isRecordPath } from '@/lib/navigation.ts';
 import { useMediaQuery } from '@/lib/use-media-query.ts';
 
@@ -124,7 +124,11 @@ export function ContextPanel() {
           if (!next) panel.hide();
         }}
       >
-        <DialogContent aria-describedby={undefined} className="max-h-[85vh] overflow-y-auto">
+        <DialogContent
+          {...{ [KEYBOARD_PASSTHROUGH]: '' }}
+          aria-describedby={undefined}
+          className="max-h-[85vh] overflow-y-auto"
+        >
           <DialogTitle className="sr-only">{panel.label}</DialogTitle>
           {panel.content}
         </DialogContent>

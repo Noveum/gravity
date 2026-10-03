@@ -133,4 +133,29 @@ describe('SaveViewDialog', () => {
     await userEvent.keyboard('{Meta>}s{/Meta}');
     expect(await screen.findByLabelText('View name')).toBeInTheDocument();
   });
+
+  test('Cmd+S on a view you own from another pipeline saves a new view for this one', async () => {
+    const elsewhere: SavedViewRow = {
+      id: 'v3',
+      object: 'lead',
+      pipelineId: 'p2',
+      name: 'Other pipeline',
+      filter: emptyFilterGroup(),
+      display: {},
+      visibility: 'private',
+      ownerId: 'u1',
+      position: 0,
+      syncId: 3,
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    };
+    const fetchMock = mock(() => Promise.resolve(respond({})));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    renderWithClient(<SaveViewDialog object="lead" pipelineId="p1" filter={filter} viewId="v3" />, {
+      bootstrap: bootstrapFixture({ savedViews: [elsewhere] }),
+    });
+    await userEvent.keyboard('{Meta>}s{/Meta}');
+    expect(await screen.findByLabelText('View name')).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

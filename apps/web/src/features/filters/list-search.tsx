@@ -4,6 +4,7 @@ import { Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useHotkey } from '@/lib/keyboard/index.ts';
 import { useDebouncedValue } from '@/lib/use-debounced-value.ts';
+import { MAX_LIST_SEARCH_LENGTH } from './list-query.ts';
 
 export interface ListSearchProps {
   readonly value: string;
@@ -47,6 +48,7 @@ export function ListSearch({ value, onChange }: ListSearchProps) {
         aria-label="Search this list"
         placeholder="Search"
         value={draft}
+        maxLength={MAX_LIST_SEARCH_LENGTH}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.key !== 'Escape') return;

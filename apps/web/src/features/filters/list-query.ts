@@ -9,6 +9,12 @@ import {
 } from '@gravity/shared/filters';
 import type { SavedViewRow } from '@gravity/shared/records';
 
+export const MAX_LIST_SEARCH_LENGTH = 200;
+
+export function cappedSearch(q: string): string {
+  return q.trim().slice(0, MAX_LIST_SEARCH_LENGTH).trim();
+}
+
 function parses(node: FilterNode): boolean {
   return filterGroupSchema.safeParse({ kind: 'group', combinator: 'and', children: [node] })
     .success;
@@ -43,7 +49,7 @@ export function resolveListQuery<T>(
   const decoded = decodeListQuery(search);
   const view = views.find((entry) => entry.id === params.get('view'));
   const filter = params.has('filter') || view === undefined ? decoded.filter : view.filter;
-  return { filter: safeFilter(filter, registry), q: decoded.q };
+  return { filter: safeFilter(filter, registry), q: cappedSearch(decoded.q) };
 }
 
 export function leadViewsFor(

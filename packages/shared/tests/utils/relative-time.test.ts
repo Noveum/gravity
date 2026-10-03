@@ -31,3 +31,18 @@ describe('relativeTime', () => {
     expect(relativeTime(new Date('2028-07-22T12:00:00.000Z'), now)).toBe('in 2y');
   });
 });
+
+describe('relativeTime calendar days', () => {
+  test('tomorrow means the next calendar day, not 24 rounded hours', () => {
+    const morning = new Date(2026, 6, 22, 8, 0);
+    expect(relativeTime(new Date(2026, 6, 23, 20, 0), morning)).toBe('tomorrow');
+    const lateEvening = new Date(2026, 6, 22, 23, 0);
+    expect(relativeTime(new Date(2026, 6, 24, 1, 0), lateEvening)).toBe('in 2d');
+    expect(relativeTime(new Date(2026, 6, 23, 9, 0), lateEvening)).toBe('tomorrow');
+  });
+
+  test('later the same day is still counted in hours', () => {
+    const morning = new Date(2026, 6, 22, 8, 0);
+    expect(relativeTime(new Date(2026, 6, 22, 20, 0), morning)).toBe('in 12h');
+  });
+});

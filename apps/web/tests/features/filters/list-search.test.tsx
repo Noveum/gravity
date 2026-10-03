@@ -70,4 +70,12 @@ describe('ListSearch', () => {
     await pause(SEARCH_DEBOUNCE_MS * 2);
     expect(box).toHaveValue('ada ');
   });
+
+  test('the box takes at most 200 characters', () => {
+    renderWithClient(<ListSearch value="" onChange={mock()} />);
+    expect(screen.getByRole('searchbox', { name: 'Search this list' })).toHaveAttribute(
+      'maxlength',
+      '200',
+    );
+  });
 });

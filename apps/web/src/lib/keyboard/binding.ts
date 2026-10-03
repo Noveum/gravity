@@ -131,9 +131,12 @@ export function activatesFocusedControl(event: KeyEventLike, target: EventTarget
 const LAYER_SURFACES =
   '[role="menu"], [role="menuitem"], [role="dialog"], [role="alertdialog"], [role="listbox"]';
 
+export const KEYBOARD_PASSTHROUGH = 'data-keyboard-passthrough';
+
 export function ownsKeyboardLayer(target: EventTarget | null): boolean {
   if (target === null || !(target instanceof Element)) return false;
-  return target.closest(LAYER_SURFACES) !== null;
+  const layer = target.closest(LAYER_SURFACES);
+  return layer !== null && !layer.hasAttribute(KEYBOARD_PASSTHROUGH);
 }
 
 export function formatBinding(binding: string): string[] {

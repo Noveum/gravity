@@ -7,30 +7,30 @@ import {
   inCondition,
   replaceCondition,
 } from '@gravity/shared/filters';
-import type {
-  ActivityRow,
-  CompanyRow,
-  EmploymentRow,
-  FieldDefinitionRow,
-  LeadRow,
-  PersonRow,
-  SavedViewRow,
-} from '@gravity/shared/records';
-import { QueryClient } from '@tanstack/react-query';
+import type { FieldDefinitionRow, LeadRow, SavedViewRow } from '@gravity/shared/records';
+import { InfiniteQueryObserver, onlineManager, QueryClient } from '@tanstack/react-query';
 import { clientId } from '@/lib/query/client-id.ts';
 import { queryKeys } from '@/lib/query/keys.ts';
 import type { Pages } from '@/lib/query/pages.ts';
 import type {
   Bootstrap,
+  CompanyPage,
   CompanyRecord,
   LeadPage,
+  PersonPage,
   PersonRecord,
   TimelinePage,
 } from '@/lib/query/schemas.ts';
-import { isOwnEcho, registerCrmDeltaHandlers } from '@/lib/realtime/crm-deltas.tsx';
+import { registerCrmDeltaHandlers } from '@/lib/realtime/crm-deltas.tsx';
 import { applyDelta } from '@/lib/realtime/delta-bridge.tsx';
 import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
 import { leadFixture } from '../../support/lead-fixture.ts';
+import {
+  activityFixture,
+  companyFixture,
+  employmentFixture,
+  personFixture,
+} from '../../support/record-fixtures.ts';
 
 let unregister: () => void = () => undefined;
 
@@ -60,6 +60,10 @@ const newOnly = encodeListQuery({
 });
 const readyOnly = encodeListQuery({
   filter: replaceCondition(emptyFilterGroup(), inCondition('stage', ['ready'])),
+  q: '',
+});
+const acmePeople = encodeListQuery({
+  filter: replaceCondition(emptyFilterGroup(), containsCondition('company', 'acme')),
   q: '',
 });
 const named = encodeListQuery({
@@ -119,63 +123,6 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve };
 }
 
-function personFixture(overrides: Partial<PersonRow> = {}): PersonRow {
-  return {
-    id: 'per1',
-    name: 'Ada Lovelace',
-    emails: ['ada@acme.io'],
-    primaryEmail: 'ada@acme.io',
-    phones: [],
-    linkedinUrl: null,
-    linkedinProviderId: null,
-    location: null,
-    timezone: null,
-    doNotContact: false,
-    fields: {},
-    companyId: null,
-    companyName: null,
-    title: null,
-    syncId: 5,
-    createdAt: AT,
-    updatedAt: AT,
-    archivedAt: null,
-    ...overrides,
-  };
-}
-
-function companyFixture(overrides: Partial<CompanyRow> = {}): CompanyRow {
-  return {
-    id: 'c1',
-    name: 'Acme',
-    domains: ['acme.io'],
-    primaryDomain: 'acme.io',
-    size: null,
-    segment: null,
-    location: null,
-    fields: {},
-    syncId: 5,
-    createdAt: AT,
-    updatedAt: AT,
-    archivedAt: null,
-    ...overrides,
-  };
-}
-
-function employmentFixture(overrides: Partial<EmploymentRow> = {}): EmploymentRow {
-  return {
-    id: 'e1',
-    personId: 'per1',
-    companyId: 'c1',
-    companyName: 'Acme',
-    title: 'Engineer',
-    startedAt: null,
-    endedAt: null,
-    isCurrent: true,
-    syncId: 60,
-    ...overrides,
-  };
-}
-
 function viewFixture(overrides: Partial<SavedViewRow> = {}): SavedViewRow {
   return {
     id: 'v1',
@@ -233,15 +180,20 @@ describe('lead deltas', () => {
     expect(ids(client, 'p1', readyOnly)).toEqual(['l7']);
   });
 
-  test('the browser ignores its own echo', () => {
-    const client = cache({ [`p1|${newOnly}`]: [leadFixture()] });
+  test('its own lead echo is harmless and never flickers back', () => {
+    const client = cache({ [`p1|${newOnly}`]: [], [`p1|${readyOnly}`]: [] });
+    const answered = leadFixture({ stageId: 'ready', priority: 2, syncId: 14 });
+    client.setQueryData(queryKeys.leads('p1', readyOnly), leadPages([answered]));
     applyDelta(
-      action('lead', leadFixture({ stageId: 'ready', syncId: 13 }), {
+      action('lead', leadFixture({ stageId: 'ready', priority: 1, syncId: 13 }), {
         originClientId: clientId(),
       }),
       client,
     );
-    expect(ids(client, 'p1', newOnly)).toEqual(['l1']);
+    applyDelta(action('lead', answered, { originClientId: clientId() }), client);
+    const listed = client.getQueryData<Pages<LeadPage>>(queryKeys.leads('p1', readyOnly));
+    expect(listed?.pages[0]?.leads).toEqual([answered]);
+    expect(ids(client, 'p1', newOnly)).toEqual([]);
   });
 
   test('an older update after a newer one does not revert the row', () => {
@@ -272,53 +224,55 @@ describe('lead deltas', () => {
   });
 });
 
-describe('echoes', () => {
-  test('an action without an origin or from another browser is not an echo', () => {
-    expect(isOwnEcho(action('lead', { id: 'l1' }))).toBe(false);
-    expect(isOwnEcho(action('lead', { id: 'l1' }, { originClientId: 'someone-else' }))).toBe(false);
-    expect(isOwnEcho(action('lead', { id: 'l1' }, { originClientId: clientId() }))).toBe(true);
-  });
-
-  test('the browser ignores its own person echo', () => {
-    const client = cache({});
-    client.setQueryData<PersonRecord>(queryKeys.person('per1'), {
-      person: personFixture(),
-      employments: [],
+describe('echoes of its own writes', () => {
+  test('its own company rename relabels its people and moves them out of an old-name list', () => {
+    const client = cache({
+      [`p1|${everything}`]: [leadFixture({ companyId: 'c1', companyName: 'Acme' })],
+    });
+    const employee = personFixture({ companyId: 'c1', companyName: 'Acme', title: 'Engineer' });
+    client.setQueryData<Pages<PersonPage>>(queryKeys.people(acmePeople), {
+      pages: [{ people: [employee], nextCursor: null }],
+      pageParams: [null],
+    });
+    client.setQueryData<CompanyRecord>(queryKeys.company('c1'), {
+      company: companyFixture(),
+      people: [{ person: employee, employment: employmentFixture() }],
       leads: [],
     });
+    const renamed = companyFixture({ name: 'Globex', syncId: 50 });
+    client.setQueryData<CompanyRecord>(queryKeys.company('c1'), (record) =>
+      record === undefined ? record : { ...record, company: renamed },
+    );
+    const own = { originClientId: clientId() };
+    applyDelta(action('company', renamed, own), client);
     applyDelta(
-      action('person', personFixture({ name: 'Echoed', syncId: 6 }), {
-        originClientId: clientId(),
-      }),
+      action('person', personFixture({ ...employee, companyName: 'Globex', syncId: 51 }), own),
       client,
     );
-    expect(client.getQueryData<PersonRecord>(queryKeys.person('per1'))?.person.name).toBe(
-      'Ada Lovelace',
-    );
+    const people = client.getQueryData<Pages<PersonPage>>(queryKeys.people(acmePeople));
+    expect(people?.pages[0]?.people).toEqual([]);
+    const record = client.getQueryData<CompanyRecord>(queryKeys.company('c1'));
+    expect(record?.people[0]?.person.companyName).toBe('Globex');
+    const leads = client.getQueryData<Pages<LeadPage>>(queryKeys.leads('p1', everything));
+    expect(leads?.pages[0]?.leads[0]?.companyName).toBe('Globex');
   });
 
-  test('its own activity still lands in its own timeline', () => {
+  test('its own activity lands in its own timeline', () => {
     const client = cache({});
     const key = queryKeys.timeline('lead', 'l1', 'all');
     client.setQueryData<Pages<TimelinePage>>(key, {
       pages: [{ activities: [], nextCursor: null }],
       pageParams: [null],
     });
-    const activity: ActivityRow = {
-      id: 'a1',
-      kind: 'lead.stage_changed',
-      actor: { type: 'user', id: 'u1' },
-      occurredAt: AT,
-      payload: {},
-      links: [{ entityType: 'lead', entityId: 'l1' }],
-      syncId: 80,
-    };
-    applyDelta(action('activity', activity, { originClientId: clientId() }), client);
+    applyDelta(
+      action('activity', activityFixture({ syncId: 80 }), { originClientId: clientId() }),
+      client,
+    );
     const activities = client.getQueryData<Pages<TimelinePage>>(key)?.pages[0]?.activities ?? [];
     expect(activities.map((entry) => entry.id)).toEqual(['a1']);
   });
 
-  test('its own configuration change still updates the bootstrap', () => {
+  test('its own configuration change updates the bootstrap', () => {
     const client = cache({});
     applyDelta(
       action('saved_view', viewFixture(), { action: 'insert', originClientId: clientId() }),
@@ -349,6 +303,43 @@ describe('record and configuration deltas', () => {
     applyDelta(action('company', companyFixture({ name: 'Acme Labs', syncId: 41 })), client);
     const data = client.getQueryData<Pages<LeadPage>>(queryKeys.leads('p1', everything));
     expect(data?.pages[0]?.leads[0]?.companyName).toBe('Acme Labs');
+  });
+
+  test('a company delta updates its lists and its open record', () => {
+    const client = cache({});
+    client.setQueryData<Pages<CompanyPage>>(queryKeys.companies(everything), {
+      pages: [{ companies: [companyFixture()], nextCursor: null }],
+      pageParams: [null],
+    });
+    client.setQueryData<CompanyRecord>(queryKeys.company('c1'), {
+      company: companyFixture(),
+      people: [],
+      leads: [],
+    });
+    applyDelta(action('company', companyFixture({ name: 'Acme Labs', syncId: 42 })), client);
+    const listed = client.getQueryData<Pages<CompanyPage>>(queryKeys.companies(everything));
+    expect(listed?.pages[0]?.companies[0]?.name).toBe('Acme Labs');
+    expect(client.getQueryData<CompanyRecord>(queryKeys.company('c1'))?.company.name).toBe(
+      'Acme Labs',
+    );
+  });
+
+  test('an employment delta updates the person record and the person leads', () => {
+    const client = cache({ [`p1|${everything}`]: [leadFixture()] });
+    client.setQueryData<PersonRecord>(queryKeys.person('per1'), {
+      person: personFixture(),
+      employments: [],
+      leads: [],
+    });
+    applyDelta(
+      action('employment', employmentFixture({ syncId: 62 }), { action: 'insert' }),
+      client,
+    );
+    const record = client.getQueryData<PersonRecord>(queryKeys.person('per1'));
+    expect(record?.employments.map((job) => job.id)).toEqual(['e1']);
+    expect(record?.person.title).toBe('Engineer');
+    const leads = client.getQueryData<Pages<LeadPage>>(queryKeys.leads('p1', everything));
+    expect(leads?.pages[0]?.leads[0]?.companyName).toBe('Acme');
   });
 
   test('a new job shows the person on the open company record', () => {
@@ -569,5 +560,82 @@ describe('deltas that arrive while a query is fetching', () => {
     response.resolve(bootstrapFixture());
     await loading;
     expect(bootstrapOf(client).stages.some((entry) => entry.id === stage.id)).toBe(false);
+  });
+
+  test('a person renamed while its record loads keeps the new name', async () => {
+    const client = cache({});
+    const response = deferred<PersonRecord>();
+    const loading = client.fetchQuery({
+      queryKey: queryKeys.person('per1'),
+      queryFn: () => response.promise,
+    });
+    applyDelta(action('person', personFixture({ name: 'Grace Hopper', syncId: 9 })), client);
+    response.resolve({ person: personFixture(), employments: [], leads: [] });
+    await loading;
+    expect(client.getQueryData<PersonRecord>(queryKeys.person('per1'))?.person.name).toBe(
+      'Grace Hopper',
+    );
+  });
+
+  test('a change during fetchNextPage survives the pages it captured', async () => {
+    const client = cache({});
+    const second = deferred<LeadPage>();
+    const options = {
+      queryKey: queryKeys.leads('p1', everything),
+      queryFn: ({ pageParam }: { pageParam: string | null }) =>
+        pageParam === null
+          ? Promise.resolve<LeadPage>({ leads: [leadFixture()], nextCursor: 'c2' })
+          : second.promise,
+      initialPageParam: null as string | null,
+      getNextPageParam: (page: LeadPage) => page.nextCursor,
+      staleTime: Number.POSITIVE_INFINITY,
+    };
+    await client.fetchInfiniteQuery(options);
+    const observer = new InfiniteQueryObserver(client, options);
+    const loadingMore = observer.fetchNextPage();
+    applyDelta(action('lead', leadFixture({ priority: 3, syncId: 19 })), client);
+    second.resolve({ leads: [leadFixture({ id: 'l2', key: 'YOD-2' })], nextCursor: null });
+    await loadingMore;
+    const data = client.getQueryData<Pages<LeadPage>>(queryKeys.leads('p1', everything));
+    expect(ids(client, 'p1', everything)).toEqual(['l1', 'l2']);
+    expect(data?.pages[0]?.leads[0]?.priority).toBe(3);
+  });
+
+  test('a delta during a paused fetch is replayed when it finally lands', async () => {
+    const client = cache({});
+    const response = deferred<Pages<LeadPage>>();
+    client.mount();
+    onlineManager.setOnline(false);
+    try {
+      const fetching = client.fetchQuery({
+        queryKey: queryKeys.leads('p1', everything),
+        queryFn: () => response.promise,
+      });
+      expect(client.getQueryState(queryKeys.leads('p1', everything))?.fetchStatus).toBe('paused');
+      applyDelta(
+        action('lead', leadFixture({ id: 'l6', syncId: 22 }), { action: 'insert' }),
+        client,
+      );
+      onlineManager.setOnline(true);
+      response.resolve(leadPages([]));
+      await fetching;
+    } finally {
+      onlineManager.setOnline(true);
+      client.unmount();
+    }
+    expect(ids(client, 'p1', everything)).toEqual(['l6']);
+  });
+
+  test('a payload it cannot read is not replayed after the fetch', async () => {
+    const client = cache({});
+    const response = deferred<Pages<LeadPage>>();
+    const fetching = client.fetchQuery({
+      queryKey: queryKeys.leads('p1', everything),
+      queryFn: () => response.promise,
+    });
+    applyDelta(action('lead', { id: 'l1', syncId: 23, stageId: 7 }), client);
+    response.resolve(leadPages([]));
+    await fetching;
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

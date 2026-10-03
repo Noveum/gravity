@@ -12,7 +12,6 @@ import type { QueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import type { z } from 'zod';
 import { applyBootstrapDelta } from '@/lib/query/bootstrap-cache.ts';
-import { clientId } from '@/lib/query/client-id.ts';
 import {
   BOOTSTRAP_ROOT,
   COMPANIES_ROOT,
@@ -31,12 +30,6 @@ import {
   prependActivity,
 } from '@/lib/query/record-cache.ts';
 import { type DeltaHandler, registerDeltaHandler } from './delta-bridge.tsx';
-
-export function isOwnEcho(action: SyncAction): boolean {
-  return action.originClientId !== undefined && action.originClientId === clientId();
-}
-
-const ECHOED_MODELS: ReadonlySet<SyncModel> = new Set(['lead', 'person', 'company']);
 
 const LEAD_ROOTS = [LEADS_ROOT, LEAD_ROOT, PERSON_ROOT, COMPANY_ROOT] as const;
 
@@ -81,39 +74,42 @@ function refetchRoots(client: QueryClient, roots: readonly string[]): void {
   }
 }
 
+type CrmHandler = (action: SyncAction, client: QueryClient) => boolean;
+
 function placing<T>(
   model: CrmModel,
   schema: z.ZodType<T>,
   place: (client: QueryClient, row: T) => void,
-): DeltaHandler {
+): CrmHandler {
   return (action, client) => {
     const parsed = schema.safeParse(action.data);
     if (parsed.success) {
       place(client, parsed.data);
-      return;
+      return true;
     }
     console.warn(
       `Could not read the ${action.model} ${action.action} for ${action.modelId}, refetching.`,
     );
     refetchRoots(client, AFFECTED_ROOTS[model]);
+    return false;
   };
 }
 
 const placeLeadRow = placing('lead', leadRowSchema, placeLead);
 
-function handleLead(action: SyncAction, client: QueryClient): void {
+function handleLead(action: SyncAction, client: QueryClient): boolean {
   if (action.action === 'delete') {
     removeLead(client, action.modelId);
-    return;
+    return true;
   }
-  placeLeadRow(action, client);
+  return placeLeadRow(action, client);
 }
 
-function handleBootstrap(action: SyncAction, client: QueryClient): void {
-  applyBootstrapDelta(client, action);
+function handleBootstrap(action: SyncAction, client: QueryClient): boolean {
+  return applyBootstrapDelta(client, action);
 }
 
-export const CRM_DELTA_HANDLERS: readonly (readonly [CrmModel, DeltaHandler])[] = [
+export const CRM_DELTA_HANDLERS: readonly (readonly [CrmModel, CrmHandler])[] = [
   ['lead', handleLead],
   ['person', placing('person', personRowSchema, placePerson)],
   ['company', placing('company', companyRowSchema, placeCompany)],
@@ -159,8 +155,8 @@ function replayAfterFetches(
   replay: () => void,
 ): void {
   const fetching = client.getQueryCache().findAll({
-    fetchStatus: 'fetching',
-    predicate: (query) => roots.some((root) => query.queryKey[0] === root),
+    predicate: (query) =>
+      query.state.fetchStatus !== 'idle' && roots.some((root) => query.queryKey[0] === root),
   });
   if (fetching.length === 0) return;
   const watch = watchOf(client);
@@ -170,13 +166,13 @@ function replayAfterFetches(
   }
 }
 
-function crmHandler(model: CrmModel, handler: DeltaHandler): DeltaHandler {
-  const skipsEchoes = ECHOED_MODELS.has(model);
+function crmHandler(model: CrmModel, handler: CrmHandler): DeltaHandler {
   const roots = AFFECTED_ROOTS[model];
   return (action, client) => {
-    if (skipsEchoes && isOwnEcho(action)) return;
-    handler(action, client);
-    replayAfterFetches(client, roots, () => handler(action, client));
+    if (!handler(action, client)) return;
+    replayAfterFetches(client, roots, () => {
+      handler(action, client);
+    });
   };
 }
 

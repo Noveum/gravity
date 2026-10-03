@@ -41,9 +41,15 @@ function refetchBootstrap(client: QueryClient): void {
   client.invalidateQueries({ queryKey: [BOOTSTRAP_ROOT] }).catch(() => undefined);
 }
 
-function unreadable(client: QueryClient, action: SyncAction): void {
+interface BootstrapPatch {
+  readonly client: QueryClient;
+  readable: boolean;
+}
+
+function unreadable(patch: BootstrapPatch, action: SyncAction): void {
+  patch.readable = false;
   console.warn(`Ignored a ${action.model} update for ${action.modelId} it could not read.`);
-  refetchBootstrap(client);
+  refetchBootstrap(patch.client);
 }
 
 function removes(action: SyncAction): boolean {
@@ -67,16 +73,16 @@ function withoutPipelines(bootstrap: Bootstrap, pipelineIds: readonly string[]):
   };
 }
 
-function applyPipeline(client: QueryClient, bootstrap: Bootstrap, action: SyncAction): Bootstrap {
+function applyPipeline(patch: BootstrapPatch, bootstrap: Bootstrap, action: SyncAction): Bootstrap {
   const next = {
     ...bootstrap,
-    pipelines: applyRow(client, bootstrap.pipelines, action, pipelineRowSchema),
+    pipelines: applyRow(patch, bootstrap.pipelines, action, pipelineRowSchema),
   };
   return removes(action) ? withoutPipelines(next, [action.modelId]) : next;
 }
 
-function applyBrand(client: QueryClient, bootstrap: Bootstrap, action: SyncAction): Bootstrap {
-  const next = { ...bootstrap, brands: applyRow(client, bootstrap.brands, action, brandRowSchema) };
+function applyBrand(patch: BootstrapPatch, bootstrap: Bootstrap, action: SyncAction): Bootstrap {
+  const next = { ...bootstrap, brands: applyRow(patch, bootstrap.brands, action, brandRowSchema) };
   if (!removes(action)) return next;
   const pipelineIds = next.pipelines
     .filter((pipeline) => pipeline.brandId === action.modelId)
@@ -85,7 +91,7 @@ function applyBrand(client: QueryClient, bootstrap: Bootstrap, action: SyncActio
 }
 
 function applyRow<T extends Versioned>(
-  client: QueryClient,
+  patch: BootstrapPatch,
   list: T[],
   action: SyncAction,
   schema: z.ZodType<T>,
@@ -95,7 +101,7 @@ function applyRow<T extends Versioned>(
   }
   const parsed = schema.safeParse(action.data);
   if (!parsed.success) {
-    unreadable(client, action);
+    unreadable(patch, action);
     return list;
   }
   const row = parsed.data;
@@ -109,7 +115,7 @@ const memberPatchSchema = z.object({ id: z.string(), role: z.string(), syncId: z
 
 const organizationPatchSchema = z.object({ name: z.string() });
 
-function applyMember(client: QueryClient, bootstrap: Bootstrap, action: SyncAction): Bootstrap {
+function applyMember(patch: BootstrapPatch, bootstrap: Bootstrap, action: SyncAction): Bootstrap {
   if (action.action === 'delete') {
     return {
       ...bootstrap,
@@ -118,12 +124,12 @@ function applyMember(client: QueryClient, bootstrap: Bootstrap, action: SyncActi
   }
   const parsed = memberPatchSchema.safeParse(action.data);
   if (!parsed.success) {
-    unreadable(client, action);
+    unreadable(patch, action);
     return bootstrap;
   }
   const known = bootstrap.members.find((member) => member.memberId === action.modelId);
   if (known === undefined) {
-    refetchBootstrap(client);
+    refetchBootstrap(patch.client);
     return bootstrap;
   }
   if (known.syncId > parsed.data.syncId) return bootstrap;
@@ -137,31 +143,32 @@ function applyMember(client: QueryClient, bootstrap: Bootstrap, action: SyncActi
   };
 }
 
-export function applyBootstrapDelta(client: QueryClient, action: SyncAction): void {
+export function applyBootstrapDelta(client: QueryClient, action: SyncAction): boolean {
+  const patch: BootstrapPatch = { client, readable: true };
   patchBootstrap(client, (bootstrap) => {
     switch (action.model) {
       case 'brand':
-        return applyBrand(client, bootstrap, action);
+        return applyBrand(patch, bootstrap, action);
       case 'pipeline':
-        return applyPipeline(client, bootstrap, action);
+        return applyPipeline(patch, bootstrap, action);
       case 'stage':
-        return { ...bootstrap, stages: applyRow(client, bootstrap.stages, action, stageRowSchema) };
+        return { ...bootstrap, stages: applyRow(patch, bootstrap.stages, action, stageRowSchema) };
       case 'field_definition':
         return {
           ...bootstrap,
-          fields: applyRow(client, bootstrap.fields, action, fieldDefinitionRowSchema),
+          fields: applyRow(patch, bootstrap.fields, action, fieldDefinitionRowSchema),
         };
       case 'saved_view':
         return {
           ...bootstrap,
-          savedViews: applyRow(client, bootstrap.savedViews, action, savedViewRowSchema),
+          savedViews: applyRow(patch, bootstrap.savedViews, action, savedViewRowSchema),
         };
       case 'member':
-        return applyMember(client, bootstrap, action);
+        return applyMember(patch, bootstrap, action);
       case 'organization': {
         const parsed = organizationPatchSchema.safeParse(action.data);
         if (!parsed.success) {
-          unreadable(client, action);
+          unreadable(patch, action);
           return bootstrap;
         }
         return {
@@ -173,4 +180,5 @@ export function applyBootstrapDelta(client: QueryClient, action: SyncAction): vo
         return bootstrap;
     }
   });
+  return patch.readable;
 }

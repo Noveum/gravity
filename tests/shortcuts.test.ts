@@ -1,0 +1,34 @@
+import { describe, expect, test } from "vitest";
+import { type ShortcutInput, shortcutFor } from "../packages/core/shortcuts";
+
+const input = (extra: Partial<ShortcutInput> = {}): ShortcutInput => ({
+  key: "n",
+  metaKey: false,
+  ctrlKey: false,
+  altKey: false,
+  shiftKey: false,
+  isComposing: false,
+  isEditing: false,
+  isModal: false,
+  prefix: false,
+  ...extra,
+});
+describe("keyboard safety", () => {
+  test("typing, IME and modal forms never create tasks or navigate", () => {
+    for (const key of ["n", "j", "k", "g", "/", "ArrowDown", "?"]) {
+      expect(shortcutFor(input({ key, isEditing: true }))).toBeNull();
+      expect(shortcutFor(input({ key, isComposing: true }))).toBeNull();
+      expect(shortcutFor(input({ key, isModal: true }))).toBeNull();
+    }
+  });
+  test("command menu uses platform modifier without taking browser shortcuts", () => {
+    expect(
+      shortcutFor(input({ key: "k", metaKey: true, isEditing: true })),
+    ).toBe("commands");
+    expect(shortcutFor(input({ key: "k", ctrlKey: true }))).toBe("commands");
+    expect(shortcutFor(input({ key: "l", metaKey: true }))).toBeNull();
+    expect(shortcutFor(input({ key: "n", ctrlKey: true }))).toBeNull();
+    expect(shortcutFor(input({ key: "a", prefix: true }))).toBe("actions");
+    expect(shortcutFor(input({ key: "a" }))).toBeNull();
+  });
+});

@@ -11,7 +11,8 @@
     "./policy": "./src/policy/index.ts",
     "./validators": "./src/validators/index.ts",
     "./utils": "./src/utils/index.ts",
-    "./constants": "./src/constants/index.ts"
+    "./constants": "./src/constants/index.ts",
+    "./records": "./src/records/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

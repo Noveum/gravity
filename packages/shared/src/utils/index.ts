@@ -3,7 +3,9 @@ import { v7 as uuidv7 } from 'uuid';
 export * from './email-configuration.ts';
 export * from './email-domain.ts';
 export * from './error-fields.ts';
+export * from './identity.ts';
 export * from './initials.ts';
+export * from './pipeline-key.ts';
 export * from './relative-time.ts';
 export * from './slug.ts';
 

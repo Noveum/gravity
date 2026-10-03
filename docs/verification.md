@@ -2,7 +2,7 @@
 
 Verified locally on Node 22.15.1 and Bun 1.3.14.
 
-- `bun run test`: 29 tests passed, using actual SQL migrations/constraints in PGlite and a real local HTTP OAuth/MCP server.
+- `bun run test`: 32 tests passed, using actual SQL migrations/constraints in PGlite and a real local HTTP OAuth/MCP server.
 - `bun run typecheck`: passed.
 - `bun run lint`: passed without warnings.
 - `bun run build`: passed; the app, auth, discovery, webhook, materials, SSE and MCP routes compile.
@@ -35,3 +35,11 @@ The actual SSE endpoint returned 200 and `text/event-stream`. A committed HTTP d
 While a local draft was unsaved, a remote HTTP save preserved the local text and exposed a conflict. Attempting Save kept the conflict and did not overwrite the committed draft. Explicit discard/reload showed the remote version. Buffers are page-session memory only.
 
 Keyboard routing tests cover typing/IME/modal suppression, platform command modifiers, navigation prefixes and preservation of browser shortcuts. The command menu and form were exercised through browser controls; physical-key and screen-reader qualification remain pending. A revised 390 × 844 layout had no document-level horizontal overflow and uses a compact horizontal navigation row and modeless inspector drawer.
+
+## Resizing and connected record navigation
+
+Reviewed the compact desktop header at 49 pixels high with both themes. Dragged both dividers, used the detail divider's physical ArrowRight/Home/End keys, and confirmed the maximum width retained a 320-pixel list. Navigation/detail widths persisted after full reload. Expanded a person to fill the workspace, inspected the three-column related-work layout, and restored the split view. Tables retain readable column widths with local horizontal scrolling when the inspector grows.
+
+Clicked People → Mira Chen → Northstar Labs → Back; the company showed its readable contacts and product relationships, and Back restored the person. Person/meeting and person/opportunity links focused the corresponding record. A sequence enrollment opened the person inspector. Awaiting them showed only the two fictional tasks owed by the other party, excluding our own scheduled review. The revised drawer and action header had no document overflow at 390 × 844. A Next.js development hot-reload router error appeared during source edits; a full reload cleared it and the subsequent clean page had no issue overlay.
+
+Additional SQL checks enforce product-scoped company/person detail, private-action filtering, immutable MCP product grants, and product-authorized owners for meeting commitments. The real MCP tool transport calls `get_company_context` and excludes the ungranted product and its opportunity. These are foundation read flows; record editing, live providers and deployment remain subject to the gaps above.

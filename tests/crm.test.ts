@@ -169,6 +169,35 @@ describe("intentional action handling", () => {
       service.acceptCommitment(admin, { ...input, meetingId: demoId(1001) }),
     ).rejects.toMatchObject({ code: "NO_COMMITMENT" });
   });
+  test("a reviewed meeting cannot assign a promise to someone outside its product", async () => {
+    const [meeting] = await local.db
+      .insert(s.meetings)
+      .values({
+        organizationId: demoId(1),
+        productId: demoId(10),
+        relationshipId: demoId(300),
+        title: "Fictional reviewed meeting",
+        startsAt: new Date(),
+        status: "held",
+        proposedCommitment: "Prepare the reviewed shortlist",
+      })
+      .returning();
+    await expect(
+      service.acceptCommitment(admin, {
+        organizationId: demoId(1),
+        meetingId: meeting.id,
+        version: 1,
+        ownerId: restricted.userId,
+        dueAt: new Date().toISOString(),
+      }),
+    ).rejects.toMatchObject({ code: "OWNER_NOT_ALLOWED" });
+    const [unchanged] = await local.db
+      .select()
+      .from(s.meetings)
+      .where(eq(s.meetings.id, meeting.id));
+    expect(unchanged.version).toBe(1);
+    expect(unchanged.commitmentActionId).toBeNull();
+  });
 });
 describe("creating product relationships", () => {
   test("concurrent creation rejects duplicate email without merging or overwriting identity", async () => {
@@ -595,6 +624,49 @@ describe("materials and assistant access", () => {
     expect(response.status).toBe(200);
     expect(body).toContain("API Marketplace");
     expect(body).not.toContain("AI Platform");
+    const companyResponse = await mcpHandler(
+      local.db,
+      principal,
+      demoId(1),
+    ).fetch(
+      new Request("http://127.0.0.1:3014/mcp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: {
+            name: "get_company_context",
+            arguments: { companyId: demoId(100) },
+          },
+        }),
+      }),
+    );
+    const companyBody = await companyResponse.text();
+    expect(companyResponse.status).toBe(200);
+    expect(companyBody).toContain("Northstar Labs");
+    const envelope = JSON.parse(
+      companyBody
+        .split("\n")
+        .find((line) => line.startsWith("data: "))
+        ?.slice(6) ?? "{}",
+    );
+    const company = JSON.parse(envelope.result.content[0].text);
+    // Shared task prose may mention another product; only granted records may be returned.
+    expect(
+      company.products.map((product: { id: string }) => product.id),
+    ).toEqual([demoId(11)]);
+    expect(
+      company.relationships.map(
+        (relationship: { id: string }) => relationship.id,
+      ),
+    ).toEqual([demoId(306)]);
+    expect(company.meetings).toEqual([]);
+    expect(company.opportunities).toEqual([]);
   });
   test("production cannot activate the local demo bypass", () => {
     vi.stubEnv("NODE_ENV", "production");
@@ -668,5 +740,78 @@ describe("explicit next-action scheduling", () => {
       .from(s.actions)
       .where(eq(s.actions.id, result.actionId));
     expect(action.productId).toBe(demoId(11));
+  });
+});
+
+describe("connected record details", () => {
+  test("person details include company and related work without leaking other products", async () => {
+    const context = await service.context(admin, demoId(1), demoId(300));
+    expect(context.company?.id).toBe(demoId(100));
+    expect(context.relationships.map((r) => r.id)).toEqual(
+      expect.arrayContaining([demoId(300), demoId(306)]),
+    );
+    expect(context.meetings.some((m) => m.id === demoId(1001))).toBe(true);
+    expect(context.opportunities.some((o) => o.id === demoId(1101))).toBe(true);
+    const narrowed = await service.context(restricted, demoId(1), demoId(306));
+    expect(narrowed.relationships.map((r) => r.id)).toEqual([demoId(306)]);
+    expect(narrowed.products.map((p) => p.id)).toEqual([demoId(11)]);
+    expect(narrowed.meetings).toHaveLength(0);
+    expect(narrowed.opportunities).toHaveLength(0);
+  });
+  test("company details obey org/product and private-source permissions", async () => {
+    const context = await service.companyContext(
+      admin,
+      { organizationId: demoId(1) },
+      demoId(100),
+    );
+    expect(context.people.map((p) => p.id)).toEqual([demoId(200)]);
+    expect(context.relationships.map((r) => r.id)).toEqual(
+      expect.arrayContaining([demoId(300), demoId(306)]),
+    );
+    const narrowed = await service.companyContext(
+      restricted,
+      { organizationId: demoId(1) },
+      demoId(100),
+    );
+    expect(narrowed.relationships.map((r) => r.id)).toEqual([demoId(306)]);
+    expect(narrowed.actions.every((a) => a.productId === demoId(11))).toBe(
+      true,
+    );
+    await expect(
+      service.companyContext(
+        restricted,
+        { organizationId: demoId(1) },
+        demoId(104),
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      service.companyContext(admin, { organizationId: demoId(1) }, demoId(106)),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const privateCompany = await service.companyContext(
+      teammate,
+      { organizationId: demoId(1) },
+      demoId(103),
+    );
+    expect(
+      privateCompany.actions.some(
+        (a) => a.sourceConversationId === demoId(711),
+      ),
+    ).toBe(false);
+    const grant = {
+      ...admin,
+      source: "mcp" as const,
+      organizationId: demoId(1),
+      productIds: [demoId(11)],
+      readOnly: true,
+    };
+    expect(
+      (
+        await service.companyContext(
+          grant,
+          { organizationId: demoId(1) },
+          demoId(100),
+        )
+      ).relationships.map((r) => r.id),
+    ).toEqual([demoId(306)]);
   });
 });

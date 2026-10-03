@@ -47,7 +47,8 @@ Tokens are resource-bound to the MCP URL and expire after five minutes. On each 
 | `list_products` | Currently readable granted products |
 | `list_next_actions` | Pending actions in a permitted product/all granted products |
 | `search_records` | Search readable people/companies/relationships |
-| `get_person_context` | Relationship, readable messages, evidence and coverage limits |
+| `get_person_context` | Person, company, permitted product relationships, readable messages, evidence and related work |
+| `get_company_context` | Company, permitted contacts, product relationships and related work |
 | `list_materials` | Private material metadata for permitted products/stages |
 | `read_material` | Bounded text/Markdown, or PDF metadata with extraction unavailable |
 

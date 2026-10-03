@@ -1,16 +1,22 @@
 "use client";
-import type { ClientContext, ClientSnapshot } from "@crm/core/dto";
+import type {
+  ClientCompanyContext,
+  ClientContext,
+  ClientSnapshot,
+} from "@crm/core/dto";
 import { shortcutFor } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import {
+  ArrowLeft,
   ArrowUpRight,
   Building2,
   CalendarDays,
-  ChevronRight,
   FolderOpen,
   GitBranch,
   Layers,
   ListChecks,
+  Maximize2,
+  Minimize2,
   Plug,
   Plus,
   RotateCw,
@@ -20,12 +26,20 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { ActionDialog } from "./action-dialog";
 import { Commands } from "./commands";
 import { Materials } from "./materials";
+import { ResizeHandle, usePanelLayout } from "./panel-layout";
 import { PersonDialog } from "./person-dialog";
 import { Preferences } from "./preferences";
+import { CompanyDetails, PersonDetails, RelatedWork } from "./record-details";
 
 type View =
   | "actions"
@@ -96,6 +110,14 @@ export function CrmApp({
   userId: string;
   demo: boolean;
 }) {
+  const panels = usePanelLayout();
+  const [selectedCompany, setSelectedCompany] = useState("");
+  const [companyContext, setCompanyContext] =
+    useState<ClientCompanyContext | null>(null);
+  const [focusedRecord, setFocusedRecord] = useState("");
+  const [recordHistory, setRecordHistory] = useState<
+    { relationshipId: string; companyId: string; actionId: string }[]
+  >([]);
   const [organizations, setOrganizations] = useState(initialOrganizations);
   const [organizationId, setOrganizationId] = useState(initialOrganizationId);
   const [productId, setProductId] = useState("");
@@ -104,6 +126,7 @@ export function CrmApp({
   const [search, setSearch] = useState("");
   const [owner, setOwner] = useState("");
   const [kind, setKind] = useState("");
+  const [awaitingThem, setAwaitingThem] = useState(false);
   const [selected, setSelected] = useState(
     initial?.actions.find((a) => a.status === "blocked")?.relationshipId ?? "",
   );
@@ -127,6 +150,7 @@ export function CrmApp({
   const [draftVersion, setDraftVersion] = useState(0);
   const contextCache = useRef(new Map<string, ClientContext>());
   const contextScope = useRef("");
+  const companyScope = useRef("");
   const revision = useRef("");
   const fetchGeneration = useRef(0);
   const refresh = useCallback(async () => {
@@ -146,6 +170,9 @@ export function CrmApp({
         ) {
           setData(null);
           setContext(null);
+          setSelectedCompany("");
+          setCompanyContext(null);
+          setRecordHistory([]);
           setSelected("");
           setSelectedAction("");
           draftBuffers.current.clear();
@@ -247,7 +274,47 @@ export function CrmApp({
       });
     return () => controller.abort();
   }, [selected, organizationId, data?.asOf]);
-  const action = data?.actions.find((a) => a.id === selectedAction);
+  useEffect(() => {
+    const scope = `${organizationId}/${productId}/${selectedCompany}`;
+    if (companyScope.current !== scope) {
+      companyScope.current = scope;
+      setCompanyContext(null);
+    }
+    if (!selectedCompany || !organizationId || !data?.asOf) return;
+    const controller = new AbortController();
+    void requestJson<ClientCompanyContext>(
+      `/api/crm?operation=company&organizationId=${organizationId}&companyId=${selectedCompany}${productId ? `&productId=${productId}` : ""}`,
+      { signal: controller.signal },
+    )
+      .then((result) => {
+        if (!controller.signal.aborted) setCompanyContext(result);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setNotice(errorText(error));
+          if (
+            error instanceof Error &&
+            ["FORBIDDEN", "UNAUTHORIZED", "NOT_FOUND"].includes(error.message)
+          ) {
+            setCompanyContext(null);
+            setSelectedCompany("");
+            setRecordHistory([]);
+          }
+        }
+      });
+    return () => controller.abort();
+  }, [selectedCompany, organizationId, productId, data?.asOf]);
+  useEffect(() => {
+    if (!focusedRecord) return;
+    const target = document.querySelector<HTMLElement>(
+      `[data-record-id="${focusedRecord}"]`,
+    );
+    target?.scrollIntoView({ block: "nearest" });
+    target?.focus({ preventScroll: true });
+  }, [focusedRecord]);
+  const action =
+    data?.actions.find((a) => a.id === selectedAction) ??
+    context?.actions.find((a) => a.id === selectedAction);
   useEffect(() => {
     if (!action?.id) {
       setDraft("");
@@ -283,6 +350,11 @@ export function CrmApp({
     }
   }
   function switchOrganization(id: string) {
+    setAwaitingThem(false);
+    setSelectedCompany("");
+    setCompanyContext(null);
+    setRecordHistory([]);
+    panels.setExpanded(false);
     setPersonDialog(false);
     setActionDialog(false);
     fetchGeneration.current++;
@@ -299,6 +371,11 @@ export function CrmApp({
     revision.current = "";
   }
   function switchProduct(id: string) {
+    setAwaitingThem(false);
+    setSelectedCompany("");
+    setCompanyContext(null);
+    setRecordHistory([]);
+    panels.setExpanded(false);
     fetchGeneration.current++;
     setPersonDialog(false);
     setActionDialog(false);
@@ -310,13 +387,75 @@ export function CrmApp({
     setNotice("");
   }
   function navigate(next: View) {
+    setSelectedCompany("");
+    setCompanyContext(null);
+    setRecordHistory([]);
+    setFocusedRecord("");
+    panels.setExpanded(false);
     setView(next);
     setSearch("");
+    setOwner("");
+    setKind("");
+    setAwaitingThem(false);
     setNotice("");
     if (next !== "actions" && next !== "people") {
       setSelected("");
       setSelectedAction("");
     }
+  }
+  function closeInspector() {
+    setSelected("");
+    setSelectedCompany("");
+    setSelectedAction("");
+    setRecordHistory([]);
+    panels.setExpanded(false);
+  }
+  function rememberRecord() {
+    if (selected || selectedCompany)
+      setRecordHistory((history) => [
+        ...history.slice(-19),
+        {
+          relationshipId: selected,
+          companyId: selectedCompany,
+          actionId: selectedAction,
+        },
+      ]);
+  }
+  function openPerson(relationshipId: string, actionId = "") {
+    const relationship =
+      data?.relationships.find((r) => r.id === relationshipId) ??
+      context?.relationships.find((r) => r.id === relationshipId);
+    if (productId && relationship && relationship.productId !== productId)
+      switchProduct(relationship.productId);
+    else if (relationshipId !== selected || selectedCompany) rememberRecord();
+    setSelectedCompany("");
+    setSelected(relationshipId);
+    setSelectedAction(actionId);
+    const kind = data?.actions.find((action) => action.id === actionId)?.kind;
+    setTab(
+      actionId && (kind === "reply" || kind === "approval")
+        ? "draft"
+        : "timeline",
+    );
+  }
+  function openCompany(companyId: string) {
+    rememberRecord();
+    setSelectedCompany(companyId);
+    setSelected("");
+    setSelectedAction("");
+  }
+  function previousRecord() {
+    const previous = recordHistory.at(-1);
+    if (!previous) return;
+    setRecordHistory(recordHistory.slice(0, -1));
+    setSelected(previous.relationshipId);
+    setSelectedCompany(previous.companyId);
+    setSelectedAction(previous.actionId);
+    setTab("timeline");
+  }
+  function revealRecord(view: "meetings" | "opportunities", id: string) {
+    navigate(view);
+    setFocusedRecord(id);
   }
   function warmContext(relationshipId: string) {
     if (!data?.asOf) return;
@@ -355,6 +494,7 @@ export function CrmApp({
         a.status !== "completed" &&
         (!owner || a.ownerId === owner) &&
         (!kind || a.kind === kind) &&
+        (!awaitingThem || a.owedBy === "them") &&
         matches(
           a.title,
           personFor(a.relationshipId)?.name,
@@ -388,8 +528,7 @@ export function CrmApp({
       else if (command === "schedule") {
         if (data?.relationships.length) setActionDialog(true);
       } else if (command === "close") {
-        setSelected("");
-        setSelectedAction("");
+        closeInspector();
       } else if (command === "next" || command === "previous") {
         const current = visibleActions.findIndex(
           (a) => a.id === selectedAction,
@@ -420,12 +559,21 @@ export function CrmApp({
       window.removeEventListener("keydown", handleKey);
     };
   });
-  const showInspector = (view === "actions" || view === "people") && !!selected;
+  const showInspector = !!selected || !!selectedCompany;
   const subtitle = t[`${view}Subtitle` as keyof typeof t] as string;
   const currentOrg = organizations.find((org) => org.id === organizationId);
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div
+      ref={panels.frame}
+      className="app-shell"
+      style={
+        {
+          "--navigation-width": `${panels.navigation}px`,
+          "--inspector-width": `${panels.inspector}px`,
+        } as CSSProperties
+      }
+    >
+      <aside className="sidebar" id="navigation-panel">
         <div className="brand">
           <span className="brand-icon">
             <Sparkles size={16} />
@@ -474,14 +622,15 @@ export function CrmApp({
           {[
             [t.replies, "reply"],
             [t.promises, "commitment"],
-            [t.waiting, "review"],
+            [t.waiting, "waiting"],
           ].map(([name, value]) => (
             <button
               type="button"
               key={value}
               onClick={() => {
                 navigate("actions");
-                setKind(value);
+                setKind(value === "waiting" ? "" : value);
+                setAwaitingThem(value === "waiting");
               }}
             >
               <span className={`tiny-dot ${value}`} />
@@ -517,24 +666,24 @@ export function CrmApp({
           </div>
         </div>
       </aside>
+      <ResizeHandle
+        className="navigation-resize"
+        controls="navigation-panel"
+        label={t.resizeNavigation}
+        hint={t.resizeHint}
+        value={panels.navigation}
+        min={176}
+        max={panels.navigationMax}
+        direction={1}
+        onChange={panels.resizeNavigation}
+        onReset={() => panels.resizeNavigation(214)}
+      />
       <main className="main">
         <header className="topbar">
-          <div className="breadcrumbs">
-            {currentOrg?.name ?? t.workspace}
-            <ChevronRight size={13} />
-            <span>{label(view)}</span>
-          </div>
+          <h1 className="view-title" title={subtitle}>
+            {label(view)}
+          </h1>
           <div className="top-controls">
-            <Preferences />
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t.commands}
-              onClick={() => setCommandsOpen(true)}
-            >
-              <Search size={15} />
-              <kbd>{t.keys.commandHint}</kbd>
-            </button>
             <select
               aria-label={t.product}
               value={productId}
@@ -549,6 +698,109 @@ export function CrmApp({
                   </option>
                 ))}
             </select>
+            {!["integrations", "settings", "materials"].includes(view) && (
+              <div className="toolbar-filters">
+                <label className="search">
+                  <Search size={15} />
+                  <input
+                    ref={searchInput}
+                    type="search"
+                    aria-label={t.search}
+                    placeholder={t.searchPlaceholder}
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                </label>
+                {view === "people" && (
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={!data?.products.length}
+                    onClick={() => setPersonDialog(true)}
+                  >
+                    <Plus size={14} />
+                    {t.addPerson}
+                  </button>
+                )}
+                {view === "actions" && (
+                  <>
+                    <button
+                      type="button"
+                      className="primary"
+                      aria-label={t.scheduleAction}
+                      disabled={!data?.relationships.length}
+                      onClick={() => setActionDialog(true)}
+                    >
+                      <Plus size={14} />
+                      {t.newAction}
+                    </button>
+                    <select
+                      aria-label={t.owner}
+                      value={owner}
+                      onChange={(event) => setOwner(event.target.value)}
+                    >
+                      <option value="">{t.everyone}</option>
+                      <option value={userId}>{t.mine}</option>
+                      {data?.members
+                        .filter((m) => m.id !== userId)
+                        .map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                    </select>
+                    <select
+                      aria-label={t.actionType}
+                      value={kind}
+                      onChange={(event) => setKind(event.target.value)}
+                    >
+                      <option value="">{t.allTypes}</option>
+                      {[
+                        "reply",
+                        "approval",
+                        "review",
+                        "commitment",
+                        "research",
+                      ].map((k) => (
+                        <option key={k} value={k}>
+                          {label(k)}
+                        </option>
+                      ))}
+                    </select>
+                    {awaitingThem && (
+                      <button
+                        type="button"
+                        className="badge"
+                        aria-label={`${t.waiting}: ${t.clearFilters}`}
+                        onClick={() => setAwaitingThem(false)}
+                      >
+                        {t.waiting} <X size={12} />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t.commands}
+              onClick={() => setCommandsOpen(true)}
+            >
+              <Search size={15} />
+            </button>
+            <details className="view-options">
+              <summary aria-label={t.viewOptions}>
+                <Settings2 size={15} />
+              </summary>
+              <div className="options-popover">
+                <Preferences />
+              </div>
+            </details>
+            <span className={`live-status sync-${syncState}`} title={t.polling}>
+              <span />
+              <span className="sr-only">{label(syncState)}</span>
+            </span>
             <button
               type="button"
               className="icon-button"
@@ -559,91 +811,6 @@ export function CrmApp({
             </button>
           </div>
         </header>
-        <div className="heading">
-          <div>
-            <div className="eyebrow">
-              {productId ? product(productId)?.name : t.allProducts}
-            </div>
-            <h1>{label(view)}</h1>
-            <p>{subtitle}</p>
-          </div>
-          <span className={`live-status sync-${syncState}`} title={t.polling}>
-            <span />
-            {label(syncState)}
-          </span>
-        </div>
-        {!["integrations", "settings", "materials"].includes(view) && (
-          <div className="filters">
-            <label className="search">
-              <Search size={15} />
-              <input
-                ref={searchInput}
-                type="search"
-                aria-label={t.search}
-                placeholder={t.searchPlaceholder}
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </label>
-            {view === "people" && (
-              <button
-                type="button"
-                className="primary"
-                disabled={!data?.products.length}
-                onClick={() => setPersonDialog(true)}
-              >
-                <Plus size={14} />
-                {t.addPerson}
-              </button>
-            )}
-            {view === "actions" && (
-              <>
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={!data?.relationships.length}
-                  onClick={() => setActionDialog(true)}
-                >
-                  <Plus size={14} />
-                  {t.scheduleAction}
-                </button>
-                <select
-                  aria-label={t.owner}
-                  value={owner}
-                  onChange={(event) => setOwner(event.target.value)}
-                >
-                  <option value="">{t.everyone}</option>
-                  <option value={userId}>{t.mine}</option>
-                  {data?.members
-                    .filter((m) => m.id !== userId)
-                    .map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                </select>
-                <select
-                  aria-label={t.actionType}
-                  value={kind}
-                  onChange={(event) => setKind(event.target.value)}
-                >
-                  <option value="">{t.allTypes}</option>
-                  {[
-                    "reply",
-                    "approval",
-                    "review",
-                    "commitment",
-                    "research",
-                  ].map((k) => (
-                    <option key={k} value={k}>
-                      {label(k)}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-          </div>
-        )}
         {commandsOpen && (
           <Commands
             onClose={() => setCommandsOpen(false)}
@@ -701,6 +868,7 @@ export function CrmApp({
               setTab("timeline");
               setView("actions");
               setKind("");
+              setAwaitingThem(false);
               setOwner("");
               setSearch("");
               setNotice(t.scheduledAction);
@@ -742,9 +910,13 @@ export function CrmApp({
           </div>
         ) : (
           <div
-            className={`workspace-content ${showInspector ? "with-inspector" : ""}`}
+            className={`workspace-content ${showInspector ? "with-inspector" : ""} ${showInspector && panels.expanded ? "inspector-expanded" : ""}`}
           >
-            <section className="content" aria-label={label(view)}>
+            <section
+              id="records-panel"
+              className="content"
+              aria-label={label(view)}
+            >
               {view === "actions" && (
                 <>
                   {["now", "upcoming"].map((group) => {
@@ -772,6 +944,7 @@ export function CrmApp({
                               }
                               aria-pressed={selectedAction === a.id}
                               onClick={() => {
+                                setSelectedCompany("");
                                 setSelected(a.relationshipId);
                                 setSelectedAction(a.id);
                                 setTab("timeline");
@@ -841,6 +1014,9 @@ export function CrmApp({
               )}
               {view === "people" && (
                 <div className="table-scroll">
+                  {!data.people.some((p) =>
+                    matches(p.name, p.title, companyFor(p.id)?.name),
+                  ) && <p className="empty">{t.noPeople}</p>}
                   <table>
                     <thead>
                       <tr>
@@ -864,18 +1040,33 @@ export function CrmApp({
                               <td>
                                 <button
                                   type="button"
-                                  className="text-button"
+                                  className="text-button identity-link"
+                                  aria-label={p.name}
                                   onClick={() => {
-                                    setSelected(relationships[0]?.id ?? "");
-                                    setSelectedAction("");
-                                    setTab("timeline");
+                                    openPerson(relationships[0]?.id ?? "");
                                   }}
                                 >
                                   {p.name}
+                                  <small>{p.title}</small>
                                 </button>
-                                <small>{p.title}</small>
                               </td>
-                              <td>{companyFor(p.id)?.name}</td>
+                              <td>
+                                {companyFor(p.id) ? (
+                                  <button
+                                    type="button"
+                                    className="text-button"
+                                    onClick={() =>
+                                      openCompany(companyFor(p.id)?.id || "")
+                                    }
+                                  >
+                                    {companyFor(p.id)?.name}
+                                  </button>
+                                ) : (
+                                  <span className="muted">
+                                    {t.companyMissing}
+                                  </span>
+                                )}
+                              </td>
                               <td>
                                 {relationships.map((r) => (
                                   <button
@@ -884,9 +1075,7 @@ export function CrmApp({
                                     className="badge"
                                     aria-pressed={selected === r.id}
                                     onClick={() => {
-                                      setSelected(r.id);
-                                      setSelectedAction("");
-                                      setTab("timeline");
+                                      openPerson(r.id);
                                     }}
                                   >
                                     {product(r.productId)?.name} ·{" "}
@@ -908,6 +1097,9 @@ export function CrmApp({
               )}
               {view === "companies" && (
                 <div className="table-scroll">
+                  {!data.companies.some((c) => matches(c.name, c.domain)) && (
+                    <p className="empty">{t.noCompanies}</p>
+                  )}
                   <table>
                     <thead>
                       <tr>
@@ -922,14 +1114,34 @@ export function CrmApp({
                         .map((c) => (
                           <tr key={c.id}>
                             <td>
-                              <strong>{c.name}</strong>
+                              <button
+                                type="button"
+                                className="text-button"
+                                onClick={() => openCompany(c.id)}
+                              >
+                                {c.name}
+                              </button>
                               <small>{c.domain}</small>
                             </td>
                             <td>
                               {data.people
                                 .filter((p) => p.companyId === c.id)
-                                .map((p) => p.name)
-                                .join(", ")}
+                                .map((p) => (
+                                  <button
+                                    type="button"
+                                    className="text-button linked-contact"
+                                    key={p.id}
+                                    onClick={() =>
+                                      openPerson(
+                                        data.relationships.find(
+                                          (r) => r.personId === p.id,
+                                        )?.id || "",
+                                      )
+                                    }
+                                  >
+                                    {p.name}
+                                  </button>
+                                ))}
                             </td>
                             <td>
                               {[
@@ -954,6 +1166,9 @@ export function CrmApp({
               )}
               {view === "sequences" && (
                 <div className="page-content">
+                  {!data.sequences.some((s) =>
+                    matches(s.name, product(s.productId)?.name),
+                  ) && <p className="empty">{t.noSequences}</p>}
                   {data.sequences
                     .filter((sequence) =>
                       matches(sequence.name, product(sequence.productId)?.name),
@@ -991,13 +1206,15 @@ export function CrmApp({
                           {data.enrollments
                             .filter((e) => e.sequenceId === sequence.id)
                             .map((e) => (
-                              <span
+                              <button
+                                type="button"
+                                onClick={() => openPerson(e.relationshipId)}
                                 className={`badge ${e.status === "paused_reply" ? "warning" : ""}`}
                                 key={e.id}
                               >
                                 {personFor(e.relationshipId)?.name} ·{" "}
                                 {label(e.status)}
-                              </span>
+                              </button>
                             ))}
                         </div>
                         <p className="muted">{t.sequenceNote}</p>
@@ -1008,6 +1225,9 @@ export function CrmApp({
               {view === "meetings" && (
                 <div className="page-content">
                   <p className="callout">{t.meetingNote}</p>
+                  {!data.meetings.some((m) =>
+                    matches(m.title, personFor(m.relationshipId)?.name),
+                  ) && <p className="empty">{t.noMeetings}</p>}
                   {data.meetings
                     .filter((meeting) =>
                       matches(
@@ -1016,7 +1236,12 @@ export function CrmApp({
                       ),
                     )
                     .map((meeting) => (
-                      <article className="meeting" key={meeting.id}>
+                      <article
+                        className={`meeting ${focusedRecord === meeting.id ? "record-highlight" : ""}`}
+                        key={meeting.id}
+                        data-record-id={meeting.id}
+                        tabIndex={-1}
+                      >
                         <div className="section-heading">
                           <div>
                             <span className="eyebrow">
@@ -1028,7 +1253,15 @@ export function CrmApp({
                             </span>
                             <h2>{meeting.title}</h2>
                             <p className="muted">
-                              {personFor(meeting.relationshipId)?.name}
+                              <button
+                                type="button"
+                                className="text-button"
+                                onClick={() =>
+                                  openPerson(meeting.relationshipId)
+                                }
+                              >
+                                {personFor(meeting.relationshipId)?.name}
+                              </button>
                             </p>
                           </div>
                           <span className="badge">{label(meeting.status)}</span>
@@ -1065,11 +1298,17 @@ export function CrmApp({
                                 <label>
                                   {t.owner}
                                   <select name="ownerId" defaultValue={userId}>
-                                    {data.members.map((m) => (
-                                      <option key={m.id} value={m.id}>
-                                        {m.name}
-                                      </option>
-                                    ))}
+                                    {data.members
+                                      .filter((m) =>
+                                        m.productIds.includes(
+                                          meeting.productId,
+                                        ),
+                                      )
+                                      .map((m) => (
+                                        <option key={m.id} value={m.id}>
+                                          {m.name}
+                                        </option>
+                                      ))}
                                   </select>
                                 </label>
                                 <label>
@@ -1133,9 +1372,32 @@ export function CrmApp({
                                       ),
                                   )
                                   .map((o) => (
-                                    <article className="deal-card" key={o.id}>
-                                      <strong>{o.name}</strong>
-                                      <p>{personFor(o.relationshipId)?.name}</p>
+                                    <article
+                                      className={`deal-card ${focusedRecord === o.id ? "record-highlight" : ""}`}
+                                      key={o.id}
+                                      data-record-id={o.id}
+                                      tabIndex={-1}
+                                    >
+                                      <button
+                                        type="button"
+                                        className="text-button"
+                                        onClick={() =>
+                                          openPerson(o.relationshipId)
+                                        }
+                                      >
+                                        {o.name}
+                                      </button>
+                                      <p>
+                                        <button
+                                          type="button"
+                                          className="text-button"
+                                          onClick={() =>
+                                            openPerson(o.relationshipId)
+                                          }
+                                        >
+                                          {personFor(o.relationshipId)?.name}
+                                        </button>
+                                      </p>
                                       <small>
                                         {o.amountMinor !== null
                                           ? new Intl.NumberFormat("en", {
@@ -1256,30 +1518,89 @@ export function CrmApp({
               )}
             </section>
             {showInspector && (
-              <aside className="inspector" aria-label={t.selectRecord}>
+              <ResizeHandle
+                className="inspector-resize"
+                controls="record-inspector"
+                label={t.resizeInspector}
+                hint={t.resizeHint}
+                value={panels.inspector}
+                min={300}
+                max={panels.inspectorMax}
+                direction={-1}
+                onChange={panels.resizeInspector}
+                onReset={() => panels.resizeInspector(400)}
+              />
+            )}
+            {showInspector && (
+              <aside
+                id="record-inspector"
+                className="inspector"
+                aria-label={t.recordDetails}
+              >
                 <div className="inspector-heading">
-                  <span className="eyebrow">{t.relationships}</span>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={t.scheduleAction}
-                    onClick={() => setActionDialog(true)}
-                  >
-                    <Plus size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={t.closeInspector}
-                    onClick={() => {
-                      setSelected("");
-                      setSelectedAction("");
-                    }}
-                  >
-                    <X size={15} />
-                  </button>
+                  <span className="eyebrow">
+                    {selectedCompany ? t.companyDetails : t.relationships}
+                  </span>
+                  <div className="inspector-controls">
+                    {!!recordHistory.length && (
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={t.backToRecord}
+                        onClick={previousRecord}
+                      >
+                        <ArrowLeft size={15} />
+                      </button>
+                    )}
+                    {!selectedCompany && (
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={t.scheduleAction}
+                        onClick={() => setActionDialog(true)}
+                      >
+                        <Plus size={15} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="icon-button expand-control"
+                      aria-label={
+                        panels.expanded
+                          ? t.collapseInspector
+                          : t.expandInspector
+                      }
+                      onClick={() => panels.setExpanded(!panels.expanded)}
+                    >
+                      {panels.expanded ? (
+                        <Minimize2 size={15} />
+                      ) : (
+                        <Maximize2 size={15} />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={t.closeInspector}
+                      onClick={closeInspector}
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
                 </div>
-                {!context ? (
+                {selectedCompany ? (
+                  companyContext ? (
+                    <CompanyDetails
+                      context={companyContext}
+                      onPerson={openPerson}
+                      onAction={openPerson}
+                      onReveal={revealRecord}
+                      timeZone={currentOrg?.timezone || "UTC"}
+                    />
+                  ) : (
+                    <p className="muted">{t.loading}</p>
+                  )
+                ) : !context ? (
                   <p className="muted">{t.loading}</p>
                 ) : (
                   <>
@@ -1291,10 +1612,25 @@ export function CrmApp({
                         <h2>{context.person?.name}</h2>
                         <p>{context.person?.title}</p>
                         <small>
-                          {companyFor(context.person?.id ?? "")?.name}
+                          {context.company && (
+                            <button
+                              type="button"
+                              className="text-button"
+                              onClick={() =>
+                                openCompany(context.company?.id || "")
+                              }
+                            >
+                              {context.company.name}
+                            </button>
+                          )}
                         </small>
                       </div>
                     </div>
+                    <PersonDetails
+                      context={context}
+                      onCompany={openCompany}
+                      onPerson={openPerson}
+                    />
                     <dl className="properties">
                       <dt>{t.product}</dt>
                       <dd>{product(context.relationship.productId)?.name}</dd>
@@ -1500,6 +1836,14 @@ export function CrmApp({
                         <p className="coverage-note">{t.sendingUnavailable}</p>
                       </div>
                     )}
+                    <RelatedWork
+                      actions={context.actions}
+                      meetings={context.meetings}
+                      opportunities={context.opportunities}
+                      timeZone={currentOrg?.timezone || "UTC"}
+                      onAction={openPerson}
+                      onReveal={revealRecord}
+                    />
                     {action && (
                       <div className="action-summary">
                         <span className="eyebrow">{t.actions}</span>

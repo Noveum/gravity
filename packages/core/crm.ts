@@ -451,7 +451,12 @@ export class CrmService {
         ),
       );
     if (!relationship) throw new DomainError("NOT_FOUND", 404);
-    await authorize(this.db, principal, organizationId, relationship.productId);
+    const permission = await authorize(
+      this.db,
+      principal,
+      organizationId,
+      relationship.productId,
+    );
     const [person] = await this.db
       .select()
       .from(s.people)
@@ -525,15 +530,100 @@ export class CrmService {
           ),
         ),
     ]);
+    const [company] = person?.companyId
+      ? await this.db
+          .select()
+          .from(s.companies)
+          .where(
+            and(
+              eq(s.companies.organizationId, organizationId),
+              eq(s.companies.id, person.companyId),
+            ),
+          )
+      : [];
+    const [relationships, meetings, opportunities] = await Promise.all([
+      this.db
+        .select()
+        .from(s.relationships)
+        .where(
+          and(
+            eq(s.relationships.organizationId, organizationId),
+            eq(s.relationships.personId, relationship.personId),
+            inArray(
+              s.relationships.productId,
+              permission.products.map((p) => p.id),
+            ),
+          ),
+        ),
+      this.db
+        .select()
+        .from(s.meetings)
+        .where(
+          and(
+            eq(s.meetings.organizationId, organizationId),
+            eq(s.meetings.relationshipId, relationshipId),
+          ),
+        ),
+      this.db
+        .select()
+        .from(s.opportunities)
+        .where(
+          and(
+            eq(s.opportunities.organizationId, organizationId),
+            eq(s.opportunities.relationshipId, relationshipId),
+          ),
+        ),
+    ]);
     return {
       person,
+      company: company ?? null,
       relationship,
+      relationships,
+      products: permission.products,
+      meetings,
+      opportunities,
       messages,
       evidence,
       actions,
       asOf: new Date().toISOString(),
       coverage: { complete: false, note: "CONTEXT_PARTIAL", pageSize: 30 },
       unknowns: ["BUDGET_UNVERIFIED", "PRIVATE_HISTORY_NOT_ASSERTED"],
+    };
+  }
+  async companyContext(
+    principal: Principal,
+    scope: z.infer<typeof scopeSchema>,
+    companyId: string,
+  ) {
+    const snapshot = await this.snapshot(principal, scope);
+    const company = snapshot.companies.find(
+      (company) => company.id === companyId,
+    );
+    if (!company) throw new DomainError("NOT_FOUND", 404);
+    const people = snapshot.people.filter(
+      (person) => person.companyId === company.id,
+    );
+    const relationships = snapshot.relationships.filter((relationship) =>
+      people.some((person) => person.id === relationship.personId),
+    );
+    const related = (record: { relationshipId: string }) =>
+      relationships.some(
+        (relationship) => relationship.id === record.relationshipId,
+      );
+    return {
+      company,
+      people,
+      relationships,
+      products: snapshot.products.filter((product) =>
+        relationships.some(
+          (relationship) => relationship.productId === product.id,
+        ),
+      ),
+      actions: snapshot.actions.filter(related),
+      meetings: snapshot.meetings.filter(related),
+      opportunities: snapshot.opportunities.filter(related),
+      stages: snapshot.stages,
+      asOf: snapshot.asOf,
     };
   }
   async changeAction(
@@ -701,17 +791,18 @@ export class CrmService {
         return { actionId: meeting.commitmentActionId };
       if (meeting.status !== "held" || !meeting.proposedCommitment)
         throw new DomainError("NO_COMMITMENT", 409);
-      const [owner] = await tx
-        .select()
-        .from(s.memberships)
-        .where(
-          and(
-            eq(s.memberships.organizationId, input.organizationId),
-            eq(s.memberships.userId, input.ownerId),
-            eq(s.memberships.active, true),
-          ),
+      try {
+        await authorize(
+          tx,
+          { userId: input.ownerId, source: "session" },
+          input.organizationId,
+          meeting.productId,
         );
-      if (!owner) throw new DomainError("FORBIDDEN", 403);
+      } catch (error) {
+        if (error instanceof DomainError)
+          throw new DomainError("OWNER_NOT_ALLOWED", 403);
+        throw error;
+      }
       const [action] = await tx
         .insert(s.actions)
         .values({
@@ -843,3 +934,5 @@ export class CrmService {
 }
 export type Snapshot = Awaited<ReturnType<CrmService["snapshot"]>>;
 export type PersonContext = Awaited<ReturnType<CrmService["context"]>>;
+
+export type CompanyContext = Awaited<ReturnType<CrmService["companyContext"]>>;

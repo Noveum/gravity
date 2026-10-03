@@ -105,6 +105,7 @@ export function mcpHandler(
         async () =>
           result({
             readContext: true,
+            readCompanyContext: true,
             readMaterials: true,
             materialPdfExtraction: false,
             sendMessages: false,
@@ -170,6 +171,26 @@ export function mcpHandler(
             asOf: snapshot.asOf,
           });
         },
+      );
+      server.registerTool(
+        "get_company_context",
+        {
+          description:
+            "Read a company and its permitted contacts, relationships and related work.",
+          inputSchema: z.object({
+            companyId: z.uuid(),
+            productId: z.uuid().optional(),
+          }),
+          annotations: { readOnlyHint: true },
+        },
+        async ({ companyId, productId }) =>
+          result(
+            await service.companyContext(
+              principal,
+              { organizationId, productId },
+              companyId,
+            ),
+          ),
       );
       server.registerTool(
         "get_person_context",

@@ -8,7 +8,7 @@ This consolidates the conversation through October 3, 2026. “Local” means im
 | Orbit's fast, clean UI and blue palette | Exact Orbit light/dark semantic colors; system preference, persistent theme and density | Accessibility and high-volume performance qualification |
 | Multiple organizations by default | Organization creation/switching and isolated records | Invitations, membership management, organization profile/time-zone editing |
 | Multiple products inside each organization | Product creation and membership enforcement | Product settings and member permissions UI |
-| One person/company, several product contexts | Canonical identities and explicit buyer/partner relationships | Editing, reviewed imports, merge review and richer account navigation |
+| One person/company, several product contexts | Canonical identities; clickable company/contact/relationship navigation; connected actions, meetings and opportunities | Editing, reviewed imports and merge review |
 | Several salespeople, clear ownership | Member/owner filters and product-authorized scheduling | Invitations, assignment handoff, collision warnings and owner capacity |
 | Hundreds of outreach messages daily | Action queue separate from opportunity board | Pagination, virtualized rows, reviewed bulk actions and realistic load tests |
 | First, second and third follow-ups | Explicit task templates with owner/channel/due date; sequence views | Sequence editor/enrollment, working hours, retries, collision checks |
@@ -26,7 +26,7 @@ This consolidates the conversation through October 3, 2026. “Local” means im
 | Google and GitHub login; possible Orbit connection | Auth implementation/configuration points | Real credentials and invitations; future shared identity/SSO, avoid sharing session secrets |
 | Real-time and instant interaction | Immediate local filters/navigation; post-save refresh; SSE revisions, same-runtime wakeups and server reconciliation | Production fan-out, measured latency, incremental patches, pagination and offline/conflict UX |
 | Keyboard map | Search, command menu, safe navigation, queue movement, task creation and native modal Escape | Screen-reader/manual qualification and further shortcuts guided by real use |
-| Use screen space well | Independently scrolling desktop queue/inspector; compact density; a responsive modeless inspector drawer | Resizable/persisted inspector and large-display review |
+| Use screen space well | Compact desktop toolbar; persistent, resizable navigation and inspector; expanded detail mode; independent scrolling and responsive drawer | Larger-display and screen-reader qualification |
 | Cron/agents can add context and follow-up work | Domain model supports reviewed promises and change records | Audited ingestion/write tools and durable scheduled jobs; no automation created |
 | Vercel deployment, supplied database later | Single Node application and portable PostgreSQL/S3 interfaces | Identify supplied database, backup/restore and runtime-role review; staging and HTTPS deployment |
 | Keep cost modest for two initial users | Local demo requires no paid provider; no Kubernetes infrastructure | Account-specific Vercel/DB/storage/provider estimates before subscribing |
@@ -36,6 +36,8 @@ The earlier RepoCloud/Twenty setup and Cloud Run MCP endpoint are historical inf
 ## Interaction decisions
 
 The default work surface is the due-action queue, not a single board shared by every product. Choose an organization, optionally narrow to a product, then filter ownership and action type. Open the person inspector without losing the list. Product badges on People open the corresponding relationship, so one person's histories are not mixed.
+
+Desktop panel dividers can be dragged or focused and resized with arrow keys (10 pixels; Shift for 40), Home/End for the permitted bounds, and double-click to restore defaults. Widths persist on the device, and the layout keeps at least 320 pixels for the list. Expand detail hides the list while preserving its state; Restore split view returns it. At narrow widths, the inspector uses the existing drawer. Names link to people and companies across the directory, sequence enrollments, meetings and opportunity cards; related-work links focus the matching record. The Waiting view filters by who owes the next step, rather than treating every review task as a promise from another person.
 
 A task has a product relationship, responsible teammate, channel, owed-by party, title, context and UTC deadline. The form labels its input in the device time zone; the queue displays dates in the organization's time zone. Templates label initial/follow-up 1/2/3 tasks without pretending that a message was sent or that a sequence advanced. Scheduling cannot route a task into a spoofed product or assign someone who cannot read that product.
 

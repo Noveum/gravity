@@ -1,4 +1,4 @@
-import type { PersonContext, Snapshot } from "./crm";
+import type { CompanyContext, PersonContext, Snapshot } from "./crm";
 export type JsonValue<T> = T extends Date
   ? string
   : T extends readonly (infer U)[]
@@ -11,3 +11,5 @@ export type ClientContext = JsonValue<PersonContext>;
 export function serialize<T>(value: T): JsonValue<T> {
   return JSON.parse(JSON.stringify(value));
 }
+
+export type ClientCompanyContext = JsonValue<CompanyContext>;

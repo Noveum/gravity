@@ -30,6 +30,12 @@ export async function GET(request: Request) {
           scope.organizationId,
           z.uuid().parse(query.relationshipId),
         );
+      else if (query.operation === "company")
+        result = await service.companyContext(
+          principal,
+          scope,
+          z.uuid().parse(query.companyId),
+        );
       else if (query.operation === "revision")
         result = {
           revision: await service.revision(principal, scope.organizationId),

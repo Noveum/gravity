@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createOrganization } from '@gravity/core';
-import { createWorkspace, resetDatabase } from '@gravity/core/test-support';
+import { createUser, createWorkspace, resetDatabase } from '@gravity/core/test-support';
+import { db, eq, schema } from '@gravity/db';
 import type { ActiveSession } from '@/lib/auth/session.ts';
 import { mockSession } from '../../../tests-support.ts';
 
 let current: ActiveSession | null = null;
 mockSession(() => current);
 
-const { apiContext } = await import('@/lib/api/handler.ts');
+const { apiContext, pageContext } = await import('@/lib/api/handler.ts');
 
 function sessionFor(
   user: { id: string; name: string; email: string },
@@ -73,5 +74,27 @@ describe('apiContext', () => {
     const context = await apiContext();
     expect(context.principal.organizationId).toBe(first.organizationId);
     expect(Object.keys(context.principal).sort()).toEqual(['organizationId', 'role', 'userId']);
+  });
+});
+
+describe('pageContext', () => {
+  test('sends a signed in user without a workspace to onboarding', async () => {
+    const orphan = await createUser('Orphan');
+    current = sessionFor(orphan);
+    await expect(pageContext()).rejects.toMatchObject({
+      digest: expect.stringContaining('/onboarding'),
+    });
+  });
+
+  test('sends a workspace that is being deleted to the members settings', async () => {
+    const workspace = await createWorkspace('Doomed');
+    await db
+      .update(schema.organization)
+      .set({ deletionRequestedAt: new Date() })
+      .where(eq(schema.organization.id, workspace.organizationId));
+    current = sessionFor(workspace.adminUser);
+    await expect(pageContext()).rejects.toMatchObject({
+      digest: expect.stringContaining('/settings/members'),
+    });
   });
 });

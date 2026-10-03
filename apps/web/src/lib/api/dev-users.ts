@@ -17,7 +17,7 @@ export async function listDevUsers(): Promise<DevUser[]> {
   return await db
     .select({ email: schema.user.email, name: schema.user.name, image: schema.user.image })
     .from(schema.user)
-    .innerJoin(schema.member, eq(schema.member.userId, schema.user.id))
+    .leftJoin(schema.member, eq(schema.member.userId, schema.user.id))
     .groupBy(schema.user.id, schema.user.email, schema.user.name, schema.user.image)
     .orderBy(ROLE_RANK, asc(schema.user.name))
     .limit(12);

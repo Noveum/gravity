@@ -61,9 +61,9 @@ export async function apiContext(options: ContextOptions = {}): Promise<ApiConte
 export async function pageContext(options: ContextOptions = {}): Promise<ApiContext> {
   const session = await requireSession();
   const context = await contextFor(session);
-  if (context === null) redirect('/login');
+  if (context === null) redirect('/onboarding');
   if (context.deletionRequestedAt !== null && options.allowDeleting !== true) {
-    redirect('/settings/general');
+    redirect('/settings/members');
   }
   return context;
 }

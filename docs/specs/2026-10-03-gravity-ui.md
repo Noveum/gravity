@@ -168,7 +168,7 @@ Rules: single keys act on whatever is focused; `G` chords navigate; `Cmd` combin
 | `L` | Log a call or interaction |
 | `T` | Add a task or follow-up |
 | `F` | Add a fact |
-| `S` `A` `N` | Stage, assign, next action for the lead in focus |
+| `S` `A` | Stage, assign for the lead in focus (next action is in the lead card's menu; `N` is the note composer) |
 | `Tab` | Move between the record's leads |
 | `1` to `6` | Timeline filter: all, messages, meetings, notes, facts, changes |
 | `[` `]` | Previous or next record from the list it was opened from |

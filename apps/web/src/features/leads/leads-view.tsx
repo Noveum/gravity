@@ -14,6 +14,7 @@ import { useLeadList } from '@/lib/query/use-leads.ts';
 import { useRetryToast } from '@/lib/query/use-retry-toast.ts';
 import { useDelayedFlag } from '@/lib/use-delayed-flag.ts';
 import { LeadList } from './lead-list.tsx';
+import { LeadVerbs } from './lead-verbs.tsx';
 
 export function LeadsView({ pipelineKey }: { readonly pipelineKey: string }) {
   const workspace = useWorkspace();
@@ -92,6 +93,11 @@ export function LeadsView({ pipelineKey }: { readonly pipelineKey: string }) {
     );
   }
   return (
-    <LeadList pipeline={pipeline} stages={workspace.stagesOf(pipeline.id)} leads={list.leads} />
+    <LeadList
+      pipeline={pipeline}
+      stages={workspace.stagesOf(pipeline.id)}
+      leads={list.leads}
+      renderActions={(selection) => <LeadVerbs selection={selection} pipelineId={pipeline.id} />}
+    />
   );
 }

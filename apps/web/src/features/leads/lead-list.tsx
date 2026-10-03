@@ -8,6 +8,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useWorkspace, type WorkspaceData } from '@/features/workspace/use-workspace.ts';
 import { useContextPanel } from '@/lib/context-panel.tsx';
 import { HOTKEY_PRIORITY, useHotkey } from '@/lib/keyboard/index.ts';
+import { watchWindowRefocus } from '@/lib/window-refocus.ts';
 import { asPriority, StageGlyph } from './lead-glyphs.tsx';
 import {
   buildLeadRows,
@@ -27,6 +28,7 @@ export const GROUP_HEADER_HEIGHT = 32;
 export interface LeadListSelection {
   readonly targets: readonly LeadRow[];
   readonly active: LeadRow | undefined;
+  readonly selectionLeft: boolean;
   readonly clear: () => void;
 }
 
@@ -98,7 +100,10 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selected, setSelected] = useState<readonly string[]>([]);
   const [peeking, setPeeking] = useState(false);
+  const [leftFor, setLeftFor] = useState<string | null>(null);
   const previousOrder = useRef<readonly string[]>([]);
+
+  useEffect(() => watchWindowRefocus(), []);
 
   const active = useMemo(() => {
     if (activeId === null) return ordered[0];
@@ -125,8 +130,17 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
   );
   const selectedSet = useMemo(() => new Set(visibleSelected), [visibleSelected]);
   useEffect(() => {
-    if (visibleSelected.length !== selected.length) setSelected(visibleSelected);
-  }, [visibleSelected, selected]);
+    if (visibleSelected.length === selected.length) return;
+    setSelected(visibleSelected);
+    if (visibleSelected.length === 0) setLeftFor(activeLeadId ?? null);
+  }, [visibleSelected, selected, activeLeadId]);
+  useEffect(() => {
+    if (leftFor !== null && (leftFor !== activeLeadId || visibleSelected.length > 0)) {
+      setLeftFor(null);
+    }
+  }, [leftFor, activeLeadId, visibleSelected]);
+  const selectionLeft =
+    leftFor !== null && leftFor === activeLeadId && visibleSelected.length === 0;
 
   const peekOpen = peeking && panelOpen;
   const brandColor = workspace.brandById.get(pipeline.brandId)?.color;
@@ -305,7 +319,7 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
           })}
         </div>
       </div>
-      {renderActions?.({ targets, active, clear: clearSelection })}
+      {renderActions?.({ targets, active, selectionLeft, clear: clearSelection })}
     </div>
   );
 }

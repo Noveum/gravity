@@ -183,6 +183,20 @@ describe('LeadList', () => {
     expect(rowOf('YOD-3')).toHaveAttribute('data-selected', 'true');
   });
 
+  test('a row focus caused by the window regaining focus does not move the active row', async () => {
+    renderList();
+    await screen.findByTestId('lead-row-YOD-2');
+    const link = within(rowOf('YOD-2')).getByRole('link');
+    fireEvent.focusIn(link, { relatedTarget: null });
+    await userEvent.keyboard('j');
+    expect(rowOf('YOD-1')).toHaveAttribute('data-active', 'true');
+    window.dispatchEvent(new Event('blur'));
+    fireEvent.focusIn(link, { relatedTarget: null });
+    expect(rowOf('YOD-1')).toHaveAttribute('data-active', 'true');
+    fireEvent.focusIn(within(rowOf('YOD-3')).getByRole('link'), { relatedTarget: link });
+    expect(rowOf('YOD-3')).toHaveAttribute('data-active', 'true');
+  });
+
   test('Space peeks into the context panel and Enter opens the record', async () => {
     renderList();
     await screen.findByTestId('lead-row-YOD-2');

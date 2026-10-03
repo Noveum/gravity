@@ -3,13 +3,14 @@
 import type { BrandColor } from '@gravity/shared/constants';
 import type { LeadRow, MemberRow } from '@gravity/shared/records';
 import Link from 'next/link';
-import type { KeyboardEvent, MouseEvent } from 'react';
+import type { FocusEvent, KeyboardEvent, MouseEvent } from 'react';
 import { Avatar } from '@/components/ui/avatar.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { RelativeTime } from '@/components/ui/relative-time.tsx';
 import { BrandDot } from '@/features/workspace/brand-dot.tsx';
 import { cn } from '@/lib/cn.ts';
 import { listRowHover, revealOnHover } from '@/lib/interaction.ts';
+import { isWindowRefocus } from '@/lib/window-refocus.ts';
 import { OwedByChip, PriorityGlyph } from './lead-glyphs.tsx';
 import { personHref } from './lead-groups.ts';
 
@@ -75,6 +76,9 @@ export function LeadRowView({
   onOpenActive,
   onToggleSelected,
 }: LeadRowViewProps) {
+  const focusByUser = (event: FocusEvent<HTMLElement>) => {
+    if (!isWindowRefocus(event)) onFocus();
+  };
   const linkKeys = keyHandler({ ' ': onTogglePeek });
   const checkboxKeys = keyHandler({ ' ': onTogglePeek, Enter: onOpenActive });
   return (
@@ -94,7 +98,7 @@ export function LeadRowView({
         <Checkbox
           checked={selected}
           onCheckedChange={onToggleSelected}
-          onFocus={onFocus}
+          onFocus={focusByUser}
           onPointerDown={onFocus}
           onKeyDown={checkboxKeys}
           onKeyUp={swallowSpaceRelease}
@@ -115,7 +119,7 @@ export function LeadRowView({
       <Link
         href={personHref(lead)}
         prefetch={false}
-        onFocus={onFocus}
+        onFocus={focusByUser}
         onKeyDown={linkKeys}
         onClick={(event) => {
           if (!isPlainClick(event)) return;

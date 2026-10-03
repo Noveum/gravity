@@ -6,6 +6,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { CommandPalette } from '@/components/command-palette.tsx';
 import { ShortcutsOverlay } from '@/components/shortcuts-overlay.tsx';
 import { overlayClassName } from '@/components/ui/dialog.tsx';
+import { LeadUndoHotkeys } from '@/features/leads/lead-undo.ts';
 import { useWorkspace } from '@/features/workspace/use-workspace.ts';
 import { ContextPanelProvider, useContextPanel } from '@/lib/context-panel.tsx';
 import { CopyLinkProvider, useCopyLink } from '@/lib/copy-link.tsx';
@@ -132,6 +133,7 @@ export function AppShell({
         <CopyLinkProvider>
           <div data-app-shell className="relative flex h-dvh w-full overflow-hidden bg-bg">
             <CrmDeltaHandlers />
+            <LeadUndoHotkeys workspaceId={workspace.id} />
             {NAV_ITEMS.map((item) => (
               <NavChord key={item.id} item={item} />
             ))}

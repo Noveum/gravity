@@ -16,10 +16,8 @@ import {
 } from '@dnd-kit/core';
 import type { LeadRow, MemberRow, PipelineRow, StageRow } from '@gravity/shared/records';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import Link from 'next/link';
 import {
   type FocusEvent,
-  type KeyboardEvent,
   type MouseEvent,
   useCallback,
   useEffect,
@@ -32,7 +30,7 @@ import { Skeleton } from '@/components/ui/skeleton.tsx';
 import { useWorkspace } from '@/features/workspace/use-workspace.ts';
 import { cn } from '@/lib/cn.ts';
 import { cardHover } from '@/lib/interaction.ts';
-import { useHotkey } from '@/lib/keyboard/index.ts';
+import { useHotkey, useHotkeyRegistry } from '@/lib/keyboard/index.ts';
 import { isWindowRefocus } from '@/lib/window-refocus.ts';
 import {
   BOARD_KEYBOARD_CODES,
@@ -41,7 +39,7 @@ import {
   moveToStage,
 } from './board-drop.ts';
 import { OwedByChip, PriorityGlyph, StageGlyph } from './lead-glyphs.tsx';
-import { adjacentStage, groupLeadsByStage, type LeadGroup, personHref } from './lead-groups.ts';
+import { groupLeadsByStage, type LeadGroup, nextMovableStage, personHref } from './lead-groups.ts';
 import { RowOwner } from './lead-row.tsx';
 import { LeadVerbMenu, type VerbRequest } from './lead-verb-menu.tsx';
 import { LeadVerbs } from './lead-verbs.tsx';
@@ -55,13 +53,12 @@ export const BOARD_CARD_PREFIX = 'board-card-';
 
 const SCREEN_READER_INSTRUCTIONS = {
   draggable:
-    'To pick up a card, press Space. Use the left and right arrow keys to choose a stage, then press Space to drop it there, or Escape to cancel.',
+    'Space peeks the card and Enter opens it. To move it, press M, use the left and right arrow keys to choose a stage, then press Space or Enter to drop it there, or Escape to cancel.',
 };
 
 interface CardHandlers {
   readonly onFocus: () => void;
   readonly onPeek: () => void;
-  readonly onTogglePeek: () => void;
   readonly onOpen: () => void;
   readonly onVerb: (request: VerbRequest) => void;
 }
@@ -72,26 +69,17 @@ interface CardViewProps {
   readonly active: boolean;
   readonly selected: boolean;
   readonly lifted?: boolean;
-  readonly handlers?: CardHandlers;
-}
-
-function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
-  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
 
 function stopPointer(event: { stopPropagation: () => void }): void {
   event.stopPropagation();
 }
 
-function BoardCardView({ lead, owner, active, selected, lifted = false, handlers }: CardViewProps) {
-  const focusByUser = (event: FocusEvent<HTMLElement>) => {
-    if (!isWindowRefocus(event)) handlers?.onFocus();
-  };
+function BoardCardView({ lead, owner, active, selected, lifted = false }: CardViewProps) {
   return (
     <div
-      id={handlers === undefined ? undefined : `${BOARD_CARD_PREFIX}${lead.id}`}
       className={cn(
-        'group flex h-14 flex-col justify-between rounded-lg border border-border bg-surface px-2.5 py-2',
+        'flex h-14 flex-col justify-between rounded-lg border border-border bg-surface px-2.5 py-2',
         cardHover,
         active && 'border-accent hover:border-accent',
         selected && 'bg-accent-soft hover:bg-accent-soft',
@@ -110,41 +98,16 @@ function BoardCardView({ lead, owner, active, selected, lifted = false, handlers
         )}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <OwedByChip owedBy={lead.owedBy} />
-          {handlers === undefined ? null : (
-            <span onPointerDown={stopPointer} className="flex">
-              <LeadVerbMenu lead={lead} visible={active} onVerb={handlers.onVerb} />
-            </span>
-          )}
+          <span aria-hidden="true" className="size-5" />
           <RowOwner owner={owner} />
         </span>
       </div>
-      <Link
-        href={personHref(lead)}
-        prefetch={false}
-        draggable={false}
-        onFocus={focusByUser}
-        onKeyDown={(event) => {
-          if (event.key !== ' ' || event.repeat || event.defaultPrevented) return;
-          event.preventDefault();
-          handlers?.onTogglePeek();
-        }}
-        onClick={(event) => {
-          if (!isPlainClick(event)) return;
-          event.preventDefault();
-          if (event.detail === 0) {
-            handlers?.onOpen();
-            return;
-          }
-          handlers?.onFocus();
-          handlers?.onPeek();
-        }}
-        className="flex min-w-0 items-baseline gap-1.5 rounded-sm text-dense text-text"
-      >
+      <div className="flex min-w-0 items-baseline gap-1.5 text-dense text-text">
         <span className="truncate">{lead.personName}</span>
         {lead.companyName === null ? null : (
           <span className="truncate text-muted">{lead.companyName}</span>
         )}
-      </Link>
+      </div>
     </div>
   );
 }
@@ -153,43 +116,62 @@ interface BoardCardProps extends CardViewProps {
   readonly handlers: CardHandlers;
 }
 
+function cardLabel(lead: LeadRow): string {
+  return lead.companyName === null
+    ? `${lead.key} ${lead.personName}`
+    : `${lead.key} ${lead.personName}, ${lead.companyName}`;
+}
+
 function BoardCard({ lead, owner, active, selected, handlers }: BoardCardProps) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: lead.id });
-  const draggable = {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: lead.id,
+    attributes: { role: 'article', roleDescription: 'movable card' },
+  });
+  const card = {
     ...attributes,
     ...listeners,
-    'aria-label': `${lead.key} ${lead.personName}`,
+    'aria-label': cardLabel(lead),
     onFocus: (event: FocusEvent<HTMLDivElement>) => {
       if (event.target === event.currentTarget && !isWindowRefocus(event)) handlers.onFocus();
     },
-    onKeyDownCapture: (event: KeyboardEvent<HTMLDivElement>) => {
-      if (event.key !== 'Enter' || event.target !== event.currentTarget) return;
-      event.preventDefault();
+    onClick: (event: MouseEvent<HTMLDivElement>) => {
+      if (event.metaKey || event.ctrlKey) {
+        window.open(personHref(lead), '_blank', 'noopener');
+        return;
+      }
+      handlers.onFocus();
+      handlers.onPeek();
+    },
+    onDoubleClick: () => {
       handlers.onFocus();
       handlers.onOpen();
     },
   };
   return (
-    <div
-      ref={setNodeRef}
-      {...draggable}
-      data-testid={`board-card-${lead.key}`}
-      data-active={active ? 'true' : undefined}
-      data-selected={selected ? 'true' : undefined}
-      className={cn(
-        'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent',
-        isDragging
-          ? 'border border-accent border-dashed bg-accent-soft/40 [&>*]:invisible'
-          : 'cursor-grab',
+    <div className="group relative">
+      <div
+        ref={setNodeRef}
+        {...card}
+        id={`${BOARD_CARD_PREFIX}${lead.id}`}
+        data-lead-id={lead.id}
+        data-testid={`board-card-${lead.key}`}
+        data-active={active ? 'true' : undefined}
+        data-selected={selected ? 'true' : undefined}
+        data-lifted={isDragging ? 'true' : undefined}
+        className={cn(
+          'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent',
+          isDragging
+            ? 'border border-accent border-dashed bg-accent-soft/40 [&>*]:invisible'
+            : 'cursor-grab',
+        )}
+      >
+        <BoardCardView lead={lead} owner={owner} active={active} selected={selected} />
+      </div>
+      {isDragging ? null : (
+        <span onPointerDown={stopPointer} className="absolute top-[9px] right-[35px] flex">
+          <LeadVerbMenu lead={lead} visible={active} onVerb={handlers.onVerb} />
+        </span>
       )}
-    >
-      <BoardCardView
-        lead={lead}
-        owner={owner}
-        active={active}
-        selected={selected}
-        handlers={handlers}
-      />
     </div>
   );
 }
@@ -246,14 +228,18 @@ function BoardColumn({ group, activeId, selectedIds, ownerOf, handlersFor }: Boa
         </span>
       </header>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-2">
-        <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+        <ul
+          aria-label={`${stage.name} leads`}
+          className="relative w-full"
+          style={{ height: virtualizer.getTotalSize() }}
+        >
           {virtualizer.getVirtualItems().map((item) => {
             const lead = leads[item.index];
             if (lead === undefined) return null;
             return (
-              <div
+              <li
                 key={item.key}
-                className="absolute top-0 left-0 w-full"
+                className="absolute top-0 left-0 w-full list-none"
                 style={{ height: item.size, transform: `translateY(${item.start}px)` }}
               >
                 <BoardCard
@@ -263,10 +249,10 @@ function BoardColumn({ group, activeId, selectedIds, ownerOf, handlersFor }: Boa
                   selected={selectedIds.has(lead.id)}
                   handlers={handlersFor(lead)}
                 />
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       </div>
     </section>
   );
@@ -286,6 +272,7 @@ export interface LeadBoardProps {
 export function LeadBoard({ pipeline, stages, leads }: LeadBoardProps) {
   const workspace = useWorkspace();
   const commit = useCommitLeadChange();
+  const registry = useHotkeyRegistry();
   const columns = useMemo(
     () => groupLeadsByStage(leads, stages, { showEmpty: true }),
     [leads, stages],
@@ -301,8 +288,65 @@ export function LeadBoard({ pipeline, stages, leads }: LeadBoardProps) {
     },
     [columns, ordered],
   );
-  const cursor = useLeadCursor({ ordered, step, paused: dragging !== null });
+  const cursor = useLeadCursor({ ordered, step });
   const { active, selectedIds, requestVerb } = cursor;
+  const activePlace = active === undefined ? undefined : `${active.id}:${active.stageId}`;
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const cardFocused = useRef(false);
+  const releaseKeys = useRef<(() => void) | null>(null);
+
+  const holdKeys = () => {
+    releaseKeys.current?.();
+    releaseKeys.current = registry.suspend();
+  };
+  const freeKeys = () => {
+    releaseKeys.current?.();
+    releaseKeys.current = null;
+  };
+  useEffect(
+    () => () => {
+      releaseKeys.current?.();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const board = boardRef.current;
+    const [activeId] = activePlace?.split(':') ?? [];
+    if (!cardFocused.current || activeId === undefined || board === null) return;
+    const focusActive = (): boolean => {
+      const target = board.querySelector<HTMLElement>(`[data-lead-id="${activeId}"]`);
+      if (target === null) return false;
+      const current = document.activeElement;
+      const elsewhere =
+        current instanceof HTMLElement &&
+        current !== document.body &&
+        current.isConnected &&
+        !current.hasAttribute('data-lead-id');
+      if (current !== target && !elsewhere) target.focus({ preventScroll: true });
+      return true;
+    };
+    if (focusActive()) return;
+    const frame = requestAnimationFrame(() => {
+      focusActive();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activePlace]);
+
+  const trackFocus = {
+    onFocus: (event: FocusEvent<HTMLDivElement>) => {
+      cardFocused.current =
+        event.target instanceof HTMLElement && event.target.hasAttribute('data-lead-id');
+    },
+    onBlur: (event: FocusEvent<HTMLDivElement>) => {
+      const left = event.target;
+      const next = event.relatedTarget;
+      if (next instanceof HTMLElement && next.hasAttribute('data-lead-id')) return;
+      queueMicrotask(() => {
+        if (left.isConnected) cardFocused.current = false;
+      });
+    },
+  };
 
   const across = (direction: 1 | -1) => {
     const from = columnOf(columns, active);
@@ -320,34 +364,31 @@ export function LeadBoard({ pipeline, stages, leads }: LeadBoardProps) {
 
   const move = (lead: LeadRow, target: StageRow | undefined) => {
     const outcome = moveToStage(lead, target);
-    if (outcome.kind === 'hold') requestVerb({ lead, verb: 'hold', origin: null });
+    if (outcome.kind === 'hold') {
+      requestVerb({ lead, verb: 'hold', origin: null, announce: false });
+    }
     if (outcome.kind === 'change') commit([lead], outcome.change, false);
   };
 
   const shift = (direction: 1 | -1) => {
-    if (active !== undefined) move(active, adjacentStage(stages, active.stageId, direction));
+    if (active !== undefined) move(active, nextMovableStage(stages, active.stageId, direction));
   };
 
-  const live = dragging === null;
   useHotkey('right', () => across(1), {
     ...LEAD_SURFACE,
     label: 'Next stage column',
-    enabled: live,
   });
   useHotkey('left', () => across(-1), {
     ...LEAD_SURFACE,
     label: 'Previous stage column',
-    enabled: live,
   });
   useHotkey('shift+right', () => shift(1), {
     ...LEAD_SURFACE,
     label: 'Move the card one stage right',
-    enabled: live,
   });
   useHotkey('shift+left', () => shift(-1), {
     ...LEAD_SURFACE,
     label: 'Move the card one stage left',
-    enabled: live,
   });
 
   const sensors = useSensors(
@@ -355,6 +396,7 @@ export function LeadBoard({ pipeline, stages, leads }: LeadBoardProps) {
     useSensor(KeyboardSensor, {
       coordinateGetter: columnCoordinates,
       keyboardCodes: BOARD_KEYBOARD_CODES,
+      scrollBehavior: 'auto',
     }),
   );
 
@@ -364,10 +406,12 @@ export function LeadBoard({ pipeline, stages, leads }: LeadBoardProps) {
     id === null || id === undefined ? undefined : stages.find((stage) => stage.id === id);
 
   const onDragStart = (event: DragStartEvent) => {
+    holdKeys();
     setDragging(event.active.id);
     cursor.focus(leadOf(event.active.id));
   };
   const onDragEnd = (event: DragEndEvent) => {
+    freeKeys();
     setDragging(null);
     const lead = leadOf(event.active.id);
     if (lead !== undefined) move(lead, stageOf(event.over?.id));
@@ -393,7 +437,6 @@ export function LeadBoard({ pipeline, stages, leads }: LeadBoardProps) {
   const handlersFor = (lead: LeadRow): CardHandlers => ({
     onFocus: () => cursor.focus(lead),
     onPeek: () => cursor.openPeek(lead),
-    onTogglePeek: cursor.togglePeek,
     onOpen: cursor.openActive,
     onVerb: requestVerb,
   });
@@ -411,9 +454,17 @@ export function LeadBoard({ pipeline, stages, leads }: LeadBoardProps) {
         accessibility={{ announcements, screenReaderInstructions: SCREEN_READER_INSTRUCTIONS }}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        onDragCancel={() => setDragging(null)}
+        onDragCancel={() => {
+          freeKeys();
+          setDragging(null);
+        }}
       >
-        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3" data-testid="lead-board">
+        <div
+          ref={boardRef}
+          {...trackFocus}
+          className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3"
+          data-testid="lead-board"
+        >
           {columns.map((column) => (
             <BoardColumn
               key={column.stage.id}

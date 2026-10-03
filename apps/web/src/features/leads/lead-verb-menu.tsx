@@ -19,6 +19,7 @@ export interface VerbRequest {
   readonly lead: LeadRow;
   readonly verb: VerbMode;
   readonly origin: HTMLElement | null;
+  readonly announce?: boolean;
 }
 
 export const VERB_ITEMS: readonly {

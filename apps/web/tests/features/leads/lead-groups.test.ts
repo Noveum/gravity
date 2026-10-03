@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  adjacentStage,
   buildLeadRows,
   groupLeadsByStage,
+  nextMovableStage,
   OTHER_STAGE_ID,
   personHref,
   selectionTargets,
@@ -74,17 +74,25 @@ describe('lead grouping', () => {
     expect(selectionThrough(['a', 'b'], 'b', 'a')).toEqual(['a']);
   });
 
-  test('adjacentStage walks live stages in order and stops at the ends', () => {
-    expect(adjacentStage(stages, 'new', 1)?.id).toBe('stage-researching');
-    expect(adjacentStage(stages, 'new', -1)).toBeUndefined();
+  test('nextMovableStage walks open and hold stages in order and stops at the ends', () => {
+    expect(nextMovableStage(stages, 'new', 1)?.id).toBe('stage-researching');
+    expect(nextMovableStage(stages, 'new', -1)).toBeUndefined();
+    expect(nextMovableStage(stages, 'stage-on-hold', 1)).toBeUndefined();
+    expect(nextMovableStage(stages, 'stage-on-hold', -1)?.id).toBe('stage-meeting-held');
   });
 
-  test('adjacentStage steps out of the trailing Other group into the last live stage', () => {
-    const last = [...stages].sort((a, b) => a.sortOrder - b.sortOrder).at(-1);
-    expect(adjacentStage(stages, OTHER_STAGE_ID, -1)?.id).toBe(last?.id);
-    expect(adjacentStage(stages, 'stage-archived-elsewhere', -1)?.id).toBe(last?.id);
-    expect(adjacentStage(stages, OTHER_STAGE_ID, 1)).toBeUndefined();
-    expect(adjacentStage([], OTHER_STAGE_ID, -1)).toBeUndefined();
+  test('nextMovableStage never lands on a won or lost stage', () => {
+    expect(nextMovableStage(stages, 'stage-meeting-held', 1)?.id).toBe('stage-on-hold');
+    expect(nextMovableStage(stages, 'stage-qualified', 1)?.id).toBe('stage-on-hold');
+    expect(nextMovableStage(stages, 'stage-closed-no-reply', -1)?.id).toBe('stage-on-hold');
+    expect(nextMovableStage(stages, 'stage-closed-no-reply', 1)).toBeUndefined();
+  });
+
+  test('nextMovableStage leaves the Other group only forwards, into the first open stage', () => {
+    expect(nextMovableStage(stages, OTHER_STAGE_ID, 1)?.id).toBe('new');
+    expect(nextMovableStage(stages, 'stage-archived-elsewhere', 1)?.id).toBe('new');
+    expect(nextMovableStage(stages, OTHER_STAGE_ID, -1)).toBeUndefined();
+    expect(nextMovableStage([], OTHER_STAGE_ID, 1)).toBeUndefined();
   });
 
   test('the selection wins over the focused lead, in display order', () => {

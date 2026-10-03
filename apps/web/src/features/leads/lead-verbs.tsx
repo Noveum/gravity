@@ -52,7 +52,7 @@ export interface LeadVerbsProps {
 
 interface Subject {
   readonly leads: readonly LeadRow[];
-  readonly fromMenu: boolean;
+  readonly announce: boolean;
 }
 
 interface Pending {
@@ -116,7 +116,7 @@ export function LeadVerbs({
   useEffect(() => {
     if (request === null) return;
     origin.current = request.origin;
-    setSubject({ leads: [request.lead], fromMenu: true });
+    setSubject({ leads: [request.lead], announce: request.announce ?? true });
     setPending(null);
     setMode(request.verb);
     settleRequest();
@@ -137,7 +137,7 @@ export function LeadVerbs({
       return;
     }
     const before = [...targets];
-    const announce = hasSelection || selectionLeft || subject?.fromMenu === true;
+    const announce = hasSelection || selectionLeft || subject?.announce === true;
     close();
     commit(before, change, announce);
   };
@@ -162,7 +162,7 @@ export function LeadVerbs({
   const openFrom = (next: VerbMode, from: HTMLElement | null) => {
     if (selection.targets.length === 0) return;
     origin.current = from;
-    setSubject(from === null ? null : { leads: selection.targets, fromMenu: false });
+    setSubject(from === null ? null : { leads: selection.targets, announce: false });
     setPending(null);
     setMode(next);
   };

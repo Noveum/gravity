@@ -84,15 +84,22 @@ export function selectionThrough(
   return anchored.includes(to) ? anchored : [...anchored, to];
 }
 
-export function adjacentStage(
+function movable(stage: StageRow): boolean {
+  return stage.category === 'open' || stage.category === 'hold';
+}
+
+export function nextMovableStage(
   stages: readonly StageRow[],
   stageId: string,
   direction: 1 | -1,
 ): StageRow | undefined {
   const ordered = liveStages(stages);
   const index = ordered.findIndex((stage) => stage.id === stageId);
-  if (index === -1) return direction === -1 ? ordered.at(-1) : undefined;
-  return ordered[index + direction];
+  if (index === -1) {
+    return direction === 1 ? ordered.find((stage) => stage.category === 'open') : undefined;
+  }
+  const ahead = direction === 1 ? ordered.slice(index + 1) : ordered.slice(0, index).reverse();
+  return ahead.find(movable);
 }
 
 export function selectionTargets(

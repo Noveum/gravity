@@ -88,17 +88,26 @@ describe('useLeadsLayout', () => {
 
   test('a late answer to an earlier toggle does not undo a later one', async () => {
     const server = deferredServer();
-    const { hook } = setup();
+    const { client, hook } = setup();
     act(() => hook.result.current.toggle());
     act(() => hook.result.current.toggle());
     expect(hook.result.current.layout).toBe('list');
     await waitFor(() => expect(server.sent).toHaveLength(2));
-    act(() => server.pending.shift()?.());
+    const [first, second] = server.pending;
+    if (first === undefined || second === undefined) throw new Error('two requests');
+    act(() => second());
+    await waitFor(() =>
+      expect(client.getQueryData<Bootstrap>(queryKeys.bootstrap)?.viewPreferences).toEqual([
+        { page: 'leads', scope: 'p1', layout: 'list', display: {} },
+      ]),
+    );
+    act(() => first());
     await act(async () => {
-      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 20));
     });
+    expect(client.getQueryData<Bootstrap>(queryKeys.bootstrap)?.viewPreferences).toEqual([
+      { page: 'leads', scope: 'p1', layout: 'list', display: {} },
+    ]);
     expect(hook.result.current.layout).toBe('list');
-    act(() => server.pending.shift()?.());
-    await waitFor(() => expect(hook.result.current.layout).toBe('list'));
   });
 });

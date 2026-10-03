@@ -6,6 +6,7 @@ import {
   HotkeyProvider,
   useHotkey,
   useHotkeyList,
+  useHotkeyRegistry,
 } from '../../../src/lib/keyboard/index.ts';
 
 interface SurfaceProps {
@@ -255,4 +256,38 @@ describe('malformed keyboard events', () => {
       expect(onRun).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+describe('suspension', () => {
+  function Suspender({ onJ }: { readonly onJ: () => void }) {
+    useHotkey('j', onJ, { label: 'Next', section: 'Records', scope: 'records' });
+    return null;
+  }
+
+  it('runs no binding while the registry is suspended, and again once released', async () => {
+    const onJ = mock();
+    let release: () => void = () => undefined;
+    function Holder() {
+      const registry = useHotkeyRegistry();
+      return (
+        <button type="button" data-testid="hold" onClick={() => (release = registry.suspend())}>
+          Hold
+        </button>
+      );
+    }
+    render(
+      <HotkeyProvider>
+        <Suspender onJ={onJ} />
+        <Holder />
+      </HotkeyProvider>,
+    );
+    await userEvent.click(screen.getByTestId('hold'));
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.keyboard('j');
+    expect(onJ).not.toHaveBeenCalled();
+    release();
+    release();
+    await userEvent.keyboard('j');
+    expect(onJ).toHaveBeenCalledTimes(1);
+  });
 });

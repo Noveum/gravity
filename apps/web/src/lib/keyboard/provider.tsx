@@ -44,7 +44,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     let buffer: BufferedStep[] = [];
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (shouldIgnoreKeyDown(event)) return;
+      if (registry.suspended || shouldIgnoreKeyDown(event)) return;
       const editable = isEditableTarget(event.target);
       const now = Date.now();
       buffer = editable ? [] : pruneBuffer(buffer, now, SEQUENCE_TIMEOUT_MS);

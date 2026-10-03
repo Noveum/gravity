@@ -18,8 +18,10 @@ export function moveToStage(lead: LeadRow, target: StageRow | undefined): BoardM
   return stageChangeFor(lead, target);
 }
 
+export const BOARD_PICK_UP_CODE = 'KeyM';
+
 export const BOARD_KEYBOARD_CODES: KeyboardCodes = {
-  start: [KeyboardCode.Space],
+  start: [BOARD_PICK_UP_CODE],
   cancel: [KeyboardCode.Esc],
   end: [KeyboardCode.Space, KeyboardCode.Enter, KeyboardCode.Tab],
 };

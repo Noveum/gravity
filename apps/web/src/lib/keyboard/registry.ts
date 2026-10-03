@@ -78,6 +78,21 @@ export class HotkeyRegistry {
   private readonly entries = new Map<string, HotkeyEntry>();
   private readonly listeners = new Set<() => void>();
   private snapshot: readonly HotkeyEntry[] = [];
+  private suspensions = 0;
+
+  get suspended(): boolean {
+    return this.suspensions > 0;
+  }
+
+  suspend(): () => void {
+    this.suspensions += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.suspensions -= 1;
+    };
+  }
 
   register(input: HotkeyEntryInput): () => void {
     const steps = parseBinding(input.binding);

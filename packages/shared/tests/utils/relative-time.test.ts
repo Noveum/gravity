@@ -20,15 +20,18 @@ describe('relativeTime', () => {
     expect(relativeTime(new Date('2024-07-22T12:00:00.000Z'), now)).toBe('2y ago');
   });
 
-  test('reports future moments without calling them past', () => {
-    expect(relativeTime(new Date('2026-07-22T12:00:10.000Z'), now)).toBe('in a moment');
-    expect(relativeTime(new Date('2026-07-22T12:30:00.000Z'), now)).toBe('in 30m');
-    expect(relativeTime(new Date('2026-07-22T15:00:00.000Z'), now)).toBe('in 3h');
-    expect(relativeTime(new Date('2026-07-23T12:00:00.000Z'), now)).toBe('tomorrow');
-    expect(relativeTime(new Date('2026-07-25T12:00:00.000Z'), now)).toBe('in 3d');
-    expect(relativeTime(new Date('2026-08-12T12:00:00.000Z'), now)).toBe('in 3w');
-    expect(relativeTime(new Date('2026-10-22T12:00:00.000Z'), now)).toBe('in 3mo');
-    expect(relativeTime(new Date('2028-07-22T12:00:00.000Z'), now)).toBe('in 2y');
+  test('reports future moments without calling them past, in any time zone', () => {
+    const noon = new Date(2026, 6, 22, 12, 0);
+    const later = (days: number, hours = 12, minutes = 0, seconds = 0) =>
+      new Date(2026, 6, 22 + days, hours, minutes, seconds);
+    expect(relativeTime(later(0, 12, 0, 10), noon)).toBe('in a moment');
+    expect(relativeTime(later(0, 12, 30), noon)).toBe('in 30m');
+    expect(relativeTime(later(0, 15), noon)).toBe('in 3h');
+    expect(relativeTime(later(1), noon)).toBe('tomorrow');
+    expect(relativeTime(later(3), noon)).toBe('in 3d');
+    expect(relativeTime(later(21), noon)).toBe('in 3w');
+    expect(relativeTime(later(92), noon)).toBe('in 3mo');
+    expect(relativeTime(later(731), noon)).toBe('in 2y');
   });
 });
 

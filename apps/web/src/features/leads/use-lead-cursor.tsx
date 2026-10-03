@@ -34,7 +34,6 @@ export type LeadStep = (from: LeadRow | undefined, delta: 1 | -1) => LeadRow | u
 export interface LeadCursorOptions {
   readonly ordered: readonly LeadRow[];
   readonly step: LeadStep;
-  readonly paused?: boolean;
 }
 
 export interface LeadCursor {
@@ -72,7 +71,7 @@ function toggled(current: readonly string[], id: string): readonly string[] {
   return current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id];
 }
 
-export function useLeadCursor({ ordered, step, paused = false }: LeadCursorOptions): LeadCursor {
+export function useLeadCursor({ ordered, step }: LeadCursorOptions): LeadCursor {
   const router = useRouter();
   const { open: panelOpen, show, clear: clearPanel } = useContextPanel();
   const orderedIds = useMemo(() => new Set(ordered.map((lead) => lead.id)), [ordered]);
@@ -179,30 +178,25 @@ export function useLeadCursor({ ordered, step, paused = false }: LeadCursorOptio
     [clearPanel],
   );
 
-  const live = !paused;
   useHotkey('j', () => focus(step(active, 1)), {
     ...LEAD_SURFACE,
     label: 'Next lead',
     aliases: ['down'],
-    enabled: live,
   });
   useHotkey('k', () => focus(step(active, -1)), {
     ...LEAD_SURFACE,
     label: 'Previous lead',
     aliases: ['up'],
-    enabled: live,
   });
   useHotkey('shift+j', () => extend(1), {
     ...LEAD_SURFACE,
     label: 'Extend the selection down',
     aliases: ['shift+down'],
-    enabled: live,
   });
   useHotkey('shift+k', () => extend(-1), {
     ...LEAD_SURFACE,
     label: 'Extend the selection up',
     aliases: ['shift+up'],
-    enabled: live,
   });
   useHotkey(
     'x',
@@ -211,19 +205,17 @@ export function useLeadCursor({ ordered, step, paused = false }: LeadCursorOptio
       setActiveId(active.id);
       setSelected((current) => toggled(current, active.id));
     },
-    { ...LEAD_SURFACE, label: 'Select or deselect', enabled: live },
+    { ...LEAD_SURFACE, label: 'Select or deselect' },
   );
-  useHotkey('space', togglePeek, { ...LEAD_SURFACE, label: 'Toggle the peek', enabled: live });
+  useHotkey('space', togglePeek, { ...LEAD_SURFACE, label: 'Toggle the peek' });
   useHotkey('enter', openActive, {
     ...LEAD_SURFACE,
     label: 'Open the record',
     aliases: ['o'],
-    enabled: live,
   });
   useHotkey('mod+a', () => setSelected(ordered.map((lead) => lead.id)), {
     ...LEAD_SURFACE,
     label: 'Select every lead that matches',
-    enabled: live,
   });
   useHotkey(
     'escape',
@@ -235,7 +227,7 @@ export function useLeadCursor({ ordered, step, paused = false }: LeadCursorOptio
       ...LEAD_SURFACE,
       label: 'Close the peek, then clear the selection',
       preventDefault: false,
-      enabled: live && (peekOpen || visibleSelected.length > 0),
+      enabled: peekOpen || visibleSelected.length > 0,
     },
   );
 

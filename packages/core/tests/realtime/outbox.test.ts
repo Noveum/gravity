@@ -73,7 +73,7 @@ describe('outbox', () => {
     const delivered: number[] = [];
     const working = mock((actions: SyncAction[]) => {
       delivered.push(...actions.map((entry) => entry.syncId));
-      return Promise.resolve();
+      return Promise.resolve(true);
     });
     expect(await republishStale(30_000, 10, working)).toBe(1);
     expect(delivered).toEqual([1010]);
@@ -83,8 +83,8 @@ describe('outbox', () => {
 
   test('flushOutbox skips rows that are already published', async () => {
     await recordSync(db, [action(1011)]);
-    expect(await flushOutbox([1011])).toBe(1);
-    const working = mock(() => Promise.resolve());
+    expect(await flushOutbox([1011], () => Promise.resolve(true))).toBe(1);
+    const working = mock(() => Promise.resolve(true));
     expect(await flushOutbox([1011], working)).toBe(0);
     expect(working).not.toHaveBeenCalled();
   });
@@ -95,7 +95,7 @@ describe('outbox', () => {
     const order: number[] = [];
     const working = mock((actions: SyncAction[]) => {
       order.push(...actions.map((entry) => entry.syncId));
-      return Promise.resolve();
+      return Promise.resolve(true);
     });
     expect(await republishStale(30_000, 10, working)).toBe(2);
     expect(order).toEqual([1005, 1006]);
@@ -105,9 +105,28 @@ describe('outbox', () => {
 
   test('republishStale leaves recent rows alone', async () => {
     await recordSync(db, [action(1012)]);
-    const working = mock(() => Promise.resolve());
+    const working = mock(() => Promise.resolve(true));
     expect(await republishStale(30_000, 10, working)).toBe(0);
     expect(working).not.toHaveBeenCalled();
+  });
+
+  test('with no redis configured the default publisher leaves rows pending', async () => {
+    expect(process.env['REDIS_URL']).toBe('');
+    await recordSync(db, [action(1013)]);
+    expect(await flushOutbox([1013])).toBe(0);
+    await db.update(schema.outbox).set({ createdAt: new Date(Date.now() - 60_000) });
+    expect(await republishStale(30_000, 10)).toBe(0);
+    const [row] = await db.select().from(schema.outbox).where(eq(schema.outbox.syncId, 1013));
+    expect(row?.publishedAt).toBeNull();
+  });
+
+  test('a publisher that reports no delivery leaves rows pending without logging', async () => {
+    await recordSync(db, [action(1014)]);
+    const undelivered = mock(() => Promise.resolve(false));
+    expect(await flushOutbox([1014], undelivered)).toBe(0);
+    expect(undelivered).toHaveBeenCalledTimes(1);
+    const [row] = await db.select().from(schema.outbox).where(eq(schema.outbox.syncId, 1014));
+    expect(row?.publishedAt).toBeNull();
   });
 
   test('readOutboxSince replays deletes in order and reports truncation', async () => {

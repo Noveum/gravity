@@ -52,11 +52,12 @@ function connection(): Redis | null {
   return client;
 }
 
-export async function publishDeltas(actions: SyncAction[]): Promise<void> {
-  if (actions.length === 0) return;
+export async function publishDeltas(actions: SyncAction[]): Promise<boolean> {
+  if (actions.length === 0) return true;
   const redis = connection();
-  if (redis === null) return;
+  if (redis === null) return false;
   await redis.publish(REDIS_DELTA_CHANNEL, JSON.stringify(actions));
+  return true;
 }
 
 export async function publishSessionRevoked(userId: string): Promise<void> {

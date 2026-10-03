@@ -3,7 +3,7 @@ import { type SyncAction, syncActionSchema } from '@gravity/shared/events';
 import type { Executor } from '../internal.ts';
 import { publishDeltas } from './publisher.ts';
 
-type Publish = (actions: SyncAction[]) => Promise<void>;
+type Publish = (actions: SyncAction[]) => Promise<boolean>;
 
 interface OutboxRow {
   readonly syncId: number;
@@ -30,12 +30,14 @@ function toActions(rows: readonly OutboxRow[]): SyncAction[] {
 
 async function publishRows(rows: readonly OutboxRow[], publish: Publish): Promise<number> {
   if (rows.length === 0) return 0;
+  let delivered: boolean;
   try {
-    await publish(toActions(rows));
+    delivered = await publish(toActions(rows));
   } catch (error: unknown) {
     console.error('[gravity] outbox publish failed, rows stay pending', error);
     return 0;
   }
+  if (!delivered) return 0;
   await db
     .update(schema.outbox)
     .set({ publishedAt: new Date() })

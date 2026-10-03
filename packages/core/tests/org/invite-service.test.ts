@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { db, eq, schema } from '@gravity/db';
 import { DomainError } from '@gravity/shared/errors';
+import { ZodError } from 'zod';
 import {
   acceptInvite,
   createInvite,
@@ -80,6 +81,36 @@ describe('invites', () => {
     expect(rows.filter((row) => created.actions.some((a) => a.syncId === row.syncId))).toHaveLength(
       2,
     );
+  });
+
+  test('re-inviting an address records a delete for the replaced row and an insert for the new one', async () => {
+    const workspace = await createWorkspace();
+    const first = await createInvite(workspace.admin, { email: 'again@gravity.test' });
+    const second = await createInvite(workspace.admin, { email: 'again@gravity.test' });
+    expect(second.actions.map((action) => action.action)).toEqual(['delete', 'insert']);
+    expect(second.actions[0]?.modelId).toBe(first.actions[0]?.modelId);
+    expect(second.actions[1]?.modelId).not.toBe(first.actions[0]?.modelId);
+    const syncIds = second.actions.map((action) => action.syncId);
+    expect(new Set(syncIds).size).toBe(2);
+    const rows = await db
+      .select()
+      .from(schema.outbox)
+      .where(eq(schema.outbox.organizationId, workspace.organizationId));
+    for (const syncId of syncIds) expect(rows.map((row) => row.syncId)).toContain(syncId);
+    const pending = await listPendingInvites(workspace.admin);
+    expect(pending.map((invite) => invite.id)).toEqual([second.token]);
+  });
+
+  test('a batch with a duplicate address never creates then deletes its own invite', async () => {
+    const workspace = await createWorkspace();
+    const before = await db.select().from(schema.outbox);
+    await expect(
+      createInvites(workspace.admin, {
+        invites: [{ email: 'Dup@gravity.test' }, { email: 'dup@gravity.test' }],
+      }),
+    ).rejects.toThrow(ZodError);
+    expect(await listPendingInvites(workspace.admin)).toHaveLength(0);
+    expect(await db.select().from(schema.outbox)).toHaveLength(before.length);
   });
 
   test('a revoked invite cannot be accepted', async () => {

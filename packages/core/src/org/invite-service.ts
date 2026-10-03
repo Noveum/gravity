@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { and, asc, db, eq, gt, isNull, schema, sql } from '@gravity/db';
 import { conflict, forbidden, notFound } from '@gravity/shared/errors';
-import type { SyncAction } from '@gravity/shared/events';
+import type { Actor, SyncAction } from '@gravity/shared/events';
 import { scopes } from '@gravity/shared/events';
 import type { Principal } from '@gravity/shared/policy';
 import {
@@ -57,9 +57,9 @@ async function insertInvite(
     email: string;
     role: string;
     now: Date;
-    syncId: number;
   },
-): Promise<InvitationRow> {
+  actor: Actor,
+): Promise<{ invitation: InvitationRow; actions: SyncAction[] }> {
   assertCanInviteRole(principal, params.role);
   const [organization] = await executor
     .select({ allowedEmailDomains: schema.organization.allowedEmailDomains })
@@ -68,7 +68,7 @@ async function insertInvite(
     .limit(1);
   assertEmailDomainAllowed(params.email, organization ?? null);
 
-  await executor
+  const replaced = await executor
     .delete(schema.invitation)
     .where(
       and(
@@ -76,7 +76,13 @@ async function insertInvite(
         eq(schema.invitation.email, params.email),
         eq(schema.invitation.status, 'pending'),
       ),
-    );
+    )
+    .returning();
+  const actions: SyncAction[] = [];
+  for (const old of replaced) {
+    actions.push(inviteAction(old, await nextSyncId(executor), actor, 'delete'));
+  }
+  const syncId = await nextSyncId(executor);
   const [row] = await executor
     .insert(schema.invitation)
     .values({
@@ -87,10 +93,12 @@ async function insertInvite(
       status: 'pending',
       inviterId: params.inviterId,
       expiresAt: addUtcDays(params.now, INVITE_TTL_DAYS),
-      syncId: params.syncId,
+      syncId,
     })
     .returning();
-  return requireRow(row, 'The invite could not be created.');
+  const invitation = requireRow(row, 'The invite could not be created.');
+  actions.push(inviteAction(invitation, syncId, actor, 'insert'));
+  return { invitation, actions };
 }
 
 export function inviteReference(token: string): string {
@@ -110,7 +118,7 @@ export function inviteAnnouncement(invitation: InvitationRow): Record<string, un
 function inviteAction(
   invitation: InvitationRow,
   syncId: number,
-  actor: Parameters<typeof buildSyncAction>[0]['actor'],
+  actor: Actor,
   action: 'insert' | 'update' | 'delete',
 ): SyncAction {
   return buildSyncAction({
@@ -134,17 +142,18 @@ export async function createInvite(
 
   return await db.transaction(async (tx) => {
     await assertEmailIsFree(tx, principal.organizationId, parsed.email);
-    const syncId = await nextSyncId(tx);
-    const actor = principalActor(principal);
-    const invitation = await insertInvite(tx, principal, {
-      organizationId: principal.organizationId,
-      inviterId: principal.userId,
-      email: parsed.email,
-      role: parsed.role,
-      now: new Date(),
-      syncId,
-    });
-    const actions = [inviteAction(invitation, syncId, actor, 'insert')];
+    const { invitation, actions } = await insertInvite(
+      tx,
+      principal,
+      {
+        organizationId: principal.organizationId,
+        inviterId: principal.userId,
+        email: parsed.email,
+        role: parsed.role,
+        now: new Date(),
+      },
+      principalActor(principal),
+    );
     await recordSync(tx, actions);
     return { invitation, token: invitation.id, actions };
   });
@@ -156,25 +165,31 @@ export async function createInvites(
 ): Promise<{ invites: CreatedInvite[]; actions: SyncAction[] }> {
   assertCan(principal, 'member:invite');
   const parsed = inviteBulkSchema.parse(input);
+  const entries = [
+    ...new Map(parsed.invites.map((entry) => [entry.email.toLowerCase(), entry])).values(),
+  ];
 
   return await db.transaction(async (tx) => {
     const actor = principalActor(principal);
     const now = new Date();
     const invites: CreatedInvite[] = [];
     const actions: SyncAction[] = [];
-    for (const entry of parsed.invites) {
+    for (const entry of entries) {
       await assertEmailIsFree(tx, principal.organizationId, entry.email);
-      const syncId = await nextSyncId(tx);
-      const invitation = await insertInvite(tx, principal, {
-        organizationId: principal.organizationId,
-        inviterId: principal.userId,
-        email: entry.email,
-        role: entry.role,
-        now,
-        syncId,
-      });
-      invites.push({ invitation, token: invitation.id });
-      actions.push(inviteAction(invitation, syncId, actor, 'insert'));
+      const created = await insertInvite(
+        tx,
+        principal,
+        {
+          organizationId: principal.organizationId,
+          inviterId: principal.userId,
+          email: entry.email,
+          role: entry.role,
+          now,
+        },
+        actor,
+      );
+      invites.push({ invitation: created.invitation, token: created.invitation.id });
+      actions.push(...created.actions);
     }
     await recordSync(tx, actions);
     return { invites, actions };

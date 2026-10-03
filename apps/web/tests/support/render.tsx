@@ -9,7 +9,7 @@ import type { Bootstrap } from '@/lib/query/schemas.ts';
 import { bootstrapFixture } from './bootstrap-fixture.ts';
 
 export interface RenderOptions {
-  readonly bootstrap?: Bootstrap;
+  readonly bootstrap?: Bootstrap | null;
   readonly client?: QueryClient;
 }
 
@@ -25,7 +25,9 @@ export function renderWithClient(
         mutations: { retry: false },
       },
     });
-  client.setQueryData(queryKeys.bootstrap, options.bootstrap ?? bootstrapFixture());
+  if (options.bootstrap !== null) {
+    client.setQueryData(queryKeys.bootstrap, options.bootstrap ?? bootstrapFixture());
+  }
   const result = render(
     <QueryClientProvider client={client}>
       <TooltipProvider>

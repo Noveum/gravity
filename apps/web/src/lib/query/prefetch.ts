@@ -11,6 +11,15 @@ function asWire<T>(schema: z.ZodType<T>, payload: unknown): T {
   return schema.parse(JSON.parse(JSON.stringify(payload)));
 }
 
+export async function dehydratedBootstrap(context: ApiContext): Promise<DehydratedState> {
+  const client = new QueryClient();
+  client.setQueryData(
+    queryKeys.bootstrap,
+    asWire(bootstrapSchema, await bootstrapPayload(context)),
+  );
+  return dehydrate(client);
+}
+
 export async function dehydratedLeads(
   context: ApiContext,
   pipelineKey: string,

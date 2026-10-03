@@ -1,11 +1,12 @@
 'use client';
 
-import { useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import {
   createContext,
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -29,6 +30,70 @@ export function clampPanelWidth(width: number): number {
 const preferenceSchema = z
   .object({ width: z.number().optional(), open: z.boolean().optional() })
   .catch({});
+
+export const PREFERENCE_DEBOUNCE_MS = 300;
+
+interface PanelDisplay {
+  readonly width: number;
+  readonly open: boolean;
+}
+
+function useDebouncedPreference(client: QueryClient): (display: PanelDisplay) => void {
+  const pending = useRef<PanelDisplay | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inFlight = useRef(false);
+
+  const flush = useCallback(() => {
+    timer.current = null;
+    const display = pending.current;
+    if (display === null || inFlight.current) return;
+    pending.current = null;
+    inFlight.current = true;
+    apiFetch('/api/view-preferences', preferenceEnvelopeSchema, {
+      method: 'PUT',
+      body: { page: PREFERENCE_PAGE, display },
+    })
+      .then(({ preference }) => {
+        if (pending.current !== null) return;
+        patchBootstrap(client, (bootstrap) => ({
+          ...bootstrap,
+          viewPreferences: [
+            ...bootstrap.viewPreferences.filter((entry) => entry.page !== PREFERENCE_PAGE),
+            preference,
+          ],
+        }));
+      })
+      .catch((error: unknown) =>
+        console.warn('Could not remember the context panel layout.', error),
+      )
+      .finally(() => {
+        inFlight.current = false;
+        if (pending.current !== null && timer.current === null) flush();
+      });
+  }, [client]);
+
+  useEffect(() => {
+    const flushNow = () => {
+      if (timer.current === null) return;
+      clearTimeout(timer.current);
+      flush();
+    };
+    window.addEventListener('pagehide', flushNow);
+    return () => {
+      window.removeEventListener('pagehide', flushNow);
+      flushNow();
+    };
+  }, [flush]);
+
+  return useCallback(
+    (display: PanelDisplay) => {
+      pending.current = display;
+      if (timer.current !== null) clearTimeout(timer.current);
+      timer.current = setTimeout(flush, PREFERENCE_DEBOUNCE_MS);
+    },
+    [flush],
+  );
+}
 
 export interface ContextPanelApi {
   readonly open: boolean;
@@ -61,30 +126,9 @@ export function ContextPanelProvider({ children }: { readonly children: ReactNod
   const [content, setContent] = useState<{ node: ReactNode; label: string } | null>(null);
   const width = clampPanelWidth(widthOverride ?? saved.width ?? CONTEXT_PANEL_DEFAULT_WIDTH);
   const open = openOverride ?? saved.open ?? true;
-  const latest = useRef({ width, open });
-  latest.current = { width, open };
-
-  const persist = useCallback(
-    (display: { width: number; open: boolean }) => {
-      apiFetch('/api/view-preferences', preferenceEnvelopeSchema, {
-        method: 'PUT',
-        body: { page: PREFERENCE_PAGE, display },
-      })
-        .then(({ preference }) =>
-          patchBootstrap(client, (bootstrap) => ({
-            ...bootstrap,
-            viewPreferences: [
-              ...bootstrap.viewPreferences.filter((entry) => entry.page !== PREFERENCE_PAGE),
-              preference,
-            ],
-          })),
-        )
-        .catch((error: unknown) =>
-          console.warn('Could not remember the context panel layout.', error),
-        );
-    },
-    [client],
-  );
+  const latest = useRef({ width, open, hasContent: content !== null });
+  latest.current = { width, open, hasContent: content !== null };
+  const persist = useDebouncedPreference(client);
 
   const show = useCallback((node: ReactNode, label: string) => {
     setContent({ node, label });
@@ -92,6 +136,7 @@ export function ContextPanelProvider({ children }: { readonly children: ReactNod
   }, []);
   const hide = useCallback(() => setOpenOverride(false), []);
   const toggle = useCallback(() => {
+    if (!latest.current.hasContent) return;
     const next = !latest.current.open;
     setOpenOverride(next);
     persist({ width: latest.current.width, open: next });
@@ -101,7 +146,10 @@ export function ContextPanelProvider({ children }: { readonly children: ReactNod
     latest.current = { ...latest.current, width: clamped };
     setWidthOverride(clamped);
   }, []);
-  const commit = useCallback(() => persist(latest.current), [persist]);
+  const commit = useCallback(
+    () => persist({ width: latest.current.width, open: latest.current.open }),
+    [persist],
+  );
 
   const api = useMemo<ContextPanelApi>(
     () => ({

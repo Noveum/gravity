@@ -2,12 +2,13 @@
 
 import { Command } from 'cmdk';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowRight, CircleHelp, Palette, Search } from 'lucide-react';
+import { ArrowRight, CircleHelp, Palette, PanelRight, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 import { Kbd } from '@/components/ui/kbd.tsx';
+import { COPY_LINK_BINDING } from '@/lib/copy-link.tsx';
 import { formatBinding, useHotkey } from '@/lib/keyboard/index.ts';
 import { NAV_ITEMS } from '@/lib/navigation.ts';
 
@@ -21,9 +22,23 @@ export interface PaletteCommand {
   readonly run: () => void;
 }
 
+export interface PaletteActions {
+  readonly toggleTheme?: () => void;
+  readonly showShortcuts?: () => void;
+  readonly toggleContextPanel?: (() => void) | undefined;
+  readonly copyLink?: (() => void) | undefined;
+}
+
+function optionalCommand(
+  run: (() => void) | undefined,
+  command: Omit<PaletteCommand, 'run'>,
+): PaletteCommand[] {
+  return run === undefined ? [] : [{ ...command, run }];
+}
+
 export function paletteCommands(
   navigate: (href: string) => void,
-  actions: { readonly toggleTheme?: () => void; readonly showShortcuts?: () => void } = {},
+  actions: PaletteActions = {},
 ): PaletteCommand[] {
   return [
     ...NAV_ITEMS.map((item) => ({
@@ -33,6 +48,18 @@ export function paletteCommands(
       shortcut: item.chord,
       run: () => navigate(item.href),
     })),
+    ...optionalCommand(actions.toggleContextPanel, {
+      id: 'toggle-context-panel',
+      label: 'Toggle context panel',
+      group: 'View',
+      shortcut: ']',
+    }),
+    ...optionalCommand(actions.copyLink, {
+      id: 'copy-link',
+      label: 'Copy link',
+      group: 'View',
+      shortcut: COPY_LINK_BINDING,
+    }),
     {
       id: 'toggle-theme',
       label: 'Toggle light and dark theme',
@@ -51,6 +78,7 @@ export function paletteCommands(
 
 const GROUP_ICONS: Readonly<Record<string, LucideIcon>> = {
   Navigate: ArrowRight,
+  View: PanelRight,
   Preferences: Palette,
   Help: CircleHelp,
 };
@@ -75,9 +103,17 @@ export interface CommandPaletteProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onShowShortcuts: () => void;
+  readonly onToggleContextPanel?: (() => void) | undefined;
+  readonly onCopyLink?: (() => void) | undefined;
 }
 
-export function CommandPalette({ open, onOpenChange, onShowShortcuts }: CommandPaletteProps) {
+export function CommandPalette({
+  open,
+  onOpenChange,
+  onShowShortcuts,
+  onToggleContextPanel,
+  onCopyLink,
+}: CommandPaletteProps) {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
   const [term, setTerm] = useState('');
@@ -88,9 +124,11 @@ export function CommandPalette({ open, onOpenChange, onShowShortcuts }: CommandP
         paletteCommands((href) => router.push(href), {
           toggleTheme: () => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'),
           showShortcuts: onShowShortcuts,
+          toggleContextPanel: onToggleContextPanel,
+          copyLink: onCopyLink,
         }),
       ),
-    [router, setTheme, resolvedTheme, onShowShortcuts],
+    [router, setTheme, resolvedTheme, onShowShortcuts, onToggleContextPanel, onCopyLink],
   );
 
   useHotkey(PALETTE_BINDING, () => onOpenChange(true), {
@@ -100,6 +138,7 @@ export function CommandPalette({ open, onOpenChange, onShowShortcuts }: CommandP
   });
 
   const run = (command: PaletteCommand) => {
+    setTerm('');
     onOpenChange(false);
     command.run();
   };

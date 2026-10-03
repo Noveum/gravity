@@ -16,4 +16,20 @@ describe('paletteCommands', () => {
     expect(ids).toContain('toggle-theme');
     expect(ids).toContain('show-shortcuts');
   });
+
+  test('offers the panel toggle and copy link only when the shell provides them', () => {
+    const toggle = mock();
+    const copy = mock();
+    const bare = paletteCommands(mock()).map((command) => command.id);
+    expect(bare).not.toContain('toggle-context-panel');
+    expect(bare).not.toContain('copy-link');
+    const commands = paletteCommands(mock(), { toggleContextPanel: toggle, copyLink: copy });
+    const panel = commands.find((command) => command.id === 'toggle-context-panel');
+    const link = commands.find((command) => command.id === 'copy-link');
+    expect([panel?.shortcut, link?.shortcut]).toEqual([']', 'mod+shift+c']);
+    panel?.run();
+    link?.run();
+    expect(toggle).toHaveBeenCalledTimes(1);
+    expect(copy).toHaveBeenCalledTimes(1);
+  });
 });

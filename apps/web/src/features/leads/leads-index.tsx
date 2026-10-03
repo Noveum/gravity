@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { EmptyState } from '@/components/ui/empty-state.tsx';
 import { ErrorState } from '@/components/ui/error-state.tsx';
 import { ListSkeleton } from '@/components/ui/list-skeleton.tsx';
@@ -16,17 +16,14 @@ export function LeadsIndex() {
   const router = useRouter();
   const workspace = useWorkspace();
   const bootstrap = useBootstrap();
-  const target = useMemo(() => {
-    if (!workspace.ready) return null;
+  useEffect(() => {
+    if (!workspace.ready) return;
     const remembered = lastPipelineKey(workspace.userId);
     const pipeline =
       (remembered === null ? undefined : workspace.pipelineByKey.get(remembered)) ??
       workspace.pipelines[0];
-    return pipeline?.key ?? null;
-  }, [workspace]);
-  useEffect(() => {
-    if (target !== null) router.replace(leadsHref(target));
-  }, [router, target]);
+    if (pipeline !== undefined) router.replace(leadsHref(pipeline.key));
+  }, [router, workspace]);
   const loading = useDelayedFlag(bootstrap.isPending);
 
   if (bootstrap.error !== null) {
@@ -40,7 +37,7 @@ export function LeadsIndex() {
       />
     );
   }
-  if (workspace.ready && target === null) {
+  if (workspace.ready && workspace.pipelines.length === 0) {
     return (
       <EmptyState
         title="No pipelines yet"

@@ -1,15 +1,18 @@
 'use client';
 
+import { X } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { type KeyboardEvent, type PointerEvent, useRef } from 'react';
+import { Button } from '@/components/ui/button.tsx';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
+import { Tooltip } from '@/components/ui/tooltip.tsx';
 import { cn } from '@/lib/cn.ts';
 import {
   CONTEXT_PANEL_MAX_WIDTH,
   CONTEXT_PANEL_MIN_WIDTH,
   useContextPanel,
 } from '@/lib/context-panel.tsx';
-import { useHotkey } from '@/lib/keyboard/index.ts';
+import { ownsKeyboardLayer, useHotkey } from '@/lib/keyboard/index.ts';
 import { isRecordPath } from '@/lib/navigation.ts';
 import { useMediaQuery } from '@/lib/use-media-query.ts';
 
@@ -67,18 +70,51 @@ function WidthHandle() {
   );
 }
 
+function PanelHeader({ label, onClose }: { readonly label: string; readonly onClose: () => void }) {
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-2 border-border border-b pr-1.5 pl-3">
+      <span className="min-w-0 flex-1 truncate text-2xs text-faint">{label}</span>
+      <Tooltip label="Close panel" shortcut={['esc']} side="bottom">
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Close panel"
+          onClick={onClose}
+          className="size-7 shrink-0 px-0"
+        >
+          <X className="size-4" aria-hidden="true" />
+        </Button>
+      </Tooltip>
+    </div>
+  );
+}
+
 export function ContextPanel() {
   const panel = useContextPanel();
   const pathname = usePathname();
   const pushes = useMediaQuery(PUSH_QUERY, true);
   const overlays = useMediaQuery(OVERLAY_QUERY, true);
+  const hasContent = panel.content !== null;
+  const visible = panel.open && hasContent;
   useHotkey(']', panel.toggle, {
     label: 'Show or hide the context panel',
     section: 'View',
-    enabled: !isRecordPath(pathname),
+    enabled: hasContent && !isRecordPath(pathname),
   });
+  useHotkey(
+    'escape',
+    (event) => {
+      if (!ownsKeyboardLayer(event.target)) panel.hide();
+    },
+    {
+      label: 'Close the context panel',
+      section: 'View',
+      preventDefault: false,
+      enabled: visible && overlays,
+    },
+  );
 
-  if (!panel.open || panel.content === null) return null;
+  if (!visible) return null;
 
   if (!overlays) {
     return (
@@ -101,14 +137,15 @@ export function ContextPanel() {
       aria-label={panel.label}
       style={{ width: panel.width }}
       className={cn(
-        'relative h-full shrink-0 border-border border-l bg-surface',
+        'relative flex h-full shrink-0 flex-col border-border border-l bg-surface',
         'data-[state=open]:animate-panel-in motion-reduce:animate-none',
         pushes ? null : 'absolute inset-y-0 right-0 z-30 shadow-pop',
       )}
       data-state="open"
     >
       <WidthHandle />
-      <div className="h-full overflow-y-auto">{panel.content}</div>
+      <PanelHeader label={panel.label} onClose={panel.hide} />
+      <div className="min-h-0 flex-1 overflow-y-auto">{panel.content}</div>
     </aside>
   );
 }

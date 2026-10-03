@@ -6,7 +6,7 @@ export const BRAND_COLOR_CLASS: Readonly<Record<BrandColor, string>> = {
   amber: 'bg-warning',
   red: 'bg-danger',
   violet: 'bg-merged',
-  cyan: 'bg-presence',
+  cyan: 'bg-accent',
   orange: 'bg-state-triage',
   gray: 'bg-faint',
 };

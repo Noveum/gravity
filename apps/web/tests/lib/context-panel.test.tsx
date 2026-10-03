@@ -1,12 +1,12 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { restoreModulesAfterThisFile } from '../../tests-support.ts';
 import { bootstrapFixture } from '../support/bootstrap-fixture.ts';
 import { mockNavigation } from '../support/navigation.ts';
 import { renderWithClient } from '../support/render.tsx';
-import { setViewport } from '../support/viewport.ts';
+import { setViewport, setViewportWidth } from '../support/viewport.ts';
 
 await restoreModulesAfterThisFile(['next/navigation']);
 const navigation = mockNavigation('/leads/YOD');
@@ -17,12 +17,31 @@ beforeEach(() => {
 afterAll(() => setViewport(false));
 
 const { ContextPanel } = await import('@/components/layout/context-panel.tsx');
-const { clampPanelWidth, ContextPanelProvider, useContextPanel } = await import(
-  '@/lib/context-panel.tsx'
-);
+const { clampPanelWidth, ContextPanelProvider, PREFERENCE_DEBOUNCE_MS, useContextPanel } =
+  await import('@/lib/context-panel.tsx');
+const { queryKeys } = await import('@/lib/query/keys.ts');
+
+function settle(ms = PREFERENCE_DEBOUNCE_MS + 150): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function preferenceResponse(width: number): Response {
+  return new Response(
+    JSON.stringify({
+      preference: {
+        page: 'context-panel',
+        scope: '',
+        layout: 'list',
+        display: { width, open: true },
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+}
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
+  cleanup();
   globalThis.fetch = realFetch;
 });
 
@@ -32,7 +51,7 @@ function Peeker() {
   return null;
 }
 
-function renderPanel(bootstrap = bootstrapFixture()) {
+function renderPanel(bootstrap = bootstrapFixture(), peek = true) {
   const fetchMock = mock(() =>
     Promise.resolve(
       new Response(
@@ -54,7 +73,7 @@ function renderPanel(bootstrap = bootstrapFixture()) {
   globalThis.fetch = fetchMock as unknown as typeof fetch;
   const rendered = renderWithClient(
     <ContextPanelProvider>
-      <Peeker />
+      {peek ? <Peeker /> : null}
       <ContextPanel />
     </ContextPanelProvider>,
     { bootstrap },
@@ -156,5 +175,108 @@ describe('ContextPanel', () => {
     );
     const slider = await screen.findByRole('slider', { name: 'Context panel width' });
     expect(slider).toHaveAttribute('aria-valuenow', '512');
+  });
+
+  test('] with nothing to show does nothing and saves nothing', async () => {
+    const { fetchMock } = renderPanel(bootstrapFixture(), false);
+    await userEvent.keyboard(']');
+    await settle();
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('a burst of arrow keys saves once, with the final width', async () => {
+    const { fetchMock } = renderPanel();
+    const slider = await screen.findByRole('slider', { name: 'Context panel width' });
+    slider.focus();
+    await userEvent.keyboard('{ArrowLeft}{ArrowLeft}{ArrowLeft}{ArrowLeft}{ArrowRight}');
+    expect(slider).toHaveAttribute('aria-valuenow', '468');
+    expect(fetchMock).not.toHaveBeenCalled();
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(lastBody(fetchMock)).toMatchObject({ display: { width: 468, open: true } });
+  });
+
+  test('fast ] presses save once, with the last state', async () => {
+    const { fetchMock } = renderPanel();
+    await screen.findByText('Peek body');
+    await userEvent.keyboard(']]]');
+    expect(screen.queryByText('Peek body')).not.toBeInTheDocument();
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(lastBody(fetchMock)).toMatchObject({ display: { open: false } });
+  });
+
+  test('a slow answer to an older save never overwrites a newer width', async () => {
+    const answers: ((response: Response) => void)[] = [];
+    const bodies: unknown[] = [];
+    const { client } = renderPanel();
+    globalThis.fetch = mock((_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Promise<Response>((resolve) => answers.push(resolve));
+    }) as unknown as typeof fetch;
+    const slider = await screen.findByRole('slider', { name: 'Context panel width' });
+    slider.focus();
+    await userEvent.keyboard('{ArrowLeft}');
+    await settle();
+    expect(bodies).toHaveLength(1);
+    await userEvent.keyboard('{ArrowLeft}');
+    await settle();
+    expect(bodies).toHaveLength(1);
+    answers.shift()?.(preferenceResponse(436));
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    const savedWidths = () =>
+      client
+        .getQueryData<ReturnType<typeof bootstrapFixture>>(queryKeys.bootstrap)
+        ?.viewPreferences.map((entry) => entry.display['width']);
+    expect(savedWidths()).toEqual([]);
+    expect(bodies[1]).toMatchObject({ display: { width: 452 } });
+    answers.shift()?.(preferenceResponse(452));
+    await waitFor(() => expect(savedWidths()).toEqual([452]));
+    expect(slider).toHaveAttribute('aria-valuenow', '452');
+  });
+
+  test('a width still waiting to be saved is sent when the panel goes away', async () => {
+    const { fetchMock, unmount } = renderPanel();
+    const slider = await screen.findByRole('slider', { name: 'Context panel width' });
+    slider.focus();
+    await userEvent.keyboard('{ArrowLeft}');
+    unmount();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(lastBody(fetchMock)).toMatchObject({ display: { width: 436 } });
+  });
+
+  test('the header close button hides the panel', async () => {
+    setViewportWidth(1000);
+    renderPanel();
+    await screen.findByText('Peek body');
+    await userEvent.click(screen.getByRole('button', { name: 'Close panel' }));
+    expect(screen.queryByText('Peek body')).not.toBeInTheDocument();
+  });
+
+  test('Esc closes the overlay panel when it is the topmost layer', async () => {
+    setViewportWidth(1000);
+    renderPanel();
+    const panel = await screen.findByRole('complementary', { name: 'Lead YOD-1' });
+    expect(panel.className).toContain('absolute');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByText('Peek body')).not.toBeInTheDocument();
+  });
+
+  test('Esc inside a dialog above the panel leaves the panel open', async () => {
+    setViewportWidth(1000);
+    renderWithClient(
+      <ContextPanelProvider>
+        <Peeker />
+        <ContextPanel />
+        <div role="dialog" aria-label="Palette">
+          <button type="button">Inside</button>
+        </div>
+      </ContextPanelProvider>,
+    );
+    await screen.findByText('Peek body');
+    screen.getByRole('button', { name: 'Inside' }).focus();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByText('Peek body')).toBeInTheDocument();
   });
 });

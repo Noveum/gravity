@@ -7,8 +7,8 @@ import { CommandPalette } from '@/components/command-palette.tsx';
 import { ShortcutsOverlay } from '@/components/shortcuts-overlay.tsx';
 import { overlayClassName } from '@/components/ui/dialog.tsx';
 import { useWorkspace } from '@/features/workspace/use-workspace.ts';
-import { ContextPanelProvider } from '@/lib/context-panel.tsx';
-import { CopyLinkProvider } from '@/lib/copy-link.tsx';
+import { ContextPanelProvider, useContextPanel } from '@/lib/context-panel.tsx';
+import { CopyLinkProvider, useCopyLink } from '@/lib/copy-link.tsx';
 import { useHotkey } from '@/lib/keyboard/index.ts';
 import {
   type BreadcrumbLookup,
@@ -41,6 +41,22 @@ function NavChord({ item }: { readonly item: NavItem }) {
     section: 'Navigation',
   });
   return null;
+}
+
+function ShellCommandPalette(props: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onShowShortcuts: () => void;
+}) {
+  const panel = useContextPanel();
+  const copyLink = useCopyLink();
+  return (
+    <CommandPalette
+      {...props}
+      onToggleContextPanel={panel.content === null ? undefined : panel.toggle}
+      onCopyLink={copyLink}
+    />
+  );
 }
 
 export function AppShell({
@@ -155,7 +171,7 @@ export function AppShell({
 
             <ContextPanel />
 
-            <CommandPalette
+            <ShellCommandPalette
               open={paletteOpen}
               onOpenChange={setPaletteOpen}
               onShowShortcuts={openShortcuts}

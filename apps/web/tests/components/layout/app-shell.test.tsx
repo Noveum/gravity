@@ -1,7 +1,8 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { screen, waitFor, within } from '@testing-library/react';
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { restoreModulesAfterThisFile } from '../../../tests-support.ts';
 import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
 import { renderWithClient } from '../../support/render.tsx';
@@ -30,11 +31,21 @@ mock.module('next/navigation', () => ({
 
 const { AppShell } = await import('@/components/layout/app-shell.tsx');
 const { ThemeProvider } = await import('@/components/theme-provider.tsx');
+const { useContextPanel } = await import('@/lib/context-panel.tsx');
+const { createQueryClient } = await import('@/lib/query/provider.tsx');
+const { queryKeys } = await import('@/lib/query/keys.ts');
 
-type Bootstrap = ReturnType<typeof bootstrapFixture>;
+const realFetch = globalThis.fetch;
+const requested: string[] = [];
 
-function renderShell(body: ReactNode = <p>Page body</p>, bootstrap?: Bootstrap) {
-  return renderWithClient(
+function Peeker() {
+  const { show } = useContextPanel();
+  useEffect(() => show(<p>Peek body</p>, 'Lead YOD-1'), [show]);
+  return null;
+}
+
+function shellElement(body: ReactNode) {
+  return (
     <ThemeProvider>
       <AppShell
         workspace={{ id: 'w1', name: 'Acme Studio', slug: 'acme-studio' }}
@@ -44,9 +55,20 @@ function renderShell(body: ReactNode = <p>Page body</p>, bootstrap?: Bootstrap) 
       >
         {body}
       </AppShell>
-    </ThemeProvider>,
-    bootstrap === undefined ? {} : { bootstrap },
+    </ThemeProvider>
   );
+}
+
+async function runPaletteCommand(label: string): Promise<void> {
+  await userEvent.keyboard('{Control>}k{/Control}');
+  const palette = await screen.findByRole('dialog', { name: 'Command palette' });
+  await userEvent.click(within(palette).getByText(label));
+}
+
+type Bootstrap = ReturnType<typeof bootstrapFixture>;
+
+function renderShell(body: ReactNode = <p>Page body</p>, bootstrap?: Bootstrap) {
+  return renderWithClient(shellElement(body), bootstrap === undefined ? {} : { bootstrap });
 }
 
 function sidebarAside(): HTMLElement {
@@ -61,6 +83,21 @@ beforeEach(() => {
   push.mockClear();
   pathname = '/today';
   setViewport(true);
+  requested.length = 0;
+  globalThis.fetch = mock((input: RequestInfo | URL) => {
+    requested.push(String(input));
+    return Promise.resolve(
+      new Response(JSON.stringify({ error: { code: 'not_found', message: 'Not stubbed.' } }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+  }) as unknown as typeof fetch;
+});
+
+afterEach(() => {
+  cleanup();
+  globalThis.fetch = realFetch;
 });
 
 describe('AppShell', () => {
@@ -195,5 +232,43 @@ describe('AppShell', () => {
     renderShell(<input aria-label="Note" />);
     await userEvent.type(screen.getByLabelText('Note'), 'gc');
     expect(push).not.toHaveBeenCalled();
+  });
+
+  test('paints brand names from the hydrated bootstrap without asking the server', () => {
+    const server = new QueryClient();
+    server.setQueryData(queryKeys.bootstrap, bootstrapFixture());
+    renderWithClient(
+      <HydrationBoundary state={dehydrate(server)}>
+        {shellElement(<p>Page body</p>)}
+      </HydrationBoundary>,
+      { bootstrap: null, client: createQueryClient() },
+    );
+    const nav = screen.getAllByRole('navigation', { name: 'Workspace' })[0];
+    if (nav === undefined) throw new Error('missing workspace navigation');
+    expect(within(nav).getByText('Yodu')).toBeInTheDocument();
+    expect(requested.filter((path) => path.includes('/api/bootstrap'))).toEqual([]);
+  });
+
+  test('the palette copies the link to the current view', async () => {
+    const writeText = mock(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    renderShell();
+    await runPaletteCommand('Copy link');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(window.location.href));
+  });
+
+  test('the palette toggles the context panel once it has something to show', async () => {
+    renderShell(<Peeker />);
+    expect(await screen.findByText('Peek body')).toBeInTheDocument();
+    await runPaletteCommand('Toggle context panel');
+    await waitFor(() => expect(screen.queryByText('Peek body')).not.toBeInTheDocument());
+  });
+
+  test('the palette leaves out the panel toggle when the panel is empty', async () => {
+    renderShell();
+    await userEvent.keyboard('{Control>}k{/Control}');
+    const palette = await screen.findByRole('dialog', { name: 'Command palette' });
+    expect(within(palette).getByText('Copy link')).toBeInTheDocument();
+    expect(within(palette).queryByText('Toggle context panel')).not.toBeInTheDocument();
   });
 });

@@ -12,8 +12,11 @@ import {
 import { useToast } from '@/components/ui/toast.tsx';
 import { useHotkey } from '@/lib/keyboard/index.ts';
 
+export const COPY_LINK_BINDING = 'mod+shift+c';
+
 interface CopyLinkApi {
   readonly setTarget: (path: string | null) => void;
+  readonly copy: () => void;
 }
 
 const CopyLinkContext = createContext<CopyLinkApi | null>(null);
@@ -37,20 +40,22 @@ export function CopyLinkProvider({ children }: { readonly children: ReactNode })
       });
     }
   }, [toast]);
-  useHotkey(
-    'mod+shift+c',
-    () => {
-      copy().catch(() => undefined);
-    },
-    { label: 'Copy link to this record or view', section: 'General', allowInInput: true },
-  );
+  const copyNow = useCallback(() => {
+    copy().catch(() => undefined);
+  }, [copy]);
+  useHotkey(COPY_LINK_BINDING, copyNow, {
+    label: 'Copy link to this record or view',
+    section: 'General',
+    allowInInput: true,
+  });
   const api = useMemo<CopyLinkApi>(
     () => ({
       setTarget: (path) => {
         target.current = path;
       },
+      copy: copyNow,
     }),
-    [],
+    [copyNow],
   );
   return <CopyLinkContext.Provider value={api}>{children}</CopyLinkContext.Provider>;
 }
@@ -61,4 +66,10 @@ export function useCopyLinkTarget(path: string | null): void {
     api?.setTarget(path);
     return () => api?.setTarget(null);
   }, [api, path]);
+}
+
+export function useCopyLink(): () => void {
+  const api = useContext(CopyLinkContext);
+  if (api === null) throw new Error('useCopyLink must be used inside CopyLinkProvider');
+  return api.copy;
 }

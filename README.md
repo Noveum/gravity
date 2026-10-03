@@ -35,6 +35,10 @@ Stop the dev server before running `bun run db:migrate` against local PGlite. It
 - Explicit next-action scheduling with product-authorized owners, channels, owed-by party and UTC deadlines.
 - Authenticated SSE revision delivery with immediate same-runtime wakeups, one-second reconciliation across runtimes and fallback recovery. Unsaved drafts keep their edited version across live updates; distributed fan-out and large-list pagination remain future work.
 
+## Public pages
+
+Open `/welcome` for the landing page, `/docs` for setup/assistant/deployment guides and `/blog` for two original design articles. These pages work without auth or a database and reuse Orbit's light/dark palette. The CRM remains at `/`. Marketing distinguishes working foundations from planned integrations and has no invented customer claims. [Positioning research](docs/positioning-2026-10-04.md) records the competitor review. Set `PUBLIC_SITE_URL` and opt into `PUBLIC_SITE_INDEXING` only for a reviewed production launch; preview and development hosts remain non-indexable.
+
 ## Try the app
 
 Open `/onboarding` to create a fictional workspace with its first product. The new queue offers contact creation and connection setup guidance. Users signing in without an organization are directed there automatically. Connections shows the canonical MCP URL and explains which integrations still need implementation/configuration.
@@ -70,9 +74,11 @@ bun run typecheck
 bun run test
 bun run lint
 bun run build
+bun run test:public
+bun run licenses:check
 ```
 
-React interaction tests cover command selection, focus restoration, form submission guards, native validation, instant product switching and delayed-read reconciliation. The SQL/HTTP tests exercise actual PostgreSQL migrations and constraints using PGlite, plus OAuth registration, PKCE, consent, token refresh, MCP HTTP transport, tenant isolation, private histories, concurrent duplicate replies, coalesced reply tasks, invalidated approvals, file access, and identity creation/linking. Build success verifies packaging; it does not verify a supplied cloud database, live OAuth app, S3 bucket, or sending account.
+React interaction tests cover command selection, focus restoration, form submission guards, native validation, instant product switching and delayed-read reconciliation. The official MCP client additionally exercises OAuth auto-discovery, dynamic registration, PKCE, protocol initialization, tool calls and revocation. [Client qualification](docs/mcp-client-qualification.md) separates this protocol evidence from live Codex/Claude verification. Built public-page smoke checks run with demo/auth/database access disabled. License checks cover installed locked packages on the CI platform. The SQL/HTTP tests exercise actual PostgreSQL migrations and constraints using PGlite, plus OAuth registration, PKCE, consent, token refresh, MCP HTTP transport, tenant isolation, private histories, concurrent duplicate replies, coalesced reply tasks, invalidated approvals, file access, and identity creation/linking. Build success verifies packaging; it does not verify a supplied cloud database, live OAuth app, S3 bucket, or sending account.
 
 ## Configuration and deployment
 

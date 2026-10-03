@@ -36,6 +36,7 @@ jobs:
           test -n "$VERCEL_PROJECT_ID"
       - run: bun install --frozen-lockfile
       - run: bun audit
+      - run: bun run licenses:check
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run test

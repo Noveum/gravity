@@ -491,6 +491,13 @@
       "repository": "git+https://github.com/jridgewell/sourcemaps.git"
     },
     {
+      "name": "@modelcontextprotocol/client",
+      "version": "2.3.0",
+      "license": "Apache-2.0",
+      "direct": true,
+      "repository": "git+https://github.com/modelcontextprotocol/typescript-sdk.git"
+    },
+    {
       "name": "@modelcontextprotocol/core",
       "version": "2.3.0",
       "license": "Apache-2.0",
@@ -792,6 +799,13 @@
       "repository": null
     },
     {
+      "name": "cross-spawn",
+      "version": "7.0.6",
+      "license": "MIT",
+      "direct": false,
+      "repository": "git@github.com:moxystudio/node-cross-spawn.git"
+    },
+    {
       "name": "css-tree",
       "version": "3.2.1",
       "license": "MIT",
@@ -904,6 +918,20 @@
       "repository": "https://github.com/Rich-Harris/estree-walker"
     },
     {
+      "name": "eventsource",
+      "version": "3.0.7",
+      "license": "MIT",
+      "direct": false,
+      "repository": "git://git@github.com/EventSource/eventsource.git"
+    },
+    {
+      "name": "eventsource-parser",
+      "version": "3.1.1",
+      "license": "MIT",
+      "direct": false,
+      "repository": "git+ssh://git@github.com/rexxars/eventsource-parser.git"
+    },
+    {
       "name": "expect-type",
       "version": "1.4.0",
       "license": "Apache-2.0",
@@ -944,6 +972,13 @@
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/mathiasbynens/is-potential-custom-element-name.git"
+    },
+    {
+      "name": "isexe",
+      "version": "2.0.0",
+      "license": "ISC",
+      "direct": false,
+      "repository": "git+https://github.com/isaacs/isexe.git"
     },
     {
       "name": "jose",
@@ -1065,6 +1100,13 @@
       "repository": "git://github.com/inikulin/parse5.git"
     },
     {
+      "name": "path-key",
+      "version": "3.1.1",
+      "license": "MIT",
+      "direct": false,
+      "repository": "sindresorhus/path-key"
+    },
+    {
       "name": "picocolors",
       "version": "1.1.1",
       "license": "ISC",
@@ -1077,6 +1119,13 @@
       "license": "MIT",
       "direct": false,
       "repository": "micromatch/picomatch"
+    },
+    {
+      "name": "pkce-challenge",
+      "version": "5.0.1",
+      "license": "MIT",
+      "direct": false,
+      "repository": "git+https://github.com/crouchcd/pkce-challenge.git"
     },
     {
       "name": "postcss",
@@ -1196,6 +1245,20 @@
       "license": "Apache-2.0",
       "direct": false,
       "repository": "git+https://github.com/lovell/sharp.git"
+    },
+    {
+      "name": "shebang-command",
+      "version": "2.0.0",
+      "license": "MIT",
+      "direct": false,
+      "repository": "kevva/shebang-command"
+    },
+    {
+      "name": "shebang-regex",
+      "version": "3.0.0",
+      "license": "MIT",
+      "direct": false,
+      "repository": "sindresorhus/shebang-regex"
     },
     {
       "name": "source-map",
@@ -1364,6 +1427,13 @@
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/jsdom/whatwg-url.git"
+    },
+    {
+      "name": "which",
+      "version": "2.0.2",
+      "license": "ISC",
+      "direct": false,
+      "repository": "git://github.com/isaacs/node-which.git"
     },
     {
       "name": "why-is-node-running",

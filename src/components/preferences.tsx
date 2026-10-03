@@ -2,7 +2,11 @@
 import t from "@crm/i18n/translations/en.json";
 import { Settings2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-export function Preferences() {
+export function Preferences({
+  showDensity = true,
+}: {
+  showDensity?: boolean;
+} = {}) {
   const [theme, setTheme] = useState("system");
   const [density, setDensity] = useState("comfortable");
   useEffect(() => {
@@ -51,20 +55,22 @@ export function Preferences() {
         <option value="light">{t.light}</option>
         <option value="dark">{t.dark}</option>
       </select>
-      <select
-        aria-label={t.density}
-        value={density}
-        onChange={(e) => {
-          setDensity(e.target.value);
-          document.documentElement.dataset.density = e.target.value;
-          try {
-            localStorage.setItem("gravity-density", e.target.value);
-          } catch {}
-        }}
-      >
-        <option value="comfortable">{t.comfortable}</option>
-        <option value="compact">{t.compact}</option>
-      </select>
+      {showDensity && (
+        <select
+          aria-label={t.density}
+          value={density}
+          onChange={(e) => {
+            setDensity(e.target.value);
+            document.documentElement.dataset.density = e.target.value;
+            try {
+              localStorage.setItem("gravity-density", e.target.value);
+            } catch {}
+          }}
+        >
+          <option value="comfortable">{t.comfortable}</option>
+          <option value="compact">{t.compact}</option>
+        </select>
+      )}
     </div>
   );
 }

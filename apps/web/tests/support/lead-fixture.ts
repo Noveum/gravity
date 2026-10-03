@@ -1,0 +1,36 @@
+import type { LeadRow } from '@gravity/shared/records';
+
+export function leadFixture(overrides: Partial<LeadRow> = {}): LeadRow {
+  return {
+    id: 'l1',
+    organizationId: 'o1',
+    pipelineId: 'p1',
+    brandId: 'b1',
+    number: 1,
+    key: 'YOD-1',
+    personId: 'per1',
+    personName: 'Ada Lovelace',
+    personEmail: 'ada@acme.io',
+    personLinkedinUrl: null,
+    companyId: null,
+    companyName: null,
+    ownerId: 'u1',
+    stageId: 'new',
+    stageCategory: 'open',
+    source: 'manual',
+    priority: 0,
+    holdReason: null,
+    holdUntil: null,
+    nextAction: null,
+    nextActionAt: null,
+    owedBy: 'none',
+    lastInboundAt: null,
+    lastOutboundAt: null,
+    fields: {},
+    syncId: 10,
+    createdAt: '2026-10-01T10:00:00.000Z',
+    updatedAt: '2026-10-01T10:00:00.000Z',
+    archivedAt: null,
+    ...overrides,
+  };
+}

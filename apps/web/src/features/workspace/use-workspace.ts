@@ -33,6 +33,18 @@ export interface WorkspaceData {
   readonly allFields: readonly FieldDefinitionRow[];
 }
 
+const NO_STAGES: readonly StageRow[] = [];
+
+function stagesByPipeline(stages: readonly StageRow[]): ReadonlyMap<string, readonly StageRow[]> {
+  const grouped = new Map<string, StageRow[]>();
+  for (const stage of stages) {
+    const list = grouped.get(stage.pipelineId) ?? [];
+    list.push(stage);
+    grouped.set(stage.pipelineId, list);
+  }
+  return grouped;
+}
+
 export function useWorkspace(): WorkspaceData {
   const { data } = useBootstrap();
   return useMemo(() => {
@@ -41,6 +53,7 @@ export function useWorkspace(): WorkspaceData {
     const stages = [...(data?.stages ?? [])].sort((a, b) => a.sortOrder - b.sortOrder);
     const fields = data?.fields ?? [];
     const members = data?.members ?? [];
+    const stagesOfPipeline = stagesByPipeline(stages);
     return {
       ready: data !== undefined,
       userId: data?.me.userId ?? '',
@@ -53,7 +66,7 @@ export function useWorkspace(): WorkspaceData {
       pipelineByKey: new Map(pipelines.map((pipeline) => [pipeline.key, pipeline])),
       stageById: new Map(stages.map((stage) => [stage.id, stage])),
       memberByUserId: new Map(members.map((member) => [member.userId, member])),
-      stagesOf: (pipelineId) => stages.filter((stage) => stage.pipelineId === pipelineId),
+      stagesOf: (pipelineId) => stagesOfPipeline.get(pipelineId) ?? NO_STAGES,
       pipelinesOf: (brandId) => pipelines.filter((pipeline) => pipeline.brandId === brandId),
       fieldsFor: (object, pipelineId) =>
         fields.filter(

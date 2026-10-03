@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { screen, waitFor } from '@testing-library/react';
 import { restoreModulesAfterThisFile } from '../../../tests-support.ts';
 import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
@@ -30,9 +30,23 @@ const twoPipelines = bootstrapFixture({
   ],
 });
 
+const realFetch = globalThis.fetch;
+
 beforeEach(() => {
   navigation.replace.mockClear();
   window.localStorage.clear();
+  globalThis.fetch = mock(() =>
+    Promise.resolve(
+      new Response(JSON.stringify({ leads: [], nextCursor: null }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    ),
+  ) as unknown as typeof fetch;
+});
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
 });
 
 describe('LeadsIndex', () => {
@@ -63,7 +77,7 @@ describe('LeadsIndex', () => {
 describe('LeadsView', () => {
   test('remembers the pipeline it shows, per user', async () => {
     renderWithClient(<LeadsView pipelineKey="PRT" />, { bootstrap: twoPipelines });
-    expect(screen.getByText('Yodu · Partners')).toBeInTheDocument();
+    expect(await screen.findByText('No leads in Yodu · Partners yet.')).toBeInTheDocument();
     await waitFor(() => expect(lastPipelineKey('u1')).toBe('PRT'));
     expect(lastPipelineKey('u2')).toBeNull();
   });

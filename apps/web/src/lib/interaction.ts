@@ -7,6 +7,9 @@ export const revealOnCardHover =
 export const rowHover =
   'transition-colors duration-[var(--duration-fast)] ease-[var(--ease-standard)] motion-reduce:transition-none hover:bg-hover';
 
+export const listRowHover =
+  'transition-colors duration-[var(--duration-instant)] ease-[var(--ease-standard)] motion-reduce:transition-none hover:bg-surface-2/70';
+
 export const cardHover =
   'transition-colors duration-[var(--duration-fast)] ease-[var(--ease-standard)] motion-reduce:transition-none hover:border-border-strong hover:bg-surface-2';
 

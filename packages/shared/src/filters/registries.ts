@@ -49,6 +49,19 @@ function fieldValue(
   return null;
 }
 
+export function filterableFieldDefinitions(
+  definitions: readonly FieldDefinitionRow[],
+  object: FieldObject,
+  pipelineId: string | null,
+): FieldDefinitionRow[] {
+  return definitions.filter(
+    (definition) =>
+      definition.object === object &&
+      definition.archivedAt === null &&
+      (definition.pipelineId === null || definition.pipelineId === pipelineId),
+  );
+}
+
 export function fieldFilterProperties<
   T extends { readonly fields: Readonly<Record<string, unknown>> },
 >(
@@ -56,23 +69,16 @@ export function fieldFilterProperties<
   object: FieldObject,
   pipelineId: string | null,
 ): FilterProperty<T>[] {
-  return definitions
-    .filter(
-      (definition) =>
-        definition.object === object &&
-        definition.archivedAt === null &&
-        (definition.pipelineId === null || definition.pipelineId === pipelineId),
-    )
-    .map((definition) => {
-      const kind = fieldKindOf(definition.type);
-      return {
-        key: `fields.${definition.key}`,
-        label: definition.label,
-        kind,
-        ...(kind === 'enum' || kind === 'multi' ? { options: definition.options } : {}),
-        read: (record: T) => fieldValue(record.fields, definition.key, kind),
-      };
-    });
+  return filterableFieldDefinitions(definitions, object, pipelineId).map((definition) => {
+    const kind = fieldKindOf(definition.type);
+    return {
+      key: `fields.${definition.key}`,
+      label: definition.label,
+      kind,
+      ...(kind === 'enum' || kind === 'multi' ? { options: definition.options } : {}),
+      read: (record: T) => fieldValue(record.fields, definition.key, kind),
+    };
+  });
 }
 
 const PRIORITY_OPTIONS = LEAD_PRIORITIES.map((priority) => ({

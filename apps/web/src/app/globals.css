@@ -289,8 +289,8 @@
   --breakpoint-3xl: 120rem;
   --breakpoint-4xl: 160rem;
 
-  --sidebar-width: 15rem;
-  --sidebar-width-collapsed: 3.25rem;
+  --sidebar-width: 14.5rem;
+  --sidebar-width-collapsed: 3.5rem;
   --topbar-height: 2.75rem;
 
   --animate-shimmer: shimmer 2s var(--ease-standard) infinite;

@@ -19,3 +19,6 @@ export const swatchLift =
 export const dangerAction = 'text-danger hover:text-danger';
 
 export const dangerMenuAction = 'text-danger data-[highlighted]:text-danger';
+
+export const navRowHover =
+  'transition-colors duration-[var(--duration-instant)] ease-[var(--ease-standard)] motion-reduce:transition-none hover:bg-surface-2 hover:text-text';

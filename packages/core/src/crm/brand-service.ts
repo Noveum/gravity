@@ -1,5 +1,6 @@
 import { and, asc, db, eq, isNull, schema } from '@gravity/db';
 import { DEFAULT_PIPELINE_NAME } from '@gravity/shared/constants';
+import { conflict } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
 import { assertCan } from '@gravity/shared/policy';
 import type { BrandRow, PipelineRow, StageRow } from '@gravity/shared/records';
@@ -7,8 +8,8 @@ import { derivePipelineKey } from '@gravity/shared/utils';
 import { brandCreateSchema, brandUpdateSchema } from '@gravity/shared/validators';
 import { newId, requireRow } from '../internal.ts';
 import { asConflict } from './conflicts.ts';
-import { liveBrand, takenPipelineKeys } from './lookups.ts';
-import { archivePipelineIn, insertPipelineIn } from './pipeline-service.ts';
+import { liveBrand, openLeadCount, takenPipelineKeys } from './lookups.ts';
+import { archivePipelineIn, insertPipelineIn, openLeadsPhrase } from './pipeline-service.ts';
 import { brandRowOf } from './rows.ts';
 import { brandScopes } from './scopes.ts';
 import { type SyncBatch, type WithActions, withBatch } from './sync-batch.ts';
@@ -85,7 +86,7 @@ export async function updateBrand(
   const parsed = brandUpdateSchema.parse(input);
   try {
     return await withBatch(context, async (batch) => {
-      await liveBrand(batch.tx, batch.organizationId, brandId);
+      await liveBrand(batch.tx, batch.organizationId, brandId, true);
       const syncId = await batch.nextSyncId();
       const [updated] = await batch.tx
         .update(schema.brand)
@@ -114,7 +115,17 @@ export async function archiveBrand(
 ): Promise<WithActions<{ brand: BrandRow }>> {
   assertCan(context.principal, 'pipeline:manage');
   return await withBatch(context, async (batch) => {
-    await liveBrand(batch.tx, batch.organizationId, brandId);
+    const current = await liveBrand(batch.tx, batch.organizationId, brandId, true);
+    const pipelines = await batch.tx
+      .select({ id: schema.pipeline.id })
+      .from(schema.pipeline)
+      .where(and(eq(schema.pipeline.brandId, brandId), isNull(schema.pipeline.archivedAt)))
+      .orderBy(asc(schema.pipeline.position), asc(schema.pipeline.id))
+      .for('update');
+    const pipelineIds = pipelines.map((pipeline) => pipeline.id);
+    const open = await openLeadCount(batch.tx, batch.organizationId, pipelineIds);
+    if (open > 0)
+      throw conflict(`Close the ${openLeadsPhrase(open)} in ${current.name} before archiving it.`);
     const syncId = await batch.nextSyncId();
     const [updated] = await batch.tx
       .update(schema.brand)
@@ -123,11 +134,7 @@ export async function archiveBrand(
       .returning();
     const brand = brandRowOf(requireRow(updated, 'That brand does not exist.'));
     emitBrand(batch, syncId, 'archive', brand);
-    const pipelines = await batch.tx
-      .select({ id: schema.pipeline.id })
-      .from(schema.pipeline)
-      .where(and(eq(schema.pipeline.brandId, brandId), isNull(schema.pipeline.archivedAt)));
-    for (const pipeline of pipelines) await archivePipelineIn(batch, pipeline.id);
+    for (const pipelineId of pipelineIds) await archivePipelineIn(batch, pipelineId);
     return { brand };
   });
 }

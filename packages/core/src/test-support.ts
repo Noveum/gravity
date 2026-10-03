@@ -1,6 +1,8 @@
 import { db, schema, sql } from '@gravity/db';
+import { DomainError } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
 import { newId } from './internal.ts';
+import { acceptInvite, createInvite } from './org/invite-service.ts';
 import { resolvePrincipal } from './org/member-service.ts';
 import { createOrganization } from './org/organization-service.ts';
 
@@ -47,4 +49,70 @@ export async function createWorkspace(name = 'Acme'): Promise<TestWorkspace> {
   });
   const admin = await resolvePrincipal(adminUser.id, created.organization.id);
   return { organizationId: created.organization.id, admin, adminUser };
+}
+
+export async function createMemberPrincipal(
+  workspace: TestWorkspace,
+  role: 'guest' | 'contributor' | 'member',
+): Promise<Principal> {
+  const user = await createUser(`${role} user`);
+  const { token } = await createInvite(workspace.admin, { email: user.email, role });
+  await acceptInvite(token, user.id);
+  return await resolvePrincipal(user.id, workspace.organizationId);
+}
+
+export async function configurationFootprint(): Promise<Record<string, number>> {
+  const counts = async (table: 'brand' | 'pipeline' | 'stage' | 'field_definition' | 'outbox') => {
+    const [row] = await db.execute<{ total: string }>(
+      sql.raw(`select count(*)::text as total from "${table}"`),
+    );
+    return Number(row?.['total'] ?? 0);
+  };
+  return {
+    brand: await counts('brand'),
+    pipeline: await counts('pipeline'),
+    stage: await counts('stage'),
+    field_definition: await counts('field_definition'),
+    outbox: await counts('outbox'),
+  };
+}
+
+export interface TestLeadInput {
+  readonly organizationId: string;
+  readonly pipelineId: string;
+  readonly stageId: string;
+  readonly stageCategory?: 'open' | 'hold' | 'won' | 'lost';
+  readonly archivedAt?: Date | null;
+}
+
+export async function insertTestLead(input: TestLeadInput): Promise<string> {
+  const personId = newId();
+  await db
+    .insert(schema.person)
+    .values({ id: personId, organizationId: input.organizationId, name: 'Test Person' });
+  const [numbered] = await db.execute<{ next: string }>(
+    sql`select (coalesce(max(number), 0) + 1)::text as next from lead where pipeline_id = ${input.pipelineId}`,
+  );
+  const id = newId();
+  await db.insert(schema.lead).values({
+    id,
+    organizationId: input.organizationId,
+    personId,
+    pipelineId: input.pipelineId,
+    number: Number(numbered?.['next'] ?? 1),
+    stageId: input.stageId,
+    stageCategory: input.stageCategory ?? 'open',
+    archivedAt: input.archivedAt ?? null,
+  });
+  return id;
+}
+
+export async function refusal(attempt: Promise<unknown>): Promise<DomainError> {
+  try {
+    await attempt;
+  } catch (error: unknown) {
+    if (error instanceof DomainError) return error;
+    throw error;
+  }
+  throw new Error('Expected the call to be refused, but it succeeded.');
 }

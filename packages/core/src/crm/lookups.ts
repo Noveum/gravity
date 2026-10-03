@@ -1,11 +1,16 @@
-import { and, asc, eq, inArray, isNull, schema } from '@gravity/db';
+import { and, asc, count, eq, inArray, isNull, schema } from '@gravity/db';
 import { notFound, validationFailed } from '@gravity/shared/errors';
 import type { StageRow } from '@gravity/shared/records';
 import type { Executor } from '../internal.ts';
 import { stageRowOf } from './rows.ts';
 
-export async function liveBrand(executor: Executor, organizationId: string, brandId: string) {
-  const [row] = await executor
+export async function liveBrand(
+  executor: Executor,
+  organizationId: string,
+  brandId: string,
+  lock = false,
+) {
+  const query = executor
     .select()
     .from(schema.brand)
     .where(
@@ -16,6 +21,7 @@ export async function liveBrand(executor: Executor, organizationId: string, bran
       ),
     )
     .limit(1);
+  const [row] = lock ? await query.for('update') : await query;
   if (row === undefined) throw notFound('That brand does not exist.');
   return row;
 }
@@ -86,4 +92,24 @@ export async function takenPipelineKeys(
       and(eq(schema.pipeline.organizationId, organizationId), isNull(schema.pipeline.archivedAt)),
     );
   return new Set(rows.map((row) => row.key));
+}
+
+export async function openLeadCount(
+  executor: Executor,
+  organizationId: string,
+  pipelineIds: readonly string[],
+): Promise<number> {
+  if (pipelineIds.length === 0) return 0;
+  const [row] = await executor
+    .select({ total: count() })
+    .from(schema.lead)
+    .where(
+      and(
+        eq(schema.lead.organizationId, organizationId),
+        inArray(schema.lead.pipelineId, [...pipelineIds]),
+        inArray(schema.lead.stageCategory, ['open', 'hold']),
+        isNull(schema.lead.archivedAt),
+      ),
+    );
+  return row?.total ?? 0;
 }

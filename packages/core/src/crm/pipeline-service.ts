@@ -1,12 +1,14 @@
 import { and, asc, count, db, eq, isNull, schema } from '@gravity/db';
 import { defaultStagesFor, type PipelineKind } from '@gravity/shared/constants';
+import { conflict } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
 import { assertCan } from '@gravity/shared/policy';
 import type { PipelineRow, StageRow } from '@gravity/shared/records';
 import { pipelineCreateSchema, pipelineUpdateSchema } from '@gravity/shared/validators';
 import { newId, requireRow } from '../internal.ts';
 import { asConflict } from './conflicts.ts';
-import { liveBrand, livePipeline } from './lookups.ts';
+import { archiveFieldsOfPipelineIn } from './field-service.ts';
+import { liveBrand, livePipeline, openLeadCount } from './lookups.ts';
 import { pipelineRowOf, stageRowOf } from './rows.ts';
 import { pipelineScopes } from './scopes.ts';
 import { type SyncBatch, type WithActions, withBatch } from './sync-batch.ts';
@@ -88,7 +90,7 @@ export async function createPipeline(
   const parsed = pipelineCreateSchema.parse(input);
   try {
     return await withBatch(context, async (batch) => {
-      await liveBrand(batch.tx, batch.organizationId, parsed.brandId);
+      await liveBrand(batch.tx, batch.organizationId, parsed.brandId, true);
       return await insertPipelineIn(batch, parsed);
     });
   } catch (error: unknown) {
@@ -133,6 +135,41 @@ export async function updatePipeline(
   }
 }
 
+export function openLeadsPhrase(total: number): string {
+  return total === 1 ? '1 open or held lead' : `${total} open or held leads`;
+}
+
+async function archiveStagesOf(batch: SyncBatch, pipeline: PipelineRow): Promise<void> {
+  const stages = await batch.tx
+    .select({ id: schema.stage.id })
+    .from(schema.stage)
+    .where(
+      and(
+        eq(schema.stage.pipelineId, pipeline.id),
+        eq(schema.stage.organizationId, batch.organizationId),
+        isNull(schema.stage.archivedAt),
+      ),
+    )
+    .orderBy(asc(schema.stage.sortOrder));
+  for (const { id } of stages) {
+    const syncId = await batch.nextSyncId();
+    const [row] = await batch.tx
+      .update(schema.stage)
+      .set({ archivedAt: new Date(), syncId, updatedAt: new Date() })
+      .where(eq(schema.stage.id, id))
+      .returning();
+    const stage = stageRowOf(requireRow(row, 'That stage does not exist.'));
+    batch.emit({
+      syncId,
+      action: 'archive',
+      model: 'stage',
+      modelId: stage.id,
+      data: stage,
+      scopes: pipelineScopes(batch.organizationId, pipeline.brandId, pipeline.id),
+    });
+  }
+}
+
 export async function archivePipelineIn(
   batch: SyncBatch,
   pipelineId: string,
@@ -157,6 +194,8 @@ export async function archivePipelineIn(
     data: pipeline,
     scopes: pipelineScopes(batch.organizationId, pipeline.brandId, pipeline.id),
   });
+  await archiveStagesOf(batch, pipeline);
+  await archiveFieldsOfPipelineIn(batch, pipeline.id);
   return pipeline;
 }
 
@@ -166,7 +205,10 @@ export async function archivePipeline(
 ): Promise<WithActions<{ pipeline: PipelineRow }>> {
   assertCan(context.principal, 'pipeline:manage');
   return await withBatch(context, async (batch) => {
-    await livePipeline(batch.tx, batch.organizationId, pipelineId, true);
+    const current = await livePipeline(batch.tx, batch.organizationId, pipelineId, true);
+    const open = await openLeadCount(batch.tx, batch.organizationId, [pipelineId]);
+    if (open > 0)
+      throw conflict(`Close the ${openLeadsPhrase(open)} in ${current.name} before archiving it.`);
     return { pipeline: await archivePipelineIn(batch, pipelineId) };
   });
 }

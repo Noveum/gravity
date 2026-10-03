@@ -1,6 +1,6 @@
 import { and, asc, count, db, eq, isNull, or, schema } from '@gravity/db';
 import type { FieldObject } from '@gravity/shared/constants';
-import { notFound, validationFailed } from '@gravity/shared/errors';
+import { conflict, notFound, validationFailed } from '@gravity/shared/errors';
 import { scopes } from '@gravity/shared/events';
 import type { Principal } from '@gravity/shared/policy';
 import { assertCan } from '@gravity/shared/policy';
@@ -12,6 +12,7 @@ import {
   fieldValuesSchema,
 } from '@gravity/shared/validators';
 import { type Executor, newId, requireRow } from '../internal.ts';
+import { lockOrganization } from '../org/organization-lock.ts';
 import { asConflict } from './conflicts.ts';
 import { livePipeline } from './lookups.ts';
 import { fieldDefinitionRowOf } from './rows.ts';
@@ -51,6 +52,34 @@ async function liveField(batch: SyncBatch, fieldId: string) {
   return row;
 }
 
+async function assertKeyIsFree(
+  batch: SyncBatch,
+  object: FieldObject,
+  pipelineId: string | null,
+  key: string,
+): Promise<void> {
+  const rows = await batch.tx
+    .select({ pipelineId: schema.fieldDefinition.pipelineId })
+    .from(schema.fieldDefinition)
+    .where(
+      and(
+        eq(schema.fieldDefinition.organizationId, batch.organizationId),
+        eq(schema.fieldDefinition.object, object),
+        eq(schema.fieldDefinition.key, key),
+        isNull(schema.fieldDefinition.archivedAt),
+      ),
+    );
+  if (rows.some((row) => row.pipelineId === pipelineId)) {
+    throw conflict('A custom field with that key already exists here.');
+  }
+  if (pipelineId === null && rows.length > 0) {
+    throw conflict('A pipeline already has a custom field with that key. Use another key.');
+  }
+  if (pipelineId !== null && rows.some((row) => row.pipelineId === null)) {
+    throw conflict('A workspace-wide custom field already uses that key. Use another key.');
+  }
+}
+
 export async function createFieldDefinition(
   context: WriteContext,
   input: unknown,
@@ -62,8 +91,11 @@ export async function createFieldDefinition(
   }
   try {
     return await withBatch(context, async (batch) => {
-      if (parsed.pipelineId !== null)
-        await livePipeline(batch.tx, batch.organizationId, parsed.pipelineId);
+      await lockOrganization(batch.tx, batch.organizationId);
+      if (parsed.pipelineId !== null) {
+        await livePipeline(batch.tx, batch.organizationId, parsed.pipelineId, true);
+      }
+      await assertKeyIsFree(batch, parsed.object, parsed.pipelineId, parsed.key);
       const [siblings] = await batch.tx
         .select({ total: count() })
         .from(schema.fieldDefinition)
@@ -147,19 +179,52 @@ export async function archiveFieldDefinition(
   });
 }
 
+export async function archiveFieldsOfPipelineIn(
+  batch: SyncBatch,
+  pipelineId: string,
+): Promise<void> {
+  const fields = await batch.tx
+    .select({ id: schema.fieldDefinition.id })
+    .from(schema.fieldDefinition)
+    .where(
+      and(
+        eq(schema.fieldDefinition.organizationId, batch.organizationId),
+        eq(schema.fieldDefinition.pipelineId, pipelineId),
+        isNull(schema.fieldDefinition.archivedAt),
+      ),
+    )
+    .orderBy(asc(schema.fieldDefinition.position));
+  for (const { id } of fields) {
+    const syncId = await batch.nextSyncId();
+    const [row] = await batch.tx
+      .update(schema.fieldDefinition)
+      .set({ archivedAt: new Date(), syncId, updatedAt: new Date() })
+      .where(eq(schema.fieldDefinition.id, id))
+      .returning();
+    emitField(
+      batch,
+      syncId,
+      'archive',
+      fieldDefinitionRowOf(requireRow(row, 'That custom field does not exist.')),
+    );
+  }
+}
+
 export async function listFieldDefinitions(principal: Principal): Promise<FieldDefinitionRow[]> {
   assertCan(principal, 'record:read');
   const rows = await db
-    .select()
+    .select({ field: schema.fieldDefinition })
     .from(schema.fieldDefinition)
+    .leftJoin(schema.pipeline, eq(schema.pipeline.id, schema.fieldDefinition.pipelineId))
     .where(
       and(
         eq(schema.fieldDefinition.organizationId, principal.organizationId),
         isNull(schema.fieldDefinition.archivedAt),
+        isNull(schema.pipeline.archivedAt),
       ),
     )
     .orderBy(asc(schema.fieldDefinition.object), asc(schema.fieldDefinition.position));
-  return rows.map(fieldDefinitionRowOf);
+  return rows.map((row) => fieldDefinitionRowOf(row.field));
 }
 
 export async function loadFieldDefinitions(

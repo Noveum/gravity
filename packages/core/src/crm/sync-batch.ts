@@ -86,12 +86,16 @@ export async function withBatch<T extends object>(
   });
 }
 
-export async function retryOnUniqueViolation<T>(run: () => Promise<T>, attempts = 2): Promise<T> {
+export async function retryOnUniqueViolation<T>(
+  run: () => Promise<T>,
+  attempts = 2,
+  retryable: (error: unknown) => boolean = () => true,
+): Promise<T> {
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await run();
     } catch (error: unknown) {
-      if (attempt >= attempts || !isUniqueViolation(error)) throw error;
+      if (attempt >= attempts || !isUniqueViolation(error) || !retryable(error)) throw error;
     }
   }
 }

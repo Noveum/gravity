@@ -16,22 +16,27 @@ import { type SyncBatch, type WithActions, withBatch } from './sync-batch.ts';
 import type { WriteContext } from './write-context.ts';
 
 async function lockedStage(batch: SyncBatch, stageId: string) {
-  const [row] = await batch.tx
-    .select({ stage: schema.stage, brandId: schema.pipeline.brandId })
+  const live = and(
+    eq(schema.stage.id, stageId),
+    eq(schema.stage.organizationId, batch.organizationId),
+    isNull(schema.stage.archivedAt),
+  );
+  const [located] = await batch.tx
+    .select({ pipelineId: schema.stage.pipelineId })
     .from(schema.stage)
-    .innerJoin(schema.pipeline, eq(schema.pipeline.id, schema.stage.pipelineId))
-    .where(
-      and(
-        eq(schema.stage.id, stageId),
-        eq(schema.stage.organizationId, batch.organizationId),
-        isNull(schema.stage.archivedAt),
-        isNull(schema.pipeline.archivedAt),
-      ),
-    )
+    .where(live)
+    .limit(1);
+  if (located === undefined) throw notFound('That stage does not exist.');
+  const [pipeline] = await batch.tx
+    .select({ brandId: schema.pipeline.brandId })
+    .from(schema.pipeline)
+    .where(and(eq(schema.pipeline.id, located.pipelineId), isNull(schema.pipeline.archivedAt)))
     .limit(1)
     .for('update');
-  if (row === undefined) throw notFound('That stage does not exist.');
-  return row;
+  if (pipeline === undefined) throw notFound('That stage does not exist.');
+  const [stage] = await batch.tx.select().from(schema.stage).where(live).limit(1).for('update');
+  if (stage === undefined) throw notFound('That stage does not exist.');
+  return { stage, brandId: pipeline.brandId };
 }
 
 async function leadsIn(batch: SyncBatch, stageId: string): Promise<number> {

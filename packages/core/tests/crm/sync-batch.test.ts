@@ -271,4 +271,36 @@ describe('retryOnUniqueViolation', () => {
     ).rejects.toThrow('duplicate');
     expect(calls).toBe(2);
   });
+
+  test('rethrows a unique violation the caller marks as not retryable', async () => {
+    let calls = 0;
+    const violation = (constraint: string) =>
+      Object.assign(new Error(constraint), { code: '23505', constraint_name: constraint });
+    const retryable = (error: unknown) =>
+      !(error instanceof Error && error.message === 'lead_open_person_pipeline_unique');
+    await expect(
+      retryOnUniqueViolation(
+        () => {
+          calls += 1;
+          return Promise.reject(violation('lead_open_person_pipeline_unique'));
+        },
+        2,
+        retryable,
+      ),
+    ).rejects.toThrow('lead_open_person_pipeline_unique');
+    expect(calls).toBe(1);
+
+    let others = 0;
+    const value = await retryOnUniqueViolation(
+      () => {
+        others += 1;
+        return others === 1
+          ? Promise.reject(violation('person_org_primary_email_unique'))
+          : Promise.resolve('ok');
+      },
+      2,
+      retryable,
+    );
+    expect([value, others]).toEqual(['ok', 2]);
+  });
 });

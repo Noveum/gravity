@@ -9,6 +9,7 @@ export * from './crm/cursor.ts';
 export * from './crm/employment-service.ts';
 export * from './crm/field-service.ts';
 export * from './crm/lead-rows.ts';
+export * from './crm/lead-service.ts';
 export * from './crm/lookups.ts';
 export * from './crm/person-lookup.ts';
 export * from './crm/person-service.ts';

@@ -126,35 +126,58 @@ function allowedKeys(node: object): readonly string[] {
   return [...FILTER_GROUP_KEYS, ...FILTER_CONDITION_KEYS];
 }
 
-function collectStrayKeys(node: unknown, path: string, found: string[]): void {
+const MAX_INSPECTED_DEPTH = MAX_FILTER_DEPTH + 1;
+
+interface ShapeFindings {
+  readonly stray: string[];
+  tooDeep: boolean;
+}
+
+function collectShapeFindings(
+  node: unknown,
+  path: string,
+  depth: number,
+  found: ShapeFindings,
+): void {
   if (node === null || typeof node !== 'object' || Array.isArray(node)) return;
+  if (depth > MAX_INSPECTED_DEPTH) {
+    found.tooDeep = true;
+    return;
+  }
   const allowed = allowedKeys(node);
   for (const [key, value] of Object.entries(node)) {
     const at = path.length === 0 ? key : `${path}.${key}`;
     if (!allowed.includes(key)) {
-      found.push(at);
+      found.stray.push(at);
       continue;
     }
     if (key !== 'children' || !Array.isArray(value)) continue;
-    for (const [index, child] of value.entries()) collectStrayKeys(child, `${at}[${index}]`, found);
+    for (const [index, child] of value.entries()) {
+      collectShapeFindings(child, `${at}[${index}]`, depth + 1, found);
+    }
   }
 }
 
 export function strayFilterKeys(node: unknown): string[] {
-  const found: string[] = [];
-  collectStrayKeys(node, '', found);
-  return found;
+  const found: ShapeFindings = { stray: [], tooDeep: false };
+  collectShapeFindings(node, '', 1, found);
+  return found.stray;
+}
+
+export function filterShapeIssue(node: unknown): string | null {
+  const found: ShapeFindings = { stray: [], tooDeep: false };
+  collectShapeFindings(node, '', 1, found);
+  if (found.tooDeep) return `A filter may nest groups at most ${MAX_FILTER_DEPTH} levels deep.`;
+  if (found.stray.length === 0) return null;
+  return `A filter does not store ${found.stray.join(', ')}. Send conditions under children.`;
 }
 
 export const filterGroupWriteSchema = z
   .unknown()
   .superRefine((value, ctx) => {
-    const stray = strayFilterKeys(value);
-    if (stray.length === 0) return;
-    ctx.addIssue({
-      code: 'custom',
-      message: `A saved filter does not store ${stray.join(', ')}. Send conditions under children.`,
-    });
+    const issue = filterShapeIssue(value);
+    if (issue === null) return;
+    ctx.addIssue({ code: 'custom', message: issue });
   })
   .pipe(filterGroupSchema);
 

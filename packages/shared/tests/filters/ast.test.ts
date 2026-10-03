@@ -63,6 +63,16 @@ describe('filterGroupWriteSchema', () => {
   });
 });
 
+describe('filterGroupWriteSchema depth', () => {
+  test('refuses nesting deeper than the limit without throwing', () => {
+    let node: unknown = { kind: 'group', children: [] };
+    for (let level = 0; level < 100_000; level += 1) node = { kind: 'group', children: [node] };
+    const result = filterGroupWriteSchema.safeParse(node);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain('levels deep');
+  });
+});
+
 describe('condition helpers', () => {
   test('replace swaps a condition for the same property and remove drops it', () => {
     const first = replaceCondition(emptyFilterGroup(), inCondition('stage', ['a']));

@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { emptyFilterGroup, type FilterGroup, filterGroupSchema, isEmptyFilter } from './ast.ts';
+import {
+  emptyFilterGroup,
+  type FilterGroup,
+  filterGroupSchema,
+  filterShapeIssue,
+  isEmptyFilter,
+} from './ast.ts';
 
 export function encodeFilter(group: FilterGroup): string {
   return isEmptyFilter(group) ? '' : JSON.stringify(filterGroupSchema.parse(group));
@@ -29,6 +35,11 @@ export const filterGroupQuerySchema = z
         ctx.addIssue({ code: 'custom', message: 'The filter is not valid JSON.' });
         return z.NEVER;
       }
+    }
+    const shape = filterShapeIssue(candidate);
+    if (shape !== null) {
+      ctx.addIssue({ code: 'custom', message: shape });
+      return z.NEVER;
     }
     const parsed = filterGroupSchema.safeParse(candidate);
     if (parsed.success) return parsed.data;

@@ -98,4 +98,40 @@ describe('filterGroupQuerySchema', () => {
     expect(result.success).toBe(false);
     expect(result.error).toBeInstanceOf(z.ZodError);
   });
+
+  test('refuses a stray key on the group instead of dropping it', () => {
+    const result = schema.safeParse({
+      filter: JSON.stringify({ kind: 'group', children: [], owner: 'me' }),
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain('owner');
+    expect(result.error).toBeInstanceOf(z.ZodError);
+  });
+
+  test('refuses a negated key on a condition instead of inverting the filter', () => {
+    const result = schema.safeParse({
+      filter: JSON.stringify({
+        kind: 'group',
+        children: [
+          { kind: 'condition', property: 'stage', operator: 'in', values: ['s1'], negated: true },
+        ],
+      }),
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain('children[0].negated');
+  });
+
+  test('refuses nesting deeper than the limit without throwing', () => {
+    let node: unknown = { kind: 'group', children: [] };
+    for (let level = 0; level < 100_000; level += 1) node = { kind: 'group', children: [node] };
+    const result = schema.safeParse({ filter: node });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain('levels deep');
+  });
+
+  test('refuses deep nesting sent as an encoded string', () => {
+    let node: unknown = { kind: 'group', children: [] };
+    for (let level = 0; level < 40; level += 1) node = { kind: 'group', children: [node] };
+    expect(schema.safeParse({ filter: JSON.stringify(node) }).success).toBe(false);
+  });
 });

@@ -207,6 +207,165 @@ describe('evaluateFilter', () => {
   });
 });
 
+describe('negation over missing values', () => {
+  function not(property: string, rest: Record<string, unknown>): FilterGroup {
+    return all({
+      kind: 'condition',
+      property,
+      negate: true,
+      ...rest,
+    } as FilterNode);
+  }
+
+  test('a negated null boolean matches', () => {
+    const notTrue = not('vip', { operator: 'in', values: ['true'] });
+    const notFalse = not('vip', { operator: 'in', values: ['false'] });
+    expect(matches({ vip: null }, notTrue)).toBe(true);
+    expect(matches({ vip: null }, notFalse)).toBe(true);
+    expect(matches({ vip: true }, notTrue)).toBe(false);
+    expect(matches({ vip: false }, notFalse)).toBe(false);
+  });
+
+  test('a negated multi matches null and empty lists and excludes a hit', () => {
+    const notA = not('tags', { operator: 'in', values: ['a'] });
+    expect(matches({ tags: [] }, notA)).toBe(true);
+    expect(matches({ tags: ['b'] }, notA)).toBe(true);
+    expect(matches({ tags: ['a', 'b'] }, notA)).toBe(false);
+    const notNone = not('tags', { operator: 'in', values: ['none'] });
+    expect(matches({ tags: [] }, notNone)).toBe(false);
+    expect(matches({ tags: ['a'] }, notNone)).toBe(true);
+  });
+
+  test('a negated date condition matches a null date', () => {
+    expect(matches({ due: null }, not('due', { operator: 'in', values: ['overdue'] }))).toBe(true);
+    expect(matches({ due: null }, not('due', { operator: 'in', values: ['today'] }))).toBe(true);
+    expect(
+      matches({ due: null }, not('due', { operator: 'range', from: '2026-10-01', to: null })),
+    ).toBe(true);
+    expect(
+      matches(
+        { due: null },
+        not('due', {
+          operator: 'relative',
+          relative: { unit: 'day', offset: 7, direction: 'past' },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      matches(
+        { due: '2026-10-02T08:00:00.000Z' },
+        not('due', { operator: 'in', values: ['overdue'] }),
+      ),
+    ).toBe(false);
+  });
+
+  test('a null date matches none and is excluded by any', () => {
+    expect(
+      matches(
+        { due: null },
+        all({
+          kind: 'condition',
+          property: 'due',
+          operator: 'in',
+          values: ['none'],
+          negate: false,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      matches(
+        { due: null },
+        all({ kind: 'condition', property: 'due', operator: 'in', values: ['any'], negate: false }),
+      ),
+    ).toBe(false);
+  });
+
+  test('a null date never matches a positive range or relative condition', () => {
+    const range = all({
+      kind: 'condition',
+      property: 'due',
+      operator: 'range',
+      from: '2026-10-01',
+      to: null,
+      negate: false,
+    });
+    expect(matches({ due: null }, range)).toBe(false);
+  });
+
+  test('a negated number range matches outside the range', () => {
+    const outside = not('priority', { operator: 'range', from: '2', to: '3' });
+    expect(matches({ priority: 4 }, outside)).toBe(true);
+    expect(matches({ priority: 2 }, outside)).toBe(false);
+  });
+
+  test('a null number does not match a range and a negated one does', () => {
+    const nullable: FilterRegistry<{ readonly size: number | null }> = {
+      object: 'company',
+      properties: [{ key: 'size', label: 'Size', kind: 'number', read: (row) => row.size }],
+      search: () => [],
+    };
+    const range = all({
+      kind: 'condition',
+      property: 'size',
+      operator: 'range',
+      from: '1',
+      to: '5',
+      negate: false,
+    });
+    const notRange = all({
+      kind: 'condition',
+      property: 'size',
+      operator: 'range',
+      from: '1',
+      to: '5',
+      negate: true,
+    });
+    expect(evaluateFilter(range, { size: null }, nullable, context)).toBe(false);
+    expect(evaluateFilter(notRange, { size: null }, nullable, context)).toBe(true);
+  });
+});
+
+describe('groups with nothing to decide', () => {
+  const stage = (value: string): FilterNode => ({
+    kind: 'condition',
+    property: 'stage',
+    operator: 'in',
+    values: [value],
+    negate: false,
+  });
+  const ghost: FilterNode = {
+    kind: 'condition',
+    property: 'ghost',
+    operator: 'in',
+    values: ['x'],
+    negate: false,
+  };
+
+  test('an or group with an empty subgroup is decided by its other children', () => {
+    const empty: FilterGroup = { kind: 'group', combinator: 'and', children: [] };
+    const either: FilterGroup = {
+      kind: 'group',
+      combinator: 'or',
+      children: [empty, stage('new')],
+    };
+    expect(matches({ stage: 'ready' }, either)).toBe(false);
+    expect(matches({ stage: 'new' }, either)).toBe(true);
+  });
+
+  test('an or group holding only an empty subgroup matches', () => {
+    const empty: FilterGroup = { kind: 'group', combinator: 'and', children: [] };
+    expect(matches({}, { kind: 'group', combinator: 'or', children: [empty] })).toBe(true);
+  });
+
+  test('a nested group of unknown properties is ignored by its parent', () => {
+    const unknown: FilterGroup = { kind: 'group', combinator: 'and', children: [ghost, ghost] };
+    const parent = all(unknown, stage('new'));
+    expect(matches({ stage: 'ready' }, parent)).toBe(false);
+    expect(matches({ stage: 'new' }, parent)).toBe(true);
+    expect(matches({ stage: 'ready' }, all(unknown))).toBe(true);
+  });
+});
+
 describe('matchesSearch', () => {
   test('every token must appear in some search field', () => {
     expect(matchesSearch(base, 'ada ready', registry)).toBe(true);

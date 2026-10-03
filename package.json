@@ -1,0 +1,51 @@
+{
+  "name": "gravity",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Noveum/gravity.git"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "trustedDependencies": [
+    "@biomejs/biome",
+    "esbuild",
+    "lefthook",
+    "sharp"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "build": "bun run --filter '*' build",
+    "typecheck": "tsc -p scripts/tsconfig.json --noEmit && bun run --filter '*' typecheck",
+    "test": "bun test scripts && bun run --filter '*' test",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "check-comments": "bun scripts/strip-comments.ts --check",
+    "check-bytes": "bun scripts/check-source-bytes.ts",
+    "check-bun-imports": "bun scripts/check-bun-imports.ts",
+    "check-deps": "bun scripts/check-dependency-dedupe.ts",
+    "verify": "bun run lint && bun run check-comments && bun run check-bytes && bun run check-bun-imports && bun run check-deps && bun run typecheck && bun run test",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:reset": "docker compose down -v && docker compose up -d",
+    "db:generate": "bun run --filter '@gravity/db' generate",
+    "db:migrate": "bun run --filter '@gravity/db' migrate",
+    "db:push": "bun run --filter '@gravity/db' push",
+    "db:test-setup": "bun run --filter '@gravity/db' test-setup",
+    "db:studio": "bun run --filter '@gravity/db' studio",
+    "prepare": "lefthook install || true"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.7",
+    "@types/bun": "1.3.14",
+    "lefthook": "2.1.10",
+    "typescript": "5.9.3"
+  }
+}

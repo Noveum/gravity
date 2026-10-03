@@ -1,0 +1,59 @@
+name: gravity
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: gravity-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gravity
+      POSTGRES_PASSWORD: gravity
+      POSTGRES_DB: gravity
+    ports:
+      - "${POSTGRES_PORT:-5436}:5432"
+    volumes:
+      - gravity-postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gravity -d gravity"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    container_name: gravity-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6382}:6379"
+    volumes:
+      - gravity-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: docker.io/pgsty/minio@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+    container_name: gravity-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9031"
+    environment:
+      MINIO_ROOT_USER: gravityminio
+      MINIO_ROOT_PASSWORD: gravityminio
+    ports:
+      - "${MINIO_PORT:-9030}:9000"
+      - "${MINIO_CONSOLE_PORT:-9031}:9031"
+    volumes:
+      - gravity-minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  gravity-postgres:
+  gravity-redis:
+  gravity-minio:

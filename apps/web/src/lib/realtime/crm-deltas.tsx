@@ -29,7 +29,7 @@ import {
   placePerson,
   prependActivity,
 } from '@/lib/query/record-cache.ts';
-import { type DeltaHandler, registerDeltaHandler } from './delta-bridge.tsx';
+import { type DeltaHandler, isSuperseded, registerDeltaHandler } from './delta-bridge.tsx';
 
 const LEAD_ROOTS = [LEADS_ROOT, LEAD_ROOT, PERSON_ROOT, COMPANY_ROOT] as const;
 
@@ -171,7 +171,7 @@ function crmHandler(model: CrmModel, handler: CrmHandler): DeltaHandler {
   return (action, client) => {
     if (!handler(action, client)) return;
     replayAfterFetches(client, roots, () => {
-      handler(action, client);
+      if (!isSuperseded(action, client)) handler(action, client);
     });
   };
 }

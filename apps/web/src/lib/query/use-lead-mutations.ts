@@ -4,6 +4,7 @@ import { type LeadRow, leadStateOf, resolveLeadChange } from '@gravity/shared/re
 import type { LeadChange, quickCreateSchema } from '@gravity/shared/validators';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
+import { noteServerRow } from '@/lib/realtime/delta-bridge.tsx';
 import { apiFetch } from './fetcher.ts';
 import {
   COMPANIES_ROOT,
@@ -89,7 +90,10 @@ export function useChangeLeads() {
       failed(failureTitle(input.leads), error, () => mutation.mutate(input));
     },
     onSuccess: (leads) => {
-      for (const lead of leads) placeLead(client, lead);
+      for (const lead of leads) {
+        noteServerRow(client, 'lead', lead.id, lead.syncId);
+        placeLead(client, lead);
+      }
     },
   });
   return mutation;
@@ -127,8 +131,13 @@ export function useQuickCreateLead() {
     },
     onSuccess: async (result) => {
       await cancelLoadedQueries(client, ...QUICK_CREATE_ROOTS);
+      noteServerRow(client, 'person', result.person.id, result.person.syncId);
       placePerson(client, result.person);
-      if (result.company !== null) placeCompany(client, result.company);
+      if (result.company !== null) {
+        noteServerRow(client, 'company', result.company.id, result.company.syncId);
+        placeCompany(client, result.company);
+      }
+      noteServerRow(client, 'lead', result.lead.id, result.lead.syncId);
       placeLead(client, result.lead);
     },
   });

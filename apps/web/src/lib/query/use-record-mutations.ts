@@ -2,6 +2,7 @@
 
 import type { CompanyRow, PersonRow } from '@gravity/shared/records';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { noteServerRow } from '@/lib/realtime/delta-bridge.tsx';
 import { apiFetch } from './fetcher.ts';
 import {
   COMPANIES_ROOT,
@@ -81,7 +82,10 @@ export function useUpdatePerson() {
       if (context !== undefined) placePerson(client, context.previous);
       failed(`Could not update ${input.person.name}`, error, () => mutation.mutate(input));
     },
-    onSuccess: (person) => placePerson(client, person),
+    onSuccess: (person) => {
+      noteServerRow(client, 'person', person.id, person.syncId);
+      placePerson(client, person);
+    },
   });
   return mutation;
 }
@@ -132,7 +136,10 @@ export function useUpdateCompany() {
       if (context !== undefined) placeCompany(client, context.previous);
       failed(`Could not update ${input.company.name}`, error, () => mutation.mutate(input));
     },
-    onSuccess: (company) => placeCompany(client, company),
+    onSuccess: (company) => {
+      noteServerRow(client, 'company', company.id, company.syncId);
+      placeCompany(client, company);
+    },
   });
   return mutation;
 }

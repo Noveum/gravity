@@ -23,6 +23,7 @@ export const CATCHUP_OVERLAP = 1000;
 
 interface AppliedState {
   readonly byRecord: Map<string, number>;
+  readonly answered: Map<string, number>;
   cursor: number;
 }
 
@@ -32,7 +33,7 @@ const appliedByClient = new WeakMap<QueryClient, AppliedState>();
 function appliedStateOf(client: QueryClient): AppliedState {
   const existing = appliedByClient.get(client);
   if (existing !== undefined) return existing;
-  const created: AppliedState = { byRecord: new Map(), cursor: 0 };
+  const created: AppliedState = { byRecord: new Map(), answered: new Map(), cursor: 0 };
   appliedByClient.set(client, created);
   return created;
 }
@@ -46,10 +47,40 @@ export function registerDeltaHandler(model: SyncModel, handler: DeltaHandler): (
   };
 }
 
+function recordKey(model: SyncModel, id: string): string {
+  return `${model}:${id}`;
+}
+
+function raise(map: Map<string, number>, record: string, syncId: number): void {
+  if (syncId > (map.get(record) ?? 0)) map.set(record, syncId);
+}
+
+export function noteServerRow(
+  client: QueryClient,
+  model: SyncModel,
+  id: string,
+  syncId: number,
+): void {
+  const state = appliedStateOf(client);
+  const record = recordKey(model, id);
+  raise(state.byRecord, record, syncId);
+  raise(state.answered, record, syncId);
+}
+
+export function isSuperseded(action: SyncAction, client: QueryClient): boolean {
+  const state = appliedByClient.get(client);
+  if (state === undefined) return false;
+  const record = recordKey(action.model, action.modelId);
+  return (
+    (state.byRecord.get(record) ?? 0) > action.syncId ||
+    (state.answered.get(record) ?? 0) >= action.syncId
+  );
+}
+
 export function applyDelta(action: SyncAction, client: QueryClient): void {
   const state = appliedStateOf(client);
   if (action.syncId > state.cursor) state.cursor = action.syncId;
-  const record = `${action.model}:${action.modelId}`;
+  const record = recordKey(action.model, action.modelId);
   if (action.syncId <= (state.byRecord.get(record) ?? 0)) return;
   state.byRecord.set(record, action.syncId);
   for (const handler of handlers.get(action.model) ?? []) handler(action, client);

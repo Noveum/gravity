@@ -1,13 +1,17 @@
 import { describe, expect, test } from 'bun:test';
+import type { SyncAction } from '@gravity/shared/events';
 import { emptyFilterGroup, encodeListQuery } from '@gravity/shared/filters';
 import type { LeadRow } from '@gravity/shared/records';
 import type { QueryClient } from '@tanstack/react-query';
 import { act, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { clientId } from '@/lib/query/client-id.ts';
 import { queryKeys } from '@/lib/query/keys.ts';
 import { cachedLead } from '@/lib/query/lead-cache.ts';
 import type { PersonPage } from '@/lib/query/schemas.ts';
 import { useChangeLeads, useQuickCreateLead } from '@/lib/query/use-lead-mutations.ts';
+import { registerCrmDeltaHandlers } from '@/lib/realtime/crm-deltas.tsx';
+import { applyDelta } from '@/lib/realtime/delta-bridge.tsx';
 import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
 import { installDeferredFetch } from '../../support/deferred-fetch.ts';
 import { leadFixture } from '../../support/lead-fixture.ts';
@@ -60,6 +64,79 @@ function cachedPeople(client: QueryClient): string[] {
   const data = client.getQueryData<{ pages: PersonPage[] }>(queryKeys.people(''));
   return (data?.pages ?? []).flatMap((page) => page.people.map((person) => person.id));
 }
+
+function echo(lead: LeadRow): SyncAction {
+  return {
+    syncId: lead.syncId,
+    organizationId: 'o1',
+    scopes: ['workspace:o1'],
+    action: 'update',
+    model: 'lead',
+    modelId: lead.id,
+    data: lead,
+    actor: { type: 'user', id: 'u1' },
+    at: new Date(0).toISOString(),
+    originClientId: clientId(),
+  };
+}
+
+describe('late echoes of answered changes', () => {
+  test('the optimistic second edit survives the late echo of the first', async () => {
+    const unregister = registerCrmDeltaHandlers();
+    try {
+      const { client, result } = setup();
+      const firstAnswer = leadFixture({ priority: 1, syncId: 11 });
+      act(() => {
+        result.current.mutate({
+          leads: [leadFixture()],
+          change: { type: 'update', patch: { priority: 1 } },
+        });
+      });
+      await waitFor(() => expect(server.waiting()).toBe(1));
+      server.answer(200, { lead: firstAnswer });
+      await waitFor(() => expect(cachedLead(client, 'l1')?.syncId).toBe(11));
+      act(() => {
+        result.current.mutate({
+          leads: [firstAnswer],
+          change: { type: 'update', patch: { priority: 2 } },
+        });
+      });
+      await waitFor(() => expect(cachedLead(client, 'l1')?.priority).toBe(2));
+      expect(cachedLead(client, 'l1')?.syncId).toBe(11);
+      applyDelta(echo(firstAnswer), client);
+      expect(cachedLead(client, 'l1')?.priority).toBe(2);
+      await waitFor(() => expect(server.waiting()).toBe(1));
+      server.answer(200, { lead: leadFixture({ priority: 2, syncId: 12 }) });
+      await waitFor(() => expect(cachedLead(client, 'l1')?.syncId).toBe(12));
+      expect(cachedLead(client, 'l1')?.priority).toBe(2);
+    } finally {
+      unregister();
+    }
+  });
+
+  test('quick create records the lead, person and company it was answered with', async () => {
+    const unregister = registerCrmDeltaHandlers();
+    try {
+      const { client, result } = setupQuickCreate();
+      act(() => {
+        result.current.mutate({ body: quickBody, preview });
+      });
+      await waitFor(() => expect(server.waiting()).toBe(1));
+      const created = leadFixture({ ...preview, syncId: 31 });
+      server.answer(200, {
+        lead: created,
+        person: personFixture({ id: 'per2', name: 'Grace Hopper', syncId: 30 }),
+        company: null,
+        personCreated: true,
+      });
+      await waitFor(() => expect(cachedLead(client, 'l3')?.syncId).toBe(31));
+      applyDelta(echo({ ...created, priority: 4 }), client);
+      expect(cachedLead(client, 'l3')?.priority).toBe(0);
+    } finally {
+      unregister();
+    }
+  });
+});
 
 describe('useChangeLeads', () => {
   test('applies the change while the request is pending and keeps the server row', async () => {

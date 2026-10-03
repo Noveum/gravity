@@ -5,7 +5,9 @@ import {
   applyDelta,
   CATCHUP_OVERLAP,
   catchUp,
+  isSuperseded,
   lastAppliedSyncId,
+  noteServerRow,
   registerDeltaHandler,
 } from '@/lib/realtime/delta-bridge.tsx';
 
@@ -83,6 +85,40 @@ describe('delta bridge', () => {
 function page(actions: SyncAction[], truncated: boolean, syncId: number): SyncCatchup {
   return { actions, truncated, reset: false, syncId };
 }
+
+describe('mutation responses', () => {
+  test('a noted server row drops a later echo at or below its sync id', () => {
+    const handler = mock();
+    const unregister = registerDeltaHandler('member', handler);
+    const client = new QueryClient();
+    noteServerRow(client, 'member', 'm1', 11);
+    applyDelta({ ...base, syncId: 11 }, client);
+    applyDelta({ ...base, syncId: 10 }, client);
+    applyDelta({ ...base, syncId: 12 }, client);
+    expect(handler.mock.calls.map(([action]) => action.syncId)).toEqual([12]);
+    unregister();
+  });
+
+  test('noting never lowers what was applied and leaves the catch-up cursor alone', () => {
+    const client = new QueryClient();
+    applyDelta({ ...base, syncId: 15 }, client);
+    noteServerRow(client, 'member', 'm1', 12);
+    noteServerRow(client, 'member', 'm2', 40);
+    expect(lastAppliedSyncId(client)).toBe(15);
+    expect(isSuperseded({ ...base, syncId: 14 }, client)).toBe(true);
+    expect(isSuperseded({ ...base, modelId: 'm2', syncId: 40 }, client)).toBe(true);
+  });
+
+  test('an applied delta is superseded only by a newer one or an answered mutation', () => {
+    const client = new QueryClient();
+    const applied = { ...base, syncId: 20 };
+    applyDelta(applied, client);
+    expect(isSuperseded(applied, client)).toBe(false);
+    noteServerRow(client, 'member', 'm1', 20);
+    expect(isSuperseded(applied, client)).toBe(true);
+    expect(isSuperseded({ ...base, syncId: 21 }, client)).toBe(false);
+  });
+});
 
 describe('catch up', () => {
   test('asks for an overlap below the cursor and applies what it missed', async () => {

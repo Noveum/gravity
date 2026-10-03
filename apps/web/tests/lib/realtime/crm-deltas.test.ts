@@ -22,7 +22,7 @@ import type {
   TimelinePage,
 } from '@/lib/query/schemas.ts';
 import { registerCrmDeltaHandlers } from '@/lib/realtime/crm-deltas.tsx';
-import { applyDelta } from '@/lib/realtime/delta-bridge.tsx';
+import { applyDelta, noteServerRow } from '@/lib/realtime/delta-bridge.tsx';
 import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
 import { leadFixture } from '../../support/lead-fixture.ts';
 import {
@@ -637,5 +637,25 @@ describe('deltas that arrive while a query is fetching', () => {
     response.resolve(leadPages([]));
     await fetching;
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  test('a replay never undoes an optimistic edit made after the answer it echoes', async () => {
+    const client = cache({ [`p1|${everything}`]: [leadFixture()] });
+    const response = deferred<Pages<LeadPage>>();
+    const fetching = client.fetchQuery({
+      queryKey: queryKeys.leads('p2', everything),
+      queryFn: () => response.promise,
+    });
+    const firstAnswer = leadFixture({ priority: 1, syncId: 11 });
+    applyDelta(action('lead', firstAnswer, { originClientId: clientId() }), client);
+    noteServerRow(client, 'lead', 'l1', 11);
+    client.setQueryData(
+      queryKeys.leads('p1', everything),
+      leadPages([{ ...firstAnswer, priority: 2 }]),
+    );
+    response.resolve(leadPages([]));
+    await fetching;
+    const data = client.getQueryData<Pages<LeadPage>>(queryKeys.leads('p1', everything));
+    expect(data?.pages[0]?.leads[0]?.priority).toBe(2);
   });
 });

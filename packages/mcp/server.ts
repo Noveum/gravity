@@ -112,6 +112,7 @@ export function mcpHandler(
             approveDrafts: false,
             gmailSync: false,
             linkedinSync: false,
+            calendarSync: false,
             firefliesSync: false,
             organizationBound: true,
           }),

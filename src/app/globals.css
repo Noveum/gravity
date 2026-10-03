@@ -963,7 +963,7 @@ form label {
 }
 .integration-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
 .integration-card {
@@ -2003,5 +2003,206 @@ body:has(.resize-handle[data-dragging]) {
   *::after {
     scroll-behavior: auto;
     transition-duration: 0s;
+  }
+}
+
+.setup-page {
+  min-height: 100dvh;
+  background: var(--bg);
+  padding: 28px 40px;
+}
+.setup-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 1120px;
+  margin: auto;
+}
+.setup-brand .preferences {
+  margin-left: auto;
+}
+.setup-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  max-width: 1000px;
+  margin: 90px auto;
+  align-items: start;
+}
+.setup-intro h1 {
+  font-size: 36px;
+  line-height: 1.2;
+  letter-spacing: -1px;
+  max-width: 380px;
+  margin: 16px 0;
+}
+/* biome-ignore lint/style/noDescendingSpecificity: These setup and connection scopes do not overlap the record controls. */
+.setup-intro p {
+  line-height: 1.7;
+  color: var(--muted);
+}
+.setup-intro a {
+  font-size: 12px;
+  color: var(--accent);
+}
+.setup-steps {
+  list-style: none;
+  padding: 0;
+  margin: 32px 0;
+  display: grid;
+  gap: 24px;
+}
+.setup-steps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.setup-steps li span {
+  background: var(--soft);
+  color: var(--accent);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+}
+.setup-form-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 30px;
+  background: var(--side);
+}
+.setup-form-card h2 {
+  font-size: 19px;
+  margin: 0 0 12px;
+}
+/* biome-ignore lint/style/noDescendingSpecificity: These setup and connection scopes do not overlap the record controls. */
+.setup-form-card p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.setup-form-card label {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  margin: 22px 0;
+}
+/* biome-ignore lint/style/noDescendingSpecificity: These setup and connection scopes do not overlap the record controls. */
+.setup-form-card input,
+/* biome-ignore lint/style/noDescendingSpecificity: These setup and connection scopes do not overlap the record controls. */
+.setup-form-card select {
+  width: 100%;
+  min-width: 0;
+}
+.setup-form-card .primary {
+  width: 100%;
+  justify-content: center;
+}
+.setup-included {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+  color: var(--muted);
+  margin-bottom: 22px;
+}
+.setup-included svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--green);
+}
+.setup-empty {
+  padding: 22px;
+  border-bottom: 1px solid var(--line);
+}
+.connection-guide summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 12px;
+}
+.connection-guide ol,
+.mcp-steps {
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+/* biome-ignore lint/style/noDescendingSpecificity: These setup and connection scopes do not overlap the record controls. */
+.connection-guide p {
+  margin: 14px 0 8px;
+}
+.integration-card .connection-note {
+  margin: 18px 0 0;
+  font-size: 11px;
+}
+.endpoint-copy {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+/* biome-ignore lint/style/noDescendingSpecificity: These setup and connection scopes do not overlap the record controls. */
+.endpoint-copy input {
+  width: 100%;
+  min-width: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.endpoint-copy button {
+  flex-shrink: 0;
+}
+/* biome-ignore lint/style/noDescendingSpecificity: These setup and connection scopes do not overlap the record controls. */
+.mcp-card .text-button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+@media (max-width: 760px) {
+  .setup-page {
+    padding: 18px;
+  }
+  .setup-layout {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    margin: 36px auto;
+  }
+  .setup-intro h1 {
+    font-size: 30px;
+  }
+  .setup-steps {
+    gap: 14px;
+    margin: 22px 0;
+  }
+  .setup-form-card {
+    padding: 22px;
+  }
+  .setup-brand .preferences select {
+    max-width: 95px;
+  }
+}
+
+/* Keep the complete navigation visible on shorter desktop screens in compact mode. */
+@media (min-width: 761px) and (max-height: 840px) {
+  :root[data-density="compact"] .sidebar {
+    padding-top: 16px;
+  }
+  :root[data-density="compact"] .brand {
+    padding-bottom: 16px;
+  }
+  :root[data-density="compact"] .org-switch select {
+    margin-bottom: 14px;
+  }
+  :root[data-density="compact"] .saved-label {
+    margin-top: 16px;
+  }
+  :root[data-density="compact"] .sidebar-bottom {
+    padding-top: 16px;
+  }
+  :root[data-density="compact"] .sidebar nav {
+    gap: 2px;
+  }
+  :root[data-density="compact"] .sidebar nav button {
+    padding-block: 7px;
+    min-height: 32px;
   }
 }

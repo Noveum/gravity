@@ -21,6 +21,10 @@ The social-login callback paths are `/api/auth/callback/google` and `/api/auth/c
 
 Review `drizzle/` before applying `bun run db:migrate` to the supplied database. Confirm database/project/region, backups, restore procedure, pooling and least-privileged access first. Never use `db:seed` on a real database. Build with `bun run build`, then run on Node with production environment variables. Vercel production verification is still a roadmap gate.
 
+## Workspace onboarding
+
+An authenticated user without organizations opens `/onboarding`. The native form creates the organization, first product, administrator membership, default material folder and four stages in one transaction, with the chosen organization time zone. It opens that organization/product after save. If initiated from assistant authorization, setup returns to the original OAuth selection request. Existing users can create another workspace from Settings. Invites and membership editing are still pending.
+
 ## MCP contract
 
 The CRM route is `<APP_URL>/mcp`, using stateless HTTP POST. It is authenticated with OAuth; users do not need a pasted CRM API key. A bare URL is not sufficient until a real auth environment and organization membership exist. Local demo mode does not grant anonymous MCP access. Missing auth configuration returns an unavailable response instead of exposing fictional or real records.

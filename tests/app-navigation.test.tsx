@@ -336,3 +336,54 @@ test("creating a person for another product refreshes the full snapshot before o
       .value,
   ).toBe(demoId(12));
 });
+
+test("a fresh workspace opens its first product and offers working contact and integration paths", async () => {
+  const created = await service.createWorkspace(principal, {
+    name: "Fictional UI onboarding",
+    productName: "Initial product",
+    timezone: "UTC",
+  });
+  const initial = serialize(
+    await service.snapshot(principal, {
+      organizationId: created.organizationId,
+    }),
+  );
+  render(
+    <CrmApp
+      initial={initial}
+      organizations={[
+        {
+          id: created.organizationId,
+          name: "Fictional UI onboarding",
+          timezone: "UTC",
+        },
+      ]}
+      initialOrganizationId={created.organizationId}
+      initialProductId={created.productId}
+      userId={demoUser}
+      demo
+      mcpEndpoint="https://gravity.example.test/mcp"
+    />,
+  );
+  expect(
+    (screen.getByRole("combobox", { name: t.product }) as HTMLSelectElement)
+      .value,
+  ).toBe(created.productId);
+  expect(screen.getByRole("heading", { name: t.workspaceReady })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: t.addPerson }));
+  await waitFor(() =>
+    expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy(),
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText(t.name).matches(":disabled")).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: t.cancel }));
+  fireEvent.click(screen.getByRole("button", { name: t.connectTools }));
+  expect(
+    screen.getByRole("heading", { name: t.integrations, level: 1 }),
+  ).toBeTruthy();
+  expect((screen.getByLabelText(t.mcpEndpoint) as HTMLInputElement).value).toBe(
+    "https://gravity.example.test/mcp",
+  );
+  expect(screen.getByRole("heading", { name: t.calendar })).toBeTruthy();
+});

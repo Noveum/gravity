@@ -7,7 +7,10 @@ export const dynamic = "force-dynamic";
 export default function Page() {
   return (
     <Suspense fallback={<p>{t.loading}</p>}>
-      <SignIn providers={enabledProviders()} demo={isDemoMode()} />
+      <SignIn
+        providers={isDemoMode() ? [] : enabledProviders()}
+        demo={isDemoMode()}
+      />
     </Suspense>
   );
 }

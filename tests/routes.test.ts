@@ -344,3 +344,72 @@ describe("signed integration HTTP contracts", () => {
     expect(await events()).toHaveLength(before.length);
   });
 });
+
+describe("workspace onboarding HTTP transaction", () => {
+  test("creates scoped defaults and rejects invalid or unauthenticated setup", async () => {
+    const body = {
+      operation: "workspace",
+      name: "Fictional onboarding",
+      productName: "Pilot",
+      timezone: "Asia/Kolkata",
+      organizationId: demoId(2),
+    };
+    expect((await crm(body, "")).status).toBe(401);
+    expect(
+      (await crm(body, demoUser, "https://other.example.test")).status,
+    ).toBe(403);
+    const before = await db.select().from(s.organizations);
+    expect((await crm({ ...body, timezone: "Made/Up" })).status).toBe(400);
+    expect((await crm({ ...body, name: " " })).status).toBe(400);
+    expect(await db.select().from(s.organizations)).toHaveLength(before.length);
+    const response = await crm(body);
+    expect(response.status).toBe(200);
+    const created = await response.json();
+    expect(created.organizationId).not.toBe(body.organizationId);
+    const result = await read(`organizationId=${created.organizationId}`);
+    const snapshot = await result.json();
+    expect(snapshot.products.map((p: { id: string }) => p.id)).toEqual([
+      created.productId,
+    ]);
+    expect(snapshot.people).toHaveLength(0);
+    expect(
+      snapshot.members.find((m: { id: string }) => m.id === demoUser).role,
+    ).toBe("admin");
+    expect(snapshot.folders).toHaveLength(1);
+    expect(snapshot.stages).toHaveLength(4);
+    expect(
+      (await read(`organizationId=${created.organizationId}`, "demo-teammate"))
+        .status,
+    ).toBe(403);
+    const [org] = await db
+      .select()
+      .from(s.organizations)
+      .where(eq(s.organizations.id, created.organizationId));
+    expect(org.timezone).toBe("Asia/Kolkata");
+  });
+  test("failed membership insertion rolls back the organization and all defaults", async () => {
+    const before = await db.select().from(s.organizations);
+    const { CrmService } = await import("../packages/core/crm");
+    const service = new CrmService(db);
+    await expect(
+      service.createWorkspace(
+        { userId: "nonexistent-test-user", source: "session" },
+        { name: "Must roll back", productName: "Pilot", timezone: "UTC" },
+      ),
+    ).rejects.toThrow();
+    expect(await db.select().from(s.organizations)).toHaveLength(before.length);
+    for (const principal of [
+      { userId: demoUser, source: "mcp" as const },
+      { userId: demoUser, source: "session" as const, readOnly: true },
+    ]) {
+      await expect(
+        service.createWorkspace(principal, {
+          name: "Denied",
+          productName: "Pilot",
+          timezone: "UTC",
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+    }
+    expect(await db.select().from(s.organizations)).toHaveLength(before.length);
+  });
+});

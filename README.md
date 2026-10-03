@@ -4,7 +4,7 @@ An open-source CRM foundation for teams managing relationships and outreach acro
 
 The daily action queue is the center of the app. A person can have separate buyer or partner relationships for different products, with separate owners, context, outreach, and opportunities. Conversation history and evidence explain the next step.
 
-**Status: working local foundation, not a production sales system.** Changes persist in a real local PostgreSQL engine. Live Gmail/LinkedIn connection, sending, invitations, imports, execution workers, and deployment remain unfinished. No live mail or private outreach data is included.
+**Status: working local foundation, not a production sales system.** Changes persist in a real local PostgreSQL engine. Live Gmail/LinkedIn/Calendar connection, sending, invitations, imports, execution workers, and deployment remain unfinished. No live mail or private outreach data is included.
 
 ## Run locally
 
@@ -21,7 +21,7 @@ Stop the dev server before running `bun run db:migrate` against local PGlite. It
 
 ## What works
 
-- Organization switching and creation; several products per organization, product creation, and product membership enforcement.
+- Guided workspace onboarding with a first product, organization time zone and atomic defaults; organization switching, several products per organization, product creation and product membership enforcement.
 - People/company views and explicit product relationships. Create a person and optional research task; link an existing readable person to another product without copying or overwriting identity. Duplicate email creation is rejected for review.
 - Next actions filtered by product, owner, type, and search; separate saved views for replies, commitments, and waiting on others.
 - Conversation/evidence inspector with partial-history disclosure and private conversation permissions.
@@ -36,6 +36,8 @@ Stop the dev server before running `bun run db:migrate` against local PGlite. It
 - Authenticated SSE revision delivery with immediate same-runtime wakeups, one-second reconciliation across runtimes and fallback recovery. Unsaved drafts keep their edited version across live updates; distributed fan-out and large-list pagination remain future work.
 
 ## Try the app
+
+Open `/onboarding` to create a fictional workspace with its first product. The new queue offers contact creation and connection setup guidance. Users signing in without an organization are directed there automatically. Connections shows the canonical MCP URL and explains which integrations still need implementation/configuration.
 
 Choose **Northstar Collective** to see three fictional products, or **Lunar Studio** to see a separate organization. Add a fictional person under People and attach a second product relationship using Existing person. In Next actions, select Mira's blocked follow-up, inspect her reply, and rework the draft. In Sales materials, choose a product, create a nested folder, upload a small PDF/text file, and filter by a relevant stage. In Meetings, review a proposed commitment before assigning its deadline.
 
@@ -74,7 +76,7 @@ React interaction tests cover command selection, focus restoration, form submiss
 
 ## Configuration and deployment
 
-Start from `.env.example`; use a secret manager for real credentials. [Setup and OAuth MCP](docs/setup-and-mcp.md) describes the required variables and callbacks. [Architecture](docs/architecture.md) records tenant boundaries and storage decisions. [Connector design](docs/connectors.md) distinguishes implemented event handling from live synchronization. [Consolidated requirements and keyboard map](docs/requirements.md) covers every requested feature and its status. [Delivery roadmap](docs/roadmap.md) records production gates and the next implementation slices. [Naming research](docs/naming.md) records the selected brand and naming history. [Verification record](docs/verification.md) records the tests and browser checks actually performed.
+Start from `.env.example`; use a secret manager for real credentials. [Setup and OAuth MCP](docs/setup-and-mcp.md) describes the required variables and callbacks. [Architecture](docs/architecture.md) records tenant boundaries and storage decisions. [Connector design](docs/connectors.md) distinguishes implemented event handling from live synchronization. [Consolidated requirements and keyboard map](docs/requirements.md) covers every requested feature and its status. [Delivery roadmap](docs/roadmap.md) records production gates and the next implementation slices. [Naming research](docs/naming.md) records the selected brand and naming history. [Full-flow review](docs/flow-review-2026-10-04.md) covers onboarding, integration status and screenshots. [Verification record](docs/verification.md) records the tests and browser checks actually performed.
 
 Target deployment: Vercel with managed PostgreSQL and private object storage, without Kubernetes. Do not deploy this foundation for real sales work before the production gates are complete. In particular, the local 10 MB upload route must be replaced with authenticated direct-to-storage uploads to accommodate Vercel request limits.
 

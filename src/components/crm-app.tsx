@@ -47,6 +47,7 @@ import {
   requestJson,
 } from "./client-api";
 import { Commands } from "./commands";
+import { Connections } from "./connections";
 import { focusRecord, useKeyboardNavigation } from "./keyboard-navigation";
 import { Materials } from "./materials";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
@@ -75,12 +76,16 @@ export function CrmApp({
   initial,
   organizations: initialOrganizations,
   initialOrganizationId,
+  initialProductId = "",
+  mcpEndpoint = "",
   userId,
   demo,
 }: {
   initial: ClientSnapshot | null;
   organizations: Organization[];
   initialOrganizationId: string;
+  initialProductId?: string;
+  mcpEndpoint?: string;
   userId: string;
   demo: boolean;
 }) {
@@ -94,7 +99,7 @@ export function CrmApp({
   >([]);
   const [organizations, setOrganizations] = useState(initialOrganizations);
   const [organizationId, setOrganizationId] = useState(initialOrganizationId);
-  const [productId, setProductId] = useState("");
+  const [productId, setProductId] = useState(initialProductId);
   const [view, setView] = useState<View>("actions");
   const [loadFailed, setLoadFailed] = useState(false);
   const [sourceData, setData] = useState(initial);
@@ -107,10 +112,18 @@ export function CrmApp({
   const [kind, setKind] = useState("");
   const [awaitingThem, setAwaitingThem] = useState(false);
   const [selected, setSelected] = useState(
-    initial?.actions.find((a) => a.status === "blocked")?.relationshipId ?? "",
+    initial?.actions.find(
+      (a) =>
+        a.status === "blocked" &&
+        (!initialProductId || a.productId === initialProductId),
+    )?.relationshipId ?? "",
   );
   const [selectedAction, setSelectedAction] = useState(
-    initial?.actions.find((a) => a.status === "blocked")?.id ?? "",
+    initial?.actions.find(
+      (a) =>
+        a.status === "blocked" &&
+        (!initialProductId || a.productId === initialProductId),
+    )?.id ?? "",
   );
   const [context, setContext] = useState<ClientContext | null>(null);
   const [tab, setTab] = useState<"timeline" | "evidence" | "draft">("timeline");
@@ -988,6 +1001,27 @@ export function CrmApp({
                 if (target) returnFocus.current = target;
               }}
             >
+              {!data.products.length && view !== "settings" && (
+                <div className="setup-empty">
+                  <h2>{t.noProductsAvailable}</h2>
+                  <p>
+                    {data.members.find((member) => member.id === userId)
+                      ?.role === "admin"
+                      ? t.setupAddProduct
+                      : t.setupAskAccess}
+                  </p>
+                  {data.members.find((member) => member.id === userId)?.role ===
+                    "admin" && (
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => navigate("settings")}
+                    >
+                      {t.newProduct}
+                    </button>
+                  )}
+                </div>
+              )}
               {view === "actions" && (
                 <>
                   {["now", "upcoming"].map((group) => {
@@ -1077,7 +1111,29 @@ export function CrmApp({
                     ) : null;
                   })}
                   {!visibleActions.length && (
-                    <div className="empty">{t.noResults}</div>
+                    <div className="empty">
+                      {!data.people.length && data.products.length ? (
+                        <>
+                          <h2>{t.workspaceReady}</h2>
+                          <p>{t.workspaceNextStep}</p>
+                          <button
+                            type="button"
+                            className="primary"
+                            onClick={() => setPersonDialog(true)}
+                          >
+                            {t.addPerson}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => navigate("integrations")}
+                          >
+                            {t.connectTools}
+                          </button>
+                        </>
+                      ) : (
+                        t.noResults
+                      )}
+                    </div>
                   )}
                 </>
               )}
@@ -1509,65 +1565,19 @@ export function CrmApp({
                 />
               )}
               {view === "integrations" && (
-                <div className="page-content integration-grid">
-                  {[
-                    { name: t.gmail, description: t.gmailDescription },
-                    { name: t.linkedin, description: t.linkedinDescription },
-                    { name: t.fireflies, description: t.firefliesDescription },
-                  ].map((item) => (
-                    <article className="integration-card" key={item.name}>
-                      <div className="section-heading">
-                        <h2>{item.name}</h2>
-                        <span className="badge">{t.notConnected}</span>
-                      </div>
-                      <p>{item.description}</p>
-                      <span className="muted">{t.connectLater}</span>
-                    </article>
-                  ))}
-                  <article className="integration-card mcp-card">
-                    <div className="section-heading">
-                      <h2>{t.mcp}</h2>
-                      <span className="badge">OAuth 2.1</span>
-                    </div>
-                    <p>{t.mcpDescription}</p>
-                    <div className="endpoint-field">
-                      {t.mcpEndpoint}
-                      <code>
-                        {typeof window === "undefined"
-                          ? ""
-                          : window.location.origin}
-                        /mcp
-                      </code>
-                    </div>
-                    <p className="callout">
-                      {demo ? t.mcpOffline : t.mcpInstructions}
-                    </p>
-                    <p className="muted">{t.noKey}</p>
-                    {data.grants.length ? (
-                      data.grants.map((grant) => (
-                        <div className="grant-row" key={grant.id}>
-                          <span>
-                            {grant.productIds
-                              .map((id) => product(id)?.name)
-                              .join(", ")}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => void revokeGrant(grant.id)}
-                          >
-                            {t.revoke}
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      <small>{t.noGrants}</small>
-                    )}
-                  </article>
-                </div>
+                <Connections
+                  data={data}
+                  endpoint={mcpEndpoint}
+                  demo={demo}
+                  onRevoke={revokeGrant}
+                />
               )}
               {view === "settings" && (
                 <div className="page-content">
                   <p className="callout">{t.organizationIsolation}</p>
+                  <a className="auth-link" href="/onboarding">
+                    {t.createWorkspace}
+                  </a>
                   <SettingsForm
                     organizationId={organizationId}
                     canCreateProduct={
@@ -1996,16 +2006,21 @@ export function CrmApp({
     </div>
   );
   async function revokeGrant(grantId: string) {
+    const submittedOrganization = organizationId;
     try {
       await requestJson("/api/grants", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ grantId }),
       });
+      if (activeOrganization.current !== submittedOrganization) return true;
       await refresh();
       setNotice(t.updated);
+      return true;
     } catch (error) {
-      setNotice(errorText(error));
+      if (activeOrganization.current === submittedOrganization)
+        setNotice(errorText(error));
+      return false;
     }
   }
 }

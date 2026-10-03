@@ -23,7 +23,7 @@ export default async function LoginPage({
   const callbackUrl = safeCallback(params['next']);
   const errorCode = authErrorCode(params['error']);
   const session = await getSession();
-  if (session !== null && params['reauth'] !== '1') redirect(callbackUrl ?? '/today');
+  if (session !== null && params['reauth'] !== '1') redirect(callbackUrl);
 
   const devUsers = devLoginEnabled() ? await listDevUsers() : [];
 
@@ -36,11 +36,9 @@ export default async function LoginPage({
           passwordEnabled={passwordAuthEnabled}
           emailEnabled={emailConfigured(process.env)}
           openSignUp={signUpIsOpen()}
-          {...(callbackUrl === undefined ? {} : { callbackUrl })}
+          callbackUrl={callbackUrl}
         />
-        {devUsers.length > 0 ? (
-          <DevSignIn users={devUsers} callbackUrl={callbackUrl ?? '/today'} />
-        ) : null}
+        {devUsers.length > 0 ? <DevSignIn users={devUsers} callbackUrl={callbackUrl} /> : null}
       </div>
       {errorCode === undefined ? null : <AuthErrorNotice code={errorCode} />}
     </main>

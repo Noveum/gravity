@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { db, schema } from '@gravity/db';
-import { retryOnUniqueViolation, withBatch } from '../../src/crm/sync-batch.ts';
+import { db, eq, schema } from '@gravity/db';
+import { retryOnUniqueViolation, type SyncBatch, withBatch } from '../../src/crm/sync-batch.ts';
+import { newId } from '../../src/internal.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
 
@@ -81,6 +82,160 @@ describe('withBatch', () => {
     const result = await withBatch({ principal: workspace.admin }, () => Promise.resolve({}));
     expect(result.actions).toEqual([]);
     expect(await db.select().from(schema.outbox)).toHaveLength(0);
+  });
+});
+
+async function insertBrand(
+  batch: SyncBatch,
+  name: string,
+): Promise<{ id: string; syncId: number }> {
+  const syncId = await batch.nextSyncId();
+  const id = newId();
+  await batch.tx
+    .insert(schema.brand)
+    .values({ id, organizationId: batch.organizationId, name, syncId });
+  return { id, syncId };
+}
+
+async function brandCount(): Promise<number> {
+  return (await db.select().from(schema.brand)).length;
+}
+
+describe('the write transaction', () => {
+  test('a throw after a real write leaves neither the row nor an outbox row', async () => {
+    await expect(
+      withBatch({ principal: workspace.admin }, async (batch) => {
+        const brand = await insertBrand(batch, 'Lumen');
+        batch.emit({
+          syncId: brand.syncId,
+          action: 'insert',
+          model: 'brand',
+          modelId: brand.id,
+          data: { id: brand.id },
+          scopes: [`workspace:${batch.organizationId}`],
+        });
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    expect(await brandCount()).toBe(0);
+    expect(await db.select().from(schema.outbox)).toHaveLength(0);
+  });
+
+  test('a failing outbox write rolls back the domain row written in the same batch', async () => {
+    await db.insert(schema.outbox).values({
+      syncId: 900_000,
+      organizationId: workspace.organizationId,
+      payload: {},
+    });
+    await expect(
+      withBatch({ principal: workspace.admin }, async (batch) => {
+        const brand = await insertBrand(batch, 'Lumen');
+        batch.emit({
+          syncId: 900_000,
+          action: 'insert',
+          model: 'brand',
+          modelId: brand.id,
+          data: { id: brand.id },
+          scopes: [`workspace:${batch.organizationId}`],
+        });
+        return {};
+      }),
+    ).rejects.toThrow();
+    expect(await brandCount()).toBe(0);
+    expect(await db.select().from(schema.outbox)).toHaveLength(1);
+  });
+
+  test('the stored outbox payload carries the client id, actor and scopes', async () => {
+    const result = await withBatch(
+      { principal: workspace.admin, originClientId: 'tab-9' },
+      async (batch) => {
+        const brand = await insertBrand(batch, 'Lumen');
+        batch.emit({
+          syncId: brand.syncId,
+          action: 'insert',
+          model: 'brand',
+          modelId: brand.id,
+          data: { id: brand.id },
+          scopes: [`workspace:${batch.organizationId}`, 'brand:b1', 'brand:b1'],
+        });
+        return {};
+      },
+    );
+    const [row] = await db
+      .select()
+      .from(schema.outbox)
+      .where(eq(schema.outbox.syncId, result.actions[0]?.syncId ?? -1));
+    expect(row?.payload['originClientId']).toBe('tab-9');
+    expect(row?.payload['actor']).toEqual({ type: 'user', id: workspace.admin.userId });
+    expect(row?.payload['scopes']).toEqual([`workspace:${workspace.organizationId}`, 'brand:b1']);
+  });
+
+  test('the stored payload has no originClientId key when none was given', async () => {
+    await withBatch({ principal: workspace.admin }, async (batch) => {
+      batch.emit({
+        syncId: await batch.nextSyncId(),
+        action: 'update',
+        model: 'brand',
+        modelId: 'b1',
+        data: {},
+        scopes: ['workspace:x'],
+      });
+      return {};
+    });
+    const [row] = await db.select().from(schema.outbox);
+    expect(row).toBeDefined();
+    expect(row !== undefined && 'originClientId' in row.payload).toBe(false);
+  });
+});
+
+describe('batch validation', () => {
+  const valid = (batch: SyncBatch) => ({
+    action: 'insert' as const,
+    model: 'brand' as const,
+    modelId: 'b1',
+    data: {},
+    scopes: [`workspace:${batch.organizationId}`],
+  });
+
+  test.each([
+    ['an empty model id', { modelId: '' }],
+    ['an empty scope', { scopes: [''] }],
+    ['no scopes', { scopes: [] }],
+  ])('%s rolls the whole write back', async (_name, override) => {
+    await expect(
+      withBatch({ principal: workspace.admin }, async (batch) => {
+        const brand = await insertBrand(batch, 'Lumen');
+        batch.emit({ ...valid(batch), syncId: brand.syncId, ...override });
+        return {};
+      }),
+    ).rejects.toMatchObject({ status: 500 });
+    expect(await brandCount()).toBe(0);
+    expect(await db.select().from(schema.outbox)).toHaveLength(0);
+  });
+
+  test.each([
+    ['an empty client id', ''],
+    ['a 65 character client id', 'c'.repeat(65)],
+  ])('%s is refused with a 422 before anything is written', async (_name, originClientId) => {
+    let ran = false;
+    await expect(
+      withBatch({ principal: workspace.admin, originClientId }, async () => {
+        ran = true;
+        return await Promise.resolve({});
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(ran).toBe(false);
+  });
+
+  test('a 64 character client id is accepted', async () => {
+    const result = await withBatch(
+      { principal: workspace.admin, originClientId: 'c'.repeat(64) },
+      async (batch) => {
+        batch.emit({ ...valid(batch), syncId: await batch.nextSyncId() });
+        return {};
+      },
+    );
+    expect(result.actions[0]?.originClientId).toHaveLength(64);
   });
 });
 

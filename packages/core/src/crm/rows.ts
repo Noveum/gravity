@@ -8,6 +8,7 @@ import {
   SAVED_VIEW_VISIBILITIES,
   STAGE_CATEGORIES,
 } from '@gravity/shared/constants';
+import { internal } from '@gravity/shared/errors';
 import { actorSchema } from '@gravity/shared/events';
 import { emptyFilterGroup, filterGroupSchema } from '@gravity/shared/filters';
 import { policyRole } from '@gravity/shared/policy';
@@ -166,10 +167,13 @@ export function activityRowOf(
   links: readonly ActivityLinkRow[],
 ): ActivityRow {
   const actor = actorSchema.safeParse(row.actor);
+  if (!actor.success) {
+    throw internal(`Activity ${row.id} has an unreadable actor.`, actor.error);
+  }
   return {
     id: row.id,
     kind: row.kind,
-    actor: actor.success ? actor.data : { type: 'system', id: 'unknown' },
+    actor: actor.data,
     occurredAt: row.occurredAt.toISOString(),
     payload: row.payload,
     links: [...links],

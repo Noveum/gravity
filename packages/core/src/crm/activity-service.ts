@@ -5,14 +5,16 @@ import {
   TIMELINE_PREFIXES,
   type TimelineFilter,
 } from '@gravity/shared/constants';
+import { validationFailed } from '@gravity/shared/errors';
 import { scopes } from '@gravity/shared/events';
 import type { Principal } from '@gravity/shared/policy';
 import { assertCan } from '@gravity/shared/policy';
 import type { ActivityLinkRow, ActivityRow } from '@gravity/shared/records';
 import { timelineQuerySchema } from '@gravity/shared/validators';
+import { z } from 'zod';
 import { newId, requireRow } from '../internal.ts';
 import { decodeCursor, encodeCursor } from './cursor.ts';
-import { activityRowOf, oneOf } from './rows.ts';
+import { activityRowOf } from './rows.ts';
 import type { SyncBatch } from './sync-batch.ts';
 import { writeActor } from './write-context.ts';
 
@@ -115,6 +117,25 @@ export async function recordActivity(batch: SyncBatch, input: ActivityInput): Pr
   return activity;
 }
 
+const timelineCursorSchema = z.tuple([z.string().datetime({ offset: true }), z.string().min(1)]);
+
+function decodeTimelineCursor(raw: string): z.infer<typeof timelineCursorSchema> {
+  const parsed = timelineCursorSchema.safeParse(decodeCursor(raw, 2));
+  if (!parsed.success) throw validationFailed('That page cursor is not valid. Reload the list.');
+  return parsed.data;
+}
+
+function linkOf(link: typeof schema.activityLink.$inferSelect): ActivityLinkRow[] {
+  const entityType = ACTIVITY_ENTITY_TYPES.find((type) => type === link.entityType);
+  if (entityType === undefined) {
+    console.warn(
+      `[gravity] skipping activity_link of activity ${link.activityId} with unknown entity type "${link.entityType}"`,
+    );
+    return [];
+  }
+  return [{ entityType, entityId: link.entityId }];
+}
+
 function kindFilter(filter: TimelineFilter): SQL | undefined {
   if (filter === 'all') return undefined;
   return or(
@@ -125,7 +146,7 @@ function kindFilter(filter: TimelineFilter): SQL | undefined {
 export async function listTimeline(principal: Principal, input: unknown): Promise<TimelinePage> {
   assertCan(principal, 'record:read');
   const query = timelineQuerySchema.parse(input);
-  const cursor = query.cursor === undefined ? null : decodeCursor(query.cursor, 2);
+  const cursor = query.cursor === undefined ? null : decodeTimelineCursor(query.cursor);
   const rows = await db
     .select({ activity: schema.activity })
     .from(schema.activityLink)
@@ -138,7 +159,7 @@ export async function listTimeline(principal: Principal, input: unknown): Promis
         kindFilter(query.filter),
         cursor === null
           ? undefined
-          : sql`(${schema.activityLink.occurredAt}, ${schema.activityLink.activityId}) < (${String(cursor[0])}::timestamptz, ${String(cursor[1])})`,
+          : sql`(${schema.activityLink.occurredAt}, ${schema.activityLink.activityId}) < (${cursor[0]}::timestamptz, ${cursor[1]})`,
       ),
     )
     .orderBy(desc(schema.activityLink.occurredAt), desc(schema.activityLink.activityId))
@@ -162,14 +183,7 @@ export async function listTimeline(principal: Principal, input: unknown): Promis
   const activities = page.map((row) =>
     activityRowOf(
       row,
-      sortLinks(
-        links
-          .filter((link) => link.activityId === row.id)
-          .map((link) => ({
-            entityType: oneOf(ACTIVITY_ENTITY_TYPES, link.entityType, 'person'),
-            entityId: link.entityId,
-          })),
-      ),
+      sortLinks(links.filter((link) => link.activityId === row.id).flatMap(linkOf)),
     ),
   );
   const last = page.at(-1);

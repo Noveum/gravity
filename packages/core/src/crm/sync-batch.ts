@@ -1,5 +1,12 @@
 import { db, type Transaction } from '@gravity/db';
-import type { SyncAction, SyncActionKind, SyncModel } from '@gravity/shared/events';
+import { internal, validationFailed } from '@gravity/shared/errors';
+import {
+  originClientIdSchema,
+  type SyncAction,
+  type SyncActionKind,
+  type SyncModel,
+  syncActionSchema,
+} from '@gravity/shared/events';
 import { isUniqueViolation } from '../internal.ts';
 import { recordSync } from '../realtime/outbox.ts';
 import { buildSyncAction } from '../realtime/publisher.ts';
@@ -27,6 +34,12 @@ export interface SyncBatch {
 export type WithActions<T> = T & { readonly actions: SyncAction[] };
 
 export function createSyncBatch(tx: Transaction, context: WriteContext): SyncBatch {
+  if (
+    context.originClientId !== undefined &&
+    !originClientIdSchema.safeParse(context.originClientId).success
+  ) {
+    throw validationFailed('The client id is not valid.');
+  }
   const emitted: SyncAction[] = [];
   const actor = writeActor(context);
   const organizationId = context.principal.organizationId;
@@ -49,6 +62,17 @@ export function createSyncBatch(tx: Transaction, context: WriteContext): SyncBat
   };
 }
 
+function validAction(action: SyncAction): SyncAction {
+  const parsed = syncActionSchema.safeParse(action);
+  if (!parsed.success) {
+    throw internal(
+      `Refusing to record a malformed sync action for ${action.model} ${action.modelId}.`,
+      parsed.error,
+    );
+  }
+  return parsed.data;
+}
+
 export async function withBatch<T extends object>(
   context: WriteContext,
   run: (batch: SyncBatch) => Promise<T>,
@@ -56,7 +80,7 @@ export async function withBatch<T extends object>(
   return await db.transaction(async (tx) => {
     const batch = createSyncBatch(tx, context);
     const result = await run(batch);
-    const actions = [...batch.actions()];
+    const actions = batch.actions().map(validAction);
     await recordSync(tx, actions);
     return { ...result, actions };
   });

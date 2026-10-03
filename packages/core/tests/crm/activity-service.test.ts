@@ -1,6 +1,9 @@
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { db, schema } from '@gravity/db';
 import { diffValues, listTimeline, recordActivity } from '../../src/crm/activity-service.ts';
+import { encodeCursor } from '../../src/crm/cursor.ts';
 import { withBatch } from '../../src/crm/sync-batch.ts';
+import { newId } from '../../src/internal.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
 
@@ -124,6 +127,66 @@ describe('listTimeline', () => {
     await expect(
       listTimeline(workspace.admin, { subjectType: 'person', subjectId: 'p1', cursor: '%%%' }),
     ).rejects.toMatchObject({ status: 422 });
+  });
+
+  test('refuses a well-formed cursor of the wrong shape with a 422', async () => {
+    for (const cursor of [
+      encodeCursor(['x', 'y']),
+      encodeCursor([1, 'y']),
+      encodeCursor(['2026-10-03T09:00:00.000Z', 5]),
+      encodeCursor(['2026-10-03T09:00:00.000Z', '']),
+    ]) {
+      await expect(
+        listTimeline(workspace.admin, { subjectType: 'person', subjectId: 'p1', cursor }),
+      ).rejects.toMatchObject({ status: 422 });
+    }
+  });
+
+  test('skips and warns about a link with an unknown entity type', async () => {
+    await log(workspace, 'lead.created', 1);
+    const [activity] = await db.select().from(schema.activity);
+    await db.insert(schema.activityLink).values({
+      activityId: activity?.id ?? '',
+      organizationId: workspace.organizationId,
+      entityType: 'bogus',
+      entityId: 'z1',
+      occurredAt: at(1),
+    });
+    const warn = spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const page = await listTimeline(workspace.admin, { subjectType: 'person', subjectId: 'p1' });
+      expect(page.activities[0]?.links).toEqual([
+        { entityType: 'person', entityId: 'p1' },
+        { entityType: 'lead', entityId: 'l1' },
+      ]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain(activity?.id ?? 'missing');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('fails loudly instead of inventing an actor for an unreadable row', async () => {
+    const id = newId();
+    await db.insert(schema.activity).values({
+      id,
+      organizationId: workspace.organizationId,
+      kind: 'lead.created',
+      actor: { nonsense: true },
+      occurredAt: at(1),
+      payload: {},
+      syncId: 1,
+    });
+    await db.insert(schema.activityLink).values({
+      activityId: id,
+      organizationId: workspace.organizationId,
+      entityType: 'person',
+      entityId: 'p1',
+      occurredAt: at(1),
+    });
+    await expect(
+      listTimeline(workspace.admin, { subjectType: 'person', subjectId: 'p1' }),
+    ).rejects.toMatchObject({ status: 500, message: expect.stringContaining(id) });
   });
 
   test('never shows another workspace activity for the same entity id', async () => {

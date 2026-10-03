@@ -1,9 +1,14 @@
 "use client";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { errorText, requestJson } from "./client-api";
 import { useDialogSnapshot } from "./dialog-snapshot";
+import {
+  submitOnModEnter,
+  useModalLifecycle,
+  useReadyFocus,
+} from "./modal-lifecycle";
 
 export function PersonDialog({
   data: initialData,
@@ -32,9 +37,8 @@ export function PersonDialog({
   const [existing, setExisting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    modal.current?.showModal();
-  }, []);
+  useModalLifecycle(modal);
+  useReadyFocus(modal, loading);
   return (
     <dialog
       ref={modal}
@@ -71,6 +75,7 @@ export function PersonDialog({
         </button>
       </div>
       <form
+        onKeyDown={submitOnModEnter}
         key={String(existing)}
         onSubmit={async (event) => {
           event.preventDefault();
@@ -136,7 +141,7 @@ export function PersonDialog({
             <>
               <label>
                 {t.person}
-                <select name="personId" required>
+                <select data-primary-field name="personId" required>
                   <option value="">{t.choosePerson}</option>
                   {data.people.map((person) => (
                     <option key={person.id} value={person.id}>
@@ -151,7 +156,12 @@ export function PersonDialog({
             <>
               <label>
                 {t.name}
-                <input name="name" required maxLength={100} />
+                <input
+                  data-primary-field
+                  name="name"
+                  required
+                  maxLength={100}
+                />
               </label>
               <label>
                 {t.email}
@@ -198,18 +208,26 @@ export function PersonDialog({
           </label>
         </fieldset>
         <p className="muted">{t.personCreateNote}</p>
-        <p role="status">{error || loadError || (loading ? t.loading : "")}</p>
+        <p role={error || loadError ? "alert" : "status"}>
+          {error || loadError || (loading ? t.loading : "")}
+        </p>
         {loadError && (
           <button type="button" onClick={retry}>
             {t.retry}
           </button>
         )}
         <div className="dialog-actions">
-          <button type="button" disabled={busy} onClick={onClose}>
+          <button
+            data-modal-cancel
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+          >
             {t.cancel}
           </button>
           <button
             type="submit"
+            title={t.submitHint}
             className="primary"
             disabled={busy || loading || !!loadError || !data.products.length}
           >

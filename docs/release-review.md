@@ -5,9 +5,9 @@ Reviewed application, permissions, SQL migrations, OAuth/MCP, connectors, privat
 | Dimension | Assessment | Evidence and remaining work |
 |---|---|---|
 | Security | Foundation boundaries tested; production review pending | Composite tenant/product constraints, current membership and immutable MCP grants, private-source filtering, exact-body HMAC, bounded request bodies and origin checks. Distributed rate limits, provider credential encryption, role hardening and operational review remain gates. |
-| Correctness | Tested foundation flows | 40 SQL/HTTP/OAuth tests, including retries, concurrent operations, stale drafts, cross-account replies and route errors. Live providers, actual assistant compatibility, sender execution and meeting imports are unqualified. |
+| Correctness | Tested foundation flows | 64 SQL/HTTP/OAuth/UI tests, including retries, concurrent operations, stale drafts, cross-account replies and route errors. Live providers, actual assistant compatibility, sender execution and meeting imports are unqualified. |
 | Performance | Local responsiveness verified; scale unqualified | Immediate local interaction and revision delivery, bounded local context cache and cross-runtime polling. Snapshots still load complete permitted lists; pagination, durable jobs, fan-out and realistic high-volume qualification are required. |
-| Maintainability | Clear domain boundaries; frontend needs further separation | HTTP and MCP share policy/services. Shared client helpers now avoid circular imports. The main app component remains large and should be split along view/controller boundaries before broad feature expansion. |
+| Maintainability | Clear domain boundaries; frontend needs further separation | HTTP and MCP share policy/services. Shared client helpers now avoid circular imports; keyboard routing, modal lifecycle, settings forms and snapshot projection have separate modules. The main app component remains large and should be split along view/controller boundaries before broad feature expansion. |
 
 ## Findings resolved in this review
 
@@ -21,6 +21,10 @@ Reviewed application, permissions, SQL migrations, OAuth/MCP, connectors, privat
 ## Strengths supported by tests
 
 Tenant and product isolation is enforced in domain queries and composite foreign keys. Read-only MCP shares the same authorization and rechecks active grants/memberships rather than trusting token validity alone. Connector retries are transactional and idempotent; private replies preserve their visibility. Approvals bind to content/version and invalidate on a new reply or saved edit. Native modals, keyboard-aware shortcuts and resizable panels support the daily queue without adding sending side effects.
+
+## Keyboard and responsiveness review
+
+Arrow-driven command selection skips disabled commands and exposes its active option through ARIA. All record views support focus movement without incidental activation. Dialogs restore trigger focus, scope-loading forms focus their primary field when ready, failed values stay editable, and material/settings submissions have synchronous guards. Product switches use authorized local projection; acknowledged writes invalidate pre-commit reads and reconcile in the background. SQL action ordering now has a deterministic ID tie-breaker. UI regression tests cover these event/focus and concurrency boundaries.
 
 ## Known unfinished flows
 

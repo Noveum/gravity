@@ -32,3 +32,37 @@ describe("keyboard safety", () => {
     expect(shortcutFor(input({ key: "a" }))).toBeNull();
   });
 });
+
+describe("complete keyboard map", () => {
+  test("all views have unambiguous go-to chords", () => {
+    const views = {
+      a: "actions",
+      p: "people",
+      c: "companies",
+      s: "sequences",
+      m: "meetings",
+      o: "opportunities",
+      f: "materials",
+      i: "integrations",
+      t: "settings",
+    };
+    for (const [key, view] of Object.entries(views))
+      expect(shortcutFor(input({ key, prefix: true }))).toBe(view);
+    expect(shortcutFor(input({ key: "c" }))).toBe("create");
+    expect(shortcutFor(input({ key: "?", shiftKey: true }))).toBe("help");
+    expect(shortcutFor(input({ key: "l" }))).toBe("detailFocus");
+    expect(shortcutFor(input({ key: "3" }))).toBe("draft");
+  });
+  test("consumed events, held create keys and modified shortcuts do not trigger actions", () => {
+    expect(shortcutFor(input({ defaultPrevented: true }))).toBeNull();
+    for (const key of ["g", "c", "n"])
+      expect(shortcutFor(input({ key, repeat: true }))).toBeNull();
+    expect(
+      shortcutFor(input({ key: "k", metaKey: true, shiftKey: true })),
+    ).toBeNull();
+    expect(
+      shortcutFor(input({ key: "k", ctrlKey: true, isModal: true })),
+    ).toBeNull();
+    expect(shortcutFor(input({ key: "Enter", metaKey: true }))).toBeNull();
+  });
+});

@@ -322,7 +322,7 @@ export class CrmService {
             ),
           ),
         )
-        .orderBy(asc(s.actions.dueAt)),
+        .orderBy(asc(s.actions.dueAt), asc(s.actions.id)),
       this.db.select().from(s.sequences).where(scoped(s.sequences)),
       this.db.select().from(s.enrollments).where(scoped(s.enrollments)),
       this.db.select().from(s.folders).where(scoped(s.folders)),
@@ -346,7 +346,7 @@ export class CrmService {
         .select()
         .from(s.stages)
         .where(scoped(s.stages))
-        .orderBy(asc(s.stages.position)),
+        .orderBy(asc(s.stages.position), asc(s.stages.id)),
       this.db.select().from(s.meetings).where(scoped(s.meetings)),
       this.db.select().from(s.opportunities).where(scoped(s.opportunities)),
       this.db

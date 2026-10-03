@@ -2,8 +2,9 @@
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { Download, FileText, Folder, Plus, Upload, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { dateLabel, errorText, requestJson } from "./client-api";
+import { submitOnModEnter, useModalLifecycle } from "./modal-lifecycle";
 
 export function Materials({
   data,
@@ -24,14 +25,13 @@ export function Materials({
   const [stageId, setStageId] = useState("");
   const [dialog, setDialog] = useState<"folder" | "upload" | null>(null);
   const modal = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    if (dialog && modal.current && !modal.current.open)
-      modal.current.showModal();
-  }, [dialog]);
+  useModalLifecycle(modal, !!dialog);
   const [formProduct, setFormProduct] = useState(
     productId || data.products[0]?.id || "",
   );
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  const [error, setError] = useState("");
   const product = (id: string) => data.products.find((p) => p.id === id);
   const assets = data.assets.filter(
     (asset) =>
@@ -43,10 +43,14 @@ export function Materials({
   );
   function open(value: typeof dialog) {
     setFormProduct(productId || data.products[0]?.id || "");
+    setError("");
     setDialog(value);
   }
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
+    setError("");
     const form = event.currentTarget;
     const fields = new FormData(form);
     setBusy(true);
@@ -72,8 +76,9 @@ export function Materials({
       setDialog(null);
       onNotice(t.updated);
     } catch (error) {
-      onNotice(errorText(error));
+      setError(errorText(error));
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -210,6 +215,7 @@ export function Materials({
                       <td>{Math.ceil(asset.size / 1024)} KB</td>
                       <td>
                         <a
+                          data-nav-record={asset.id}
                           className="icon-button"
                           href={`/api/materials?organizationId=${organizationId}&assetId=${asset.id}`}
                           aria-label={`${t.download} ${asset.name}`}
@@ -266,96 +272,100 @@ export function Materials({
               <X size={16} />
             </button>
           </div>
-          <form onSubmit={submit}>
-            <label>
-              {t.product}
-              <select
-                value={formProduct}
-                onChange={(event) => setFormProduct(event.target.value)}
-                required
-              >
-                {data.products
-                  .filter((p) => !productId || p.id === productId)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {dialog === "folder" ? (
-              <>
-                <label>
-                  {t.folderName}
-                  <input name="name" required maxLength={100} />
-                </label>
-                <label>
-                  {t.parentFolder}
-                  <select name="parentId" key={formProduct}>
-                    <option value="">{t.rootFolder}</option>
-                    {data.folders
-                      .filter((f) => f.productId === formProduct)
-                      .map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {folderPath(f.id)}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-              </>
-            ) : (
-              <>
-                <label>
-                  {t.folder}
-                  <select
-                    name="folderId"
-                    key={formProduct}
-                    required
-                    defaultValue={
-                      data.folders.some(
-                        (f) => f.id === folderId && f.productId === formProduct,
-                      )
-                        ? folderId
-                        : undefined
-                    }
-                  >
-                    {data.folders
-                      .filter((f) => f.productId === formProduct)
-                      .map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {folderPath(f.id)}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label>
-                  {t.file}
-                  <input
-                    name="file"
-                    type="file"
-                    required
-                    accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
-                  />
-                </label>
-                <p className="muted">{t.uploadHint}</p>
-                <fieldset>
-                  <legend>{t.materialStage}</legend>
-                  {data.stages
-                    .filter((stage) => stage.productId === formProduct)
-                    .map((stage) => (
-                      <label className="checkbox-label" key={stage.id}>
-                        <input
-                          name="stageIds"
-                          type="checkbox"
-                          value={stage.id}
-                        />
-                        {stage.name}
-                      </label>
+          <form onSubmit={submit} onKeyDown={submitOnModEnter}>
+            <fieldset className="dialog-fields" disabled={busy}>
+              <label>
+                {t.product}
+                <select
+                  value={formProduct}
+                  onChange={(event) => setFormProduct(event.target.value)}
+                  required
+                >
+                  {data.products
+                    .filter((p) => !productId || p.id === productId)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
                     ))}
-                </fieldset>
-                <p className="muted">{t.uploadStageHint}</p>
-              </>
-            )}
+                </select>
+              </label>
+              {dialog === "folder" ? (
+                <>
+                  <label>
+                    {t.folderName}
+                    <input name="name" required maxLength={100} />
+                  </label>
+                  <label>
+                    {t.parentFolder}
+                    <select name="parentId" key={formProduct}>
+                      <option value="">{t.rootFolder}</option>
+                      {data.folders
+                        .filter((f) => f.productId === formProduct)
+                        .map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {folderPath(f.id)}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label>
+                    {t.folder}
+                    <select
+                      name="folderId"
+                      key={formProduct}
+                      required
+                      defaultValue={
+                        data.folders.some(
+                          (f) =>
+                            f.id === folderId && f.productId === formProduct,
+                        )
+                          ? folderId
+                          : undefined
+                      }
+                    >
+                      {data.folders
+                        .filter((f) => f.productId === formProduct)
+                        .map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {folderPath(f.id)}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    {t.file}
+                    <input
+                      name="file"
+                      type="file"
+                      required
+                      accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
+                    />
+                  </label>
+                  <p className="muted">{t.uploadHint}</p>
+                  <fieldset>
+                    <legend>{t.materialStage}</legend>
+                    {data.stages
+                      .filter((stage) => stage.productId === formProduct)
+                      .map((stage) => (
+                        <label className="checkbox-label" key={stage.id}>
+                          <input
+                            name="stageIds"
+                            type="checkbox"
+                            value={stage.id}
+                          />
+                          {stage.name}
+                        </label>
+                      ))}
+                  </fieldset>
+                  <p className="muted">{t.uploadStageHint}</p>
+                </>
+              )}
+            </fieldset>
+            {error && <p role="alert">{error}</p>}
             <div className="dialog-actions">
               <button
                 type="button"
@@ -366,6 +376,7 @@ export function Materials({
               </button>
               <button
                 type="submit"
+                title={t.submitHint}
                 className="primary"
                 disabled={
                   busy ||

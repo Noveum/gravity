@@ -1,10 +1,14 @@
 "use client";
+import {
+  createRefreshCoordinator,
+  productSnapshot,
+} from "@crm/core/client-state";
 import type {
   ClientCompanyContext,
   ClientContext,
   ClientSnapshot,
 } from "@crm/core/dto";
-import { shortcutFor } from "@crm/core/shortcuts";
+import type { View } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import {
   ArrowLeft,
@@ -30,6 +34,7 @@ import {
   type CSSProperties,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -42,22 +47,15 @@ import {
   requestJson,
 } from "./client-api";
 import { Commands } from "./commands";
+import { focusRecord, useKeyboardNavigation } from "./keyboard-navigation";
 import { Materials } from "./materials";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
 import { PersonDialog } from "./person-dialog";
 import { ViewOptions } from "./preferences";
 import { CompanyDetails, PersonDetails, RelatedWork } from "./record-details";
+import { SettingsForm } from "./settings-form";
+import { Shortcuts } from "./shortcuts";
 
-type View =
-  | "actions"
-  | "people"
-  | "companies"
-  | "sequences"
-  | "meetings"
-  | "opportunities"
-  | "materials"
-  | "integrations"
-  | "settings";
 const nav = [
   { id: "actions", icon: ListChecks },
   { id: "people", icon: Users },
@@ -98,7 +96,12 @@ export function CrmApp({
   const [organizationId, setOrganizationId] = useState(initialOrganizationId);
   const [productId, setProductId] = useState("");
   const [view, setView] = useState<View>("actions");
-  const [data, setData] = useState(initial);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [sourceData, setData] = useState(initial);
+  const data = useMemo(
+    () => (sourceData ? productSnapshot(sourceData, productId) : null),
+    [sourceData, productId],
+  );
   const [search, setSearch] = useState("");
   const [owner, setOwner] = useState("");
   const [kind, setKind] = useState("");
@@ -119,7 +122,14 @@ export function CrmApp({
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [syncState, setSyncState] = useState("reconnecting");
   const searchInput = useRef<HTMLInputElement>(null);
-  const shortcutPrefix = useRef(0);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const activeOrganization = useRef(organizationId);
+  activeOrganization.current = organizationId;
+  const mutating = useRef(false);
+  const activeAction = useRef(selectedAction);
+  activeAction.current = selectedAction;
+  const refreshCoordinator = useMemo(() => createRefreshCoordinator(), []);
+  const returnFocus = useRef<HTMLElement | null>(null);
   const draftBuffers = useRef(
     new Map<string, { text: string; version: number }>(),
   );
@@ -129,34 +139,49 @@ export function CrmApp({
   const companyScope = useRef("");
   const revision = useRef("");
   const fetchGeneration = useRef(0);
-  const refresh = useCallback(async () => {
-    if (!organizationId) return;
-    const generation = ++fetchGeneration.current;
-    try {
-      const snapshot = await requestJson<ClientSnapshot>(
-        `/api/crm?organizationId=${organizationId}${productId ? `&productId=${productId}` : ""}`,
-      );
-      if (generation === fetchGeneration.current) setData(snapshot);
-    } catch (error) {
-      if (generation === fetchGeneration.current) {
-        setNotice(errorText(error));
-        if (
-          error instanceof Error &&
-          ["FORBIDDEN", "UNAUTHORIZED"].includes(error.message)
-        ) {
-          setData(null);
-          setContext(null);
-          setSelectedCompany("");
-          setCompanyContext(null);
-          setRecordHistory([]);
-          setSelected("");
-          setSelectedAction("");
-          draftBuffers.current.clear();
-          contextCache.current.clear();
+  const refresh = useCallback(
+    () =>
+      refreshCoordinator(async () => {
+        if (!organizationId || activeOrganization.current !== organizationId)
+          return;
+        const generation = ++fetchGeneration.current;
+        try {
+          const snapshot = await requestJson<ClientSnapshot>(
+            `/api/crm?organizationId=${organizationId}`,
+          );
+          if (
+            activeOrganization.current === organizationId &&
+            generation === fetchGeneration.current
+          ) {
+            setData(snapshot);
+            setLoadFailed(false);
+          }
+        } catch (error) {
+          if (
+            activeOrganization.current === organizationId &&
+            generation === fetchGeneration.current
+          ) {
+            setLoadFailed(true);
+            setNotice(errorText(error));
+            if (
+              error instanceof Error &&
+              ["FORBIDDEN", "UNAUTHORIZED"].includes(error.message)
+            ) {
+              setData(null);
+              setContext(null);
+              setSelectedCompany("");
+              setCompanyContext(null);
+              setRecordHistory([]);
+              setSelected("");
+              setSelectedAction("");
+              draftBuffers.current.clear();
+              contextCache.current.clear();
+            }
+          }
         }
-      }
-    }
-  }, [organizationId, productId]);
+      }),
+    [organizationId, refreshCoordinator],
+  );
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -300,28 +325,61 @@ export function CrmApp({
     const buffer = draftBuffers.current.get(action.id);
     setDraft(buffer?.text ?? action.draft ?? "");
     setDraftVersion(buffer?.version ?? action.version);
-    if (buffer && buffer.version !== action.version)
+    if (buffer && buffer.version !== action.version && !mutating.current)
       setNotice(t.errors.CONFLICT);
   }, [action?.draft, action?.id, action?.version]);
   async function mutate(body: object) {
+    if (mutating.current) return false;
+    mutating.current = true;
+    const submittedOrganization = organizationId;
     setBusy(true);
     setNotice("");
     try {
-      await requestJson("/api/crm", {
+      const result = await requestJson<unknown>("/api/crm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      if (activeOrganization.current !== submittedOrganization) return true;
+      // A read started before this commit must not overwrite its confirmed result.
+      fetchGeneration.current++;
       const changed = body as { operation?: string; actionId?: string };
+      if (changed.operation === "action") {
+        const updatedAction = result as ClientSnapshot["actions"][number];
+        draftBuffers.current.delete(updatedAction.id);
+        if (activeAction.current === updatedAction.id) {
+          setDraft(updatedAction.draft);
+          setDraftVersion(updatedAction.version);
+        }
+        setData((previous) =>
+          previous
+            ? {
+                ...previous,
+                asOf: new Date().toISOString(),
+                actions: previous.actions.map((item) =>
+                  item.id === updatedAction.id ? updatedAction : item,
+                ),
+              }
+            : previous,
+        );
+      }
       if (changed.operation === "action" && changed.actionId)
         draftBuffers.current.delete(changed.actionId);
-      await refresh();
+      void refresh();
       setNotice(t.updated);
       return true;
     } catch (error) {
-      setNotice(errorText(error));
+      if (activeOrganization.current === submittedOrganization) {
+        setNotice(errorText(error));
+        if (
+          error instanceof Error &&
+          ["CONFLICT", "FORBIDDEN", "UNAUTHORIZED"].includes(error.message)
+        )
+          void refresh();
+      }
       return false;
     } finally {
+      mutating.current = false;
       setBusy(false);
     }
   }
@@ -339,6 +397,7 @@ export function CrmApp({
     setOrganizationId(id);
     setProductId("");
     setData(null);
+    setLoadFailed(false);
     setContext(null);
     setSelected("");
     setSelectedAction("");
@@ -352,14 +411,12 @@ export function CrmApp({
     setCompanyContext(null);
     setRecordHistory([]);
     panels.setExpanded(false);
-    fetchGeneration.current++;
     setPersonDialog(false);
     setActionDialog(false);
     setProductId(id);
     setSelected("");
     setSelectedAction("");
     setContext(null);
-    setData(null);
     setNotice("");
   }
   function navigate(next: View) {
@@ -369,6 +426,10 @@ export function CrmApp({
     setFocusedRecord("");
     panels.setExpanded(false);
     setView(next);
+    requestAnimationFrame(() => {
+      if (!document.querySelector("dialog[open]"))
+        document.querySelector<HTMLElement>(".view-title")?.focus();
+    });
     setSearch("");
     setOwner("");
     setKind("");
@@ -380,6 +441,7 @@ export function CrmApp({
     }
   }
   function closeInspector() {
+    returnFocus.current?.focus();
     setSelected("");
     setSelectedCompany("");
     setSelectedAction("");
@@ -434,7 +496,7 @@ export function CrmApp({
     setFocusedRecord(id);
   }
   function warmContext(relationshipId: string) {
-    if (!data?.asOf) return;
+    if (!relationshipId || !data?.asOf) return;
     const key = `${organizationId}/${relationshipId}/${data.asOf}`;
     if (contextCache.current.has(key)) return;
     void requestJson<ClientContext>(
@@ -477,63 +539,70 @@ export function CrmApp({
           companyFor(personFor(a.relationshipId)?.id ?? "")?.name,
         ),
     ) ?? [];
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      const command = shortcutFor({
-        key: event.key,
-        metaKey: event.metaKey,
-        ctrlKey: event.ctrlKey,
-        altKey: event.altKey,
-        shiftKey: event.shiftKey,
-        isComposing: event.isComposing,
-        isEditing: !!target?.closest(
-          "input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox]",
-        ),
-        isModal: !!document.querySelector("dialog[open]"),
-        prefix: Date.now() < shortcutPrefix.current,
-      });
-      shortcutPrefix.current = 0;
-      if (!command) return;
-      if ((command === "next" || command === "previous") && view !== "actions")
-        return;
-      event.preventDefault();
-      if (command === "prefix") shortcutPrefix.current = Date.now() + 900;
-      else if (command === "commands") setCommandsOpen(true);
-      else if (command === "search") searchInput.current?.focus();
-      else if (command === "schedule") {
-        if (data?.relationships.length) setActionDialog(true);
-      } else if (command === "close") {
-        closeInspector();
-      } else if (command === "next" || command === "previous") {
-        const current = visibleActions.findIndex(
-          (a) => a.id === selectedAction,
-        );
-        const index =
-          current < 0
-            ? 0
-            : Math.max(
-                0,
-                Math.min(
-                  visibleActions.length - 1,
-                  current + (command === "next" ? 1 : -1),
-                ),
-              );
-        const next = visibleActions[index];
-        if (next) {
-          setSelected(next.relationshipId);
-          setSelectedAction(next.id);
-          setTab("timeline");
-          document
-            .querySelector<HTMLElement>(`[data-action-id="${next.id}"]`)
-            ?.focus();
-        }
-      } else navigate(command as View);
+  useKeyboardNavigation((command) => {
+    if (["next", "previous", "first", "last"].includes(command)) {
+      if (
+        !document.activeElement?.classList.contains("view-title") &&
+        document.activeElement?.closest(
+          "#record-inspector, .sidebar, .resize-handle, header",
+        )
+      )
+        return false;
+      return focusRecord(command);
     }
-    window.addEventListener("keydown", handleKey);
-    return () => {
-      window.removeEventListener("keydown", handleKey);
-    };
+    if (command === "commands") setCommandsOpen(true);
+    else if (command === "help") setHelpOpen(true);
+    else if (command === "search") {
+      if (!searchInput.current) return false;
+      searchInput.current.focus();
+    } else if (command === "organization" || command === "product") {
+      document
+        .querySelector<HTMLSelectElement>(
+          `select[aria-label="${command === "organization" ? t.workspace : t.product}"]`,
+        )
+        ?.focus();
+    } else if (command === "create" && view === "people") {
+      if (!data?.products.length) return false;
+      setPersonDialog(true);
+    } else if (command === "schedule" || command === "create") {
+      if (!data?.relationships.length) return false;
+      setActionDialog(true);
+    } else if (command === "close") {
+      const target = document.activeElement;
+      if (target === searchInput.current) {
+        if (search) setSearch("");
+        else {
+          searchInput.current?.blur();
+          document.querySelector<HTMLElement>(".view-title")?.focus();
+        }
+      } else if (target?.closest("textarea, input, select, [contenteditable]"))
+        return false;
+      else {
+        closeInspector();
+        returnFocus.current?.focus();
+      }
+    } else if (command === "listFocus") {
+      return focusRecord("next");
+    } else if (command === "detailFocus") {
+      const target = document.querySelector<HTMLButtonElement>(
+        "#record-inspector button:not(:disabled)",
+      );
+      if (!target) return false;
+      target.focus();
+    } else if (command === "back") {
+      if (!recordHistory.length) return false;
+      previousRecord();
+    } else if (command === "expand") {
+      if (!selected && !selectedCompany) return false;
+      panels.setExpanded(!panels.expanded);
+    } else if (["timeline", "evidence", "draft"].includes(command)) {
+      if (!selected || (command === "draft" && !action)) return false;
+      setTab(command as typeof tab);
+      document
+        .querySelector<HTMLButtonElement>(`[data-inspector-tab="${command}"]`)
+        ?.focus();
+    } else navigate(command as View);
+    return true;
   });
   const showInspector = !!selected || !!selectedCompany;
   const subtitle = t[`${view}Subtitle` as keyof typeof t] as string;
@@ -656,7 +725,7 @@ export function CrmApp({
       />
       <main className="main">
         <header className="topbar">
-          <h1 className="view-title" title={subtitle}>
+          <h1 tabIndex={-1} className="view-title" title={subtitle}>
             {label(view)}
           </h1>
           <div className="top-controls">
@@ -780,10 +849,23 @@ export function CrmApp({
             </button>
           </div>
         </header>
+        {helpOpen && <Shortcuts onClose={() => setHelpOpen(false)} />}
         {commandsOpen && (
           <Commands
             onClose={() => setCommandsOpen(false)}
             commands={[
+              {
+                id: "help",
+                title: t.keyboardHelp,
+                shortcut: "?",
+                run: () => setHelpOpen(true),
+              },
+              {
+                id: "refresh",
+                title: t.refresh,
+                shortcut: "",
+                run: () => void refresh(),
+              },
               ...nav.map((item) => ({
                 id: item.id,
                 title: label(item.id),
@@ -800,7 +882,7 @@ export function CrmApp({
               {
                 id: "person",
                 title: t.addPerson,
-                shortcut: "",
+                shortcut: t.keys.create,
                 disabled: !data?.products.length,
                 run: () => {
                   navigate("people");
@@ -810,13 +892,13 @@ export function CrmApp({
               {
                 id: "integrations",
                 title: t.integrations,
-                shortcut: "",
+                shortcut: t.keys.integrations,
                 run: () => navigate("integrations"),
               },
               {
                 id: "settings",
                 title: t.settings,
-                shortcut: "",
+                shortcut: t.keys.settings,
                 run: () => navigate("settings"),
               },
             ]}
@@ -833,7 +915,7 @@ export function CrmApp({
             onCreated={async (result) => {
               if (productId && productId !== result.productId)
                 setProductId(result.productId);
-              else await refresh();
+              await refresh();
               setSelected(result.relationshipId);
               setSelectedAction(result.actionId);
               setTab("timeline");
@@ -856,7 +938,7 @@ export function CrmApp({
             onCreated={async (result) => {
               if (productId && productId !== result.productId)
                 setProductId(result.productId);
-              else await refresh();
+              await refresh();
               setSelected(result.relationshipId);
               setSelectedAction("");
               setTab("timeline");
@@ -866,7 +948,16 @@ export function CrmApp({
         )}
         {!data ? (
           <div className="empty">
-            {organizationId ? t.loading : t.organizationIsolation}
+            {organizationId
+              ? loadFailed
+                ? t.viewLoadError
+                : t.loading
+              : t.organizationIsolation}
+            {organizationId && loadFailed && (
+              <button type="button" onClick={() => void refresh()}>
+                {t.retry}
+              </button>
+            )}
             {!organizationId && (
               <SettingsForm
                 organizationId={organizationId}
@@ -889,6 +980,13 @@ export function CrmApp({
               id="records-panel"
               className="content"
               aria-label={label(view)}
+              onClickCapture={(event) => {
+                const target =
+                  event.target instanceof Element
+                    ? event.target.closest<HTMLElement>("button, a[href]")
+                    : null;
+                if (target) returnFocus.current = target;
+              }}
             >
               {view === "actions" && (
                 <>
@@ -911,16 +1009,14 @@ export function CrmApp({
                               type="button"
                               key={a.id}
                               className="action-row"
+                              data-nav-record={a.id}
                               data-action-id={a.id}
                               onPointerEnter={() =>
                                 warmContext(a.relationshipId)
                               }
                               aria-pressed={selectedAction === a.id}
                               onClick={() => {
-                                setSelectedCompany("");
-                                setSelected(a.relationshipId);
-                                setSelectedAction(a.id);
-                                setTab("timeline");
+                                openPerson(a.relationshipId, a.id);
                               }}
                             >
                               <span
@@ -1014,6 +1110,10 @@ export function CrmApp({
                                 <button
                                   type="button"
                                   className="text-button identity-link"
+                                  data-nav-record={p.id}
+                                  onFocus={() =>
+                                    warmContext(relationships[0]?.id ?? "")
+                                  }
                                   aria-label={p.name}
                                   onClick={() => {
                                     openPerson(relationships[0]?.id ?? "");
@@ -1090,6 +1190,7 @@ export function CrmApp({
                               <button
                                 type="button"
                                 className="text-button"
+                                data-nav-record={c.id}
                                 onClick={() => openCompany(c.id)}
                               >
                                 {c.name}
@@ -1181,6 +1282,7 @@ export function CrmApp({
                             .map((e) => (
                               <button
                                 type="button"
+                                data-nav-record={e.id}
                                 onClick={() => openPerson(e.relationshipId)}
                                 className={`badge ${e.status === "paused_reply" ? "warning" : ""}`}
                                 key={e.id}
@@ -1227,6 +1329,7 @@ export function CrmApp({
                             <h2>{meeting.title}</h2>
                             <p className="muted">
                               <button
+                                data-nav-record={meeting.id}
                                 type="button"
                                 className="text-button"
                                 onClick={() =>
@@ -1270,7 +1373,11 @@ export function CrmApp({
                               >
                                 <label>
                                   {t.owner}
-                                  <select name="ownerId" defaultValue={userId}>
+                                  <select
+                                    name="ownerId"
+                                    defaultValue={userId}
+                                    disabled={busy}
+                                  >
                                     {data.members
                                       .filter((m) =>
                                         m.productIds.includes(
@@ -1288,6 +1395,7 @@ export function CrmApp({
                                   {t.commitmentDate}
                                   <input
                                     name="dueAt"
+                                    disabled={busy}
                                     type="datetime-local"
                                     required
                                   />
@@ -1352,6 +1460,7 @@ export function CrmApp({
                                       tabIndex={-1}
                                     >
                                       <button
+                                        data-nav-record={o.id}
                                         type="button"
                                         className="text-button"
                                         onClick={() =>
@@ -1636,6 +1745,7 @@ export function CrmApp({
                         <button
                           type="button"
                           key={value}
+                          data-inspector-tab={value}
                           aria-pressed={tab === value}
                           onClick={() => setTab(value as typeof tab)}
                         >
@@ -1713,6 +1823,23 @@ export function CrmApp({
                           {t.draftLabel}
                         </label>
                         <textarea
+                          maxLength={20000}
+                          disabled={busy}
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === "Enter" &&
+                              (event.metaKey || event.ctrlKey) &&
+                              !event.altKey &&
+                              !event.nativeEvent.isComposing
+                            ) {
+                              event.preventDefault();
+                              event.currentTarget.parentElement
+                                ?.querySelector<HTMLButtonElement>(
+                                  "[data-save-draft]:not(:disabled)",
+                                )
+                                ?.click();
+                            }
+                          }}
                           id="message-draft"
                           value={draft}
                           onChange={(event) => {
@@ -1771,6 +1898,7 @@ export function CrmApp({
                           ) : (
                             <>
                               <button
+                                data-save-draft
                                 type="button"
                                 disabled={busy || draft === action.draft}
                                 onClick={() =>
@@ -1810,7 +1938,9 @@ export function CrmApp({
                             </>
                           )}
                         </div>
-                        <p className="coverage-note">{t.sendingUnavailable}</p>
+                        <p className="coverage-note">
+                          {t.draftSaveHint} · {t.sendingUnavailable}
+                        </p>
                       </div>
                     )}
                     <RelatedWork
@@ -1878,66 +2008,4 @@ export function CrmApp({
       setNotice(errorText(error));
     }
   }
-}
-function SettingsForm({
-  organizationId,
-  canCreateProduct = false,
-  mutate,
-  onOrganizations,
-}: {
-  organizationId: string;
-  canCreateProduct?: boolean;
-  mutate: (body: object) => Promise<boolean>;
-  onOrganizations: () => Promise<void>;
-}) {
-  const [busy, setBusy] = useState(false);
-  const submitting = useRef(false);
-  return (
-    <div className="settings-forms">
-      {[
-        "organization",
-        ...(organizationId && canCreateProduct ? ["product"] : []),
-      ].map((kind) => (
-        <form
-          key={kind}
-          onSubmit={async (event) => {
-            event.preventDefault();
-            if (submitting.current) return;
-            const form = event.currentTarget;
-            const values = new FormData(form);
-            submitting.current = true;
-            setBusy(true);
-            try {
-              if (
-                await mutate({
-                  operation: kind,
-                  organizationId,
-                  name: values.get("name"),
-                })
-              ) {
-                form.reset();
-                await onOrganizations();
-              }
-            } finally {
-              submitting.current = false;
-              setBusy(false);
-            }
-          }}
-        >
-          <label>
-            {kind === "organization" ? t.organizationName : t.productName}
-            <input name="name" required maxLength={100} disabled={busy} />
-          </label>
-          <button className="primary" type="submit" disabled={busy}>
-            <Plus size={14} />
-            {busy
-              ? t.saving
-              : kind === "organization"
-                ? t.newOrganization
-                : t.newProduct}
-          </button>
-        </form>
-      ))}
-    </div>
-  );
 }

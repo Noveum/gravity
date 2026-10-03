@@ -34,7 +34,7 @@ The actual SSE endpoint returned 200 and `text/event-stream`. A committed HTTP d
 
 While a local draft was unsaved, a remote HTTP save preserved the local text and exposed a conflict. Attempting Save kept the conflict and did not overwrite the committed draft. Explicit discard/reload showed the remote version. Buffers are page-session memory only.
 
-Keyboard routing tests cover typing/IME/modal suppression, platform command modifiers, navigation prefixes and preservation of browser shortcuts. The command menu and form were exercised through browser controls; physical-key and screen-reader qualification remain pending. A revised 390 × 844 layout had no document-level horizontal overflow and uses a compact horizontal navigation row and modeless inspector drawer.
+Keyboard routing tests cover typing/IME/modal suppression, platform command modifiers, navigation prefixes and preservation of browser shortcuts. The command menu and form were exercised through browser controls; physical-key checks are recorded in the later keyboard review; screen-reader qualification remains pending. A revised 390 × 844 layout had no document-level horizontal overflow and uses a compact horizontal navigation row and modeless inspector drawer.
 
 ## Resizing and connected record navigation
 
@@ -59,3 +59,17 @@ Final local checks passed with Node 22.15.1/Bun 1.3.14: TypeScript, Biome, all 4
 The initial publication commit `8e1f85942977192597d8ac66ed57c672924a1492` passed the [first GitHub CI run](https://github.com/Noveum/gravity/actions/runs/37134125466) on a fresh Ubuntu runner: pinned checkout/runtime setup, frozen install, dependency audit, TypeScript, Biome, all 40 tests and production build. This verifies clean Linux packaging in addition to local macOS checks. The manual preview workflow remains disabled and has not deployed to Vercel.
 
 The refreshed local browser verified that opening Appearance then pressing physical Escape closed it and returned focus to its summary; clicking Companies outside the open menu also closed it. The app was restarted successfully after its production build.
+
+## Keyboard, form and responsiveness review
+
+The expanded suite contains 64 tests across nine files: the original SQL/HTTP/OAuth/SSE suites, plus React/jsdom interactions, authorized product projection and refresh coalescing. UI tests use the real React components; where transport is injected, SQL fixtures and domain operations remain real in the app-level tests. jsdom dialog top-layer behavior is substituted, and native dialogs are checked separately in the browser.
+
+Regression coverage includes disabled/empty/IME command selection, active-option ARIA, focus restoration, record movement without incidental activation, typed and consumed events, appearance/menu ownership, native required validation, scope-loading/retry, duplicate person/settings submissions and retained errors. App tests verify the view-title-to-record flow, synchronous product projection without another list read, discarded old-organization reads, confirmed completion surviving a pre-commit read, modifier draft save without approval/false conflict, and creation for another product appearing after the required full refresh.
+
+Physical in-app keyboard checks exercised G P/C/S/M/O/T, J then Enter for people/company/sequence/meeting/opportunity records, evidence selection, inspector expansion/restoration and Escape focus return. Cmd K opened the palette; search plus Enter navigated to Companies. The ? guide opened and searched all view/work/inspector keys. C opened a native person dialog, which focused Name after scope loading; Cmd Enter created a fictional buyer. N and Cmd Enter scheduled a fictional follow-up, which appeared in a second tab without reload. Draft Cmd Enter saved the fictional text without approval. Material J focused its download link without downloading it. Light/compact and dark layouts were visually reviewed with the existing compact header and visible record focus rings.
+
+Snapshot filtering uses Set membership rather than nested person/company scans. Product changes preserve the authorized snapshot and SSE connection. Refreshes coalesce overlapping requests; acknowledged actions update immediately and invalidate reads started before their commit. This establishes local functional responsiveness, not a high-volume or production latency benchmark.
+
+The refreshed dependency license inventory records 186 installed locked packages with no undeclared license fields; Bun audit found no vulnerabilities. Production/provider/publication limits recorded above still apply. The repository remains private; no hosting or paid service was added in this pass.
+
+Final local verification for this pass: TypeScript, Biome without warnings, all 64 tests, dependency audit and production build passed. Credential-pattern screening of 106 source/document files found no matches; local databases and uploads remain ignored. Screening is a limited check, not a proof against every possible secret.

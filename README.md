@@ -31,7 +31,7 @@ Stop the dev server before running `bun run db:migrate` against local PGlite. It
 - Private PDF, Markdown, and text materials, nested folders per product, associations with one or several product stages, authenticated download, and content hashes. Files start as drafts; approval/version replacement and PDF extraction are pending.
 - Tested Unipile v2 event normalization and signed webhook entry point. Incoming replies pause enrollments and invalidate approved drafts; several replies in one conversation keep one pending reply task; retries do not duplicate messages. Unknown threads remain in the database for later classification.
 - Read-only MCP using OAuth authorization-code flow with PKCE, resource-bound JWTs, organization/product selection, client consent, refresh, and revocable immutable grants. The OAuth flow is exercised against real local HTTP and SQL in tests. Real Codex/Claude and social-provider connections still require configuration and live verification.
-- Orbit’s blue light/dark palettes, system preference, compact row density, a searchable command menu and safe keyboard navigation.
+- Orbit’s blue light/dark palettes, system preference, compact row density, a searchable command menu, complete shortcut guide and keyboard navigation across record views.
 - Explicit next-action scheduling with product-authorized owners, channels, owed-by party and UTC deadlines.
 - Authenticated SSE revision delivery with immediate same-runtime wakeups, one-second reconciliation across runtimes and fallback recovery. Unsaved drafts keep their edited version across live updates; distributed fan-out and large-list pagination remain future work.
 
@@ -70,7 +70,7 @@ bun run lint
 bun run build
 ```
 
-Tests exercise actual PostgreSQL migrations and constraints using PGlite, plus OAuth registration, PKCE, consent, token refresh, MCP HTTP transport, tenant isolation, private histories, concurrent duplicate replies, coalesced reply tasks, invalidated approvals, file access, and identity creation/linking. Build success verifies packaging; it does not verify a supplied cloud database, live OAuth app, S3 bucket, or sending account.
+React interaction tests cover command selection, focus restoration, form submission guards, native validation, instant product switching and delayed-read reconciliation. The SQL/HTTP tests exercise actual PostgreSQL migrations and constraints using PGlite, plus OAuth registration, PKCE, consent, token refresh, MCP HTTP transport, tenant isolation, private histories, concurrent duplicate replies, coalesced reply tasks, invalidated approvals, file access, and identity creation/linking. Build success verifies packaging; it does not verify a supplied cloud database, live OAuth app, S3 bucket, or sending account.
 
 ## Configuration and deployment
 

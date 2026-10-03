@@ -1952,3 +1952,56 @@ body:has(.resize-handle[data-dragging]) {
 .dialog-fields {
   display: contents;
 }
+
+.command-list [aria-selected="true"] {
+  background: var(--soft);
+  color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.command-hint {
+  margin-top: 10px;
+}
+.shortcuts-dialog {
+  width: min(640px, calc(100vw - 32px));
+}
+.shortcut-groups {
+  max-height: 55vh;
+  overflow-y: auto;
+  margin-block: 16px;
+}
+.shortcut-groups h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin: 18px 0 8px;
+}
+.shortcut-row {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.shortcut-row kbd {
+  white-space: nowrap;
+  color: var(--muted);
+}
+[data-nav-record]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--soft);
+}
+.view-title:focus {
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto;
+    transition-duration: 0s;
+  }
+}

@@ -2,7 +2,7 @@
 
 ## Continuous integration
 
-Pushes to `main` and pull requests run the `foundation` check on GitHub Actions: frozen Bun install, dependency audit, TypeScript, Biome, all SQL/HTTP/OAuth tests and production build. No cloud credentials are required. Actions are pinned to verified full commit SHAs, checkout credentials are not persisted, permissions are read-only and superseded runs are cancelled. Dependabot proposes weekly Bun and action updates; updates are reviewed rather than auto-merged. [GitHub action security](https://docs.github.com/en/actions/reference/security/secure-use), [Bun support](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories).
+Pushes to `main` and pull requests run the `foundation` check on GitHub Actions: frozen Bun install, dependency audit, TypeScript, Biome, all SQL/HTTP/OAuth/UI tests and production build. No cloud credentials are required. Actions are pinned to verified full commit SHAs, checkout credentials are not persisted, permissions are read-only and superseded runs are cancelled. Dependabot proposes weekly Bun and action updates; updates are reviewed rather than auto-merged. [GitHub action security](https://docs.github.com/en/actions/reference/security/secure-use), [Bun support](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories).
 
 ## Optional Vercel preview
 

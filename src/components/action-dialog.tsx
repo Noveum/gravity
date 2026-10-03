@@ -1,9 +1,14 @@
 "use client";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { errorText, label, requestJson } from "./client-api";
 import { useDialogSnapshot } from "./dialog-snapshot";
+import {
+  submitOnModEnter,
+  useModalLifecycle,
+  useReadyFocus,
+} from "./modal-lifecycle";
 
 export function ActionDialog({
   data: initialData,
@@ -42,9 +47,8 @@ export function ActionDialog({
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    modal.current?.showModal();
-  }, []);
+  useModalLifecycle(modal);
+  useReadyFocus(modal, loading);
   return (
     <dialog
       ref={modal}
@@ -57,6 +61,7 @@ export function ActionDialog({
     >
       <h2 id="action-dialog-title">{t.scheduleAction}</h2>
       <form
+        onKeyDown={submitOnModEnter}
         onSubmit={async (e) => {
           e.preventDefault();
           if (submitting.current || loading || loadError) return;
@@ -120,6 +125,7 @@ export function ActionDialog({
           <label>
             {t.person}
             <select
+              data-primary-field
               value={relationship}
               required
               onChange={(e) => setRelationship(e.target.value)}
@@ -216,19 +222,27 @@ export function ActionDialog({
           </label>
         </fieldset>
         <p className="muted">{t.scheduleNote}</p>
-        <p role="status">{error || loadError || (loading ? t.loading : "")}</p>
+        <p role={error || loadError ? "alert" : "status"}>
+          {error || loadError || (loading ? t.loading : "")}
+        </p>
         {loadError && (
           <button type="button" onClick={retry}>
             {t.retry}
           </button>
         )}
         <div className="dialog-actions">
-          <button type="button" disabled={busy} onClick={onClose}>
+          <button
+            data-modal-cancel
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+          >
             {t.cancel}
           </button>
           <button
             className="primary"
             type="submit"
+            title={t.submitHint}
             disabled={busy || loading || !!loadError || !relationship}
           >
             {busy ? t.saving : t.scheduleAction}

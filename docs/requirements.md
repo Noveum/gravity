@@ -47,15 +47,24 @@ Live updates never approve, send, or replace an unsaved draft. Draft edits are b
 
 | Key | Action |
 |---|---|
-| Cmd/Ctrl K or ? | Searchable commands and shortcut help |
-| / | Focus search in the current view |
-| J/K or Down/Up | Move through visible next actions |
+| Cmd/Ctrl K | Searchable commands; Up/Down selects an enabled match; Enter opens it |
+| ? | Searchable shortcut guide |
+| / | Focus search in the current view; Escape clears it, then returns to the view |
+| J/K or Down/Up | Focus visible records in every record view; Enter opens the focused record |
+| Home / End | Focus first / last visible record |
+| C | Create a person in People; otherwise schedule an action |
 | N | Open next-action scheduling |
-| G then A/P/C/S/M/O/F | Actions / People / Companies / Sequences / Meetings / Opportunities / Materials |
-| Escape | Close an inspector; native dialogs cancel unless saving |
+| G then A/P/C/S/M/O/F/I/T | Actions / People / Companies / Sequences / Meetings / Opportunities / Materials / Connections / Settings |
+| O / P | Focus organization / product selector; native arrows and Enter choose |
+| H / L | Focus the record list / detail panel |
+| E | Expand or restore the detail panel |
+| 1 / 2 / 3 | Conversation / Evidence / Draft, when available |
+| B | Return to the previous inspected record |
+| Cmd/Ctrl Enter | Submit a create/settings form after native validation; save an edited draft |
+| Escape | Close an inspector and restore its trigger; native dialogs cancel unless saving |
 | Tab / Shift Tab | Standard focus navigation; native modal focus containment |
 
-Single-key shortcuts do not run while typing in a form or during IME composition. Background shortcuts do not run behind an open modal. No shortcut approves or sends a message. The command menu opens with either platform modifier and supports search, Enter for the first enabled match and Down to focus the results.
+Single-key shortcuts pause while typing, during IME composition, and behind modals or menus. Child controls retain consumed keys, and dividers/inspectors keep their own arrow navigation. Go-to chords expire after 900 ms. Record movement changes focus rather than opening links or downloading files; Enter activates the focused control. No shortcut approves a draft, accepts a meeting commitment, or sends a message. Native validation and synchronous submission guards apply to modifier submission. The complete searchable guide is generated from the same view mapping as navigation.
 
 ## Live delivery contract
 
@@ -71,3 +80,5 @@ This is near-live delivery, not a guarantee of instant distributed synchronizati
 4. Connect one mailbox, reconcile replies and external sends, then add LinkedIn and meetings.
 5. Qualify direct private storage and approved enablement material before deployment.
 6. Add controlled outbound execution only after suppression, fresh approval and retry recovery pass.
+
+Product switches project the already-authorized organization snapshot synchronously; they do not issue a new list request or reconnect SSE. Server checks remain authoritative. Overlapping refreshes are coalesced, delayed responses from a previous organization are discarded, and reads started before an acknowledged write cannot replace its confirmed result. Confirmed action writes update the queue before background reconciliation. Complete snapshots still require pagination and volume qualification before production.

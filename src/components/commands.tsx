@@ -1,6 +1,7 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import { useEffect, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
+import { useModalLifecycle } from "./modal-lifecycle";
 export interface Command {
   id: string;
   title: string;
@@ -16,75 +17,111 @@ export function Commands({
   onClose: () => void;
 }) {
   const modal = useRef<HTMLDialogElement>(null);
+  const search = useRef<HTMLInputElement>(null);
+  const listId = useId();
   const [query, setQuery] = useState("");
-  useEffect(() => {
-    modal.current?.showModal();
-  }, []);
-  const filtered = commands.filter((c) =>
-    c.title.toLowerCase().includes(query.toLowerCase()),
+  const [activeId, setActiveId] = useState("");
+  useModalLifecycle(modal);
+  const filtered = commands.filter((command) =>
+    query
+      .toLowerCase()
+      .trim()
+      .split(/\s+/)
+      .every((term) => command.title.toLowerCase().includes(term)),
   );
+  const enabled = filtered.filter((command) => !command.disabled);
+  const active =
+    enabled.find((command) => command.id === activeId) || enabled[0];
+  function execute(command: Command | undefined) {
+    if (!command || command.disabled) return;
+    onClose();
+    command.run();
+  }
   return (
     <dialog
       ref={modal}
       className="dialog command-dialog"
-      aria-labelledby="commands-title"
+      aria-labelledby={`${listId}-title`}
       onCancel={onClose}
+      onKeyDown={(event) => {
+        if (
+          event.nativeEvent.isComposing ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey
+        )
+          return;
+        const key = event.key;
+        if (key === "ArrowDown" || key === "ArrowUp") {
+          event.preventDefault();
+          const index = enabled.findIndex(
+            (command) => command.id === active?.id,
+          );
+          const next =
+            enabled[
+              (index + (key === "ArrowDown" ? 1 : -1) + enabled.length) %
+                enabled.length
+            ];
+          setActiveId(next?.id || "");
+          search.current?.focus();
+          document
+            .getElementById(`${listId}-${next?.id}`)
+            ?.scrollIntoView({ block: "nearest" });
+        } else if (key === "Enter" && event.target === search.current) {
+          event.preventDefault();
+          execute(active);
+        }
+      }}
     >
-      <h2 id="commands-title">{t.commands}</h2>
+      <h2 id={`${listId}-title`}>{t.commands}</h2>
       <input
+        ref={search}
         className="command-search"
         type="search"
+        role="combobox"
         aria-label={t.commandSearch}
+        aria-expanded="true"
+        aria-autocomplete="list"
+        aria-controls={listId}
+        aria-activedescendant={active ? `${listId}-${active.id}` : undefined}
         placeholder={t.commandSearch}
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            const first = filtered.find((c) => !c.disabled);
-            if (first) {
-              onClose();
-              first.run();
-            }
-          }
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            modal.current
-              ?.querySelector<HTMLButtonElement>(
-                ".command-list button:not(:disabled)",
-              )
-              ?.focus();
-          }
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setActiveId("");
         }}
       />
-      <div className="command-list">
-        {filtered.map((c) => (
+      <div
+        id={listId}
+        className="command-list"
+        role="listbox"
+        aria-label={t.commands}
+      >
+        {filtered.map((command) => (
           <button
-            key={c.id}
+            id={`${listId}-${command.id}`}
+            key={command.id}
             type="button"
-            disabled={c.disabled}
-            onClick={() => {
-              onClose();
-              c.run();
+            role="option"
+            aria-selected={active?.id === command.id}
+            tabIndex={-1}
+            disabled={command.disabled}
+            onPointerMove={() => {
+              if (!command.disabled) setActiveId(command.id);
             }}
+            onClick={() => execute(command)}
           >
-            {c.title}
-            <kbd>{c.shortcut}</kbd>
+            {command.title}
+            <kbd>{command.shortcut}</kbd>
           </button>
         ))}
-        {!filtered.length && <p className="muted">{t.noCommands}</p>}
       </div>
-      <div className="shortcut-map">
-        <span>{t.commands}</span>
-        <kbd>{t.keys.commands}</kbd>
-        <span>{t.searchShortcut}</span>
-        <kbd>{t.keys.search}</kbd>
-        <span>{t.nextActionShortcut}</span>
-        <kbd>{t.keys.movement}</kbd>
-        <span>{t.createShortcut}</span>
-        <kbd>{t.keys.schedule}</kbd>
-        <span>{t.closeShortcut}</span>
-        <kbd>{t.keys.close}</kbd>
-      </div>
+      {!filtered.length && (
+        <p role="status" className="muted">
+          {t.noCommands}
+        </p>
+      )}
+      <p className="muted command-hint">{t.commandNavigation}</p>
       <div className="dialog-actions">
         <button type="button" onClick={onClose}>
           {t.close}

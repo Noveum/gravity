@@ -264,7 +264,7 @@
   "closeInspector": "Close inspector",
   "keys": {
     "commandHint": "⌘ K",
-    "commands": "⌘ / Ctrl K · ?",
+    "commands": "⌘ / Ctrl K",
     "search": "/",
     "movement": "J / K · ↓ / ↑",
     "schedule": "N",
@@ -275,7 +275,10 @@
     "sequences": "G S",
     "meetings": "G M",
     "opportunities": "G O",
-    "materials": "G F"
+    "materials": "G F",
+    "integrations": "G I",
+    "settings": "G T",
+    "create": "C"
   },
   "resizeNavigation": "Resize navigation sidebar",
   "resizeInspector": "Resize detail panel",
@@ -312,5 +315,19 @@
   "discovery": "Discovery",
   "evaluation": "Evaluation",
   "proposal": "Proposal",
-  "won": "Won"
+  "won": "Won",
+  "commandNavigation": "↑ / ↓ to choose · Enter to open · Esc to close",
+  "keyboardNavigation": "Go to",
+  "keyboardGeneral": "Work and navigation",
+  "keyboardRecords": "Move between records",
+  "keyboardOpen": "Open the focused record",
+  "keyboardCreate": "Create a person in People, or schedule an action",
+  "keyboardSubmit": "Submit a create or settings form",
+  "keyboardSafety": "Single-key shortcuts pause while you type or use a modal. Arrow keys focus records; Enter opens them. No shortcut sends messages or approves drafts.",
+  "keyboardListFocus": "Focus the record list",
+  "keyboardDetailFocus": "Focus the detail panel",
+  "shortcutSearch": "Search shortcuts…",
+  "viewLoadError": "This view could not be loaded. Retry to reconnect.",
+  "submitHint": "⌘ / Ctrl Enter to submit",
+  "draftSaveHint": "⌘ / Ctrl Enter to save this draft"
 }

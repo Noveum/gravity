@@ -174,16 +174,13 @@ export async function createInvites(
 ): Promise<{ invites: CreatedInvite[]; actions: SyncAction[] }> {
   assertCan(principal, 'member:invite');
   const parsed = inviteBulkSchema.parse(input);
-  const entries = [
-    ...new Map(parsed.invites.map((entry) => [entry.email.toLowerCase(), entry])).values(),
-  ];
 
   return await db.transaction(async (tx) => {
     const actor = principalActor(principal);
     const now = new Date();
     const invites: CreatedInvite[] = [];
     const actions: SyncAction[] = [];
-    for (const entry of entries) {
+    for (const entry of parsed.invites) {
       await assertEmailIsFree(tx, principal.organizationId, entry.email);
       const created = await insertInvite(
         tx,
@@ -319,16 +316,29 @@ export interface AcceptedInvite {
 
 export async function acceptInvite(token: string, userId: string): Promise<AcceptedInvite> {
   return await db.transaction(async (tx) => {
-    const [found] = await tx
-      .select(invitationColumns)
+    const tokenHash = hashToken(token);
+    const [target] = await tx
+      .select({ organizationId: schema.invitation.organizationId })
       .from(schema.invitation)
-      .where(eq(schema.invitation.tokenHash, hashToken(token)))
+      .where(eq(schema.invitation.tokenHash, tokenHash))
       .limit(1);
-    const invitation = requireRow(found, 'That invite is not valid.');
-    const organization = await lockOrganization(tx, invitation.organizationId);
+    const { organizationId } = requireRow(target, 'That invite is not valid.');
+    const organization = await lockOrganization(tx, organizationId);
     if (organization.deletionRequestedAt !== null) {
       throw conflict('That workspace is being permanently deleted.');
     }
+    const [locked] = await tx
+      .select(invitationColumns)
+      .from(schema.invitation)
+      .where(
+        and(
+          eq(schema.invitation.tokenHash, tokenHash),
+          eq(schema.invitation.organizationId, organizationId),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    const invitation = requireRow(locked, 'That invite is not valid.');
 
     const [existingMember] = await tx
       .select()
@@ -404,8 +414,9 @@ export async function acceptInvite(token: string, userId: string): Promise<Accep
     const [acceptedInvitation] = await tx
       .update(schema.invitation)
       .set({ status: 'accepted', syncId: invitationSyncId })
-      .where(eq(schema.invitation.id, invitation.id))
+      .where(and(eq(schema.invitation.id, invitation.id), eq(schema.invitation.status, 'pending')))
       .returning(invitationColumns);
+    if (acceptedInvitation === undefined) throw conflict('That invite is no longer available.');
 
     const actor = { type: 'user', id: userId, name: invitedUser.name } as const;
     const actions = [
@@ -419,9 +430,7 @@ export async function acceptInvite(token: string, userId: string): Promise<Accep
         data: member,
         actor,
       }),
-      ...(acceptedInvitation === undefined
-        ? []
-        : [inviteAction(acceptedInvitation, invitationSyncId, actor, 'update')]),
+      inviteAction(acceptedInvitation, invitationSyncId, actor, 'update'),
     ];
     await recordSync(tx, actions);
 

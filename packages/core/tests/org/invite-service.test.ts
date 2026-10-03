@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { db, eq, schema } from '@gravity/db';
 import { DomainError } from '@gravity/shared/errors';
+import postgres from 'postgres';
 import { ZodError } from 'zod';
 import {
   acceptInvite,
@@ -23,6 +24,17 @@ beforeEach(async () => {
 afterAll(async () => {
   await closeRealtime();
 });
+
+async function waitForLockWaiter(observer: postgres.Sql): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const [row] = await observer<{ waiting: number }[]>`
+      select count(*)::int as waiting from pg_stat_activity
+      where datname = current_database() and wait_event_type = 'Lock'`;
+    if ((row?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('the accept never waited on the workspace lock');
+}
 
 describe('invites', () => {
   test('an invited user joins with the invited role', async () => {
@@ -122,6 +134,57 @@ describe('invites', () => {
     await revokeInvite(workspace.admin, created.invitation.id);
     await expect(acceptInvite(created.token, invitee.id)).rejects.toThrow(DomainError);
     expect(await listPendingInvites(workspace.admin)).toHaveLength(0);
+  });
+
+  test('an invite revoked while an accept waits on the workspace lock is not accepted', async () => {
+    const workspace = await createWorkspace();
+    const invitee = await createUser('Aditi');
+    const created = await createInvite(workspace.admin, { email: invitee.email });
+    const rival = postgres(String(process.env['DATABASE_URL']), {
+      max: 2,
+      onnotice: () => undefined,
+    });
+
+    try {
+      let releaseLock = (): void => undefined;
+      const lockReleased = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      let lockHeld = (): void => undefined;
+      const lockTaken = new Promise<void>((resolve) => {
+        lockHeld = resolve;
+      });
+      const holder = rival.begin(async (tx) => {
+        await tx`select id from organization where id = ${workspace.organizationId} for update`;
+        lockHeld();
+        await lockReleased;
+      });
+      await lockTaken;
+
+      const accepting = acceptInvite(created.token, invitee.id).then(
+        () => 'accepted',
+        (error: unknown) => (error instanceof DomainError ? error.code : 'unexpected'),
+      );
+      await waitForLockWaiter(rival);
+      await rival`update invitation set status = 'revoked' where id = ${created.invitation.id} and status = 'pending'`;
+      releaseLock();
+      await holder;
+
+      expect(await accepting).toBe('conflict');
+    } finally {
+      await rival.end();
+    }
+
+    const [row] = await db
+      .select({ status: schema.invitation.status })
+      .from(schema.invitation)
+      .where(eq(schema.invitation.id, created.invitation.id));
+    expect(row?.status).toBe('revoked');
+    const joined = await db
+      .select({ id: schema.member.id })
+      .from(schema.member)
+      .where(eq(schema.member.userId, invitee.id));
+    expect(joined).toHaveLength(0);
   });
 
   test('an invite sent to another address is refused', async () => {

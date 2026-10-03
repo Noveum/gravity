@@ -14,7 +14,7 @@ export async function livePerson(
   executor: Executor,
   organizationId: string,
   personId: string,
-  lock = false,
+  lock: 'update' | 'share' | false = false,
 ) {
   const query = executor
     .select()
@@ -27,7 +27,7 @@ export async function livePerson(
       ),
     )
     .limit(1);
-  const [row] = lock ? await query.for('update') : await query;
+  const [row] = lock === false ? await query : await query.for(lock);
   if (row === undefined) throw notFound('That person does not exist.');
   return row;
 }

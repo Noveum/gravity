@@ -1,6 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { db, eq, schema } from '@gravity/db';
-import postgres from 'postgres';
 import { createBrand } from '../../src/crm/brand-service.ts';
 import {
   archiveStage,
@@ -18,6 +17,7 @@ import {
   resetDatabase,
   type TestWorkspace,
 } from '../../src/test-support.ts';
+import { racingRival } from './rival-connection.ts';
 
 let workspace: TestWorkspace;
 let pipelineId = '';
@@ -34,17 +34,6 @@ beforeEach(async () => {
 afterAll(async () => {
   await closeRealtime();
 });
-
-async function waitForLockWaiter(observer: postgres.Sql): Promise<void> {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    const [row] = await observer<{ waiting: number }[]>`
-      select count(*)::int as waiting from pg_stat_activity
-      where datname = current_database() and wait_event_type = 'Lock'`;
-    if ((row?.waiting ?? 0) > 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error('the stage edit never waited on the pipeline lock');
-}
 
 async function parkLeadIn(stageId: string, archivedAt: Date | null = null): Promise<void> {
   await db
@@ -230,38 +219,16 @@ describe('stages of another workspace', () => {
 
   test('a stage edit locks the pipeline before the stage, the order lead writes use', async () => {
     const first = stageIds[0] ?? '';
-    const rival = postgres(String(process.env['DATABASE_URL']), {
-      max: 2,
-      onnotice: () => undefined,
-    });
-    let release = (): void => undefined;
-    const released = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let held = (): void => undefined;
-    const taken = new Promise<void>((resolve) => {
-      held = resolve;
-    });
     let stageLocked = false;
-    const holder = rival.begin(async (tx) => {
-      await tx`select id from pipeline where id = ${pipelineId} for share`;
-      held();
-      await released;
-      await tx`set local lock_timeout = '500ms'`;
-      await tx`select id from stage where id = ${first} for share`;
-      stageLocked = true;
-    });
-    let renaming: Promise<unknown> = Promise.resolve();
-    try {
-      await taken;
-      renaming = updateStage({ principal: workspace.admin }, first, { name: 'Fresh' });
-      await waitForLockWaiter(rival);
-    } finally {
-      release();
-      await holder.catch(() => undefined);
-      await rival.end();
-    }
-    await renaming;
+    await racingRival(
+      (tx) => tx`select id from pipeline where id = ${pipelineId} for share`,
+      () => updateStage({ principal: workspace.admin }, first, { name: 'Fresh' }),
+      async (tx) => {
+        await tx`set local lock_timeout = '500ms'`;
+        await tx`select id from stage where id = ${first} for share`;
+        stageLocked = true;
+      },
+    );
     expect(stageLocked).toBe(true);
   });
 });

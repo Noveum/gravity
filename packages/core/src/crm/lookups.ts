@@ -48,23 +48,30 @@ export async function livePipeline(
   return row;
 }
 
+export interface StageQueryOptions {
+  readonly lock?: 'share';
+  readonly includeArchived?: boolean;
+}
+
 export async function liveStagesOf(
   executor: Executor,
   organizationId: string,
   pipelineIds: readonly string[],
+  options: StageQueryOptions = {},
 ): Promise<StageRow[]> {
   if (pipelineIds.length === 0) return [];
-  const rows = await executor
+  const query = executor
     .select()
     .from(schema.stage)
     .where(
       and(
         eq(schema.stage.organizationId, organizationId),
         inArray(schema.stage.pipelineId, [...pipelineIds]),
-        isNull(schema.stage.archivedAt),
+        options.includeArchived === true ? undefined : isNull(schema.stage.archivedAt),
       ),
     )
-    .orderBy(asc(schema.stage.sortOrder));
+    .orderBy(asc(schema.stage.pipelineId), asc(schema.stage.sortOrder), asc(schema.stage.id));
+  const rows = options.lock === undefined ? await query : await query.for(options.lock);
   return rows.map(stageRowOf);
 }
 

@@ -39,6 +39,14 @@ async function person(name: string, email: string): Promise<string> {
   return (await upsertPerson(context(), { name, emails: [email] })).person.id;
 }
 
+async function leadCounter(): Promise<number | undefined> {
+  const [row] = await db
+    .select({ leadCounter: schema.pipeline.leadCounter })
+    .from(schema.pipeline)
+    .where(eq(schema.pipeline.id, pipelineId));
+  return row?.leadCounter;
+}
+
 async function storedLead(leadId: string) {
   const [row] = await db.select().from(schema.lead).where(eq(schema.lead.id, leadId));
   return row;
@@ -70,6 +78,7 @@ describe('createLead', () => {
     });
     expect(first.actions.map((action) => action.model)).toEqual(['lead', 'activity']);
     expect(first.actions[0]?.scopes).toContain(`pipeline:${pipelineId}`);
+    expect(first.actions[0]?.scopes).toContain(`workspace:${workspace.organizationId}`);
     expect(first.actions[0]?.originClientId).toBe('tab-1');
     const second = await createLead(context(), {
       personId: await person('Grace', 'grace@navy.mil'),
@@ -143,6 +152,16 @@ describe('createLead', () => {
     expect(open.lead.key).toBe('YOD-2');
   });
 
+  test('waits on a person rename in flight and carries the committed name', async () => {
+    const created = await racingRival(
+      (tx) => tx`update person set name = 'Ada King' where id = ${personId}`,
+      () => createLead(context(), { personId, pipelineId }),
+    );
+    expect(created.lead.personName).toBe('Ada King');
+    const emitted = created.actions.find((action) => action.model === 'lead');
+    expect(emitted?.data['personName']).toBe('Ada King');
+  });
+
   test('waits on a stage retype in flight and takes the category it commits', async () => {
     const newStage = stageNamed('New');
     const created = await racingRival(
@@ -177,11 +196,7 @@ describe('foreign ids', () => {
       await db.select().from(schema.activity).where(eq(schema.activity.kind, 'lead.created')),
     ).toHaveLength(0);
     expect(await db.select().from(schema.outbox)).toHaveLength(0);
-    const [counter] = await db
-      .select({ leadCounter: schema.pipeline.leadCounter })
-      .from(schema.pipeline)
-      .where(eq(schema.pipeline.id, pipelineId));
-    expect(counter?.leadCounter).toBe(0);
+    expect(await leadCounter()).toBe(0);
   });
 
   test('a bulk change that includes a foreign lead changes nothing', async () => {
@@ -250,6 +265,9 @@ describe('changeLeads', () => {
     });
     const activity = held.actions.find((action) => action.model === 'activity');
     expect(activity?.data['kind']).toBe('lead.held');
+    const emitted = held.actions.find((action) => action.model === 'lead');
+    expect(emitted?.scopes).toContain(`workspace:${workspace.organizationId}`);
+    expect(emitted?.scopes).toContain(`pipeline:${pipelineId}`);
   });
 
   test('close lands in Closed: no reply and clears the next action', async () => {
@@ -381,7 +399,23 @@ describe('changeLeads', () => {
     expect((await storedLead(lead.id))?.priority).toBe(0);
   });
 
-  test('a reopen that loses the race to another open lead is a 409 and is not retried', async () => {
+  test('reopening a closed lead through hold is refused while another lead is open', async () => {
+    const first = await createLead(context(), { personId, pipelineId });
+    await changeLead(context(), first.lead.id, { type: 'close' });
+    await createLead(context(), { personId, pipelineId });
+    await db.delete(schema.outbox);
+    const refused = await refusal(
+      changeLead(context(), first.lead.id, { type: 'hold', reason: 'Back in Q1' }),
+    );
+    expect(refused).toMatchObject({
+      status: 409,
+      message: 'Ada Lovelace already has an open lead in this pipeline: YOD-2.',
+    });
+    expect((await storedLead(first.lead.id))?.stageCategory).toBe('lost');
+    expect(await db.select().from(schema.outbox)).toHaveLength(0);
+  });
+
+  test('a reopen that loses the race to another open lead is a 409 naming that lead', async () => {
     const first = await createLead(context(), { personId, pipelineId });
     await changeLead(context(), first.lead.id, { type: 'close' });
     const second = await createLead(context(), { personId, pipelineId });
@@ -397,7 +431,8 @@ describe('changeLeads', () => {
     );
     expect(refused).toMatchObject({
       status: 409,
-      message: 'This person already has an open lead in this pipeline.',
+      message: 'Ada Lovelace already has an open lead in this pipeline: YOD-1.',
+      details: { key: 'YOD-1', leadId: first.lead.id },
     });
     const open = await db
       .select()
@@ -433,6 +468,7 @@ describe('quickCreateLead', () => {
       pipelineId,
       person: { name: 'Grace', emails: ['grace@navy.mil'] },
     });
+    await db.delete(schema.outbox);
     await expect(
       quickCreateLead(context(), {
         pipelineId,
@@ -444,6 +480,24 @@ describe('quickCreateLead', () => {
       .from(schema.person)
       .where(eq(schema.person.primaryEmail, 'grace@navy.mil'));
     expect(stored?.emails).toEqual(['grace@navy.mil']);
+    expect(await db.select().from(schema.outbox)).toHaveLength(0);
+    expect(await leadCounter()).toBe(1);
+  });
+
+  test('a foreign owner is refused before anyone is created', async () => {
+    const other = await createWorkspace('Other');
+    await expect(
+      quickCreateLead(context(), {
+        pipelineId,
+        ownerId: other.admin.userId,
+        person: { name: 'Grace', emails: ['grace@navy.mil'] },
+      }),
+    ).rejects.toThrow('That owner is not a member of this workspace.');
+    expect(
+      await db.select().from(schema.person).where(eq(schema.person.primaryEmail, 'grace@navy.mil')),
+    ).toHaveLength(0);
+    expect(await db.select().from(schema.lead)).toHaveLength(0);
+    expect(await leadCounter()).toBe(0);
   });
 
   test('a foreign pipeline is refused before anyone is created', async () => {
@@ -460,7 +514,7 @@ describe('quickCreateLead', () => {
     ).toHaveLength(0);
   });
 
-  test('an open lead that commits under it is a 409 and is not retried', async () => {
+  test('an open lead that commits under it is a 409 naming that lead', async () => {
     const graceId = await person('Grace', 'grace@navy.mil');
     const first = await createLead(context(), { personId: graceId, pipelineId });
     await changeLead(context(), first.lead.id, { type: 'close' });
@@ -478,7 +532,8 @@ describe('quickCreateLead', () => {
     );
     expect(refused).toMatchObject({
       status: 409,
-      message: 'This person already has an open lead in this pipeline.',
+      message: 'Grace already has an open lead in this pipeline: YOD-1.',
+      details: { key: 'YOD-1', leadId: first.lead.id },
     });
     expect(
       await db.select().from(schema.lead).where(eq(schema.lead.personId, graceId)),

@@ -30,10 +30,9 @@ import { diffValues, recordActivity } from './activity-service.ts';
 import { asConflict, violatedConstraint } from './conflicts.ts';
 import { validateFieldInput } from './field-service.ts';
 import { leadRowById, selectLeadRows } from './lead-rows.ts';
-import { assertMember, livePipeline } from './lookups.ts';
+import { assertMember, livePipeline, liveStagesOf } from './lookups.ts';
 import { livePerson } from './person-lookup.ts';
 import { upsertPersonIn } from './person-service.ts';
-import { stageRowOf } from './rows.ts';
 import { leadScopes } from './scopes.ts';
 import {
   retryOnUniqueViolation,
@@ -102,20 +101,32 @@ function openLeadConflict(existing: LeadRow): DomainError {
   );
 }
 
-async function lockStagesOf(batch: SyncBatch, pipelineIds: readonly string[]): Promise<StageRow[]> {
-  if (pipelineIds.length === 0) return [];
-  const rows = await batch.tx
-    .select()
-    .from(schema.stage)
-    .where(
-      and(
-        eq(schema.stage.organizationId, batch.organizationId),
-        inArray(schema.stage.pipelineId, [...pipelineIds]),
-      ),
-    )
-    .orderBy(asc(schema.stage.pipelineId), asc(schema.stage.sortOrder), asc(schema.stage.id))
-    .for('share');
-  return rows.map(stageRowOf);
+interface OpenLeadProbe {
+  readonly personId: string;
+  readonly pipelineId: string;
+}
+
+interface ClashWatch {
+  probe?: OpenLeadProbe;
+}
+
+async function asLeadConflict(
+  error: unknown,
+  organizationId: string,
+  probe: OpenLeadProbe | undefined,
+): Promise<unknown> {
+  if (probe === undefined || violatedConstraint(error) !== OPEN_LEAD_CONSTRAINT) {
+    return asConflict(error);
+  }
+  const existing = await openLeadFor(db, organizationId, probe.personId, probe.pipelineId);
+  return existing === undefined ? asConflict(error) : openLeadConflict(existing);
+}
+
+function lockedStagesOf(batch: SyncBatch, pipelineIds: readonly string[]): Promise<StageRow[]> {
+  return liveStagesOf(batch.tx, batch.organizationId, pipelineIds, {
+    lock: 'share',
+    includeArchived: true,
+  });
 }
 
 function startingStage(stages: readonly StageRow[], stageId: string | undefined): StageRow {
@@ -172,9 +183,9 @@ async function nextLeadNumber(batch: SyncBatch, pipelineId: string): Promise<num
 
 export async function createLeadIn(batch: SyncBatch, input: LeadCreate): Promise<LeadRow> {
   const organizationId = batch.organizationId;
-  await livePerson(batch.tx, organizationId, input.personId);
   const pipeline = await livePipeline(batch.tx, organizationId, input.pipelineId, true);
-  const stage = startingStage(await lockStagesOf(batch, [pipeline.id]), input.stageId);
+  await livePerson(batch.tx, organizationId, input.personId, 'share');
+  const stage = startingStage(await lockedStagesOf(batch, [pipeline.id]), input.stageId);
   if (isOpenCategory(stage.category)) {
     const existing = await openLeadFor(batch.tx, organizationId, input.personId, pipeline.id);
     if (existing !== undefined) throw openLeadConflict(existing);
@@ -228,7 +239,7 @@ export async function createLead(
   try {
     return await withBatch(context, async (batch) => ({ lead: await createLeadIn(batch, parsed) }));
   } catch (error: unknown) {
-    throw asConflict(error);
+    throw await asLeadConflict(error, context.principal.organizationId, parsed);
   }
 }
 
@@ -238,12 +249,14 @@ export async function quickCreateLead(
 ): Promise<WithActions<QuickCreated>> {
   assertCan(context.principal, 'record:write');
   const parsed = quickCreateSchema.parse(input);
+  const clash: ClashWatch = {};
   try {
     return await retryOnUniqueViolation(
       () =>
         withBatch(context, async (batch) => {
           await livePipeline(batch.tx, batch.organizationId, parsed.pipelineId, true);
           const upserted = await upsertPersonIn(batch, parsed.person);
+          clash.probe = { personId: upserted.person.id, pipelineId: parsed.pipelineId };
           const lead = await createLeadIn(batch, {
             id: parsed.leadId,
             personId: upserted.person.id,
@@ -266,7 +279,7 @@ export async function quickCreateLead(
       isNotOpenLeadClash,
     );
   } catch (error: unknown) {
-    throw asConflict(error);
+    throw await asLeadConflict(error, context.principal.organizationId, clash.probe);
   }
 }
 
@@ -379,14 +392,18 @@ async function applyChangeIn(
   return lead;
 }
 
-async function lockLeadsIn(batch: SyncBatch, leadIds: readonly string[]): Promise<LeadRow[]> {
+async function lockPipelinesOfLeads(
+  batch: SyncBatch,
+  leadIds: readonly string[],
+): Promise<string[]> {
   const organizationId = batch.organizationId;
-  const ids = [...leadIds];
-  const owned = and(eq(schema.lead.organizationId, organizationId), inArray(schema.lead.id, ids));
   const pipelines = await batch.tx
     .selectDistinct({ id: schema.lead.pipelineId })
     .from(schema.lead)
-    .where(owned);
+    .where(
+      and(eq(schema.lead.organizationId, organizationId), inArray(schema.lead.id, [...leadIds])),
+    )
+    .orderBy(asc(schema.lead.pipelineId));
   const pipelineIds = pipelines.map((row) => row.id);
   if (pipelineIds.length === 0) throw notFound(UNKNOWN_LEADS);
   const live = await batch.tx
@@ -402,10 +419,16 @@ async function lockLeadsIn(batch: SyncBatch, leadIds: readonly string[]): Promis
     .orderBy(asc(schema.pipeline.id))
     .for('share');
   if (live.length !== pipelineIds.length) throw notFound(UNKNOWN_LEADS);
+  return pipelineIds;
+}
+
+async function lockLeadsIn(batch: SyncBatch, leadIds: readonly string[]): Promise<LeadRow[]> {
+  const organizationId = batch.organizationId;
+  const ids = [...leadIds];
   await batch.tx
     .select({ id: schema.lead.id })
     .from(schema.lead)
-    .where(owned)
+    .where(and(eq(schema.lead.organizationId, organizationId), inArray(schema.lead.id, ids)))
     .orderBy(asc(schema.lead.id))
     .for('update');
   const before = await selectLeadRows(
@@ -443,10 +466,11 @@ async function changeLeadsIn(
   batch: SyncBatch,
   leadIds: readonly string[],
   change: LeadChange,
+  clash: ClashWatch,
 ): Promise<{ leads: LeadRow[] }> {
+  const pipelineIds = await lockPipelinesOfLeads(batch, leadIds);
+  const stages = await lockedStagesOf(batch, pipelineIds);
   const before = await lockLeadsIn(batch, leadIds);
-  const pipelineIds = [...new Set(before.map((lead) => lead.pipelineId))];
-  const stages = await lockStagesOf(batch, pipelineIds);
   const ownerId = change.type === 'update' ? change.patch.ownerId : undefined;
   if (ownerId !== undefined && ownerId !== null) {
     await assertMember(batch.tx, batch.organizationId, ownerId);
@@ -457,6 +481,7 @@ async function changeLeadsIn(
   for (const id of leadIds) {
     const lead = byId.get(id);
     if (lead === undefined) continue;
+    clash.probe = { personId: lead.personId, pipelineId: lead.pipelineId };
     leads.push(
       await applyChangeIn(batch, lead, change, stages, fieldInputs.get(lead.pipelineId) ?? null),
     );
@@ -470,10 +495,13 @@ export async function changeLeads(
 ): Promise<WithActions<{ leads: LeadRow[] }>> {
   assertCan(context.principal, 'record:write');
   const parsed = leadBulkSchema.parse(input);
+  const clash: ClashWatch = {};
   try {
-    return await withBatch(context, (batch) => changeLeadsIn(batch, parsed.leadIds, parsed.change));
+    return await withBatch(context, (batch) =>
+      changeLeadsIn(batch, parsed.leadIds, parsed.change, clash),
+    );
   } catch (error: unknown) {
-    throw asConflict(error);
+    throw await asLeadConflict(error, context.principal.organizationId, clash.probe);
   }
 }
 

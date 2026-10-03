@@ -298,7 +298,7 @@ export async function updatePerson(
   const parsed = personPatchSchema.parse(input);
   try {
     return await withBatch(context, async (batch) => {
-      const existing = await livePerson(batch.tx, batch.organizationId, personId, true);
+      const existing = await livePerson(batch.tx, batch.organizationId, personId, 'update');
       const merged =
         parsed.fields === undefined
           ? null

@@ -122,7 +122,7 @@ export async function writeEmploymentIn(
   batch: SyncBatch,
   input: EmploymentInput,
 ): Promise<EmploymentWrite> {
-  await livePerson(batch.tx, batch.organizationId, input.personId, true);
+  await livePerson(batch.tx, batch.organizationId, input.personId, 'update');
   const company = await liveCompany(batch.tx, batch.organizationId, input.companyId, 'share');
   const current = await lockJobs(
     batch,

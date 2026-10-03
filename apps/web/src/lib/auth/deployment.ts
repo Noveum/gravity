@@ -2,7 +2,7 @@ import { oAuthProxy } from 'better-auth/plugins';
 import { z } from 'zod';
 
 const deploymentSchema = z.object({
-  BETTER_AUTH_URL: z.url().default('http://localhost:3000'),
+  BETTER_AUTH_URL: z.url().default('http://localhost:3300'),
   GRAVITY_AUTH_ALLOWED_HOSTS: z.string().default(''),
   OAUTH_PROXY_SECRET: z.preprocess(
     (value) => (value === '' ? undefined : value),

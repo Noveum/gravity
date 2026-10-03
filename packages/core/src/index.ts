@@ -23,6 +23,8 @@ export * from './crm/search-service.ts';
 export * from './crm/sql-registries.ts';
 export * from './crm/stage-service.ts';
 export * from './crm/sync-batch.ts';
+export * from './crm/view-preference-service.ts';
+export * from './crm/view-service.ts';
 export * from './crm/write-context.ts';
 export * from './internal.ts';
 export * from './org/active-organization.ts';

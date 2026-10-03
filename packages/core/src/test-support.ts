@@ -1,4 +1,5 @@
 import { db, schema, sql } from '@gravity/db';
+import type { OrgRole } from '@gravity/shared/constants';
 import { DomainError } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
 import { newId } from './internal.ts';
@@ -56,6 +57,17 @@ export async function createMemberPrincipal(
   role: 'guest' | 'contributor' | 'member',
 ): Promise<Principal> {
   const user = await createUser(`${role} user`);
+  const { token } = await createInvite(workspace.admin, { email: user.email, role });
+  await acceptInvite(token, user.id);
+  return await resolvePrincipal(user.id, workspace.organizationId);
+}
+
+export async function addMember(
+  workspace: TestWorkspace,
+  name: string,
+  role: OrgRole,
+): Promise<Principal> {
+  const user = await createUser(name);
   const { token } = await createInvite(workspace.admin, { email: user.email, role });
   await acceptInvite(token, user.id);
   return await resolvePrincipal(user.id, workspace.organizationId);

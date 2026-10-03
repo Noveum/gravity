@@ -1,16 +1,16 @@
-# Lyra design
+# Gravity design
 
-Status: approved design, 2026-10-03. This document is the source of truth for what Lyra is. The implementation plans under `docs/plans/` derive from it.
+Status: approved design, 2026-10-03. This document is the source of truth for what Gravity is. The implementation plans under `docs/plans/` derive from it.
 
-## 1. What Lyra is
+## 1. What Gravity is
 
-Lyra is an open-source, realtime, keyboard-first CRM for small teams doing a lot of outreach across several products. It has the speed and polish of Orbit (the sibling task manager), and it is built around three ideas:
+Gravity is an open-source, realtime, keyboard-first CRM for small teams doing a lot of outreach across several products. It has the speed and polish of Orbit (the sibling task manager), and it is built around three ideas:
 
 1. One person can be pursued for several products by several teammates at once, without collisions, with one shared history.
 2. Every follow-up is planned, every outbound message is approved by a human, and the system enforces the team's contact rules.
 3. AI agents (Claude, Codex, cron-driven scripts) are first-class users through an MCP server that ships on day one.
 
-Lyra records, plans and gates outreach. It does not send messages itself in v1. An agent or a person sends through their own tools and accounts and reports the send back. LinkedIn and Gmail sync confirm what was actually sent and received. The data model leaves room to add native sending through each member's own connected accounts later without a migration.
+Gravity records, plans and gates outreach. It does not send messages itself in v1. An agent or a person sends through their own tools and accounts and reports the send back. LinkedIn and Gmail sync confirm what was actually sent and received. The data model leaves room to add native sending through each member's own connected accounts later without a migration.
 
 ### Motivating use case
 
@@ -18,7 +18,7 @@ A team of a few founders and sellers runs several outbound motions at once: serv
 
 ### Non-goals for v1
 
-- Sending messages from Lyra itself. This comes later, behind the same gate.
+- Sending messages from Gravity itself. This comes later, behind the same gate.
 - Marketing automation, landing pages, newsletters, ticketing.
 - Native mobile apps.
 - Pooling several LinkedIn accounts per person.
@@ -218,9 +218,9 @@ Served at `/mcp` from the web app. OAuth 2.1 with dynamic client registration an
 
 ### 7.1 Scopes
 
-- `lyra.read`: everything the user can read.
-- `lyra.write`: records, facts, tasks, drafts, enrollments, claiming and reporting sends.
-- `lyra.approve`: approving touches. Off by default, warned on consent, and can be forbidden by workspace policy.
+- `gravity.read`: everything the user can read.
+- `gravity.write`: records, facts, tasks, drafts, enrollments, claiming and reporting sends.
+- `gravity.approve`: approving touches. Off by default, warned on consent, and can be forbidden by workspace policy.
 
 A token with neither read nor write is refused with 403 before any tool is registered.
 
@@ -254,7 +254,7 @@ Every write accepts an idempotency key. Bulk writes default to dry run. Response
 
 ### 7.3 Resources
 
-Each brand's current playbook is an MCP resource (`lyra://brands/{slug}/playbook`) and is included in `describe_workspace`.
+Each brand's current playbook is an MCP resource (`gravity://brands/{slug}/playbook`) and is included in `describe_workspace`.
 
 ## 8. Integrations
 
@@ -335,9 +335,9 @@ Fixed on the way in: a transactional outbox, integration tokens encrypted at res
 
 ## 10. Authentication
 
-Lyra runs standalone with its own auth tables, so a self-hosted copy needs nothing else. Sign-in methods are Google, GitHub, passkeys and email OTP, with optional argon2id passwords behind `LYRA_PASSWORD_AUTH`. An `ALLOWED_EMAIL_DOMAINS` allowlist applies to invites and user creation.
+Gravity runs standalone with its own auth tables, so a self-hosted copy needs nothing else. Sign-in methods are Google, GitHub, passkeys and email OTP, with optional argon2id passwords behind `GRAVITY_PASSWORD_AUTH`. An `ALLOWED_EMAIL_DOMAINS` allowlist applies to invites and user creation.
 
-A generic OpenID Connect provider slot (`LYRA_OIDC_ISSUER`, `LYRA_OIDC_CLIENT_ID`, `LYRA_OIDC_CLIENT_SECRET`, `LYRA_OIDC_LABEL`) lets a deployment add one more button such as "Continue with Orbit" or "Continue with Noveum" when that identity provider exists. Orbit does not act as an OIDC provider today; adding that is Orbit-side work and out of scope here.
+A generic OpenID Connect provider slot (`GRAVITY_OIDC_ISSUER`, `GRAVITY_OIDC_CLIENT_ID`, `GRAVITY_OIDC_CLIENT_SECRET`, `GRAVITY_OIDC_LABEL`) lets a deployment add one more button such as "Continue with Orbit" or "Continue with Noveum" when that identity provider exists. Orbit does not act as an OIDC provider today; adding that is Orbit-side work and out of scope here.
 
 ## 11. Data import
 
@@ -345,7 +345,7 @@ A generic OpenID Connect provider slot (`LYRA_OIDC_ISSUER`, `LYRA_OIDC_CLIENT_ID
 
 ## 12. Security and privacy
 
-- Integration credentials are encrypted with AES-256-GCM under `LYRA_ENCRYPTION_KEY` and never returned by any API or tool.
+- Integration credentials are encrypted with AES-256-GCM under `GRAVITY_ENCRYPTION_KEY` and never returned by any API or tool.
 - Every query is scoped by workspace in `packages/core`. Authorization goes through `packages/shared/src/policy`; the UI reads the same policy to hide affordances.
 - Every write records its actor.
 - Erasing a person deletes their data and keeps a hashed suppression entry so they are never contacted again.

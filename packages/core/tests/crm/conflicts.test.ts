@@ -39,6 +39,8 @@ describe('asConflict', () => {
     'lead_open_person_pipeline_unique',
     'lead_pipeline_number_unique',
     'employment_current_unique',
+    'lead_pkey',
+    'saved_view_pkey',
   ])('maps %s to a 409 naming the constraint', (constraint) => {
     const original = uniqueViolation(constraint);
     const mapped = asConflict(original);
@@ -47,6 +49,14 @@ describe('asConflict', () => {
     expect(mapped instanceof DomainError && mapped.details).toEqual({ constraint });
     expect(mapped instanceof DomainError && mapped.cause).toBe(original);
   });
+
+  test.each(['lead_pkey', 'saved_view_pkey'])(
+    'says a taken id is already in use for %s',
+    (constraint) => {
+      const mapped = asConflict(uniqueViolation(constraint));
+      expect(mapped instanceof DomainError && mapped.message).toBe('That id is already in use.');
+    },
+  );
 
   test('leaves an unmapped constraint and other errors untouched', () => {
     const unknown = uniqueViolation('something_else_unique');

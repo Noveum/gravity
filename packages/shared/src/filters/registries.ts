@@ -119,7 +119,7 @@ export function leadFilterRegistry(
         label: 'Owed by',
         kind: 'enum',
         options: OWED_BY_OPTIONS,
-        read: (lead) => lead.owedBy,
+        read: (lead) => (lead.owedBy === 'none' ? null : lead.owedBy),
       },
       { key: 'source', label: 'Source', kind: 'text', read: (lead) => lead.source },
       { key: 'person', label: 'Person', kind: 'text', read: (lead) => lead.personName },

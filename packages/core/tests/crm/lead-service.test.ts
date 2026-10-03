@@ -87,6 +87,18 @@ describe('createLead', () => {
     expect(second.lead.key).toBe('YOD-2');
   });
 
+  test('a lead id that is already in use is a 409 and burns no number', async () => {
+    const leadId = randomUUIDv7();
+    await createLead(context(), { id: leadId, personId, pipelineId });
+    const other = await person('Grace', 'grace@navy.mil');
+    const refused = await refusal(
+      createLead(context(), { id: leadId, personId: other, pipelineId }),
+    );
+    expect(refused).toMatchObject({ status: 409, message: 'That id is already in use.' });
+    expect(await db.select().from(schema.lead)).toHaveLength(1);
+    expect(await leadCounter()).toBe(1);
+  });
+
   test('refuses a second open lead, names the first and burns no number', async () => {
     await createLead(context(), { personId, pipelineId });
     await expect(createLead(context(), { personId, pipelineId })).rejects.toThrow(
@@ -461,6 +473,26 @@ describe('quickCreateLead', () => {
       companyName: 'Navy',
     });
     expect(created.personCreated).toBe(true);
+  });
+
+  test('a lead id that is already in use is a 409 and creates no person', async () => {
+    const leadId = randomUUIDv7();
+    await createLead(context(), { id: leadId, personId, pipelineId });
+    await db.delete(schema.outbox);
+    const refused = await refusal(
+      quickCreateLead(context(), {
+        leadId,
+        pipelineId,
+        person: { name: 'Grace Hopper', emails: ['grace@navy.mil'] },
+      }),
+    );
+    expect(refused).toMatchObject({ status: 409, message: 'That id is already in use.' });
+    expect(
+      await db.select().from(schema.person).where(eq(schema.person.primaryEmail, 'grace@navy.mil')),
+    ).toHaveLength(0);
+    expect(await db.select().from(schema.lead)).toHaveLength(1);
+    expect(await db.select().from(schema.outbox)).toHaveLength(0);
+    expect(await leadCounter()).toBe(1);
   });
 
   test('refuses a matched person who already has an open lead and changes nothing about them', async () => {

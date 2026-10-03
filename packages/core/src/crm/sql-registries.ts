@@ -60,7 +60,7 @@ export function leadSqlRegistry(
     ['stageCategory', { kind: 'enum', expression: schema.lead.stageCategory }],
     ['owner', { kind: 'id', expression: schema.lead.ownerId, allowsMe: true }],
     ['priority', { kind: 'number', expression: schema.lead.priority }],
-    ['owedBy', { kind: 'enum', expression: schema.lead.owedBy }],
+    ['owedBy', { kind: 'enum', expression: sql`nullif(${schema.lead.owedBy}, 'none')` }],
     ['source', { kind: 'text', expression: schema.lead.source }],
     ['person', { kind: 'text', expression: schema.person.name }],
     ['email', { kind: 'text', expression: schema.person.primaryEmail }],

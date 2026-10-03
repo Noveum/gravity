@@ -3,8 +3,9 @@ import { db, eq, schema } from '@gravity/db';
 import { createBrand } from '../../src/crm/brand-service.ts';
 import { upsertCompany } from '../../src/crm/company-service.ts';
 import { addEmployment } from '../../src/crm/employment-service.ts';
-import { createLead } from '../../src/crm/lead-service.ts';
+import { changeLead, createLead } from '../../src/crm/lead-service.ts';
 import { upsertPerson } from '../../src/crm/person-service.ts';
+import { archivePipeline } from '../../src/crm/pipeline-service.ts';
 import { getCompanyRecord, getPersonRecord } from '../../src/crm/record-service.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
@@ -72,6 +73,27 @@ describe('record reads', () => {
     await expect(getPersonRecord(other.admin, ada.person.id)).rejects.toThrow(
       'That person does not exist.',
     );
+  });
+
+  test('person and company records leave out a won lead in an archived pipeline', async () => {
+    const context = { principal: workspace.admin };
+    const brand = await createBrand(context, { name: 'Yodu' });
+    const ada = await upsertPerson(context, {
+      name: 'Ada',
+      company: { domain: 'acme.io', name: 'Acme' },
+    });
+    const { lead } = await createLead(context, {
+      personId: ada.person.id,
+      pipelineId: brand.pipeline.id,
+    });
+    const won = brand.stages.find((stage) => stage.category === 'won');
+    await changeLead(context, lead.id, { type: 'close', stageId: won?.id ?? '' });
+    const companyId = ada.company?.id ?? '';
+    expect((await getPersonRecord(workspace.admin, ada.person.id)).leads).toHaveLength(1);
+    expect((await getCompanyRecord(workspace.admin, companyId)).leads).toHaveLength(1);
+    await archivePipeline(context, brand.pipeline.id);
+    expect((await getPersonRecord(workspace.admin, ada.person.id)).leads).toHaveLength(0);
+    expect((await getCompanyRecord(workspace.admin, companyId)).leads).toHaveLength(0);
   });
 
   test('a company record leaves out people who left and archived people', async () => {

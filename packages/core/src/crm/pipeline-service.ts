@@ -12,6 +12,7 @@ import { liveBrand, livePipeline, openLeadCount } from './lookups.ts';
 import { pipelineRowOf, stageRowOf } from './rows.ts';
 import { pipelineScopes } from './scopes.ts';
 import { type SyncBatch, type WithActions, withBatch } from './sync-batch.ts';
+import { dropViewsOfPipelineIn } from './view-service.ts';
 import type { WriteContext } from './write-context.ts';
 
 export interface PipelineSeed {
@@ -196,6 +197,7 @@ export async function archivePipelineIn(
   });
   await archiveStagesOf(batch, pipeline);
   await archiveFieldsOfPipelineIn(batch, pipeline.id);
+  await dropViewsOfPipelineIn(batch, pipeline.id);
   return pipeline;
 }
 

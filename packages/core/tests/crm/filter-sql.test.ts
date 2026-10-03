@@ -229,6 +229,7 @@ beforeAll(async () => {
     createdAt: new Date('2026-09-26T00:00:00.000Z'),
     updatedAt: pinnedUpdate,
     lastOutboundAt: new Date('2026-09-03T00:00:00.000Z'),
+    owedBy: 'us',
   });
   await db.execute(
     sql`update lead set created_at = '2026-09-25 23:59:59.999999+00' where id = ${ids['grace'] ?? 'missing'}`,
@@ -241,6 +242,7 @@ beforeAll(async () => {
     createdAt: new Date('2026-10-03T23:59:59.999Z'),
     updatedAt: pinnedUpdate,
     lastOutboundAt: new Date('2026-09-02T23:59:59.999Z'),
+    owedBy: 'them',
   });
   await pin(ids['edsger'], {
     createdAt: new Date('2026-10-04T00:00:00.000Z'),
@@ -295,12 +297,30 @@ const LEAD_CASES: Case[] = [
   ['stage negated', () => all(inCondition('stage', [readyId], true)), ['ada', 'grace'], ['linus']],
   ['stage category', () => all(inCondition('stageCategory', ['open'])), ['ada'], []],
   [
-    'owed by none is read as unset, which no row is',
+    'owed by none means owed by nobody',
     () => all(inCondition('owedBy', ['none'])),
-    [],
+    ['grace', 'edsger', 'barbara'],
+    ['ada', 'linus'],
+  ],
+  [
+    'owed by none negated means owed by someone',
+    () => all(inCondition('owedBy', ['none'], true)),
+    ['ada', 'linus'],
     ['grace'],
   ],
-  ['owed by none negated', () => all(inCondition('owedBy', ['none'], true)), ['grace'], []],
+  [
+    'owed by us or nobody',
+    () => all(inCondition('owedBy', ['us', 'none'])),
+    ['ada', 'grace'],
+    ['linus'],
+  ],
+  ['owed by them', () => all(inCondition('owedBy', ['them'])), ['linus'], ['ada', 'grace']],
+  [
+    'owed by them negated, nobody included',
+    () => all(inCondition('owedBy', ['them'], true)),
+    ['ada', 'grace'],
+    ['linus'],
+  ],
   ['custom select', () => all(inCondition('fields.industry', ['saas'])), ['ada'], ['linus']],
   [
     'custom select negated, unset included',
@@ -334,6 +354,18 @@ const LEAD_CASES: Case[] = [
     [],
   ],
   [
+    'custom multi unset negated, only a real list remains',
+    () => all(inCondition('fields.tags', ['none'], true)),
+    ['ada'],
+    ['linus', 'grace', 'edsger', 'barbara'],
+  ],
+  [
+    'custom multi overlap or unset negated matches nothing',
+    () => all(inCondition('fields.tags', ['a', 'none'], true)),
+    [],
+    ['ada', 'grace', 'linus', 'edsger', 'barbara'],
+  ],
+  [
     'custom multi negated',
     () => all(inCondition('fields.tags', ['a'], true)),
     ['grace', 'edsger'],
@@ -350,6 +382,18 @@ const LEAD_CASES: Case[] = [
     () => all(range('fields.seats', null, 'Infinity')),
     ['ada', 'linus'],
     ['grace', 'edsger'],
+  ],
+  [
+    'custom number range negated, empty and mistyped values included',
+    () => all(range('fields.seats', '3', null, true)),
+    ['linus', 'grace', 'edsger', 'barbara'],
+    ['ada'],
+  ],
+  [
+    'custom number up to a bound negated',
+    () => all(range('fields.seats', null, '4', true)),
+    ['ada', 'grace', 'edsger', 'barbara'],
+    ['linus'],
   ],
   ['custom number in', () => all(inCondition('fields.seats', ['5.0'])), ['ada'], ['edsger']],
   [

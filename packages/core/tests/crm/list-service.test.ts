@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { db, eq, schema } from '@gravity/db';
 import { encodeFilter, inCondition } from '@gravity/shared/filters';
+import type { Principal } from '@gravity/shared/policy';
 import { createBrand } from '../../src/crm/brand-service.ts';
 import { upsertCompany } from '../../src/crm/company-service.ts';
 import { encodeCursor } from '../../src/crm/cursor.ts';
@@ -8,7 +9,12 @@ import { createLead } from '../../src/crm/lead-service.ts';
 import { listCompanies, listLeads, listPeople } from '../../src/crm/list-service.ts';
 import { upsertPerson } from '../../src/crm/person-service.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
-import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
+import {
+  addMember,
+  createWorkspace,
+  resetDatabase,
+  type TestWorkspace,
+} from '../../src/test-support.ts';
 
 let workspace: TestWorkspace;
 let pipelineId = '';
@@ -66,6 +72,20 @@ describe('listLeads', () => {
     expect(
       (await listLeads(workspace.admin, { pipelineId, q: 'hopper' })).leads.map((lead) => lead.key),
     ).toEqual(['YOD-2']);
+  });
+
+  test('owner me resolves to the principal asking', async () => {
+    const teammate = await addMember(workspace, 'Tess', 'member');
+    await db.update(schema.lead).set({ ownerId: teammate.userId }).where(eq(schema.lead.number, 2));
+    const filter = encodeFilter({
+      kind: 'group',
+      combinator: 'and',
+      children: [inCondition('owner', ['me'])],
+    });
+    const keysFor = async (principal: Principal) =>
+      (await listLeads(principal, { pipelineId, filter })).leads.map((lead) => lead.key);
+    expect(await keysFor(teammate)).toEqual(['YOD-2']);
+    expect(await keysFor(workspace.admin)).toEqual(['YOD-3', 'YOD-1']);
   });
 
   test('refuses an unknown filter property and a foreign pipeline', async () => {

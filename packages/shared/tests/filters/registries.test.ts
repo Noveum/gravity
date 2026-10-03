@@ -64,6 +64,21 @@ describe('leadFilterRegistry', () => {
     expect(evaluateFilter(filter, lead, registry, { now: new Date(), userId: 'u1' })).toBe(true);
   });
 
+  test('owed by none matches a lead owed by nobody and no other owed by value', () => {
+    const registry = leadFilterRegistry();
+    const context = { now: new Date(), userId: 'u1' };
+    const nobody = replaceCondition(emptyFilterGroup(), inCondition('owedBy', ['none']));
+    const someone = replaceCondition(emptyFilterGroup(), inCondition('owedBy', ['none'], true));
+    const us = replaceCondition(emptyFilterGroup(), inCondition('owedBy', ['us', 'none']));
+    const owedByUs: LeadRow = { ...lead, owedBy: 'us' };
+    expect(evaluateFilter(nobody, lead, registry, context)).toBe(true);
+    expect(evaluateFilter(nobody, owedByUs, registry, context)).toBe(false);
+    expect(evaluateFilter(someone, lead, registry, context)).toBe(false);
+    expect(evaluateFilter(someone, owedByUs, registry, context)).toBe(true);
+    expect(evaluateFilter(us, lead, registry, context)).toBe(true);
+    expect(evaluateFilter(us, owedByUs, registry, context)).toBe(true);
+  });
+
   test('the key is searchable', () => {
     expect(leadFilterRegistry().search(lead)).toContain('YOD-7');
   });

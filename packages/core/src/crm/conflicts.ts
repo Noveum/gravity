@@ -1,6 +1,8 @@
 import { conflict } from '@gravity/shared/errors';
 import { uniqueViolationOf } from '../internal.ts';
 
+const ID_IN_USE = 'That id is already in use.';
+
 const CONFLICT_MESSAGES: Readonly<Record<string, string>> = {
   brand_org_name_unique: 'A brand with that name already exists.',
   pipeline_org_key_unique: 'Another pipeline already uses that key.',
@@ -11,6 +13,8 @@ const CONFLICT_MESSAGES: Readonly<Record<string, string>> = {
   lead_open_person_pipeline_unique: 'This person already has an open lead in this pipeline.',
   lead_pipeline_number_unique: 'Two leads were numbered at the same moment. Try again.',
   employment_current_unique: 'This person already works at that company.',
+  lead_pkey: ID_IN_USE,
+  saved_view_pkey: ID_IN_USE,
 };
 
 export function violatedConstraint(error: unknown): string | null {

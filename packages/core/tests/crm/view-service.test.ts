@@ -1,14 +1,18 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { db, schema } from '@gravity/db';
 import { containsCondition } from '@gravity/shared/filters';
 import type { Principal } from '@gravity/shared/policy';
-import { createBrand } from '../../src/crm/brand-service.ts';
+import { randomUUIDv7 } from '@gravity/shared/utils';
+import { archiveBrand, createBrand } from '../../src/crm/brand-service.ts';
 import { createFieldDefinition } from '../../src/crm/field-service.ts';
+import { archivePipeline } from '../../src/crm/pipeline-service.ts';
 import {
   createSavedView,
   deleteSavedView,
   listSavedViews,
   updateSavedView,
 } from '../../src/crm/view-service.ts';
+import { readOutboxSince } from '../../src/realtime/outbox.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import {
   addMember,
@@ -85,7 +89,39 @@ describe('saved views', () => {
       ['delete', [`workspace:${workspace.organizationId}`]],
       ['update', [`user:${workspace.admin.userId}`]],
     ]);
+    const [removal, update] = narrowed.actions;
+    expect(removal?.syncId).toBeLessThan(update?.syncId ?? 0);
     expect(await listSavedViews(teammate)).toHaveLength(0);
+  });
+
+  test('a teammate catching up after a narrowing gets the delete and never the private update', async () => {
+    const shared = await createSavedView(
+      { principal: workspace.admin },
+      { object: 'person', name: 'Team', visibility: 'workspace' },
+    );
+    const narrowed = await updateSavedView({ principal: workspace.admin }, shared.view.id, {
+      visibility: 'private',
+    });
+    const reader = {
+      organizationId: workspace.organizationId,
+      userId: teammate.userId,
+    };
+    const fromStart = await readOutboxSince(reader, 0, 50);
+    const seen = fromStart.actions.filter((action) => action.model === 'saved_view');
+    expect(seen.map((action) => action.action)).toEqual(['insert', 'delete']);
+    const afterCreate = await readOutboxSince(reader, shared.view.syncId, 50);
+    expect(afterCreate.actions.map((action) => [action.action, action.model])).toEqual([
+      ['delete', 'saved_view'],
+    ]);
+    const privateUpdate = narrowed.actions.find((action) => action.action === 'update');
+    const reached = [...fromStart.actions, ...afterCreate.actions].map((action) => action.syncId);
+    expect(reached).not.toContain(privateUpdate?.syncId);
+    const owner = await readOutboxSince(
+      { organizationId: workspace.organizationId, userId: workspace.admin.userId },
+      shared.view.syncId,
+      50,
+    );
+    expect(owner.actions.map((action) => action.action)).toEqual(['delete', 'update']);
   });
 
   test('refuses a filter on an unknown property and a pipeline on a person view', async () => {
@@ -182,6 +218,17 @@ describe('saved views', () => {
     expect(await listSavedViews(teammate)).toHaveLength(0);
   });
 
+  test('a duplicate client id is a 409 and creates nothing', async () => {
+    const id = randomUUIDv7();
+    await createSavedView({ principal: teammate }, { id, object: 'person', name: 'One' });
+    const refused = await refusal(
+      createSavedView({ principal: workspace.admin }, { id, object: 'company', name: 'Two' }),
+    );
+    expect(refused).toMatchObject({ status: 409, message: 'That id is already in use.' });
+    expect(await db.select().from(schema.savedView)).toHaveLength(1);
+    expect(await listSavedViews(workspace.admin)).toHaveLength(0);
+  });
+
   test('a view from another workspace is invisible and a guest cannot write', async () => {
     const created = await createSavedView(
       { principal: workspace.admin },
@@ -201,6 +248,44 @@ describe('saved views', () => {
     expect((await listSavedViews(guest)).map((view) => view.name)).toEqual(['Team']);
   });
 
+  test('a new view goes after the highest position, even once an earlier view is deleted', async () => {
+    const first = await createSavedView({ principal: teammate }, { object: 'person', name: 'A' });
+    const second = await createSavedView({ principal: teammate }, { object: 'person', name: 'B' });
+    await deleteSavedView({ principal: teammate }, first.view.id);
+    const third = await createSavedView({ principal: teammate }, { object: 'person', name: 'C' });
+    expect([first.view.position, second.view.position, third.view.position]).toEqual([0, 1, 2]);
+    expect((await listSavedViews(teammate)).map((view) => view.name)).toEqual(['B', 'C']);
+  });
+
+  test('views sharing a position list by name, then id', async () => {
+    const ids = ['00000000-0000-7000-8000-000000000002', '00000000-0000-7000-8000-000000000001'];
+    for (const [index, id] of ids.entries()) {
+      await db.insert(schema.savedView).values({
+        id,
+        organizationId: workspace.organizationId,
+        object: 'person',
+        name: 'Same',
+        ownerId: teammate.userId,
+        position: 5,
+        syncId: index + 1,
+      });
+    }
+    await db.insert(schema.savedView).values({
+      id: '00000000-0000-7000-8000-000000000003',
+      organizationId: workspace.organizationId,
+      object: 'person',
+      name: 'Alpha',
+      ownerId: teammate.userId,
+      position: 5,
+      syncId: 3,
+    });
+    expect((await listSavedViews(teammate)).map((view) => view.id)).toEqual([
+      '00000000-0000-7000-8000-000000000003',
+      '00000000-0000-7000-8000-000000000001',
+      '00000000-0000-7000-8000-000000000002',
+    ]);
+  });
+
   test('lists views in position order and numbers each owner from zero', async () => {
     await createSavedView({ principal: teammate }, { object: 'person', name: 'B' });
     const second = await createSavedView({ principal: teammate }, { object: 'person', name: 'A' });
@@ -211,5 +296,68 @@ describe('saved views', () => {
     expect(first.view.position).toBe(0);
     expect(second.view.position).toBe(1);
     expect((await listSavedViews(teammate)).map((view) => view.name)).toEqual(['B', 'Z', 'A']);
+  });
+});
+
+describe('saved views of an archived pipeline', () => {
+  async function viewsOnPipeline(pipelineId: string) {
+    const mine = await createSavedView(
+      { principal: teammate },
+      { object: 'lead', name: 'Mine', pipelineId },
+    );
+    const shared = await createSavedView(
+      { principal: workspace.admin },
+      { object: 'lead', name: 'Team', pipelineId, visibility: 'workspace' },
+    );
+    const person = await createSavedView(
+      { principal: workspace.admin },
+      { object: 'person', name: 'People', visibility: 'workspace' },
+    );
+    return { mine, shared, person };
+  }
+
+  test('archiving a pipeline drops its views from the list and tells their audiences', async () => {
+    const brand = await createBrand({ principal: workspace.admin }, { name: 'Yodu' });
+    const { mine, shared } = await viewsOnPipeline(brand.pipeline.id);
+    const archived = await archivePipeline({ principal: workspace.admin }, brand.pipeline.id);
+    const removals = archived.actions.filter((action) => action.model === 'saved_view');
+    expect(removals).toHaveLength(2);
+    const removalOf = (id: string) => removals.find((action) => action.modelId === id);
+    expect(removalOf(mine.view.id)).toMatchObject({
+      action: 'delete',
+      data: { id: mine.view.id },
+      scopes: [`user:${teammate.userId}`],
+    });
+    expect(removalOf(shared.view.id)).toMatchObject({
+      action: 'delete',
+      data: { id: shared.view.id },
+      scopes: [`workspace:${workspace.organizationId}`],
+    });
+    expect((await listSavedViews(teammate)).map((view) => view.name)).toEqual(['People']);
+    expect((await listSavedViews(workspace.admin)).map((view) => view.name)).toEqual(['People']);
+  });
+
+  test('archiving a brand does the same for every pipeline under it', async () => {
+    const brand = await createBrand({ principal: workspace.admin }, { name: 'Yodu' });
+    const { mine, shared } = await viewsOnPipeline(brand.pipeline.id);
+    const archived = await archiveBrand({ principal: workspace.admin }, brand.brand.id);
+    const removed = archived.actions
+      .filter((action) => action.model === 'saved_view')
+      .map((action) => action.modelId)
+      .sort();
+    expect(removed).toEqual([mine.view.id, shared.view.id].sort());
+    expect((await listSavedViews(teammate)).map((view) => view.name)).toEqual(['People']);
+  });
+
+  test('a view on a live pipeline is untouched by archiving another', async () => {
+    const yodu = await createBrand({ principal: workspace.admin }, { name: 'Yodu' });
+    const orbit = await createBrand({ principal: workspace.admin }, { name: 'Orbit' });
+    await createSavedView(
+      { principal: teammate },
+      { object: 'lead', name: 'Orbit view', pipelineId: orbit.pipeline.id },
+    );
+    const archived = await archivePipeline({ principal: workspace.admin }, yodu.pipeline.id);
+    expect(archived.actions.filter((action) => action.model === 'saved_view')).toHaveLength(0);
+    expect((await listSavedViews(teammate)).map((view) => view.name)).toEqual(['Orbit view']);
   });
 });

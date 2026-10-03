@@ -1,4 +1,4 @@
-import { and, asc, count, db, eq, or, schema } from '@gravity/db';
+import { and, asc, db, eq, isNull, or, schema, sql } from '@gravity/db';
 import type { SavedViewObject } from '@gravity/shared/constants';
 import { forbidden, notFound, validationFailed } from '@gravity/shared/errors';
 import { scopes } from '@gravity/shared/events';
@@ -14,13 +14,14 @@ import { assertCan, can } from '@gravity/shared/policy';
 import type { SavedViewRow } from '@gravity/shared/records';
 import { savedViewCreateSchema, savedViewUpdateSchema } from '@gravity/shared/validators';
 import { type Executor, newId, requireRow } from '../internal.ts';
+import { asConflict } from './conflicts.ts';
 import { loadFieldDefinitions } from './field-service.ts';
 import { livePipeline } from './lookups.ts';
 import { savedViewRowOf } from './rows.ts';
 import { type SyncBatch, type WithActions, withBatch } from './sync-batch.ts';
 import type { WriteContext } from './write-context.ts';
 
-function viewScopes(
+export function viewScopes(
   organizationId: string,
   view: { visibility: string; ownerId: string },
 ): string[] {
@@ -85,54 +86,58 @@ export async function createSavedView(
   if (parsed.object !== 'lead' && parsed.pipelineId !== null) {
     throw validationFailed('Only lead views belong to a pipeline.');
   }
-  return await withBatch(context, async (batch) => {
-    if (parsed.pipelineId !== null) {
-      await livePipeline(batch.tx, batch.organizationId, parsed.pipelineId);
-    }
-    await assertViewFilter(
-      batch.tx,
-      batch.organizationId,
-      parsed.object,
-      parsed.pipelineId,
-      parsed.filter,
-    );
-    const [siblings] = await batch.tx
-      .select({ total: count() })
-      .from(schema.savedView)
-      .where(
-        and(
-          eq(schema.savedView.organizationId, batch.organizationId),
-          eq(schema.savedView.ownerId, context.principal.userId),
-        ),
+  try {
+    return await withBatch(context, async (batch) => {
+      if (parsed.pipelineId !== null) {
+        await livePipeline(batch.tx, batch.organizationId, parsed.pipelineId, true);
+      }
+      await assertViewFilter(
+        batch.tx,
+        batch.organizationId,
+        parsed.object,
+        parsed.pipelineId,
+        parsed.filter,
       );
-    const syncId = await batch.nextSyncId();
-    const [row] = await batch.tx
-      .insert(schema.savedView)
-      .values({
-        id: parsed.id ?? newId(),
-        organizationId: batch.organizationId,
-        object: parsed.object,
-        pipelineId: parsed.pipelineId,
-        name: parsed.name,
-        filter: { ...parsed.filter },
-        display: parsed.display,
-        visibility: parsed.visibility,
-        ownerId: context.principal.userId,
-        position: siblings?.total ?? 0,
+      const [last] = await batch.tx
+        .select({ position: sql<number>`coalesce(max(${schema.savedView.position}), -1)` })
+        .from(schema.savedView)
+        .where(
+          and(
+            eq(schema.savedView.organizationId, batch.organizationId),
+            eq(schema.savedView.ownerId, context.principal.userId),
+          ),
+        );
+      const syncId = await batch.nextSyncId();
+      const [row] = await batch.tx
+        .insert(schema.savedView)
+        .values({
+          id: parsed.id ?? newId(),
+          organizationId: batch.organizationId,
+          object: parsed.object,
+          pipelineId: parsed.pipelineId,
+          name: parsed.name,
+          filter: { ...parsed.filter },
+          display: parsed.display,
+          visibility: parsed.visibility,
+          ownerId: context.principal.userId,
+          position: (last?.position ?? -1) + 1,
+          syncId,
+        })
+        .returning();
+      const view = savedViewRowOf(requireRow(row, 'The view could not be saved.'));
+      batch.emit({
         syncId,
-      })
-      .returning();
-    const view = savedViewRowOf(requireRow(row, 'The view could not be saved.'));
-    batch.emit({
-      syncId,
-      action: 'insert',
-      model: 'saved_view',
-      modelId: view.id,
-      data: view,
-      scopes: viewScopes(batch.organizationId, view),
+        action: 'insert',
+        model: 'saved_view',
+        modelId: view.id,
+        data: view,
+        scopes: viewScopes(batch.organizationId, view),
+      });
+      return { view };
     });
-    return { view };
-  });
+  } catch (error: unknown) {
+    throw asConflict(error);
+  }
 }
 
 export async function updateSavedView(
@@ -214,17 +219,42 @@ export async function deleteSavedView(
 export async function listSavedViews(principal: Principal): Promise<SavedViewRow[]> {
   assertCan(principal, 'record:read');
   const rows = await db
-    .select()
+    .select({ view: schema.savedView })
     .from(schema.savedView)
+    .leftJoin(schema.pipeline, eq(schema.pipeline.id, schema.savedView.pipelineId))
     .where(
       and(
         eq(schema.savedView.organizationId, principal.organizationId),
+        isNull(schema.pipeline.archivedAt),
         or(
           eq(schema.savedView.visibility, 'workspace'),
           eq(schema.savedView.ownerId, principal.userId),
         ),
       ),
     )
-    .orderBy(asc(schema.savedView.position), asc(schema.savedView.name));
-  return rows.map(savedViewRowOf);
+    .orderBy(asc(schema.savedView.position), asc(schema.savedView.name), asc(schema.savedView.id));
+  return rows.map((row) => savedViewRowOf(row.view));
+}
+
+export async function dropViewsOfPipelineIn(batch: SyncBatch, pipelineId: string): Promise<void> {
+  const views = await batch.tx
+    .select()
+    .from(schema.savedView)
+    .where(
+      and(
+        eq(schema.savedView.pipelineId, pipelineId),
+        eq(schema.savedView.organizationId, batch.organizationId),
+      ),
+    )
+    .orderBy(asc(schema.savedView.position), asc(schema.savedView.id));
+  for (const view of views) {
+    batch.emit({
+      syncId: await batch.nextSyncId(),
+      action: 'delete',
+      model: 'saved_view',
+      modelId: view.id,
+      data: { id: view.id },
+      scopes: viewScopes(batch.organizationId, view),
+    });
+  }
 }

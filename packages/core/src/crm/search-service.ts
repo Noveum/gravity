@@ -1,5 +1,4 @@
 import { and, asc, db, desc, eq, isNull, or, schema, sql } from '@gravity/db';
-import { isDomainError } from '@gravity/shared/errors';
 import { assertCan, type Principal } from '@gravity/shared/policy';
 import type { CompanyRow, LeadRow, PersonRow } from '@gravity/shared/records';
 import {
@@ -13,7 +12,6 @@ import { arrayOverlaps } from 'drizzle-orm';
 import { selectCompanyRows } from './company-service.ts';
 import { likePattern, searchToSql } from './filter-sql.ts';
 import { selectLeadRows } from './lead-rows.ts';
-import { getLeadByKey } from './lead-service.ts';
 import { selectPersonRows } from './person-lookup.ts';
 import { LEAD_SEARCH_EXPRESSIONS } from './sql-registries.ts';
 
@@ -38,14 +36,20 @@ function duplicateDomain(domain: string | undefined, email: string | undefined):
   return null;
 }
 
-async function leadByKey(principal: Principal, term: string): Promise<LeadRow[]> {
-  if (parseLeadKey(term) === null) return [];
-  try {
-    return [await getLeadByKey(principal, term)];
-  } catch (error: unknown) {
-    if (isDomainError(error) && error.code === 'not_found') return [];
-    throw error;
-  }
+function leadByKey(principal: Principal, term: string): Promise<LeadRow[]> {
+  const parsed = parseLeadKey(term);
+  if (parsed === null) return Promise.resolve([]);
+  return selectLeadRows(
+    db,
+    principal.organizationId,
+    and(
+      eq(schema.pipeline.key, parsed.key),
+      eq(schema.lead.number, parsed.number),
+      isNull(schema.lead.archivedAt),
+      isNull(schema.pipeline.archivedAt),
+    ),
+    { limit: 1 },
+  );
 }
 
 function searchPeople(principal: Principal, q: string, limit: number): Promise<PersonRow[]> {

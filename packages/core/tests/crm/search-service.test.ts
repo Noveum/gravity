@@ -1,14 +1,18 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { db, eq, schema } from '@gravity/db';
 import { createBrand } from '../../src/crm/brand-service.ts';
-import { createLead } from '../../src/crm/lead-service.ts';
+import { changeLead, createLead } from '../../src/crm/lead-service.ts';
 import { upsertPerson } from '../../src/crm/person-service.ts';
+import { archivePipeline } from '../../src/crm/pipeline-service.ts';
 import { findDuplicates, searchRecords } from '../../src/crm/search-service.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
 
 let workspace: TestWorkspace;
 let adaId = '';
+let pipelineId = '';
+let wonStageId = '';
+let leadId = '';
 
 beforeEach(async () => {
   await resetDatabase();
@@ -24,10 +28,14 @@ beforeEach(async () => {
     },
   );
   adaId = ada.person.id;
-  await createLead(
-    { principal: workspace.admin },
-    { personId: ada.person.id, pipelineId: brand.pipeline.id },
-  );
+  pipelineId = brand.pipeline.id;
+  wonStageId = brand.stages.find((stage) => stage.category === 'won')?.id ?? '';
+  leadId = (
+    await createLead(
+      { principal: workspace.admin },
+      { personId: ada.person.id, pipelineId: brand.pipeline.id },
+    )
+  ).lead.id;
 });
 
 afterAll(async () => {
@@ -69,6 +77,23 @@ describe('searchRecords', () => {
       .where(eq(schema.lead.personId, adaId));
     const result = await searchRecords(workspace.admin, { q: 'Ada' });
     expect([...result.people, ...result.leads]).toHaveLength(0);
+  });
+
+  test('a lead key never returns an archived lead', async () => {
+    await db.update(schema.lead).set({ archivedAt: new Date() }).where(eq(schema.lead.id, leadId));
+    const result = await searchRecords(workspace.admin, { q: 'yod-1' });
+    expect(result.leads).toHaveLength(0);
+  });
+
+  test('skips a won lead in an archived pipeline by term and by key', async () => {
+    const context = { principal: workspace.admin };
+    await changeLead(context, leadId, { type: 'close', stageId: wonStageId });
+    expect((await searchRecords(workspace.admin, { q: 'yod-1' })).leads).toHaveLength(1);
+    expect((await searchRecords(workspace.admin, { q: 'Ada' })).leads).toHaveLength(1);
+    await archivePipeline(context, pipelineId);
+    expect((await searchRecords(workspace.admin, { q: 'yod-1' })).leads).toHaveLength(0);
+    expect((await searchRecords(workspace.admin, { q: 'Ada' })).leads).toHaveLength(0);
+    expect((await searchRecords(workspace.admin, { q: 'Ada' })).people).toHaveLength(1);
   });
 
   test('treats wildcards in the term literally', async () => {

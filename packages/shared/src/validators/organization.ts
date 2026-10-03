@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isReservedWorkspaceSlug, SLUG_PATTERN } from '../constants/index.ts';
+import { isReservedWorkspaceSlug, ORG_ROLES, SLUG_PATTERN } from '../constants/index.ts';
 
 export const workspaceSlugSchema = z
   .string()
@@ -24,6 +24,16 @@ export const organizationUpdateSchema = z
     allowedEmailDomains: z.array(z.string().trim().toLowerCase().min(1).max(255)).max(20),
   })
   .partial();
+
+export const memberUpdateSchema = z
+  .object({
+    role: z.enum(ORG_ROLES).optional(),
+    isAgent: z.boolean().optional(),
+  })
+  .refine(
+    (value) => value.role !== undefined || value.isAgent !== undefined,
+    'Choose a member property to update.',
+  );
 
 export type OrganizationCreateInput = z.infer<typeof organizationCreateSchema>;
 export type OrganizationUpdateInput = z.infer<typeof organizationUpdateSchema>;

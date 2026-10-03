@@ -53,3 +53,9 @@ Browser review created a fictional organization/product, switched tenant scope, 
 The dependency audit returned an empty advisory object after the esbuild 0.28.1 override. Drizzle generation reported no schema changes, and frozen install succeeded. The license inventory records 134 installed locked packages with no undeclared license fields; uninstalled platform dependencies are listed separately.
 
 Final local checks passed with Node 22.15.1/Bun 1.3.14: TypeScript, Biome, all 40 tests and the production build. The tests also pass when the surrounding `CRM_DEMO_MODE` is false; Vitest explicitly configures its isolated local-file fixtures and production-mode rejection remains tested. Reviewed People in light/compact mode and Sequences in dark/comfortable mode. Appearance controls now dismiss on outside interaction or Escape instead of lingering over another view.
+
+## Remote GitHub verification
+
+The initial publication commit `8e1f85942977192597d8ac66ed57c672924a1492` passed the [first GitHub CI run](https://github.com/Noveum/gravity/actions/runs/37134125466) on a fresh Ubuntu runner: pinned checkout/runtime setup, frozen install, dependency audit, TypeScript, Biome, all 40 tests and production build. This verifies clean Linux packaging in addition to local macOS checks. The manual preview workflow remains disabled and has not deployed to Vercel.
+
+The refreshed local browser verified that opening Appearance then pressing physical Escape closed it and returned focus to its summary; clicking Companies outside the open menu also closed it. The app was restarted successfully after its production build.

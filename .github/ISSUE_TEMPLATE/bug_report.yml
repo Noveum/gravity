@@ -1,0 +1,21 @@
+name: Bug report
+description: Report a reproducible Gravity issue using fictional data.
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps and expected behavior
+      description: Use fictional records. Report security vulnerabilities privately.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and observed result
+      description: Browser, operating system, runtime and relevant sanitized errors.

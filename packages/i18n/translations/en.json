@@ -208,7 +208,8 @@
     "CONNECTOR_NOT_CONFIGURED": "This connector has not been configured.",
     "NETWORK_ERROR": "Could not reach the server. Try again.",
     "PERSON_EXISTS": "This email already exists in this organization. Use Existing person to add a product relationship, or ask a teammate to review the duplicate.",
-    "OWNER_NOT_ALLOWED": "Choose an active teammate with access to this product."
+    "OWNER_NOT_ALLOWED": "Choose an active teammate with access to this product.",
+    "PRODUCT_EXISTS": "A product with this name already exists in this organization."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
   "addPerson": "Add person",
@@ -305,5 +306,11 @@
   "recordUnavailable": "This record is no longer available in this view.",
   "clearFilters": "Clear filters",
   "domain": "Domain",
-  "summary": "Summary"
+  "summary": "Summary",
+  "retry": "Retry",
+  "defaultFolder": "Overview",
+  "discovery": "Discovery",
+  "evaluation": "Evaluation",
+  "proposal": "Proposal",
+  "won": "Won"
 }

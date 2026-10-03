@@ -129,7 +129,11 @@ export class CrmService {
         type: "action.scheduled",
         entityId: action.id,
       });
-      return { actionId: action.id, relationshipId: relationship.id };
+      return {
+        actionId: action.id,
+        relationshipId: relationship.id,
+        productId: relationship.productId,
+      };
     });
   }
   async createPerson(
@@ -230,7 +234,11 @@ export class CrmService {
         type: "relationship.created",
         entityId: relationship.id,
       });
-      return { personId, relationshipId: relationship.id };
+      return {
+        personId,
+        relationshipId: relationship.id,
+        productId: input.productId,
+      };
     });
   }
   async organizations(principal: Principal) {
@@ -907,12 +915,18 @@ export class CrmService {
       const [product] = await tx
         .insert(s.products)
         .values({ organizationId, name })
+        .onConflictDoNothing({
+          target: [s.products.organizationId, s.products.name],
+        })
         .returning();
-      await tx
-        .insert(s.folders)
-        .values({ organizationId, productId: product.id, name: "Overview" });
+      if (!product) throw new DomainError("PRODUCT_EXISTS", 409);
+      await tx.insert(s.folders).values({
+        organizationId,
+        productId: product.id,
+        name: t.defaultFolder,
+      });
       await tx.insert(s.stages).values(
-        ["Discovery", "Evaluation", "Proposal", "Won"].map(
+        [t.discovery, t.evaluation, t.proposal, t.won].map(
           (name, position) => ({
             organizationId,
             productId: product.id,

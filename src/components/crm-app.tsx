@@ -34,11 +34,18 @@ import {
   useState,
 } from "react";
 import { ActionDialog } from "./action-dialog";
+import {
+  dateLabel,
+  errorText,
+  label,
+  type Organization,
+  requestJson,
+} from "./client-api";
 import { Commands } from "./commands";
 import { Materials } from "./materials";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
 import { PersonDialog } from "./person-dialog";
-import { Preferences } from "./preferences";
+import { ViewOptions } from "./preferences";
 import { CompanyDetails, PersonDetails, RelatedWork } from "./record-details";
 
 type View =
@@ -60,43 +67,12 @@ const nav = [
   { id: "opportunities", icon: Layers },
   { id: "materials", icon: FolderOpen },
 ] as const;
-export async function requestJson<T>(
-  url: string,
-  init?: RequestInit,
-): Promise<T> {
-  const response = await fetch(url, { ...init, cache: "no-store" });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error ?? "INTERNAL_ERROR");
-  return data;
-}
-export function errorText(error: unknown) {
-  const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
-  return t.errors[code as keyof typeof t.errors] ?? t.errors.NETWORK_ERROR;
-}
-export const label = (key: string) => {
-  const value = t[key as keyof typeof t];
-  return typeof value === "string" ? value : key;
-};
-export function dateLabel(value: string, timeZone = "UTC") {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-  }).format(new Date(value));
-}
 const initialLetters = (name: string) =>
   name
     .split(" ")
     .slice(0, 2)
     .map((part) => part[0])
     .join("");
-export interface Organization {
-  id: string;
-  name: string;
-  timezone: string;
-}
 export function CrmApp({
   initial,
   organizations: initialOrganizations,
@@ -789,14 +765,7 @@ export function CrmApp({
             >
               <Search size={15} />
             </button>
-            <details className="view-options">
-              <summary aria-label={t.viewOptions}>
-                <Settings2 size={15} />
-              </summary>
-              <div className="options-popover">
-                <Preferences />
-              </div>
-            </details>
+            <ViewOptions />
             <span className={`live-status sync-${syncState}`} title={t.polling}>
               <span />
               <span className="sr-only">{label(syncState)}</span>
@@ -862,7 +831,9 @@ export function CrmApp({
             userId={userId}
             onClose={() => setActionDialog(false)}
             onCreated={async (result) => {
-              await refresh();
+              if (productId && productId !== result.productId)
+                setProductId(result.productId);
+              else await refresh();
               setSelected(result.relationshipId);
               setSelectedAction(result.actionId);
               setTab("timeline");
@@ -882,9 +853,11 @@ export function CrmApp({
             organizationId={organizationId}
             productId={productId}
             onClose={() => setPersonDialog(false)}
-            onCreated={async (relationshipId) => {
-              await refresh();
-              setSelected(relationshipId);
+            onCreated={async (result) => {
+              if (productId && productId !== result.productId)
+                setProductId(result.productId);
+              else await refresh();
+              setSelected(result.relationshipId);
               setSelectedAction("");
               setTab("timeline");
               setNotice(t.updated);
@@ -1488,6 +1461,10 @@ export function CrmApp({
                   <p className="callout">{t.organizationIsolation}</p>
                   <SettingsForm
                     organizationId={organizationId}
+                    canCreateProduct={
+                      data.members.find((member) => member.id === userId)
+                        ?.role === "admin"
+                    }
                     mutate={mutate}
                     onOrganizations={async () =>
                       setOrganizations(
@@ -1904,41 +1881,60 @@ export function CrmApp({
 }
 function SettingsForm({
   organizationId,
+  canCreateProduct = false,
   mutate,
   onOrganizations,
 }: {
   organizationId: string;
+  canCreateProduct?: boolean;
   mutate: (body: object) => Promise<boolean>;
   onOrganizations: () => Promise<void>;
 }) {
+  const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   return (
     <div className="settings-forms">
-      {["organization", ...(organizationId ? ["product"] : [])].map((kind) => (
+      {[
+        "organization",
+        ...(organizationId && canCreateProduct ? ["product"] : []),
+      ].map((kind) => (
         <form
           key={kind}
           onSubmit={async (event) => {
             event.preventDefault();
+            if (submitting.current) return;
             const form = event.currentTarget;
             const values = new FormData(form);
-            if (
-              await mutate({
-                operation: kind,
-                organizationId,
-                name: values.get("name"),
-              })
-            ) {
-              form.reset();
-              await onOrganizations();
+            submitting.current = true;
+            setBusy(true);
+            try {
+              if (
+                await mutate({
+                  operation: kind,
+                  organizationId,
+                  name: values.get("name"),
+                })
+              ) {
+                form.reset();
+                await onOrganizations();
+              }
+            } finally {
+              submitting.current = false;
+              setBusy(false);
             }
           }}
         >
           <label>
             {kind === "organization" ? t.organizationName : t.productName}
-            <input name="name" required maxLength={100} />
+            <input name="name" required maxLength={100} disabled={busy} />
           </label>
-          <button className="primary" type="submit">
+          <button className="primary" type="submit" disabled={busy}>
             <Plus size={14} />
-            {kind === "organization" ? t.newOrganization : t.newProduct}
+            {busy
+              ? t.saving
+              : kind === "organization"
+                ? t.newOrganization
+                : t.newProduct}
           </button>
         </form>
       ))}

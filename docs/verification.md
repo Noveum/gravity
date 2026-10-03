@@ -2,7 +2,7 @@
 
 Verified locally on Node 22.15.1 and Bun 1.3.14.
 
-- `bun run test`: 32 tests passed, using actual SQL migrations/constraints in PGlite and a real local HTTP OAuth/MCP server.
+- `bun run test`: 40 tests passed, using actual SQL migrations/constraints in PGlite and a real local HTTP OAuth/MCP server.
 - `bun run typecheck`: passed.
 - `bun run lint`: passed without warnings.
 - `bun run build`: passed; the app, auth, discovery, webhook, materials, SSE and MCP routes compile.
@@ -24,7 +24,7 @@ Browser verification through the in-app browser:
 
 HTTP verification uploaded a valid small fictional PDF through the actual application endpoint (201), downloaded identical bytes (200, private/no-store), rejected a cross-organization download (404), and rejected an unauthorized mutation origin (403). The UI showed the PDF under its product/folder, included it for Evaluation and excluded it for Proposal.
 
-These results do not establish cloud PostgreSQL/S3 operation, production backups, Google/GitHub login, live Gmail or LinkedIn synchronization, Fireflies import, actual Codex/Claude OAuth compatibility, Vercel deployment, large files there, high-volume queue performance, or outbound reliability. Those are recorded in the roadmap. GitHub Actions is prepared but has not run remotely because this repository has not been published.
+These results do not establish cloud PostgreSQL/S3 operation, production backups, Google/GitHub login, live Gmail or LinkedIn synchronization, Fireflies import, actual Codex/Claude OAuth compatibility, Vercel deployment, large files there, high-volume queue performance, or outbound reliability. Those are recorded in the roadmap. GitHub Actions repeats these checks remotely after publication; remote run results are recorded below.
 
 ## Gravity UI and live update checks
 
@@ -43,3 +43,13 @@ Reviewed the compact desktop header at 49 pixels high with both themes. Dragged 
 Clicked People → Mira Chen → Northstar Labs → Back; the company showed its readable contacts and product relationships, and Back restored the person. Person/meeting and person/opportunity links focused the corresponding record. A sequence enrollment opened the person inspector. Awaiting them showed only the two fictional tasks owed by the other party, excluding our own scheduled review. The revised drawer and action header had no document overflow at 390 × 844. A Next.js development hot-reload router error appeared during source edits; a full reload cleared it and the subsequent clean page had no issue overlay.
 
 Additional SQL checks enforce product-scoped company/person detail, private-action filtering, immutable MCP product grants, and product-authorized owners for meeting commitments. The real MCP tool transport calls `get_company_context` and excludes the ungranted product and its opportunity. These are foundation read flows; record editing, live providers and deployment remain subject to the gaps above.
+
+## Repository release preparation
+
+Added eight HTTP contract tests for malformed/unknown reads, tenant/product restriction, admin-only transactional product creation and duplicate recovery, scheduling from a different product scope, tampered/stale/missing signatures, LinkedIn duplicate delivery, Gmail sent/inbox/archive classification, cross-account thread rejection and fail-closed connector configuration. Authentication is injected in these route tests; domain authorization and SQL are real. The separate OAuth tests continue to use a real local HTTP auth server.
+
+Browser review created a fictional organization/product, switched tenant scope, confirmed duplicate-name correction retained the form value, and scheduled a Services action from a filtered AI Platform view. The header switched to Services and opened the saved task, Leena Rao and Cedar Systems. Connections showed Gmail/LinkedIn/Fireflies disconnected and disclosed that local OAuth MCP is unconfigured.
+
+The dependency audit returned an empty advisory object after the esbuild 0.28.1 override. Drizzle generation reported no schema changes, and frozen install succeeded. The license inventory records 134 installed locked packages with no undeclared license fields; uninstalled platform dependencies are listed separately.
+
+Final local checks passed with Node 22.15.1/Bun 1.3.14: TypeScript, Biome, all 40 tests and the production build. The tests also pass when the surrounding `CRM_DEMO_MODE` is false; Vitest explicitly configures its isolated local-file fixtures and production-mode rejection remains tested. Reviewed People in light/compact mode and Sequences in dark/comfortable mode. Appearance controls now dismiss on outside interaction or Escape instead of lingering over another view.

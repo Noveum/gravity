@@ -4,7 +4,7 @@ import t from "@crm/i18n/translations/en.json";
 import { Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { errorText, type Organization, requestJson } from "./crm-app";
+import { errorText, type Organization, requestJson } from "./client-api";
 
 function Card({
   title,

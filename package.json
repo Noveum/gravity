@@ -17,7 +17,8 @@
     "format": "biome check --write .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "licenses": "tsx scripts/licenses.ts"
   },
   "dependencies": {
     "next": "16.3.8",
@@ -43,5 +44,17 @@
     "vitest": "5.0.3",
     "tsx": "4.23.15",
     "drizzle-kit": "0.31.9"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Noveum/gravity.git"
+  },
+  "homepage": "https://github.com/Noveum/gravity#readme",
+  "bugs": {
+    "url": "https://github.com/Noveum/gravity/issues"
+  },
+  "overrides": {
+    "esbuild": "0.28.1"
   }
 }

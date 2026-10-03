@@ -2,7 +2,7 @@
 import type { ClientCompanyContext, ClientContext } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { Building2, ChevronRight } from "lucide-react";
-import { dateLabel, label } from "./crm-app";
+import { dateLabel, label } from "./client-api";
 
 interface WorkProps {
   actions: ClientContext["actions"];

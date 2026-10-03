@@ -3,7 +3,7 @@ import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { Download, FileText, Folder, Plus, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { dateLabel, errorText, requestJson } from "./crm-app";
+import { dateLabel, errorText, requestJson } from "./client-api";
 
 export function Materials({
   data,

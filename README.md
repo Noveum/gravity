@@ -78,4 +78,4 @@ Start from `.env.example`; use a secret manager for real credentials. [Setup and
 
 Target deployment: Vercel with managed PostgreSQL and private object storage, without Kubernetes. Do not deploy this foundation for real sales work before the production gates are complete. In particular, the local 10 MB upload route must be replaced with authenticated direct-to-storage uploads to accommodate Vercel request limits.
 
-This checkout has no GitHub remote or deployment. The code is prepared under Apache-2.0; publication and remote repository creation remain separate release steps.
+Source repository: [Noveum/gravity](https://github.com/Noveum/gravity). Licensed under Apache-2.0. This is a deployable application source package, not an npm SDK; `private: true` prevents accidental registry publication. [Contributing](CONTRIBUTING.md), [security reporting](SECURITY.md), [release review](docs/release-review.md), [dependency inventory](docs/dependency-licenses.json) and [CI/preview deployment](docs/ci-and-deployment.md) describe the release process. No production deployment is active.

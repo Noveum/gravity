@@ -19,6 +19,9 @@ export async function GET(request: Request) {
     const principal = await currentPrincipal(request.headers);
     const service = new CrmService(await getDatabase());
     const query = Object.fromEntries(new URL(request.url).searchParams);
+    z.enum(["organizations", "context", "company", "revision", "snapshot"])
+      .optional()
+      .parse(query.operation);
     let result: unknown;
     if (query.operation === "organizations")
       result = await service.organizations(principal);

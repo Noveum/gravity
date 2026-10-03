@@ -1541,7 +1541,7 @@ kbd {
 }
 .action-dialog form > p,
 .action-dialog form > .dialog-actions,
-.action-dialog form > label:has(textarea) {
+.action-dialog .dialog-fields > label:has(textarea) {
   grid-column: 1 / -1;
 }
 @media (max-width: 600px) {
@@ -1947,4 +1947,8 @@ body:has(.resize-handle[data-dragging]) {
 }
 .identity-link :where(small) {
   font-weight: 400;
+}
+
+.dialog-fields {
+  display: contents;
 }

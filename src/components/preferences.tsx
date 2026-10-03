@@ -1,6 +1,7 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import { useEffect, useState } from "react";
+import { Settings2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 export function Preferences() {
   const [theme, setTheme] = useState("system");
   const [density, setDensity] = useState("comfortable");
@@ -65,5 +66,43 @@ export function Preferences() {
         <option value="compact">{t.compact}</option>
       </select>
     </div>
+  );
+}
+
+export function ViewOptions() {
+  const menu = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const outside = (event: PointerEvent) => {
+      if (
+        menu.current?.open &&
+        event.target instanceof Node &&
+        !menu.current.contains(event.target)
+      )
+        menu.current.open = false;
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && menu.current?.open) {
+        event.preventDefault();
+        event.stopPropagation();
+        menu.current.open = false;
+        menu.current.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
+  return (
+    <details ref={menu} className="view-options">
+      <summary aria-label={t.viewOptions}>
+        <Settings2 size={15} />
+      </summary>
+      <div className="options-popover">
+        <Preferences />
+      </div>
+    </details>
   );
 }

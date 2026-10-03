@@ -37,6 +37,6 @@ The queue and connector slices deserve the most effort. A polished board cannot 
 
 ## Open-source release
 
-Apache-2.0 matches Orbit's permissive direction. The source is newly written, with fictional fixtures only; dependency licenses still need the normal release inventory. Review secrets and business data before pushing a new GitHub repository. Keep brand/trademark assets and source licensing distinct. Publish a Preview with an honest capability matrix; do not label unconnected providers as working integrations.
+Apache-2.0 matches Orbit's permissive direction. The source is newly written, with fictional fixtures only; the installed dependency license inventory is recorded with explicit platform coverage. Review secrets and business data before pushing a new GitHub repository. Keep brand/trademark assets and source licensing distinct. Publish a Preview with an honest capability matrix; do not label unconnected providers as working integrations.
 
 Keep PostgreSQL, object storage, connector and execution interfaces portable. Built-in AI should be optional: the core queue and external MCP clients work without an app-owned model subscription. Select any paid provider after pricing/account qualification; do not promise a fixed hosting price until the supplied database and existing Vercel account are known.

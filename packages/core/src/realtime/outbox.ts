@@ -1,5 +1,5 @@
-import { and, asc, db, eq, gt, inArray, isNull, lt, schema } from '@gravity/db';
-import { type SyncAction, syncActionSchema } from '@gravity/shared/events';
+import { and, asc, db, eq, gt, inArray, isNull, lt, schema, sql } from '@gravity/db';
+import { type SyncAction, scopes, syncActionSchema } from '@gravity/shared/events';
 import type { Executor } from '../internal.ts';
 import { publishDeltas } from './publisher.ts';
 
@@ -88,15 +88,27 @@ export interface OutboxPage {
   readonly syncId: number;
 }
 
+export interface OutboxReader {
+  readonly organizationId: string;
+  readonly userId: string;
+}
+
 export async function readOutboxSince(
-  organizationId: string,
+  reader: OutboxReader,
   since: number,
   limit: number,
 ): Promise<OutboxPage> {
+  const readable = [scopes.workspace(reader.organizationId), scopes.user(reader.userId)];
   const rows = await db
     .select({ syncId: schema.outbox.syncId, payload: schema.outbox.payload })
     .from(schema.outbox)
-    .where(and(eq(schema.outbox.organizationId, organizationId), gt(schema.outbox.syncId, since)))
+    .where(
+      and(
+        eq(schema.outbox.organizationId, reader.organizationId),
+        gt(schema.outbox.syncId, since),
+        sql`${schema.outbox.payload} -> 'scopes' ?| array[${readable[0]}, ${readable[1]}]::text[]`,
+      ),
+    )
     .orderBy(asc(schema.outbox.syncId))
     .limit(limit + 1);
   const page = rows.slice(0, limit);
@@ -106,4 +118,20 @@ export async function readOutboxSince(
     truncated: rows.length > limit,
     syncId: last === undefined ? since : last.syncId,
   };
+}
+
+export async function latestOutboxSyncId(organizationId: string): Promise<number> {
+  const [row] = await db
+    .select({ latest: sql<string | null>`max(${schema.outbox.syncId})` })
+    .from(schema.outbox)
+    .where(eq(schema.outbox.organizationId, organizationId));
+  return row?.latest == null ? 0 : Number(row.latest);
+}
+
+export async function pruneOutbox(olderThanMs: number): Promise<number> {
+  const removed = await db
+    .delete(schema.outbox)
+    .where(lt(schema.outbox.createdAt, new Date(Date.now() - olderThanMs)))
+    .returning({ syncId: schema.outbox.syncId });
+  return removed.length;
 }

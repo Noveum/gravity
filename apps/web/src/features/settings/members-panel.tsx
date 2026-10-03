@@ -105,10 +105,20 @@ export function MembersPanel({
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    const refresh = () => router.refresh();
+    let active = true;
+    let queued = false;
+    const refresh = () => {
+      if (queued) return;
+      queued = true;
+      queueMicrotask(() => {
+        queued = false;
+        if (active) router.refresh();
+      });
+    };
     const unregisterMember = registerDeltaHandler('member', refresh);
     const unregisterInvitation = registerDeltaHandler('invitation', refresh);
     return () => {
+      active = false;
       unregisterMember();
       unregisterInvitation();
     };

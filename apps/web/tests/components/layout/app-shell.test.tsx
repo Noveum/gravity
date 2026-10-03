@@ -33,6 +33,7 @@ function renderShell() {
         workspace={{ id: 'w1', name: 'Acme Studio', slug: 'acme-studio' }}
         user={{ id: 'u1', name: 'Ada Lovelace', email: 'ada@acme.test' }}
         realtimeUrl=""
+        realtimeCursor={0}
       >
         <p>Page body</p>
       </AppShell>
@@ -159,6 +160,7 @@ describe('AppShell', () => {
           workspace={{ id: 'w1', name: 'Acme Studio', slug: 'acme-studio' }}
           user={{ id: 'u1', name: 'Ada Lovelace', email: 'ada@acme.test' }}
           realtimeUrl=""
+          realtimeCursor={0}
         >
           <input aria-label="Note" />
         </AppShell>

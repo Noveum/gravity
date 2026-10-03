@@ -2,6 +2,7 @@
 
 import {
   useDeltaHandler,
+  useRealtimeStatus,
   useResumeHandler,
   useScopeSubscription,
 } from '@gravity/realtime-client/react';
@@ -61,8 +62,9 @@ export function lastAppliedSyncId(client: QueryClient): number {
 export async function catchUp(
   client: QueryClient,
   fetchPage: (since: number) => Promise<SyncCatchup>,
+  seededCursor = 0,
 ): Promise<void> {
-  let since = Math.max(0, lastAppliedSyncId(client) - CATCHUP_OVERLAP);
+  let since = Math.max(0, Math.max(lastAppliedSyncId(client), seededCursor) - CATCHUP_OVERLAP);
   for (;;) {
     const page = await fetchPage(since);
     for (const action of page.actions) applyDelta(action, client);
@@ -85,12 +87,15 @@ export function useDeltaSink(): (action: SyncAction) => void {
 export interface DeltaBridgeProps {
   readonly organizationId: string;
   readonly userId: string;
+  readonly initialCursor: number;
 }
 
-export function DeltaBridge({ organizationId, userId }: DeltaBridgeProps) {
+export function DeltaBridge({ organizationId, userId, initialCursor }: DeltaBridgeProps) {
   const client = useQueryClient();
   const sink = useDeltaSink();
+  const status = useRealtimeStatus();
   const resumeAbort = useRef<AbortController | null>(null);
+  const firstReadyHandled = useRef(false);
 
   useScopeSubscription(
     useMemo(
@@ -110,20 +115,29 @@ export function DeltaBridge({ organizationId, userId }: DeltaBridgeProps) {
 
   useEffect(() => () => resumeAbort.current?.abort(), []);
 
-  useResumeHandler(
-    useCallback(() => {
-      resumeAbort.current?.abort();
-      const controller = new AbortController();
-      resumeAbort.current = controller;
-      catchUp(client, (since) =>
+  const runCatchUp = useCallback(() => {
+    resumeAbort.current?.abort();
+    const controller = new AbortController();
+    resumeAbort.current = controller;
+    catchUp(
+      client,
+      (since) =>
         apiFetch(`/api/sync?since=${since}`, syncCatchupSchema, { signal: controller.signal }),
-      ).catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        console.error('Realtime catch-up failed, refetching what is on screen.', error);
-        client.invalidateQueries().catch(() => undefined);
-      });
-    }, [client]),
-  );
+      initialCursor,
+    ).catch((error: unknown) => {
+      if (controller.signal.aborted) return;
+      console.error('Realtime catch-up failed, refetching what is on screen.', error);
+      client.invalidateQueries().catch(() => undefined);
+    });
+  }, [client, initialCursor]);
+
+  useEffect(() => {
+    if (status !== 'open' || firstReadyHandled.current) return;
+    firstReadyHandled.current = true;
+    runCatchUp();
+  }, [status, runCatchUp]);
+
+  useResumeHandler(runCatchUp);
 
   return null;
 }

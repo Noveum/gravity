@@ -3,6 +3,8 @@ import { db, eq, schema } from '@gravity/db';
 import type { SyncAction } from '@gravity/shared/events';
 import {
   flushOutbox,
+  latestOutboxSyncId,
+  pruneOutbox,
   readOutboxSince,
   recordSync,
   republishStale,
@@ -131,9 +133,58 @@ describe('outbox', () => {
 
   test('readOutboxSince replays deletes in order and reports truncation', async () => {
     await recordSync(db, [action(1007), action(1008, 'delete'), action(1009)]);
-    const page = await readOutboxSince(organizationId, 1007, 1);
+    const page = await readOutboxSince({ organizationId, userId: 'reader' }, 1007, 1);
     expect(page.actions.map((row) => [row.syncId, row.action])).toEqual([[1008, 'delete']]);
     expect(page.truncated).toBe(true);
     expect(page.syncId).toBe(1008);
+  });
+
+  test('readOutboxSince keeps only workspace rows and the reader own user rows', async () => {
+    const own = { ...action(1020), scopes: ['user:reader'] };
+    const foreign = { ...action(1021), scopes: ['user:someone-else'] };
+    const both = { ...action(1022), scopes: ['user:someone-else', `workspace:${organizationId}`] };
+    await recordSync(db, [action(1019), own, foreign, both]);
+    const page = await readOutboxSince({ organizationId, userId: 'reader' }, 0, 10);
+    expect(page.actions.map((row) => row.syncId)).toEqual([1019, 1020, 1022]);
+    expect(page.truncated).toBe(false);
+  });
+
+  test('readOutboxSince pages across filtered rows without losing the cursor', async () => {
+    const foreign = (syncId: number) => ({ ...action(syncId), scopes: ['user:someone-else'] });
+    await recordSync(db, [action(1030), foreign(1031), foreign(1032), action(1033)]);
+    const first = await readOutboxSince({ organizationId, userId: 'reader' }, 0, 1);
+    expect([first.actions.map((row) => row.syncId), first.truncated, first.syncId]).toEqual([
+      [1030],
+      true,
+      1030,
+    ]);
+    const second = await readOutboxSince({ organizationId, userId: 'reader' }, first.syncId, 1);
+    expect([second.actions.map((row) => row.syncId), second.truncated]).toEqual([[1033], false]);
+  });
+
+  test('latestOutboxSyncId is the workspace maximum and zero when empty', async () => {
+    expect(await latestOutboxSyncId(organizationId)).toBe(0);
+    const other = (await createWorkspace('Other')).organizationId;
+    await db.delete(schema.outbox);
+    await recordSync(db, [
+      action(1040),
+      action(1042),
+      { ...action(1043), organizationId: other, scopes: [`workspace:${other}`] },
+    ]);
+    expect(await latestOutboxSyncId(organizationId)).toBe(1042);
+    expect(await latestOutboxSyncId(other)).toBe(1043);
+  });
+
+  test('pruneOutbox removes only rows older than the cutoff', async () => {
+    await recordSync(db, [action(1050), action(1051), action(1052)]);
+    const old = new Date(Date.now() - 8 * 24 * 60 * 60_000);
+    await db.update(schema.outbox).set({ createdAt: old }).where(eq(schema.outbox.syncId, 1050));
+    await db
+      .update(schema.outbox)
+      .set({ createdAt: new Date(Date.now() - 6 * 24 * 60 * 60_000) })
+      .where(eq(schema.outbox.syncId, 1051));
+    expect(await pruneOutbox(7 * 24 * 60 * 60_000)).toBe(1);
+    const left = await db.select().from(schema.outbox);
+    expect(left.map((row) => row.syncId).sort()).toEqual([1051, 1052]);
   });
 });

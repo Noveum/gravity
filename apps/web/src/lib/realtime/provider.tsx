@@ -98,6 +98,7 @@ export interface WorkspaceRealtimeProps {
   readonly url: string;
   readonly userId: string;
   readonly organizationId: string;
+  readonly initialCursor: number;
   readonly children: ReactNode;
 }
 
@@ -105,6 +106,7 @@ export function WorkspaceRealtime({
   url,
   userId,
   organizationId,
+  initialCursor,
   children,
 }: WorkspaceRealtimeProps) {
   const handleTerminal = useCallback((code: number) => handleTerminalClose(code), []);
@@ -122,7 +124,11 @@ export function WorkspaceRealtime({
         fetchTicket={fetchTicket}
         onTerminal={handleTerminal}
       >
-        <DeltaBridge organizationId={organizationId} userId={userId} />
+        <DeltaBridge
+          organizationId={organizationId}
+          userId={userId}
+          initialCursor={initialCursor}
+        />
         {children}
         <ConnectionBanner />
       </RealtimeProvider>

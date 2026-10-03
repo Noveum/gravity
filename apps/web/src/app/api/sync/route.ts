@@ -8,6 +8,10 @@ export async function GET(request: Request): Promise<Response> {
   return await handleRoute(async () => {
     const context = await apiContext();
     const { since } = syncCatchupQuerySchema.parse(searchParamsOf(request));
-    return await readOutboxSince(context.principal.organizationId, since, CATCHUP_LIMIT);
+    return await readOutboxSince(
+      { organizationId: context.principal.organizationId, userId: context.principal.userId },
+      since,
+      CATCHUP_LIMIT,
+    );
   });
 }

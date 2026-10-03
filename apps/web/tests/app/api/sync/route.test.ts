@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { recordSync } from '@gravity/core';
-import { createWorkspace, resetDatabase } from '@gravity/core/test-support';
+import { createUser, createWorkspace, resetDatabase } from '@gravity/core/test-support';
 import { db, schema } from '@gravity/db';
 import { CATCHUP_LIMIT, type SyncAction } from '@gravity/shared/events';
 import { GET } from '@/app/api/sync/route.ts';
@@ -42,6 +42,24 @@ describe('/api/sync', () => {
     ]);
     expect(body.truncated).toBe(false);
     expect(body.syncId).toBe(5003);
+  });
+
+  test('keeps user-scoped actions for their owner only', async () => {
+    const mine = await createWorkspace('Mine');
+    const colleague = await createUser('Colleague');
+    await db.delete(schema.outbox);
+    const forUser = (syncId: number, userId: string): SyncAction => ({
+      ...action(mine.organizationId, syncId, 'update'),
+      scopes: [`user:${userId}`],
+    });
+    await recordSync(db, [
+      action(mine.organizationId, 6001, 'insert'),
+      forUser(6002, colleague.id),
+      forUser(6003, mine.adminUser.id),
+    ]);
+    await signedInAs(mine.adminUser.id, mine.organizationId);
+    const body = await (await GET(new Request('http://localhost:3300/api/sync?since=0'))).json();
+    expect(body.actions.map((row: SyncAction) => row.syncId)).toEqual([6001, 6003]);
   });
 
   test('says truncated past the limit and hands back the cursor for the next page', async () => {

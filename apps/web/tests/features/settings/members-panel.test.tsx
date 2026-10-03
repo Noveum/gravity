@@ -32,7 +32,7 @@ function delta(model: SyncAction['model'], syncId: number): SyncAction {
 }
 
 describe('MembersPanel', () => {
-  test('refreshes when a member or invitation changes elsewhere, and stops once unmounted', () => {
+  test('refreshes when a member or invitation changes elsewhere, and stops once unmounted', async () => {
     const view = render(
       <MembersPanel
         currentUserId="u1"
@@ -49,10 +49,54 @@ describe('MembersPanel', () => {
     applyDelta(delta('member', 1), client);
     applyDelta(delta('invitation', 2), client);
     applyDelta(delta('person', 3), client);
+    await Promise.resolve();
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    applyDelta(delta('member', 4), client);
+    await Promise.resolve();
     expect(refresh).toHaveBeenCalledTimes(2);
 
     view.unmount();
-    applyDelta(delta('member', 4), client);
+    applyDelta(delta('member', 5), client);
+    await Promise.resolve();
     expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  test('a burst of actions in one catch-up batch refreshes once', async () => {
+    refresh.mockClear();
+    render(
+      <MembersPanel
+        currentUserId="u1"
+        members={[]}
+        invites={[]}
+        canInvite={false}
+        canInviteAdmins={false}
+        canManage={false}
+        canDeliverInvites={false}
+      />,
+    );
+    const client = new QueryClient();
+    for (let syncId = 10; syncId < 60; syncId += 1) applyDelta(delta('member', syncId), client);
+    await Promise.resolve();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test('a refresh queued before unmount never fires afterwards', async () => {
+    refresh.mockClear();
+    const view = render(
+      <MembersPanel
+        currentUserId="u1"
+        members={[]}
+        invites={[]}
+        canInvite={false}
+        canInviteAdmins={false}
+        canManage={false}
+        canDeliverInvites={false}
+      />,
+    );
+    applyDelta(delta('member', 100), new QueryClient());
+    view.unmount();
+    await Promise.resolve();
+    expect(refresh).not.toHaveBeenCalled();
   });
 });

@@ -23,6 +23,7 @@ export interface AppShellProps {
   readonly workspace: ShellWorkspace;
   readonly user: ShellUser;
   readonly realtimeUrl: string;
+  readonly realtimeCursor: number;
   readonly children: ReactNode;
 }
 
@@ -35,7 +36,13 @@ function NavChord({ item }: { readonly item: NavItem }) {
   return null;
 }
 
-export function AppShell({ workspace, user, realtimeUrl, children }: AppShellProps) {
+export function AppShell({
+  workspace,
+  user,
+  realtimeUrl,
+  realtimeCursor,
+  children,
+}: AppShellProps) {
   const pathname = usePathname();
   const isDesktop = useMediaQuery(DESKTOP_QUERY, true);
   const isWide = useMediaQuery(WIDE_QUERY, true);
@@ -75,7 +82,12 @@ export function AppShell({ workspace, user, realtimeUrl, children }: AppShellPro
   );
 
   return (
-    <WorkspaceRealtime url={realtimeUrl} userId={user.id} organizationId={workspace.id}>
+    <WorkspaceRealtime
+      url={realtimeUrl}
+      userId={user.id}
+      organizationId={workspace.id}
+      initialCursor={realtimeCursor}
+    >
       <div data-app-shell className="flex h-dvh w-full overflow-hidden bg-bg">
         {NAV_ITEMS.map((item) => (
           <NavChord key={item.id} item={item} />

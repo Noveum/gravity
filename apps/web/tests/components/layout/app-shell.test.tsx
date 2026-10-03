@@ -1,7 +1,11 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { restoreModulesAfterThisFile } from '../../../tests-support.ts';
+import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
+import { renderWithClient } from '../../support/render.tsx';
+import { setViewport } from '../../support/viewport.ts';
 
 await restoreModulesAfterThisFile(['next/navigation', '@/lib/realtime/ticket.ts']);
 
@@ -18,44 +22,40 @@ let pathname = '/today';
 
 mock.module('next/navigation', () => ({
   usePathname: () => pathname,
+  useSearchParams: () => new URLSearchParams(),
   useRouter: () => ({ push, replace: mock(), refresh: mock(), prefetch: mock() }),
   redirect: mock(),
   notFound: mock(),
 }));
 
 const { AppShell } = await import('@/components/layout/app-shell.tsx');
-const { Providers } = await import('../../../src/app/providers.tsx');
+const { ThemeProvider } = await import('@/components/theme-provider.tsx');
 
-function renderShell() {
-  return render(
-    <Providers>
+type Bootstrap = ReturnType<typeof bootstrapFixture>;
+
+function renderShell(body: ReactNode = <p>Page body</p>, bootstrap?: Bootstrap) {
+  return renderWithClient(
+    <ThemeProvider>
       <AppShell
         workspace={{ id: 'w1', name: 'Acme Studio', slug: 'acme-studio' }}
         user={{ id: 'u1', name: 'Ada Lovelace', email: 'ada@acme.test' }}
         realtimeUrl=""
         realtimeCursor={0}
       >
-        <p>Page body</p>
+        {body}
       </AppShell>
-    </Providers>,
+    </ThemeProvider>,
+    bootstrap === undefined ? {} : { bootstrap },
   );
 }
 
-function setViewport(matches: boolean): void {
-  Object.defineProperty(window, 'matchMedia', {
-    writable: true,
-    value: (query: string) => ({
-      matches,
-      media: query,
-      onchange: null,
-      addEventListener: mock(),
-      removeEventListener: mock(),
-      addListener: mock(),
-      removeListener: mock(),
-      dispatchEvent: mock(),
-    }),
-  });
+function sidebarAside(): HTMLElement {
+  const aside = document.querySelector<HTMLElement>('aside');
+  if (aside === null) throw new Error('missing sidebar');
+  return aside;
 }
+
+afterAll(() => setViewport(false));
 
 beforeEach(() => {
   push.mockClear();
@@ -74,7 +74,26 @@ describe('AppShell', () => {
     }
     expect(screen.getAllByRole('link', { name: 'Settings' }).length).toBeGreaterThan(0);
     expect(screen.getByText('Page body')).toBeInTheDocument();
-    expect(screen.queryByText('Brands')).not.toBeInTheDocument();
+    expect(within(nav).getByText('Brands')).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: /Prospecting/ })).toHaveAttribute(
+      'href',
+      '/leads/YOD',
+    );
+  });
+
+  test('leaves the Brands section out when the workspace has no brands', () => {
+    renderShell(undefined, bootstrapFixture({ brands: [], pipelines: [], stages: [] }));
+    const nav = screen.getAllByRole('navigation', { name: 'Workspace' })[0];
+    if (nav === undefined) throw new Error('missing workspace navigation');
+    expect(within(nav).queryByText('Brands')).not.toBeInTheDocument();
+  });
+
+  test('names the brand and pipeline of a lead list in the breadcrumb', () => {
+    pathname = '/leads/YOD';
+    renderShell();
+    const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(within(crumbs).getByText('Yodu')).toBeInTheDocument();
+    expect(within(crumbs).getByText('Prospecting')).toBeInTheDocument();
   });
 
   test('marks the current section and shows it in the breadcrumb', () => {
@@ -131,8 +150,7 @@ describe('AppShell', () => {
 
   test('left bracket collapses the sidebar to icons and back', async () => {
     renderShell();
-    const aside = document.querySelector('aside');
-    if (aside === null) throw new Error('missing sidebar');
+    const aside = sidebarAside();
     expect(aside.className).toContain('w-[var(--sidebar-width)]');
     await userEvent.keyboard('[[');
     expect(aside.className).toContain('w-[var(--sidebar-width-collapsed)]');
@@ -140,11 +158,31 @@ describe('AppShell', () => {
     expect(aside.className).toContain('w-[var(--sidebar-width)]');
   });
 
+  test('left bracket leaves the sidebar alone on a record page, where it means the previous record', async () => {
+    pathname = '/people/per1';
+    renderShell();
+    const aside = sidebarAside();
+    await userEvent.keyboard('[[');
+    expect(aside.className).toContain('w-[var(--sidebar-width)]');
+  });
+
   test('starts collapsed to icons below the wide breakpoint', () => {
     setViewport(false);
     renderShell();
-    const aside = document.querySelector('aside');
-    expect(aside?.className).toContain('w-[var(--sidebar-width-collapsed)]');
+    expect(sidebarAside().className).toContain('w-[var(--sidebar-width-collapsed)]');
+  });
+
+  test('the collapsed sidebar shows a dot per brand behind a separator, and no separator without brands', () => {
+    setViewport(false);
+    const { unmount } = renderShell();
+    expect(within(sidebarAside()).getByRole('link', { name: 'Yodu' })).toHaveAttribute(
+      'href',
+      '/leads/YOD',
+    );
+    expect(sidebarAside().querySelectorAll('[data-sidebar-separator]')).toHaveLength(2);
+    unmount();
+    renderShell(undefined, bootstrapFixture({ brands: [], pipelines: [], stages: [] }));
+    expect(sidebarAside().querySelectorAll('[data-sidebar-separator]')).toHaveLength(1);
   });
 
   test('opens the live connection for the current workspace', async () => {
@@ -154,18 +192,7 @@ describe('AppShell', () => {
   });
 
   test('chords are ignored while typing in a field', async () => {
-    render(
-      <Providers>
-        <AppShell
-          workspace={{ id: 'w1', name: 'Acme Studio', slug: 'acme-studio' }}
-          user={{ id: 'u1', name: 'Ada Lovelace', email: 'ada@acme.test' }}
-          realtimeUrl=""
-          realtimeCursor={0}
-        >
-          <input aria-label="Note" />
-        </AppShell>
-      </Providers>,
-    );
+    renderShell(<input aria-label="Note" />);
     await userEvent.type(screen.getByLabelText('Note'), 'gc');
     expect(push).not.toHaveBeenCalled();
   });

@@ -6,9 +6,14 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { CommandPalette } from '@/components/command-palette.tsx';
 import { ShortcutsOverlay } from '@/components/shortcuts-overlay.tsx';
 import { overlayClassName } from '@/components/ui/dialog.tsx';
+import { useWorkspace } from '@/features/workspace/use-workspace.ts';
+import { ContextPanelProvider } from '@/lib/context-panel.tsx';
+import { CopyLinkProvider } from '@/lib/copy-link.tsx';
 import { useHotkey } from '@/lib/keyboard/index.ts';
 import {
+  type BreadcrumbLookup,
   breadcrumbsFor,
+  isRecordPath,
   NAV_ITEMS,
   type NavItem,
   type ShellUser,
@@ -17,6 +22,7 @@ import {
 import { CrmDeltaHandlers } from '@/lib/realtime/crm-deltas.tsx';
 import { WorkspaceRealtime } from '@/lib/realtime/provider.tsx';
 import { DESKTOP_QUERY, useMediaQuery, WIDE_QUERY } from '@/lib/use-media-query.ts';
+import { ContextPanel } from './context-panel.tsx';
 import { Sidebar } from './sidebar.tsx';
 import { TopBar } from './top-bar.tsx';
 
@@ -54,7 +60,20 @@ export function AppShell({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const collapsed = collapsePreference ?? !isWide;
-  const breadcrumbs = useMemo(() => breadcrumbsFor(pathname), [pathname]);
+  const shellWorkspace = useWorkspace();
+  const breadcrumbs = useMemo(() => {
+    const lookup: BreadcrumbLookup = {
+      pipeline: (key) => {
+        const pipeline = shellWorkspace.pipelineByKey.get(key);
+        const brand =
+          pipeline === undefined ? undefined : shellWorkspace.brandById.get(pipeline.brandId);
+        return pipeline === undefined || brand === undefined
+          ? undefined
+          : { brandName: brand.name, pipelineName: pipeline.name };
+      },
+    };
+    return breadcrumbsFor(pathname, lookup);
+  }, [pathname, shellWorkspace]);
 
   const toggleSidebar = useCallback(() => {
     if (isDesktop) setCollapsePreference(!collapsed);
@@ -62,7 +81,11 @@ export function AppShell({
   }, [isDesktop, collapsed]);
   const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
 
-  useHotkey('[', toggleSidebar, { label: 'Toggle sidebar', section: 'View' });
+  useHotkey('[', toggleSidebar, {
+    label: 'Toggle sidebar',
+    section: 'View',
+    enabled: !isRecordPath(pathname),
+  });
   useHotkey('?', openShortcuts, { label: 'Show keyboard shortcuts', section: 'General' });
 
   if (drawerPath !== pathname) {
@@ -89,52 +112,58 @@ export function AppShell({
       organizationId={workspace.id}
       initialCursor={realtimeCursor}
     >
-      <div data-app-shell className="flex h-dvh w-full overflow-hidden bg-bg">
-        <CrmDeltaHandlers />
-        {NAV_ITEMS.map((item) => (
-          <NavChord key={item.id} item={item} />
-        ))}
+      <ContextPanelProvider>
+        <CopyLinkProvider>
+          <div data-app-shell className="relative flex h-dvh w-full overflow-hidden bg-bg">
+            <CrmDeltaHandlers />
+            {NAV_ITEMS.map((item) => (
+              <NavChord key={item.id} item={item} />
+            ))}
 
-        <aside
-          className={
-            collapsed
-              ? 'hidden w-[var(--sidebar-width-collapsed)] shrink-0 lg:block'
-              : 'hidden w-[var(--sidebar-width)] shrink-0 lg:block'
-          }
-        >
-          {sidebar(false, null)}
-        </aside>
-
-        <DialogPrimitive.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
-          <DialogPrimitive.Portal>
-            <DialogPrimitive.Overlay className={`${overlayClassName} lg:hidden`} />
-            <DialogPrimitive.Content
-              aria-label="Navigation"
-              aria-describedby={undefined}
-              className="fixed inset-y-0 left-0 z-50 w-[min(20rem,88vw)] outline-none data-[state=closed]:animate-drawer-out data-[state=open]:animate-drawer-in sm:w-[min(17rem,80vw)] lg:hidden"
+            <aside
+              className={
+                collapsed
+                  ? 'hidden w-[var(--sidebar-width-collapsed)] shrink-0 lg:block'
+                  : 'hidden w-[var(--sidebar-width)] shrink-0 lg:block'
+              }
             >
-              <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
-              {sidebar(true, () => setDrawerOpen(false))}
-            </DialogPrimitive.Content>
-          </DialogPrimitive.Portal>
-        </DialogPrimitive.Root>
+              {sidebar(false, null)}
+            </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar
-            breadcrumbs={breadcrumbs}
-            onOpenDrawer={() => setDrawerOpen(true)}
-            onOpenSearch={() => setPaletteOpen(true)}
-          />
-          <main className="min-h-0 w-full flex-1 overflow-y-auto">{children}</main>
-        </div>
+            <DialogPrimitive.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
+              <DialogPrimitive.Portal>
+                <DialogPrimitive.Overlay className={`${overlayClassName} lg:hidden`} />
+                <DialogPrimitive.Content
+                  aria-label="Navigation"
+                  aria-describedby={undefined}
+                  className="fixed inset-y-0 left-0 z-50 w-[min(20rem,88vw)] outline-none data-[state=closed]:animate-drawer-out data-[state=open]:animate-drawer-in sm:w-[min(17rem,80vw)] lg:hidden"
+                >
+                  <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
+                  {sidebar(true, () => setDrawerOpen(false))}
+                </DialogPrimitive.Content>
+              </DialogPrimitive.Portal>
+            </DialogPrimitive.Root>
 
-        <CommandPalette
-          open={paletteOpen}
-          onOpenChange={setPaletteOpen}
-          onShowShortcuts={openShortcuts}
-        />
-        <ShortcutsOverlay open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-      </div>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <TopBar
+                breadcrumbs={breadcrumbs}
+                onOpenDrawer={() => setDrawerOpen(true)}
+                onOpenSearch={() => setPaletteOpen(true)}
+              />
+              <main className="min-h-0 w-full flex-1 overflow-y-auto">{children}</main>
+            </div>
+
+            <ContextPanel />
+
+            <CommandPalette
+              open={paletteOpen}
+              onOpenChange={setPaletteOpen}
+              onShowShortcuts={openShortcuts}
+            />
+            <ShortcutsOverlay open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+          </div>
+        </CopyLinkProvider>
+      </ContextPanelProvider>
     </WorkspaceRealtime>
   );
 }

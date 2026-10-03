@@ -14,6 +14,7 @@ import {
   type ShellWorkspace,
 } from '@/lib/navigation.ts';
 import { NavItem } from './nav-item.tsx';
+import { SidebarBrands } from './sidebar-brands.tsx';
 import { SidebarSection } from './sidebar-section.tsx';
 import { WorkspaceSwitcher } from './workspace-switcher.tsx';
 
@@ -30,7 +31,6 @@ export interface SidebarProps {
 const WORK_ITEMS = NAV_ITEMS.filter((item) => item.group === 'work');
 const RECORD_ITEMS = NAV_ITEMS.filter((item) => item.group === 'records');
 const SETTINGS_ITEMS = NAV_ITEMS.filter((item) => item.group === 'settings');
-const BRAND_ITEMS: readonly NavItemData[] = [];
 
 export function Sidebar({
   workspace,
@@ -114,14 +114,15 @@ export function Sidebar({
           {collapsed ? (
             <div className="flex flex-col items-stretch gap-0.5">
               {WORK_ITEMS.map(renderItem)}
-              <div className="my-1 h-px bg-border" aria-hidden="true" />
+              <div data-sidebar-separator className="my-1 h-px bg-border" aria-hidden="true" />
               {RECORD_ITEMS.map(renderItem)}
+              <SidebarBrands collapsed touch={touch} onNavigate={onNavigate} />
             </div>
           ) : (
             <>
               <SidebarSection title="Work">{WORK_ITEMS.map(renderItem)}</SidebarSection>
               <SidebarSection title="Records">{RECORD_ITEMS.map(renderItem)}</SidebarSection>
-              <SidebarSection title="Brands">{BRAND_ITEMS.map(renderItem)}</SidebarSection>
+              <SidebarBrands collapsed={false} touch={touch} onNavigate={onNavigate} />
             </>
           )}
         </nav>

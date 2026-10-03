@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { breadcrumbsFor, isNavItemActive, NAV_ITEMS, navItemFor } from '@/lib/navigation.ts';
+import {
+  breadcrumbsFor,
+  isNavItemActive,
+  isRecordPath,
+  leadsHref,
+  NAV_ITEMS,
+  navItemFor,
+  pipelineKeyOf,
+} from '@/lib/navigation.ts';
 
 describe('navigation', () => {
   test('lists work, records and settings in that order', () => {
@@ -43,5 +51,54 @@ describe('navigation', () => {
       { label: 'Members' },
     ]);
     expect(breadcrumbsFor('/onboarding')).toEqual([]);
+  });
+});
+
+describe('breadcrumbsFor with a pipeline lookup', () => {
+  test('names the brand and pipeline of a lead list', () => {
+    const lookup = {
+      pipeline: (key: string) =>
+        key === 'YOD' ? { brandName: 'Yodu', pipelineName: 'Prospecting' } : undefined,
+    };
+    expect(breadcrumbsFor('/leads/YOD', lookup)).toEqual([
+      { label: 'Leads', href: '/leads' },
+      { label: 'Yodu' },
+      { label: 'Prospecting' },
+    ]);
+    expect(breadcrumbsFor('/leads/NOPE', lookup)).toEqual([
+      { label: 'Leads', href: '/leads' },
+      { label: 'NOPE' },
+    ]);
+  });
+
+  test('reads a lowercase key in the address as the pipeline key', () => {
+    const lookup = {
+      pipeline: (key: string) =>
+        key === 'YOD' ? { brandName: 'Yodu', pipelineName: 'Prospecting' } : undefined,
+    };
+    expect(breadcrumbsFor('/leads/yod', lookup).map((crumb) => crumb.label)).toEqual([
+      'Leads',
+      'Yodu',
+      'Prospecting',
+    ]);
+    expect(breadcrumbsFor('/leads/nope').at(-1)).toEqual({ label: 'NOPE' });
+  });
+});
+
+describe('lead routes', () => {
+  test('a pipeline list lives under its key, read back in upper case', () => {
+    expect(leadsHref('YOD')).toBe('/leads/YOD');
+    expect(pipelineKeyOf('/leads/yod')).toBe('YOD');
+    expect(pipelineKeyOf('/leads')).toBeNull();
+    expect(pipelineKeyOf('/people/yod')).toBeNull();
+  });
+
+  test('only a person or company page is a record page', () => {
+    expect(isRecordPath('/people/per1')).toBe(true);
+    expect(isRecordPath('/companies/co1')).toBe(true);
+    expect(isRecordPath('/people')).toBe(false);
+    expect(isRecordPath('/companies/')).toBe(false);
+    expect(isRecordPath('/leads/YOD')).toBe(false);
+    expect(isRecordPath('/peoplex/per1')).toBe(false);
   });
 });

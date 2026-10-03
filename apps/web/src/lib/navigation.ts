@@ -49,11 +49,45 @@ function titleCase(segment: string): string {
   return `${segment.slice(0, 1).toUpperCase()}${segment.slice(1)}`;
 }
 
-export function breadcrumbsFor(pathname: string): Breadcrumb[] {
+export function leadsHref(pipelineKey: string): string {
+  return `/leads/${pipelineKey}`;
+}
+
+export function pipelineKeyOf(pathname: string): string | null {
+  const [section, key] = pathname.split('/').filter((segment) => segment.length > 0);
+  return section === 'leads' && key !== undefined ? key.toUpperCase() : null;
+}
+
+const RECORD_SECTIONS: readonly NavSection[] = ['people', 'companies'];
+
+export function isRecordPath(pathname: string): boolean {
+  const [section, id] = pathname.split('/').filter((segment) => segment.length > 0);
+  return RECORD_SECTIONS.some((entry) => entry === section) && id !== undefined;
+}
+
+export interface BreadcrumbLookup {
+  readonly pipeline?: (
+    key: string,
+  ) => { readonly brandName: string; readonly pipelineName: string } | undefined;
+}
+
+export function breadcrumbsFor(pathname: string, lookup: BreadcrumbLookup = {}): Breadcrumb[] {
   const [section, page] = pathname.split('/').filter((segment) => segment.length > 0);
   const item = section === undefined ? undefined : navItemFor(section);
   if (item === undefined) return [];
   if (page === undefined) return [{ label: item.label }];
+  if (item.id === 'leads') {
+    const key = page.toUpperCase();
+    const found = lookup.pipeline?.(key);
+    if (found !== undefined) {
+      return [
+        { label: item.label, href: item.href },
+        { label: found.brandName },
+        { label: found.pipelineName },
+      ];
+    }
+    return [{ label: item.label, href: item.href }, { label: key }];
+  }
   return [{ label: item.label, href: item.href }, { label: titleCase(page) }];
 }
 

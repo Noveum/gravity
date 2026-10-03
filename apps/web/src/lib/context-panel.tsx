@@ -102,6 +102,7 @@ export interface ContextPanelApi {
   readonly label: string;
   readonly show: (content: ReactNode, label: string) => void;
   readonly hide: () => void;
+  readonly clear: () => void;
   readonly toggle: () => void;
   readonly resize: (width: number) => void;
   readonly commit: () => void;
@@ -135,6 +136,7 @@ export function ContextPanelProvider({ children }: { readonly children: ReactNod
     setOpenOverride(true);
   }, []);
   const hide = useCallback(() => setOpenOverride(false), []);
+  const clear = useCallback(() => setContent(null), []);
   const toggle = useCallback(() => {
     if (!latest.current.hasContent) return;
     const next = !latest.current.open;
@@ -159,11 +161,12 @@ export function ContextPanelProvider({ children }: { readonly children: ReactNod
       label: content?.label ?? '',
       show,
       hide,
+      clear,
       toggle,
       resize,
       commit,
     }),
-    [open, width, content, show, hide, toggle, resize, commit],
+    [open, width, content, show, hide, clear, toggle, resize, commit],
   );
   return <ContextPanelContext.Provider value={api}>{children}</ContextPanelContext.Provider>;
 }

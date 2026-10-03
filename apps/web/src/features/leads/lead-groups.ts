@@ -25,20 +25,45 @@ function liveStages(stages: readonly StageRow[]): StageRow[] {
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
+export const OTHER_STAGE_ID = 'other';
+
+function otherStage(lead: LeadRow): StageRow {
+  return {
+    id: OTHER_STAGE_ID,
+    pipelineId: lead.pipelineId,
+    name: 'Other',
+    category: lead.stageCategory,
+    sortOrder: Number.MAX_SAFE_INTEGER,
+    syncId: 0,
+    archivedAt: null,
+  };
+}
+
 export function groupLeadsByStage(
   leads: readonly LeadRow[],
   stages: readonly StageRow[],
   options: { readonly showEmpty?: boolean } = {},
 ): LeadGroup[] {
+  const live = liveStages(stages);
+  const known = new Set(live.map((stage) => stage.id));
   const byStage = new Map<string, LeadRow[]>();
+  const unknown: LeadRow[] = [];
   for (const lead of leads) {
+    if (!known.has(lead.stageId)) {
+      unknown.push(lead);
+      continue;
+    }
     const list = byStage.get(lead.stageId) ?? [];
     list.push(lead);
     byStage.set(lead.stageId, list);
   }
-  return liveStages(stages)
+  const groups = live
     .map((stage) => ({ stage, leads: sortLeads(byStage.get(stage.id) ?? []) }))
     .filter((group) => options.showEmpty === true || group.leads.length > 0);
+  const [first] = unknown;
+  return first === undefined
+    ? groups
+    : [...groups, { stage: otherStage(first), leads: sortLeads(unknown) }];
 }
 
 export function buildLeadRows(groups: readonly LeadGroup[]): LeadListRow[] {
@@ -71,11 +96,23 @@ export function adjacentStage(
 
 export function selectionTargets(
   ordered: readonly LeadRow[],
-  selected: readonly string[],
+  selected: Iterable<string>,
   active: LeadRow | undefined,
 ): readonly LeadRow[] {
-  if (selected.length > 0) return ordered.filter((lead) => selected.includes(lead.id));
+  const chosen = new Set(selected);
+  if (chosen.size > 0) return ordered.filter((lead) => chosen.has(lead.id));
   return active === undefined ? [] : [active];
+}
+
+export function survivingNeighbour(
+  previousOrder: readonly string[],
+  surviving: ReadonlySet<string>,
+  lostId: string,
+): string | undefined {
+  const index = previousOrder.indexOf(lostId);
+  if (index === -1) return undefined;
+  const after = previousOrder.slice(index + 1).find((id) => surviving.has(id));
+  return after ?? previousOrder.slice(0, index).findLast((id) => surviving.has(id));
 }
 
 export function personHref(lead: Pick<LeadRow, 'personId' | 'id'>): string {

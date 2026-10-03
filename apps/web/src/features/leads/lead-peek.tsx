@@ -45,21 +45,18 @@ export function LeadPeek({ leadId }: { readonly leadId: string }) {
   const activities = timeline.activities.slice(0, RECENT_ACTIVITY);
   return (
     <section className="flex flex-col" data-testid="lead-peek">
-      <div className="flex items-center justify-between border-border border-b px-4 py-2">
-        <span data-numeric className="text-2xs text-faint">
-          {lead.key}
-        </span>
-        <Link
-          href={personHref(lead)}
-          className={`flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-2xs text-faint ${tabHover}`}
-        >
-          <ArrowUpRight className="size-3.5" aria-hidden="true" />
-          Open record
-        </Link>
-      </div>
       <div className="flex flex-col gap-4 p-4">
         <header className="flex flex-col gap-0.5">
-          <h2 className="font-medium text-base text-text">{lead.personName}</h2>
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="min-w-0 truncate font-medium text-base text-text">{lead.personName}</h2>
+            <Link
+              href={personHref(lead)}
+              className={`flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-2xs text-faint ${tabHover}`}
+            >
+              <ArrowUpRight className="size-3.5" aria-hidden="true" />
+              Open record
+            </Link>
+          </div>
           {lead.companyName === null ? null : (
             <p className="text-dense text-muted">{lead.companyName}</p>
           )}

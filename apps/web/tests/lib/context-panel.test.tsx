@@ -51,6 +51,15 @@ function Peeker() {
   return null;
 }
 
+function Clearer() {
+  const { clear } = useContextPanel();
+  return (
+    <button type="button" onClick={clear}>
+      Clear the panel
+    </button>
+  );
+}
+
 function renderPanel(bootstrap = bootstrapFixture(), peek = true) {
   const fetchMock = mock(() =>
     Promise.resolve(
@@ -106,6 +115,25 @@ describe('ContextPanel', () => {
     await waitFor(() => expect(screen.queryByText('Peek body')).not.toBeInTheDocument());
     await userEvent.keyboard(']');
     expect(await screen.findByText('Peek body')).toBeInTheDocument();
+  });
+
+  test('clear drops the content, so ] has nothing to bring back', async () => {
+    const fetchMock = mock(() => Promise.resolve(preferenceResponse(420)));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    renderWithClient(
+      <ContextPanelProvider>
+        <Peeker />
+        <Clearer />
+        <ContextPanel />
+      </ContextPanelProvider>,
+    );
+    await screen.findByText('Peek body');
+    await userEvent.click(screen.getByRole('button', { name: 'Clear the panel' }));
+    expect(screen.queryByText('Peek body')).not.toBeInTheDocument();
+    await userEvent.keyboard(']');
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+    await settle();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   test('remembers that it was hidden', async () => {

@@ -3,10 +3,12 @@ import {
   adjacentStage,
   buildLeadRows,
   groupLeadsByStage,
+  OTHER_STAGE_ID,
   personHref,
   selectionTargets,
   selectionThrough,
   sortLeads,
+  survivingNeighbour,
 } from '@/features/leads/lead-groups.ts';
 import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
 import { leadFixture } from '../../support/lead-fixture.ts';
@@ -42,12 +44,29 @@ describe('lead grouping', () => {
     ]);
   });
 
-  test('archived stages are left out of the grouping', () => {
+  test('leads in a stage the bootstrap does not know land in a trailing Other group', () => {
+    const leads = [
+      leadFixture({ id: 'a', stageId: 'gone' }),
+      leadFixture({ id: 'b' }),
+      leadFixture({ id: 'c', stageId: 'ready' }),
+    ];
     const archived = stages.map((stage) =>
       stage.id === 'ready' ? { ...stage, archivedAt: '2026-10-02T10:00:00.000Z' } : stage,
     );
-    const leads = [leadFixture({ id: 'a', stageId: 'ready' }), leadFixture({ id: 'b' })];
-    expect(groupLeadsByStage(leads, archived).map((group) => group.stage.name)).toEqual(['New']);
+    const groups = groupLeadsByStage(leads, archived);
+    expect(groups.map((group) => group.stage.name)).toEqual(['New', 'Other']);
+    expect(groups.at(-1)?.stage.id).toBe(OTHER_STAGE_ID);
+    expect(groups.at(-1)?.leads.map((lead) => lead.id)).toEqual(['a', 'c']);
+    expect(groupLeadsByStage([leadFixture()], stages, { showEmpty: true })).toHaveLength(13);
+  });
+
+  test('a lost lead hands over to the next survivor, or the previous one at the end', () => {
+    const order = ['a', 'b', 'c', 'd'];
+    expect(survivingNeighbour(order, new Set(['a', 'c', 'd']), 'b')).toBe('c');
+    expect(survivingNeighbour(order, new Set(['a', 'd']), 'b')).toBe('d');
+    expect(survivingNeighbour(order, new Set(['a', 'b']), 'd')).toBe('b');
+    expect(survivingNeighbour(order, new Set(['a']), 'z')).toBeUndefined();
+    expect(survivingNeighbour(order, new Set(), 'b')).toBeUndefined();
   });
 
   test('selectionThrough extends and shrinks like Orbit', () => {
@@ -66,6 +85,7 @@ describe('lead grouping', () => {
     expect(selectionTargets(ordered, ['c', 'a'], first).map((lead) => lead.id)).toEqual(['a', 'c']);
     expect(selectionTargets(ordered, [], third).map((lead) => lead.id)).toEqual(['c']);
     expect(selectionTargets(ordered, [], undefined)).toEqual([]);
+    expect(selectionTargets(ordered, new Set(['b']), first).map((lead) => lead.id)).toEqual(['b']);
   });
 
   test('a lead opens on its person record', () => {

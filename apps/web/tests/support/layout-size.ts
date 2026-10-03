@@ -1,24 +1,21 @@
 import { afterAll, beforeAll } from 'bun:test';
 
-export function stubLayoutSize(width: number, height: number): void {
-  const realWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
-  const realHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+export type LayoutProperty = 'offsetWidth' | 'offsetHeight' | 'clientHeight' | 'scrollHeight';
+
+export function stubLayoutProperty(name: LayoutProperty, value: number): void {
+  const prototype = HTMLElement.prototype;
+  let original: PropertyDescriptor | undefined;
   beforeAll(() => {
-    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
-      configurable: true,
-      get: () => width,
-    });
-    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
-      configurable: true,
-      get: () => height,
-    });
+    original = Object.getOwnPropertyDescriptor(prototype, name);
+    Object.defineProperty(prototype, name, { configurable: true, get: () => value });
   });
   afterAll(() => {
-    if (realWidth !== undefined) {
-      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', realWidth);
-    }
-    if (realHeight !== undefined) {
-      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', realHeight);
-    }
+    if (original === undefined) Reflect.deleteProperty(prototype, name);
+    else Object.defineProperty(prototype, name, original);
   });
+}
+
+export function stubLayoutSize(width: number, height: number): void {
+  stubLayoutProperty('offsetWidth', width);
+  stubLayoutProperty('offsetHeight', height);
 }

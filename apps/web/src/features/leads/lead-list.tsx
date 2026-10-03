@@ -17,6 +17,7 @@ import {
   personHref,
   selectionTargets,
   selectionThrough,
+  survivingNeighbour,
 } from './lead-groups.ts';
 import { LeadPeek } from './lead-peek.tsx';
 import { LEAD_ROW_HEIGHT, LeadRowView } from './lead-row.tsx';
@@ -85,8 +86,7 @@ function StageHeader({ group }: { readonly group: LeadGroup }) {
 export function LeadList({ pipeline, stages, leads, renderActions }: LeadListProps) {
   const router = useRouter();
   const workspace = useWorkspace();
-  const panel = useContextPanel();
-  const { show, hide } = panel;
+  const { open: panelOpen, show, clear: clearPanel } = useContextPanel();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const groups = useMemo(() => groupLeadsByStage(leads, stages), [leads, stages]);
   const rows = useMemo(() => buildLeadRows(groups), [groups]);
@@ -94,11 +94,41 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
     () => rows.flatMap((row) => (row.kind === 'lead' ? [row.lead] : [])),
     [rows],
   );
+  const orderedIds = useMemo(() => new Set(ordered.map((lead) => lead.id)), [ordered]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selected, setSelected] = useState<readonly string[]>([]);
   const [peeking, setPeeking] = useState(false);
-  const active = ordered.find((lead) => lead.id === activeId) ?? ordered[0];
-  const peekOpen = peeking && panel.open;
+  const previousOrder = useRef<readonly string[]>([]);
+
+  const active = useMemo(() => {
+    if (activeId === null) return ordered[0];
+    const found = ordered.find((lead) => lead.id === activeId);
+    if (found !== undefined) return found;
+    const neighbour = survivingNeighbour(previousOrder.current, orderedIds, activeId);
+    return ordered.find((lead) => lead.id === neighbour) ?? ordered[0];
+  }, [ordered, orderedIds, activeId]);
+  const activeLeadId = active?.id;
+  const activeKey = active?.key;
+  const activeStageId = active?.stageId;
+
+  useEffect(() => {
+    previousOrder.current = ordered.map((lead) => lead.id);
+  }, [ordered]);
+
+  useEffect(() => {
+    if (activeLeadId !== undefined && activeLeadId !== activeId) setActiveId(activeLeadId);
+  }, [activeLeadId, activeId]);
+
+  const visibleSelected = useMemo(
+    () => selected.filter((id) => orderedIds.has(id)),
+    [selected, orderedIds],
+  );
+  const selectedSet = useMemo(() => new Set(visibleSelected), [visibleSelected]);
+  useEffect(() => {
+    if (visibleSelected.length !== selected.length) setSelected(visibleSelected);
+  }, [visibleSelected, selected]);
+
+  const peekOpen = peeking && panelOpen;
   const brandColor = workspace.brandById.get(pipeline.brandId)?.color;
 
   const virtualizer = useVirtualizer({
@@ -109,29 +139,30 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
     overscan: 12,
   });
 
-  const focusLead = useCallback(
-    (lead: LeadRow | undefined) => {
-      if (lead === undefined) return;
-      setActiveId(lead.id);
-      const index = rows.findIndex((row) => row.kind === 'lead' && row.lead.id === lead.id);
-      if (index >= 0) virtualizer.scrollToIndex(index, { align: 'auto' });
-    },
-    [rows, virtualizer],
-  );
+  const scrolledTo = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeLeadId === undefined) return;
+    const position = `${activeLeadId}:${activeStageId}`;
+    if (scrolledTo.current === position) return;
+    scrolledTo.current = position;
+    const index = rows.findIndex((row) => row.kind === 'lead' && row.lead.id === activeLeadId);
+    if (index >= 0) virtualizer.scrollToIndex(index, { align: 'auto' });
+  }, [activeLeadId, activeStageId, rows, virtualizer]);
 
-  const step = useCallback(
-    (delta: 1 | -1): LeadRow | undefined => {
-      const index = active === undefined ? -1 : ordered.indexOf(active);
-      return ordered[Math.min(ordered.length - 1, Math.max(0, index + delta))];
-    },
-    [active, ordered],
-  );
+  const step = (delta: 1 | -1): LeadRow | undefined => {
+    const index = active === undefined ? -1 : ordered.indexOf(active);
+    return ordered[Math.min(ordered.length - 1, Math.max(0, index + delta))];
+  };
+
+  const focusLead = (lead: LeadRow | undefined) => {
+    if (lead !== undefined) setActiveId(lead.id);
+  };
 
   const extend = (delta: 1 | -1) => {
     const next = step(delta);
     if (next === undefined || active === undefined) return;
     setSelected((current) => selectionThrough(current, active.id, next.id));
-    focusLead(next);
+    setActiveId(next.id);
   };
 
   const showPeek = useCallback(
@@ -139,32 +170,42 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
     [show],
   );
 
-  const closePeek = useCallback(() => {
+  const closePeek = () => {
     setPeeking(false);
-    hide();
-  }, [hide]);
+    clearPanel();
+  };
 
   const openPeek = (lead: LeadRow | undefined) => {
     if (lead === undefined) return;
+    setActiveId(lead.id);
     setPeeking(true);
     showPeek(lead.id, lead.key);
   };
 
-  const activeLeadId = active?.id;
-  const activeKey = active?.key;
+  const togglePeek = () => {
+    if (peekOpen) closePeek();
+    else openPeek(active);
+  };
+
+  const openActive = () => {
+    if (active !== undefined) router.push(personHref(active));
+  };
+
   useEffect(() => {
     if (peekOpen && activeLeadId !== undefined && activeKey !== undefined) {
       showPeek(activeLeadId, activeKey);
     }
   }, [peekOpen, activeLeadId, activeKey, showPeek]);
 
-  const peekShowing = useRef(false);
-  peekShowing.current = peekOpen;
+  const peekingNow = useRef(false);
+  useEffect(() => {
+    peekingNow.current = peeking;
+  }, [peeking]);
   useEffect(
     () => () => {
-      if (peekShowing.current) hide();
+      if (peekingNow.current) clearPanel();
     },
-    [hide],
+    [clearPanel],
   );
 
   useHotkey('j', () => focusLead(step(1)), { ...SURFACE, label: 'Next lead', aliases: ['down'] });
@@ -186,25 +227,14 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
   useHotkey(
     'x',
     () => {
-      if (active !== undefined) setSelected((current) => toggled(current, active.id));
+      if (active === undefined) return;
+      setActiveId(active.id);
+      setSelected((current) => toggled(current, active.id));
     },
     { ...SURFACE, label: 'Select or deselect' },
   );
-  useHotkey(
-    'space',
-    () => {
-      if (peekOpen) closePeek();
-      else openPeek(active);
-    },
-    { ...SURFACE, label: 'Toggle the peek' },
-  );
-  useHotkey(
-    'enter',
-    () => {
-      if (active !== undefined) router.push(personHref(active));
-    },
-    { ...SURFACE, label: 'Open the record', aliases: ['o'] },
-  );
+  useHotkey('space', togglePeek, { ...SURFACE, label: 'Toggle the peek' });
+  useHotkey('enter', openActive, { ...SURFACE, label: 'Open the record', aliases: ['o'] });
   useHotkey('mod+a', () => setSelected(ordered.map((lead) => lead.id)), {
     ...SURFACE,
     label: 'Select every lead that matches',
@@ -219,15 +249,15 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
       ...SURFACE,
       label: 'Close the peek, then clear the selection',
       preventDefault: false,
-      enabled: peekOpen || selected.length > 0,
+      enabled: peekOpen || visibleSelected.length > 0,
     },
   );
 
   const targets = useMemo(
-    () => selectionTargets(ordered, selected, active),
-    [ordered, selected, active],
+    () => selectionTargets(ordered, selectedSet, active),
+    [ordered, selectedSet, active],
   );
-  const clear = useCallback(() => setSelected([]), []);
+  const clearSelection = useCallback(() => setSelected([]), []);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -255,8 +285,8 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
                 ) : (
                   <LeadRowView
                     lead={row.lead}
-                    active={row.lead.id === active?.id}
-                    selected={selected.includes(row.lead.id)}
+                    active={row.lead.id === activeLeadId}
+                    selected={selectedSet.has(row.lead.id)}
                     owner={
                       row.lead.ownerId === null
                         ? undefined
@@ -265,6 +295,8 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
                     brandColor={brandColor}
                     onFocus={() => setActiveId(row.lead.id)}
                     onPeek={() => openPeek(row.lead)}
+                    onTogglePeek={togglePeek}
+                    onOpenActive={openActive}
                     onToggleSelected={() => setSelected((current) => toggled(current, row.lead.id))}
                   />
                 )}
@@ -273,7 +305,7 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
           })}
         </div>
       </div>
-      {renderActions?.({ targets, active, clear })}
+      {renderActions?.({ targets, active, clear: clearSelection })}
     </div>
   );
 }

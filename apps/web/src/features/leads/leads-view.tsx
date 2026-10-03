@@ -11,6 +11,7 @@ import { useWorkspace } from '@/features/workspace/use-workspace.ts';
 import { useCopyLinkTarget } from '@/lib/copy-link.tsx';
 import { rememberPipeline } from '@/lib/last-pipeline.ts';
 import { useLeadList } from '@/lib/query/use-leads.ts';
+import { useRetryToast } from '@/lib/query/use-retry-toast.ts';
 import { useDelayedFlag } from '@/lib/use-delayed-flag.ts';
 import { LeadList } from './lead-list.tsx';
 
@@ -32,6 +33,15 @@ export function LeadsView({ pipelineKey }: { readonly pipelineKey: string }) {
   const listQuery = useListQuery(registry, views);
   const list = useLeadList(pipelineId, listQuery.query);
   const loading = useDelayedFlag(list.isPending && pipeline !== undefined);
+  const hasData = list.data !== undefined;
+  const retryToast = useRetryToast();
+  const { error, refetch } = list;
+  useEffect(() => {
+    if (error === null || !hasData) return;
+    retryToast('Could not refresh the leads', error, () => {
+      refetch().catch(() => undefined);
+    });
+  }, [error, hasData, retryToast, refetch]);
   useCopyLinkTarget(null);
   useEffect(() => {
     if (pipeline !== undefined) rememberPipeline(workspace.userId, pipeline.key);
@@ -53,7 +63,7 @@ export function LeadsView({ pipelineKey }: { readonly pipelineKey: string }) {
   }
   const brand = workspace.brandById.get(pipeline.brandId);
 
-  if (list.error !== null) {
+  if (list.error !== null && !hasData) {
     return (
       <ErrorState
         title="Could not load the leads"

@@ -122,14 +122,18 @@ export function DeltaBridge({ organizationId, userId, initialCursor }: DeltaBrid
     catchUp(
       client,
       (since) =>
-        apiFetch(`/api/sync?since=${since}`, syncCatchupSchema, { signal: controller.signal }),
+        apiFetch(
+          `/api/sync?${new URLSearchParams({ organizationId, since: String(since) })}`,
+          syncCatchupSchema,
+          { signal: controller.signal },
+        ),
       initialCursor,
     ).catch((error: unknown) => {
       if (controller.signal.aborted) return;
       console.error('Realtime catch-up failed, refetching what is on screen.', error);
       client.invalidateQueries().catch(() => undefined);
     });
-  }, [client, initialCursor]);
+  }, [client, initialCursor, organizationId]);
 
   useEffect(() => {
     if (status !== 'open' || firstReadyHandled.current) return;

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { recordSync } from '@gravity/core';
+import { newId, recordSync } from '@gravity/core';
 import { createUser, createWorkspace, resetDatabase } from '@gravity/core/test-support';
 import { db, schema } from '@gravity/db';
 import { CATCHUP_LIMIT, type SyncAction } from '@gravity/shared/events';
@@ -20,6 +20,10 @@ function action(organizationId: string, syncId: number, kind: SyncAction['action
   };
 }
 
+function syncUrl(organizationId: string, since: number): string {
+  return `http://localhost:3300/api/sync?organizationId=${organizationId}&since=${since}`;
+}
+
 beforeEach(async () => {
   await resetDatabase();
 });
@@ -35,7 +39,7 @@ describe('/api/sync', () => {
       action(mine.organizationId, 5003, 'delete'),
     ]);
     await signedInAs(mine.adminUser.id, mine.organizationId);
-    const body = await (await GET(new Request('http://localhost:3300/api/sync?since=0'))).json();
+    const body = await (await GET(new Request(syncUrl(mine.organizationId, 0)))).json();
     expect(body.actions.map((row: SyncAction) => [row.syncId, row.action])).toEqual([
       [5001, 'insert'],
       [5003, 'delete'],
@@ -58,7 +62,7 @@ describe('/api/sync', () => {
       forUser(6003, mine.adminUser.id),
     ]);
     await signedInAs(mine.adminUser.id, mine.organizationId);
-    const body = await (await GET(new Request('http://localhost:3300/api/sync?since=0'))).json();
+    const body = await (await GET(new Request(syncUrl(mine.organizationId, 0)))).json();
     expect(body.actions.map((row: SyncAction) => row.syncId)).toEqual([6001, 6003]);
   });
 
@@ -73,13 +77,13 @@ describe('/api/sync', () => {
     );
     await signedInAs(mine.adminUser.id, mine.organizationId);
 
-    const first = await (await GET(new Request('http://localhost:3300/api/sync?since=0'))).json();
+    const first = await (await GET(new Request(syncUrl(mine.organizationId, 0)))).json();
     expect(first.actions).toHaveLength(CATCHUP_LIMIT);
     expect(first.truncated).toBe(true);
     expect(first.syncId).toBe(7000 + CATCHUP_LIMIT - 1);
 
     const second = await (
-      await GET(new Request(`http://localhost:3300/api/sync?since=${first.syncId}`))
+      await GET(new Request(syncUrl(mine.organizationId, first.syncId)))
     ).json();
     expect(second.actions.map((row: SyncAction) => row.syncId)).toEqual([
       7000 + CATCHUP_LIMIT,
@@ -88,9 +92,49 @@ describe('/api/sync', () => {
     expect(second.truncated).toBe(false);
   });
 
-  test('refuses a caller without a session', async () => {
-    signedOut();
+  test('replays the requested workspace even when the session is active on another', async () => {
+    const asked = await createWorkspace('Asked');
+    const active = await createWorkspace('Active');
+    await db.insert(schema.member).values({
+      id: newId(),
+      organizationId: asked.organizationId,
+      userId: active.adminUser.id,
+      role: 'member',
+    });
+    await db.delete(schema.outbox);
+    await recordSync(db, [
+      action(asked.organizationId, 8001, 'insert'),
+      action(active.organizationId, 8002, 'insert'),
+    ]);
+    await signedInAs(active.adminUser.id, active.organizationId);
+
+    const askedBody = await (await GET(new Request(syncUrl(asked.organizationId, 0)))).json();
+    expect(askedBody.actions.map((row: SyncAction) => row.syncId)).toEqual([8001]);
+    const activeBody = await (await GET(new Request(syncUrl(active.organizationId, 0)))).json();
+    expect(activeBody.actions.map((row: SyncAction) => row.syncId)).toEqual([8002]);
+  });
+
+  test('refuses a workspace the caller is not a member of', async () => {
+    const mine = await createWorkspace('Mine');
+    const other = await createWorkspace('Other');
+    await db.delete(schema.outbox);
+    await recordSync(db, [action(other.organizationId, 8101, 'insert')]);
+    await signedInAs(mine.adminUser.id, mine.organizationId);
+    const response = await GET(new Request(syncUrl(other.organizationId, 0)));
+    expect(response.status).toBe(403);
+  });
+
+  test('refuses a request that does not name a workspace', async () => {
+    const mine = await createWorkspace('Mine');
+    await signedInAs(mine.adminUser.id, mine.organizationId);
     const response = await GET(new Request('http://localhost:3300/api/sync?since=0'));
+    expect(response.status).toBe(422);
+  });
+
+  test('refuses a caller without a session', async () => {
+    const mine = await createWorkspace('Mine');
+    signedOut();
+    const response = await GET(new Request(syncUrl(mine.organizationId, 0)));
     expect(response.status).toBe(401);
   });
 });

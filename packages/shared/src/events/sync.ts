@@ -54,8 +54,11 @@ export const syncCursorSchema = z.number().int().nonnegative();
 
 export const CATCHUP_LIMIT = 500;
 
+const queryCursorSchema = z.coerce.number().int().nonnegative();
+
 export const syncCatchupQuerySchema = z.object({
-  since: z.coerce.number().int().nonnegative().default(0),
+  organizationId: z.string().min(1).max(128),
+  since: queryCursorSchema.default(0),
 });
 
 export const syncCatchupSchema = z.object({

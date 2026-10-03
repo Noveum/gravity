@@ -72,7 +72,7 @@ describe('DeltaBridge catch-up lifecycle', () => {
     expect(requests).toEqual([]);
 
     mounted.reopen('open');
-    await waitFor(() => expect(requests).toEqual(['/api/sync?since=4000']));
+    await waitFor(() => expect(requests).toEqual(['/api/sync?organizationId=o1&since=4000']));
 
     mounted.reopen('reconnecting');
     mounted.reopen('open');
@@ -83,7 +83,23 @@ describe('DeltaBridge catch-up lifecycle', () => {
   test('catches up from zero when the workspace has no history', async () => {
     const mounted = mount(new QueryClient(), 0);
     mounted.reopen('open');
-    await waitFor(() => expect(requests).toEqual(['/api/sync?since=0']));
+    await waitFor(() => expect(requests).toEqual(['/api/sync?organizationId=o1&since=0']));
+  });
+
+  test('catches up on the workspace it subscribed with', async () => {
+    const client = new QueryClient();
+    const view = render(
+      <QueryClientProvider client={client}>
+        <DeltaBridge organizationId="org_other" userId="u1" initialCursor={0} />
+      </QueryClientProvider>,
+    );
+    status = 'open';
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <DeltaBridge organizationId="org_other" userId="u1" initialCursor={0} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(requests).toEqual(['/api/sync?organizationId=org_other&since=0']));
   });
 
   test('catches up again on resume, from the highest applied sync id', async () => {
@@ -106,7 +122,7 @@ describe('DeltaBridge catch-up lifecycle', () => {
 
     resumeHandler?.();
     await waitFor(() => expect(requests).toHaveLength(2));
-    expect(requests[1]).toBe('/api/sync?since=8000');
+    expect(requests[1]).toBe('/api/sync?organizationId=o1&since=8000');
   });
 
   test('keeps paging while truncated', async () => {
@@ -116,7 +132,12 @@ describe('DeltaBridge catch-up lifecycle', () => {
         : { actions: [], truncated: false, syncId: 4600 };
     const mounted = mount(new QueryClient(), 5000);
     mounted.reopen('open');
-    await waitFor(() => expect(requests).toEqual(['/api/sync?since=4000', '/api/sync?since=4500']));
+    await waitFor(() =>
+      expect(requests).toEqual([
+        '/api/sync?organizationId=o1&since=4000',
+        '/api/sync?organizationId=o1&since=4500',
+      ]),
+    );
   });
 
   test('refetches what is on screen when catch-up fails', async () => {

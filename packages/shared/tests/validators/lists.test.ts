@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { ZodError } from 'zod';
 import { emptyFilterGroup, inCondition, replaceCondition } from '../../src/filters/ast.ts';
 import { encodeFilter } from '../../src/filters/codec.ts';
-import { leadListQuerySchema, recordListQuerySchema } from '../../src/validators/lists.ts';
+import {
+  CURSOR_MAX_LENGTH,
+  leadListQuerySchema,
+  recordListQuerySchema,
+  timelineQuerySchema,
+} from '../../src/validators/lists.ts';
 
 describe('list query schemas', () => {
   test('an absent filter is the empty filter and the limits default', () => {
@@ -29,6 +34,21 @@ describe('list query schemas', () => {
       recordListQuerySchema.parse({
         filter: JSON.stringify({ kind: 'group', children: [{ kind: 'condition' }] }),
       }),
+    ).toThrow(ZodError);
+  });
+
+  test('a cursor for a 200 character name fits and one past the cap does not', () => {
+    const encoded = Buffer.from(JSON.stringify(['x'.repeat(200), 'a-record-id'])).toString(
+      'base64url',
+    );
+    expect(encoded.length).toBeGreaterThan(256);
+    expect(recordListQuerySchema.parse({ cursor: encoded }).cursor).toBe(encoded);
+    expect(leadListQuerySchema.parse({ pipelineId: 'p1', cursor: encoded }).cursor).toBe(encoded);
+    expect(
+      timelineQuerySchema.parse({ subjectType: 'person', subjectId: 'p1', cursor: encoded }).cursor,
+    ).toBe(encoded);
+    expect(() =>
+      recordListQuerySchema.parse({ cursor: 'x'.repeat(CURSOR_MAX_LENGTH + 1) }),
     ).toThrow(ZodError);
   });
 });

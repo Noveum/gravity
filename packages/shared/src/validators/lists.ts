@@ -9,8 +9,9 @@ import {
 import { filterGroupQuerySchema } from '../filters/codec.ts';
 import { emailSchema, idSchema } from './common.ts';
 
+export const CURSOR_MAX_LENGTH = 2048;
 const searchTermSchema = z.string().trim().max(200).default('');
-const cursorSchema = z.string().max(256).optional();
+const cursorSchema = z.string().max(CURSOR_MAX_LENGTH).optional();
 
 export const leadListQuerySchema = z.object({
   pipelineId: idSchema,

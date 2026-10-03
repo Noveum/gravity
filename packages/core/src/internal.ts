@@ -25,14 +25,18 @@ export function requireRow<T>(row: T | undefined, message: string): T {
 const UNIQUE_VIOLATION = '23505';
 const CAUSE_DEPTH = 5;
 
-export function isUniqueViolation(error: unknown): boolean {
+export function uniqueViolationOf(error: unknown): Record<string, unknown> | null {
   let cursor: unknown = error;
   for (let depth = 0; depth < CAUSE_DEPTH; depth += 1) {
-    if (typeof cursor !== 'object' || cursor === null) return false;
-    if ('code' in cursor && (cursor as { code: unknown }).code === UNIQUE_VIOLATION) return true;
-    cursor = (cursor as { cause?: unknown }).cause;
+    if (typeof cursor !== 'object' || cursor === null) return null;
+    if ('code' in cursor && cursor.code === UNIQUE_VIOLATION) return { ...cursor };
+    cursor = 'cause' in cursor ? cursor.cause : undefined;
   }
-  return false;
+  return null;
+}
+
+export function isUniqueViolation(error: unknown): boolean {
+  return uniqueViolationOf(error) !== null;
 }
 
 export function addUtcDays(value: Date, days: number): Date {

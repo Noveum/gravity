@@ -1,0 +1,74 @@
+import type {
+  Actor,
+  ControlMessage,
+  SyncAction,
+  SyncActionKind,
+  SyncModel,
+} from '@gravity/shared/events';
+import { REDIS_CONTROL_CHANNEL, REDIS_DELTA_CHANNEL } from '@gravity/shared/events';
+import { Redis } from 'ioredis';
+
+export interface BuildSyncActionInput {
+  readonly syncId: number;
+  readonly organizationId: string;
+  readonly scopes: readonly string[];
+  readonly action: SyncActionKind;
+  readonly model: SyncModel;
+  readonly modelId: string;
+  readonly data: Record<string, unknown>;
+  readonly actor: Actor;
+  readonly at?: Date;
+  readonly originClientId?: string | undefined;
+}
+
+export function buildSyncAction(input: BuildSyncActionInput): SyncAction {
+  return {
+    syncId: input.syncId,
+    organizationId: input.organizationId,
+    scopes: [...new Set(input.scopes)],
+    action: input.action,
+    model: input.model,
+    modelId: input.modelId,
+    data: input.data,
+    actor: input.actor,
+    at: (input.at ?? new Date()).toISOString(),
+    ...(input.originClientId === undefined ? {} : { originClientId: input.originClientId }),
+  };
+}
+
+let client: Redis | null = null;
+
+function connection(): Redis | null {
+  const url = process.env['REDIS_URL'];
+  if (url === undefined || url.length === 0) return null;
+  if (client === null) {
+    const created = new Redis(url, { maxRetriesPerRequest: 3, enableOfflineQueue: true });
+    created.on('error', (error: Error) => {
+      if (client !== created) return;
+      console.error('[gravity] realtime publisher redis error:', error.message);
+    });
+    client = created;
+  }
+  return client;
+}
+
+export async function publishDeltas(actions: SyncAction[]): Promise<void> {
+  if (actions.length === 0) return;
+  const redis = connection();
+  if (redis === null) return;
+  await redis.publish(REDIS_DELTA_CHANNEL, JSON.stringify(actions));
+}
+
+export async function publishSessionRevoked(userId: string): Promise<void> {
+  const redis = connection();
+  if (redis === null) return;
+  const message: ControlMessage = { type: 'session_revoked', userId };
+  await redis.publish(REDIS_CONTROL_CHANNEL, JSON.stringify(message));
+}
+
+export function closeRealtime(): Promise<void> {
+  const open = client;
+  client = null;
+  open?.disconnect();
+  return Promise.resolve();
+}

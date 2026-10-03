@@ -44,6 +44,33 @@ export async function restoreModulesAfterThisFile(specifiers: readonly string[])
   });
 }
 
+export function activeSessionFor(
+  user: { readonly id: string; readonly name: string; readonly email: string },
+  activeOrganizationId?: string,
+): sessionModule.ActiveSession {
+  const now = new Date();
+  return {
+    session: {
+      id: `session-${user.id}`,
+      token: `token-${user.id}`,
+      userId: user.id,
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: new Date(now.getTime() + 60_000),
+      ...(activeOrganizationId === undefined ? {} : { activeOrganizationId }),
+    },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      emailVerified: true,
+      image: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+}
+
 const SESSION_COOKIE_NAME = 'session_token';
 
 let requestHeaders = new Headers();

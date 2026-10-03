@@ -5,7 +5,7 @@ import { WorkspaceCachePersistence } from '@/lib/query/persistence.tsx';
 import { configuredRealtimeUrl } from '@/lib/realtime/url.ts';
 
 export default async function AppLayout({ children }: { readonly children: ReactNode }) {
-  const context = await pageContext();
+  const context = await pageContext({ allowDeleting: true });
   return (
     <AppShell
       workspace={{

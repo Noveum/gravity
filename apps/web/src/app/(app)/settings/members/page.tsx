@@ -9,7 +9,7 @@ import { pageContext } from '@/lib/api/handler.ts';
 export const metadata: Metadata = { title: 'Members' };
 
 export default async function MembersSettingsPage() {
-  const { principal } = await pageContext();
+  const { principal } = await pageContext({ allowDeleting: true });
   const canInvite = can(principal, 'member:invite');
   const [members, invites] = await Promise.all([
     listMembers(principal),

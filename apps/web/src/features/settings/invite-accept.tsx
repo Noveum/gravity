@@ -22,7 +22,7 @@ export function InviteAccept({ token, workspaceName }: InviteAcceptProps) {
     setPending(true);
     setError(null);
     try {
-      await apiFetch(`/api/invites/${token}/accept`, acceptedSchema, { method: 'POST' });
+      await apiFetch(`/api/invites/accept/${token}`, acceptedSchema, { method: 'POST' });
       router.push('/today');
       router.refresh();
     } catch (caught) {

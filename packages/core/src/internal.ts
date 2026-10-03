@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Database, Transaction } from '@gravity/db';
 import { notFound } from '@gravity/shared/errors';
 import { randomUUIDv7 } from '@gravity/shared/utils';
@@ -11,6 +11,10 @@ export function newId(): string {
 
 export function newToken(): string {
   return `${randomUUID()}${randomUUID()}`.replace(/-/g, '');
+}
+
+export function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }
 
 export function requireRow<T>(row: T | undefined, message: string): T {

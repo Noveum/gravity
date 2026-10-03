@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createUser, createWorkspace, resetDatabase } from '@gravity/core/test-support';
 import { db, schema } from '@gravity/db';
-import { POST as accept } from '@/app/api/invites/[token]/accept/route.ts';
-import { DELETE as revoke } from '@/app/api/invites/[token]/route.ts';
+import { DELETE as revoke } from '@/app/api/invites/[id]/route.ts';
+import { POST as accept } from '@/app/api/invites/accept/[token]/route.ts';
 import { POST as invite, GET as pending } from '@/app/api/invites/route.ts';
 import { GET as members } from '@/app/api/members/route.ts';
 import { signedInAs } from '../../../../tests-support.ts';
@@ -29,7 +29,7 @@ function inviteRequest(email: string): Request {
 
 function acceptRequest(token: string): [Request, { params: Promise<{ token: string }> }] {
   return [
-    new Request(`http://localhost:3300/api/invites/${token}/accept`, { method: 'POST' }),
+    new Request(`http://localhost:3300/api/invites/accept/${token}`, { method: 'POST' }),
     { params: Promise.resolve({ token }) },
   ];
 }
@@ -50,7 +50,7 @@ describe('invite flow', () => {
 
     await signedInAs(invitee.id);
     const accepted = await accept(
-      new Request(`http://localhost:3300/api/invites/${token}/accept`, { method: 'POST' }),
+      new Request(`http://localhost:3300/api/invites/accept/${token}`, { method: 'POST' }),
       { params: Promise.resolve({ token }) },
     );
     expect(accepted.status).toBe(200);
@@ -84,10 +84,13 @@ describe('invite preflight', () => {
   test('lists pending invites with their email and role', async () => {
     const workspace = await createWorkspace();
     await signedInAs(workspace.adminUser.id, workspace.organizationId);
-    await invite(inviteRequest('teammate@gravity.test'));
+    const created = await invite(inviteRequest('teammate@gravity.test'));
+    const { token } = (await created.json()) as { token: string };
     const listed = await (await pending(new Request('http://localhost:3300/api/invites'))).json();
     expect(listed.invites).toHaveLength(1);
     expect(listed.invites[0]).toMatchObject({ email: 'teammate@gravity.test', role: 'member' });
+    expect(JSON.stringify(listed)).not.toContain(token);
+    expect(JSON.stringify(listed).toLowerCase()).not.toContain('hash');
   });
 });
 
@@ -97,10 +100,13 @@ describe('invite acceptance', () => {
     await signedInAs(workspace.adminUser.id, workspace.organizationId);
     const invitee = await createUser('Aditi');
     const created = await invite(inviteRequest(invitee.email));
-    const { token } = (await created.json()) as { token: string };
+    const { token, invitation } = (await created.json()) as {
+      token: string;
+      invitation: { id: string };
+    };
 
     const revoked = await revoke(new Request('http://localhost:3300/x', { method: 'DELETE' }), {
-      params: Promise.resolve({ token }),
+      params: Promise.resolve({ id: invitation.id }),
     });
     expect(revoked.status).toBe(200);
 

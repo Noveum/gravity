@@ -1,4 +1,4 @@
-import { flushOutbox } from '@gravity/core';
+import { flushOutbox, publishSessionRevoked } from '@gravity/core';
 import {
   conflict,
   internal,
@@ -129,6 +129,14 @@ export async function publish(actions: readonly SyncAction[]): Promise<void> {
     await flushOutbox(actions.map((action) => action.syncId));
   } catch (error: unknown) {
     console.error('Could not flush the outbox, the outbox job will retry.', error);
+  }
+}
+
+export async function revokeSockets(userId: string): Promise<void> {
+  try {
+    await publishSessionRevoked(userId);
+  } catch (error: unknown) {
+    console.error('Could not announce the session revocation, the hub sweep will close it.', error);
   }
 }
 

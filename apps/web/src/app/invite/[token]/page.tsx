@@ -1,3 +1,4 @@
+import { hashToken } from '@gravity/core';
 import { and, db, eq, isNull, schema } from '@gravity/db';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -22,7 +23,12 @@ async function loadInvite(token: string) {
     .from(schema.invitation)
     .innerJoin(schema.organization, eq(schema.organization.id, schema.invitation.organizationId))
     .innerJoin(schema.user, eq(schema.user.id, schema.invitation.inviterId))
-    .where(and(eq(schema.invitation.id, token), isNull(schema.organization.deletionRequestedAt)))
+    .where(
+      and(
+        eq(schema.invitation.tokenHash, hashToken(token)),
+        isNull(schema.organization.deletionRequestedAt),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }

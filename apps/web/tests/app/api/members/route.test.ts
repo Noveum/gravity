@@ -8,11 +8,12 @@ import { restoreModulesAfterThisFile, signedInAs } from '../../../../tests-suppo
 await restoreModulesAfterThisFile(['@gravity/core']);
 
 const revoked: string[] = [];
+let revocationFails = false;
 mock.module('@gravity/core', () => ({
   ...core,
   publishSessionRevoked: (userId: string) => {
     revoked.push(userId);
-    return Promise.resolve();
+    return revocationFails ? Promise.reject(new Error('redis down')) : Promise.resolve();
   },
 }));
 
@@ -40,6 +41,7 @@ function call(method: 'PATCH' | 'DELETE', id: string, body?: unknown): Promise<R
 beforeEach(async () => {
   await resetDatabase();
   revoked.length = 0;
+  revocationFails = false;
 });
 
 describe('/api/members/:id', () => {
@@ -75,6 +77,19 @@ describe('/api/members/:id', () => {
     expect(
       await db.select().from(schema.session).where(eq(schema.session.userId, member.user.id)),
     ).toHaveLength(0);
+    expect(
+      await db.select().from(schema.member).where(eq(schema.member.id, member.memberId)),
+    ).toHaveLength(0);
+  });
+
+  test('a failed revocation announcement never fails a removal that already committed', async () => {
+    const workspace = await createWorkspace();
+    const member = await addMember(workspace.organizationId, workspace.adminUser.id, 'member');
+    await signedInAs(workspace.adminUser.id, workspace.organizationId);
+    revocationFails = true;
+    const response = await call('DELETE', member.memberId);
+    expect(response.status).toBe(200);
+    expect(revoked).toEqual([member.user.id]);
     expect(
       await db.select().from(schema.member).where(eq(schema.member.id, member.memberId)),
     ).toHaveLength(0);

@@ -1,5 +1,12 @@
-import { getMember, publishSessionRevoked, removeMember, updateMemberRole } from '@gravity/core';
-import { apiContext, handleRoute, publish, readJson, routeId } from '@/lib/api/handler.ts';
+import { getMember, removeMember, updateMemberRole } from '@gravity/core';
+import {
+  apiContext,
+  handleRoute,
+  publish,
+  readJson,
+  revokeSockets,
+  routeId,
+} from '@/lib/api/handler.ts';
 
 interface RouteParams {
   readonly params: Promise<{ id: string }>;
@@ -22,7 +29,7 @@ export async function DELETE(_request: Request, { params }: RouteParams): Promis
     const target = await getMember(principal, id);
     const removed = await removeMember(principal, id);
     await publish(removed.actions);
-    await publishSessionRevoked(target.userId);
+    await revokeSockets(target.userId);
     return { removed: true };
   });
 }

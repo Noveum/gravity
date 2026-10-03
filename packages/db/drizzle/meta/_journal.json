@@ -8,6 +8,13 @@
       "when": 1791035720499,
       "tag": "0000_magical_shatterstar",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791041526074,
+      "tag": "0001_wealthy_the_santerians",
+      "breakpoints": true
     }
   ]
 }

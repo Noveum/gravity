@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { db, eq, schema } from '@gravity/db';
 import { DomainError } from '@gravity/shared/errors';
 import { ZodError } from 'zod';
@@ -7,6 +8,7 @@ import {
   createInvite,
   createInvites,
   listPendingInvites,
+  resendInvite,
   revokeInvite,
 } from '../../src/org/invite-service.ts';
 import { resolvePrincipal } from '../../src/org/member-service.ts';
@@ -98,7 +100,7 @@ describe('invites', () => {
       .where(eq(schema.outbox.organizationId, workspace.organizationId));
     for (const syncId of syncIds) expect(rows.map((row) => row.syncId)).toContain(syncId);
     const pending = await listPendingInvites(workspace.admin);
-    expect(pending.map((invite) => invite.id)).toEqual([second.token]);
+    expect(pending.map((invite) => invite.id)).toEqual([second.invitation.id]);
   });
 
   test('a batch with a duplicate address never creates then deletes its own invite', async () => {
@@ -117,7 +119,7 @@ describe('invites', () => {
     const workspace = await createWorkspace();
     const invitee = await createUser('Aditi');
     const created = await createInvite(workspace.admin, { email: invitee.email });
-    await revokeInvite(workspace.admin, created.token);
+    await revokeInvite(workspace.admin, created.invitation.id);
     await expect(acceptInvite(created.token, invitee.id)).rejects.toThrow(DomainError);
     expect(await listPendingInvites(workspace.admin)).toHaveLength(0);
   });
@@ -127,5 +129,51 @@ describe('invites', () => {
     const stranger = await createUser('Stranger');
     const created = await createInvite(workspace.admin, { email: 'someone@gravity.test' });
     await expect(acceptInvite(created.token, stranger.id)).rejects.toThrow(DomainError);
+  });
+
+  test('a listed invite exposes neither the token nor its hash', async () => {
+    const workspace = await createWorkspace();
+    const created = await createInvite(workspace.admin, { email: 'listed@gravity.test' });
+    const listed = JSON.stringify(await listPendingInvites(workspace.admin));
+    const hash = createHash('sha256').update(created.token).digest('hex');
+    expect(listed).not.toContain(created.token);
+    expect(listed).not.toContain(hash);
+    expect(JSON.stringify(created.invitation)).not.toContain(hash);
+    expect(listed).toContain(created.invitation.id);
+  });
+
+  test('only the hash of the token is stored and the public id is not the token', async () => {
+    const workspace = await createWorkspace();
+    const created = await createInvite(workspace.admin, { email: 'stored@gravity.test' });
+    const [row] = await db.select().from(schema.invitation);
+    expect(row?.tokenHash).toBe(createHash('sha256').update(created.token).digest('hex'));
+    expect(row?.id).toBe(created.invitation.id);
+    expect(row?.id).not.toBe(created.token);
+  });
+
+  test('accepting with the token works and a wrong token or the public id does not', async () => {
+    const workspace = await createWorkspace();
+    const invitee = await createUser('Aditi');
+    const created = await createInvite(workspace.admin, { email: invitee.email });
+    await expect(acceptInvite('not-the-token', invitee.id)).rejects.toThrow(DomainError);
+    await expect(acceptInvite(created.invitation.id, invitee.id)).rejects.toThrow(DomainError);
+    await expect(resolvePrincipal(invitee.id, workspace.organizationId)).rejects.toThrow();
+    const accepted = await acceptInvite(created.token, invitee.id);
+    expect(accepted.alreadyAccepted).toBe(false);
+    const principal = await resolvePrincipal(invitee.id, workspace.organizationId);
+    expect(principal.role).toBe('member');
+  });
+
+  test('resending rotates the token so the old link stops working', async () => {
+    const workspace = await createWorkspace();
+    const invitee = await createUser('Aditi');
+    const created = await createInvite(workspace.admin, { email: invitee.email });
+    const resent = await resendInvite(workspace.admin, created.invitation.id);
+    expect(resent.token).not.toBe(created.token);
+    expect(resent.invitation.id).toBe(created.invitation.id);
+    await expect(acceptInvite(created.token, invitee.id)).rejects.toThrow(DomainError);
+    await acceptInvite(resent.token, invitee.id);
+    const principal = await resolvePrincipal(invitee.id, workspace.organizationId);
+    expect(principal.role).toBe('member');
   });
 });

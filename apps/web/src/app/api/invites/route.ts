@@ -1,14 +1,14 @@
 import { createInvite, createInvites, listPendingInvites } from '@gravity/core';
 import { assertCan } from '@gravity/shared/policy';
 import { apiContext, handleRoute, publish, readJson } from '@/lib/api/handler.ts';
-import { inviteView, pendingInviteView, revealToken } from '@/lib/api/invite-view.ts';
+import { inviteView, revealToken } from '@/lib/api/invite-view.ts';
 import { sendInviteEmail, shouldSendInvites } from '@/lib/api/send-invite.ts';
 
 export async function GET(_request: Request): Promise<Response> {
   return await handleRoute(async () => {
     const { principal } = await apiContext();
     const pending = await listPendingInvites(principal);
-    return { invites: pending.map(pendingInviteView) };
+    return { invites: pending.map(inviteView) };
   });
 }
 
@@ -29,7 +29,7 @@ export async function POST(request: Request): Promise<Response> {
       await publish(created.actions);
       if (send) {
         for (const entry of created.invites) {
-          await sendInviteEmail({ invitation: entry.invitation, ...delivery });
+          await sendInviteEmail({ invitation: entry.invitation, token: entry.token, ...delivery });
         }
       }
       return {
@@ -42,7 +42,9 @@ export async function POST(request: Request): Promise<Response> {
 
     const created = await createInvite(context.principal, body);
     await publish(created.actions);
-    if (send) await sendInviteEmail({ invitation: created.invitation, ...delivery });
+    if (send) {
+      await sendInviteEmail({ invitation: created.invitation, token: created.token, ...delivery });
+    }
     return { invitation: inviteView(created.invitation), ...revealToken(created.token) };
   });
 }

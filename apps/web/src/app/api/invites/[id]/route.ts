@@ -5,14 +5,14 @@ import { inviteView, revealToken } from '@/lib/api/invite-view.ts';
 import { sendInviteEmail, shouldSendInvites } from '@/lib/api/send-invite.ts';
 
 interface RouteParams {
-  readonly params: Promise<{ token: string }>;
+  readonly params: Promise<{ id: string }>;
 }
 
 export async function DELETE(_request: Request, { params }: RouteParams): Promise<Response> {
   return await handleRoute(async () => {
     const { principal } = await apiContext();
-    const { token } = await params;
-    const revoked = await revokeInvite(principal, token);
+    const { id } = await params;
+    const revoked = await revokeInvite(principal, id);
     await publish(revoked.actions);
     return { invitation: inviteView(revoked.invitation) };
   });
@@ -23,12 +23,13 @@ export async function PATCH(_request: Request, { params }: RouteParams): Promise
     const context = await apiContext();
     assertCan(context.principal, 'member:invite');
     const send = shouldSendInvites();
-    const { token } = await params;
-    const resent = await resendInvite(context.principal, token);
+    const { id } = await params;
+    const resent = await resendInvite(context.principal, id);
     await publish(resent.actions);
     if (send) {
       await sendInviteEmail({
         invitation: resent.invitation,
+        token: resent.token,
         workspaceName: context.organizationName,
         inviterName: context.userName,
       });

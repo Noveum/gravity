@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { and, asc, db, eq, gt, isNull, schema, sql } from '@gravity/db';
 import { conflict, forbidden, notFound } from '@gravity/shared/errors';
 import type { Actor, SyncAction } from '@gravity/shared/events';
@@ -12,14 +11,26 @@ import {
 } from '@gravity/shared/policy';
 import { inviteBulkSchema, inviteCreateSchema } from '@gravity/shared/validators';
 import { principalActor } from '../actor.ts';
-import { addUtcDays, type Executor, newId, newToken, requireRow } from '../internal.ts';
+import { addUtcDays, type Executor, hashToken, newId, newToken, requireRow } from '../internal.ts';
 import { recordSync } from '../realtime/outbox.ts';
 import { buildSyncAction } from '../realtime/publisher.ts';
 import { nextSyncId } from '../sync/sync-id.ts';
 import { lockOrganization } from './organization-lock.ts';
 import { assertEmailDomainAllowed, type MemberRow } from './organization-service.ts';
 
-export type InvitationRow = typeof schema.invitation.$inferSelect;
+export type InvitationRow = Omit<typeof schema.invitation.$inferSelect, 'tokenHash'>;
+
+const invitationColumns = {
+  id: schema.invitation.id,
+  organizationId: schema.invitation.organizationId,
+  email: schema.invitation.email,
+  role: schema.invitation.role,
+  status: schema.invitation.status,
+  inviterId: schema.invitation.inviterId,
+  expiresAt: schema.invitation.expiresAt,
+  syncId: schema.invitation.syncId,
+  createdAt: schema.invitation.createdAt,
+};
 
 export const INVITE_TTL_DAYS = 14;
 
@@ -59,7 +70,7 @@ async function insertInvite(
     now: Date;
   },
   actor: Actor,
-): Promise<{ invitation: InvitationRow; actions: SyncAction[] }> {
+): Promise<{ invitation: InvitationRow; token: string; actions: SyncAction[] }> {
   assertCanInviteRole(principal, params.role);
   const [organization] = await executor
     .select({ allowedEmailDomains: schema.organization.allowedEmailDomains })
@@ -77,16 +88,18 @@ async function insertInvite(
         eq(schema.invitation.status, 'pending'),
       ),
     )
-    .returning();
+    .returning(invitationColumns);
   const actions: SyncAction[] = [];
   for (const old of replaced) {
     actions.push(inviteAction(old, await nextSyncId(executor), actor, 'delete'));
   }
   const syncId = await nextSyncId(executor);
+  const token = newToken();
   const [row] = await executor
     .insert(schema.invitation)
     .values({
-      id: newToken(),
+      id: newId(),
+      tokenHash: hashToken(token),
       organizationId: params.organizationId,
       email: params.email,
       role: params.role,
@@ -95,19 +108,15 @@ async function insertInvite(
       expiresAt: addUtcDays(params.now, INVITE_TTL_DAYS),
       syncId,
     })
-    .returning();
+    .returning(invitationColumns);
   const invitation = requireRow(row, 'The invite could not be created.');
   actions.push(inviteAction(invitation, syncId, actor, 'insert'));
-  return { invitation, actions };
-}
-
-export function inviteReference(token: string): string {
-  return createHash('sha256').update(token).digest('hex').slice(0, 32);
+  return { invitation, token, actions };
 }
 
 export function inviteAnnouncement(invitation: InvitationRow): Record<string, unknown> {
   return {
-    id: inviteReference(invitation.id),
+    id: invitation.id,
     organizationId: invitation.organizationId,
     status: invitation.status,
     syncId: invitation.syncId,
@@ -127,7 +136,7 @@ function inviteAction(
     scopes: [scopes.workspace(invitation.organizationId)],
     action,
     model: 'invitation',
-    modelId: inviteReference(invitation.id),
+    modelId: invitation.id,
     data: inviteAnnouncement(invitation),
     actor,
   });
@@ -142,7 +151,7 @@ export async function createInvite(
 
   return await db.transaction(async (tx) => {
     await assertEmailIsFree(tx, principal.organizationId, parsed.email);
-    const { invitation, actions } = await insertInvite(
+    const { invitation, token, actions } = await insertInvite(
       tx,
       principal,
       {
@@ -155,7 +164,7 @@ export async function createInvite(
       principalActor(principal),
     );
     await recordSync(tx, actions);
-    return { invitation, token: invitation.id, actions };
+    return { invitation, token, actions };
   });
 }
 
@@ -188,7 +197,7 @@ export async function createInvites(
         },
         actor,
       );
-      invites.push({ invitation: created.invitation, token: created.invitation.id });
+      invites.push({ invitation: created.invitation, token: created.token });
       actions.push(...created.actions);
     }
     await recordSync(tx, actions);
@@ -230,7 +239,7 @@ export async function pendingInvitesForEmail(email: string): Promise<PendingInvi
 export async function listPendingInvites(principal: Principal): Promise<InvitationRow[]> {
   assertCan(principal, 'member:invite');
   return await db
-    .select()
+    .select(invitationColumns)
     .from(schema.invitation)
     .where(
       and(
@@ -261,7 +270,7 @@ export async function revokeInvite(
           eq(schema.invitation.status, 'pending'),
         ),
       )
-      .returning();
+      .returning(invitationColumns);
     const invitation = requireRow(updated, 'That invite is no longer pending.');
     const actions = [inviteAction(invitation, syncId, actor, 'delete')];
     await recordSync(tx, actions);
@@ -278,9 +287,14 @@ export async function resendInvite(
   return await db.transaction(async (tx) => {
     const syncId = await nextSyncId(tx);
     const actor = principalActor(principal);
+    const token = newToken();
     const [updated] = await tx
       .update(schema.invitation)
-      .set({ expiresAt: addUtcDays(new Date(), INVITE_TTL_DAYS), syncId })
+      .set({
+        tokenHash: hashToken(token),
+        expiresAt: addUtcDays(new Date(), INVITE_TTL_DAYS),
+        syncId,
+      })
       .where(
         and(
           eq(schema.invitation.id, inviteId),
@@ -288,11 +302,11 @@ export async function resendInvite(
           eq(schema.invitation.status, 'pending'),
         ),
       )
-      .returning();
+      .returning(invitationColumns);
     const invitation = requireRow(updated, 'That invite is no longer pending.');
     const actions = [inviteAction(invitation, syncId, actor, 'update')];
     await recordSync(tx, actions);
-    return { invitation, token: invitation.id, actions };
+    return { invitation, token, actions };
   });
 }
 
@@ -306,9 +320,9 @@ export interface AcceptedInvite {
 export async function acceptInvite(token: string, userId: string): Promise<AcceptedInvite> {
   return await db.transaction(async (tx) => {
     const [found] = await tx
-      .select()
+      .select(invitationColumns)
       .from(schema.invitation)
-      .where(eq(schema.invitation.id, token))
+      .where(eq(schema.invitation.tokenHash, hashToken(token)))
       .limit(1);
     const invitation = requireRow(found, 'That invite is not valid.');
     const organization = await lockOrganization(tx, invitation.organizationId);
@@ -391,7 +405,7 @@ export async function acceptInvite(token: string, userId: string): Promise<Accep
       .update(schema.invitation)
       .set({ status: 'accepted', syncId: invitationSyncId })
       .where(eq(schema.invitation.id, invitation.id))
-      .returning();
+      .returning(invitationColumns);
 
     const actor = { type: 'user', id: userId, name: invitedUser.name } as const;
     const actions = [

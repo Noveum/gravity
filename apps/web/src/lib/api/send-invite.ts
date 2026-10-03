@@ -17,13 +17,14 @@ export function inviteAcceptUrl(token: string): string {
 
 export async function sendInviteEmail(params: {
   readonly invitation: InvitationRow;
+  readonly token: string;
   readonly workspaceName: string;
   readonly inviterName: string;
 }): Promise<void> {
   const content = await inviteEmail({
     workspaceName: params.workspaceName,
     inviterName: params.inviterName,
-    url: inviteAcceptUrl(params.invitation.id),
+    url: inviteAcceptUrl(params.token),
   });
   await sendEmail(db, {
     to: params.invitation.email,

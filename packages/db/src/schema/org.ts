@@ -54,6 +54,7 @@ export const invitation = pgTable(
   'invitation',
   {
     id: text('id').primaryKey(),
+    tokenHash: text('token_hash').notNull(),
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
@@ -68,6 +69,7 @@ export const invitation = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    uniqueIndex('invitation_token_hash_unique').on(table.tokenHash),
     index('invitation_org_idx').on(table.organizationId),
     index('invitation_email_idx').on(table.email),
     uniqueIndex('invitation_org_email_pending_unique')

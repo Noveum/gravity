@@ -3,5 +3,7 @@ export * from './common.ts';
 export * from './configuration.ts';
 export * from './fields.ts';
 export * from './invite.ts';
+export * from './lists.ts';
 export * from './organization.ts';
 export * from './records.ts';
+export * from './views.ts';

@@ -12,7 +12,8 @@
     "./validators": "./src/validators/index.ts",
     "./utils": "./src/utils/index.ts",
     "./constants": "./src/constants/index.ts",
-    "./records": "./src/records/index.ts"
+    "./records": "./src/records/index.ts",
+    "./filters": "./src/filters/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

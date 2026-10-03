@@ -10,36 +10,29 @@ export interface CollapsibleProps {
 }
 
 export function Collapsible({ open, children, className }: CollapsibleProps) {
-  const [rendered, setRendered] = useState(open);
-  const [expanded, setExpanded] = useState(open);
+  const [visible, setVisible] = useState(open);
 
   useEffect(() => {
-    if (open) {
-      setRendered(true);
-      const frame = requestAnimationFrame(() => setExpanded(true));
-      return () => cancelAnimationFrame(frame);
+    if (!open) {
+      setVisible(false);
+      return undefined;
     }
-    setExpanded(false);
-    return undefined;
+    const frame = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  if (!rendered) return null;
+  if (!open) return null;
 
   return (
     <div
-      data-state={expanded ? 'open' : 'closed'}
+      data-state={visible ? 'open' : 'closed'}
       className={cn(
-        'grid transition-[grid-template-rows,opacity] duration-[var(--duration-base)] ease-[var(--ease-out-gravity)]',
-        expanded ? 'opacity-100' : 'opacity-0',
+        'transition-opacity duration-[var(--duration-base)] ease-[var(--ease-out-gravity)] motion-reduce:transition-none',
+        visible ? 'opacity-100' : 'opacity-0',
+        className,
       )}
-      style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
-      onTransitionEnd={(event) => {
-        if (event.target !== event.currentTarget) return;
-        if (event.propertyName !== 'grid-template-rows') return;
-        if (!expanded) setRendered(false);
-      }}
     >
-      <div className={cn('min-h-0 overflow-hidden', className)}>{children}</div>
+      {children}
     </div>
   );
 }

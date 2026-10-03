@@ -1,4 +1,4 @@
-import { and, db, eq, gt, inArray, isNull, schema } from '@gravity/db';
+import { and, db, eq, gt, inArray, isNull, schema, sql } from '@gravity/db';
 import { ORG_ROLES, type OrgRole } from '@gravity/shared/constants';
 import { authMessageSchema, parseScope } from '@gravity/shared/events';
 import { type RealtimeTicketPayload, verifyRealtimeTicket } from '@gravity/shared/events/ticket';
@@ -164,18 +164,41 @@ export async function refreshedPrincipal(
   return { ...principal, role: roleSchema.parse(membership.role) };
 }
 
-export function authorizeScope(principal: ConnectionPrincipal, scope: string): Promise<boolean> {
+const RECORD_TABLES = {
+  brand: 'brand',
+  pipeline: 'pipeline',
+  person: 'person',
+  company: 'company',
+} as const;
+
+type RecordScopeKind = keyof typeof RECORD_TABLES;
+
+async function recordInOrganization(
+  kind: RecordScopeKind,
+  id: string,
+  organizationId: string,
+): Promise<boolean> {
+  const rows = await db.execute(
+    sql`select 1 from ${sql.identifier(RECORD_TABLES[kind])} where id = ${id} and organization_id = ${organizationId} and archived_at is null limit 1`,
+  );
+  return rows.length > 0;
+}
+
+export async function authorizeScope(
+  principal: ConnectionPrincipal,
+  scope: string,
+): Promise<boolean> {
   const parsed = parseScope(scope);
-  if (parsed === null) return Promise.resolve(false);
+  if (parsed === null) return false;
   switch (parsed.kind) {
     case 'workspace':
-      return Promise.resolve(parsed.id === principal.organizationId);
+      return parsed.id === principal.organizationId;
     case 'user':
-      return Promise.resolve(parsed.id === principal.userId);
+      return parsed.id === principal.userId;
     case 'brand':
     case 'pipeline':
     case 'person':
     case 'company':
-      return Promise.resolve(false);
+      return await recordInOrganization(parsed.kind, parsed.id, principal.organizationId);
   }
 }

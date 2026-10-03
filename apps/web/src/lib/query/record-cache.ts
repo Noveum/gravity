@@ -118,9 +118,49 @@ export function placeCompany(client: QueryClient, row: CompanyRow): void {
   );
 }
 
+function knownPerson(client: QueryClient, id: string): PersonRow | undefined {
+  const fromRecord = client.getQueryData<PersonRecord>(queryKeys.person(id))?.person;
+  const listed = newestListed(client, PEOPLE_ROOT, id, readPeople);
+  if (fromRecord === undefined) return listed;
+  if (listed === undefined) return fromRecord;
+  return listed.syncId > fromRecord.syncId ? listed : fromRecord;
+}
+
+function placeEmploymentOnCompany(client: QueryClient, row: EmploymentRow): void {
+  const key = queryKeys.company(row.companyId);
+  const record = client.getQueryData<CompanyRecord>(key);
+  if (record === undefined) return;
+  const listed = record.people.find((entry) => entry.person.id === row.personId);
+  const sameJob = listed !== undefined && listed.employment.id === row.id;
+  if (sameJob && listed.employment.syncId > row.syncId) return;
+  if (!row.isCurrent) {
+    if (!sameJob) return;
+    client.setQueryData<CompanyRecord>(key, {
+      ...record,
+      people: record.people.filter((entry) => entry.person.id !== row.personId),
+    });
+    return;
+  }
+  const person = listed?.person ?? knownPerson(client, row.personId);
+  if (person === undefined) {
+    client.invalidateQueries({ queryKey: key, exact: true }).catch(() => undefined);
+    return;
+  }
+  const entry = { person, employment: row };
+  client.setQueryData<CompanyRecord>(key, {
+    ...record,
+    people:
+      listed === undefined
+        ? [...record.people, entry]
+        : record.people.map((known) => (known.person.id === row.personId ? entry : known)),
+  });
+}
+
 export function applyEmployment(client: QueryClient, row: EmploymentRow): void {
+  placeEmploymentOnCompany(client, row);
   const record = client.getQueryData<PersonRecord>(queryKeys.person(row.personId));
-  if (record !== undefined) {
+  const knownJob = record?.employments.find((job) => job.id === row.id);
+  if (record !== undefined && !isStale(knownJob, row)) {
     const others = record.employments.filter((job) => job.id !== row.id);
     const employments = [row, ...others].sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent));
     const person = row.isCurrent

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { createWorkspace, resetDatabase } from '@gravity/core/test-support';
+import { archiveBrand, createBrand, upsertCompany, upsertPerson } from '@gravity/core';
+import { createWorkspace, resetDatabase, type TestWorkspace } from '@gravity/core/test-support';
 import {
   REALTIME_TICKET_TTL_MS,
   type RealtimeTicketPayload,
@@ -8,12 +9,14 @@ import {
 import { authorizeScope, type ConnectionPrincipal, readTicketFrame } from '../src/auth.ts';
 
 let principal: ConnectionPrincipal;
+let mine: TestWorkspace;
+let other: TestWorkspace;
 let otherOrganizationId = '';
 
 beforeEach(async () => {
   await resetDatabase();
-  const mine = await createWorkspace('Mine');
-  const other = await createWorkspace('Other');
+  mine = await createWorkspace('Mine');
+  other = await createWorkspace('Other');
   otherOrganizationId = other.organizationId;
   principal = {
     userId: mine.adminUser.id,
@@ -40,10 +43,39 @@ describe('authorizeScope', () => {
     expect(await authorizeScope(principal, 'team:t1')).toBe(false);
     expect(await authorizeScope(principal, 'brand:')).toBe(false);
   });
+});
 
-  test('refuses record scopes until their tables exist', async () => {
-    expect(await authorizeScope(principal, 'brand:b1')).toBe(false);
-    expect(await authorizeScope(principal, 'person:p1')).toBe(false);
+describe('record scopes', () => {
+  test('admits brands, pipelines, people and companies of the caller workspace', async () => {
+    const owner = { principal: mine.admin };
+    const brand = await createBrand(owner, { name: 'Yodu' });
+    const person = await upsertPerson(owner, { name: 'Ada' });
+    const company = await upsertCompany(owner, { name: 'Acme', domains: ['acme.io'] });
+    expect(await authorizeScope(principal, `brand:${brand.brand.id}`)).toBe(true);
+    expect(await authorizeScope(principal, `pipeline:${brand.pipeline.id}`)).toBe(true);
+    expect(await authorizeScope(principal, `person:${person.person.id}`)).toBe(true);
+    expect(await authorizeScope(principal, `company:${company.company.id}`)).toBe(true);
+  });
+
+  test('refuses the same kinds from another workspace and ids that do not exist', async () => {
+    const owner = { principal: other.admin };
+    const brand = await createBrand(owner, { name: 'Zeta' });
+    const person = await upsertPerson(owner, { name: 'Zed' });
+    const company = await upsertCompany(owner, { name: 'Zeta Co', domains: ['zeta.io'] });
+    expect(await authorizeScope(principal, `brand:${brand.brand.id}`)).toBe(false);
+    expect(await authorizeScope(principal, `pipeline:${brand.pipeline.id}`)).toBe(false);
+    expect(await authorizeScope(principal, `person:${person.person.id}`)).toBe(false);
+    expect(await authorizeScope(principal, `company:${company.company.id}`)).toBe(false);
+    expect(await authorizeScope(principal, 'company:does-not-exist')).toBe(false);
+  });
+
+  test('refuses an archived brand and its archived pipeline', async () => {
+    const owner = { principal: mine.admin };
+    const brand = await createBrand(owner, { name: 'Retired' });
+    expect(await authorizeScope(principal, `brand:${brand.brand.id}`)).toBe(true);
+    await archiveBrand(owner, brand.brand.id);
+    expect(await authorizeScope(principal, `brand:${brand.brand.id}`)).toBe(false);
+    expect(await authorizeScope(principal, `pipeline:${brand.pipeline.id}`)).toBe(false);
   });
 });
 

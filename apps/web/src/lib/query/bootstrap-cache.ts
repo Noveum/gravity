@@ -41,6 +41,49 @@ function refetchBootstrap(client: QueryClient): void {
   client.invalidateQueries({ queryKey: [BOOTSTRAP_ROOT] }).catch(() => undefined);
 }
 
+function unreadable(client: QueryClient, action: SyncAction): void {
+  console.warn(`Ignored a ${action.model} update for ${action.modelId} it could not read.`);
+  refetchBootstrap(client);
+}
+
+function removes(action: SyncAction): boolean {
+  return (
+    action.action === 'archive' ||
+    action.action === 'delete' ||
+    typeof action.data['archivedAt'] === 'string'
+  );
+}
+
+function withoutPipelines(bootstrap: Bootstrap, pipelineIds: readonly string[]): Bootstrap {
+  if (pipelineIds.length === 0) return bootstrap;
+  const gone = (pipelineId: string | null) =>
+    pipelineId !== null && pipelineIds.includes(pipelineId);
+  return {
+    ...bootstrap,
+    pipelines: bootstrap.pipelines.filter((pipeline) => !gone(pipeline.id)),
+    stages: bootstrap.stages.filter((stage) => !gone(stage.pipelineId)),
+    fields: bootstrap.fields.filter((field) => !gone(field.pipelineId)),
+    savedViews: bootstrap.savedViews.filter((view) => !gone(view.pipelineId)),
+  };
+}
+
+function applyPipeline(client: QueryClient, bootstrap: Bootstrap, action: SyncAction): Bootstrap {
+  const next = {
+    ...bootstrap,
+    pipelines: applyRow(client, bootstrap.pipelines, action, pipelineRowSchema),
+  };
+  return removes(action) ? withoutPipelines(next, [action.modelId]) : next;
+}
+
+function applyBrand(client: QueryClient, bootstrap: Bootstrap, action: SyncAction): Bootstrap {
+  const next = { ...bootstrap, brands: applyRow(client, bootstrap.brands, action, brandRowSchema) };
+  if (!removes(action)) return next;
+  const pipelineIds = next.pipelines
+    .filter((pipeline) => pipeline.brandId === action.modelId)
+    .map((pipeline) => pipeline.id);
+  return withoutPipelines(next, pipelineIds);
+}
+
 function applyRow<T extends Versioned>(
   client: QueryClient,
   list: T[],
@@ -52,8 +95,7 @@ function applyRow<T extends Versioned>(
   }
   const parsed = schema.safeParse(action.data);
   if (!parsed.success) {
-    console.warn(`Ignored a ${action.model} update for ${action.modelId} it could not read.`);
-    refetchBootstrap(client);
+    unreadable(client, action);
     return list;
   }
   const row = parsed.data;
@@ -65,6 +107,8 @@ function applyRow<T extends Versioned>(
 
 const memberPatchSchema = z.object({ id: z.string(), role: z.string(), syncId: z.number() });
 
+const organizationPatchSchema = z.object({ name: z.string() });
+
 function applyMember(client: QueryClient, bootstrap: Bootstrap, action: SyncAction): Bootstrap {
   if (action.action === 'delete') {
     return {
@@ -73,8 +117,12 @@ function applyMember(client: QueryClient, bootstrap: Bootstrap, action: SyncActi
     };
   }
   const parsed = memberPatchSchema.safeParse(action.data);
+  if (!parsed.success) {
+    unreadable(client, action);
+    return bootstrap;
+  }
   const known = bootstrap.members.find((member) => member.memberId === action.modelId);
-  if (!parsed.success || known === undefined) {
+  if (known === undefined) {
     refetchBootstrap(client);
     return bootstrap;
   }
@@ -92,12 +140,9 @@ export function applyBootstrapDelta(client: QueryClient, action: SyncAction): vo
   patchBootstrap(client, (bootstrap) => {
     switch (action.model) {
       case 'brand':
-        return { ...bootstrap, brands: applyRow(client, bootstrap.brands, action, brandRowSchema) };
+        return applyBrand(client, bootstrap, action);
       case 'pipeline':
-        return {
-          ...bootstrap,
-          pipelines: applyRow(client, bootstrap.pipelines, action, pipelineRowSchema),
-        };
+        return applyPipeline(client, bootstrap, action);
       case 'stage':
         return { ...bootstrap, stages: applyRow(client, bootstrap.stages, action, stageRowSchema) };
       case 'field_definition':
@@ -113,10 +158,15 @@ export function applyBootstrapDelta(client: QueryClient, action: SyncAction): vo
       case 'member':
         return applyMember(client, bootstrap, action);
       case 'organization': {
-        const name = action.data['name'];
-        return typeof name === 'string'
-          ? { ...bootstrap, organization: { ...bootstrap.organization, name } }
-          : bootstrap;
+        const parsed = organizationPatchSchema.safeParse(action.data);
+        if (!parsed.success) {
+          unreadable(client, action);
+          return bootstrap;
+        }
+        return {
+          ...bootstrap,
+          organization: { ...bootstrap.organization, name: parsed.data.name },
+        };
       }
       default:
         return bootstrap;

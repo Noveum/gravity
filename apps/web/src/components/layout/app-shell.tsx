@@ -14,6 +14,7 @@ import {
   type ShellUser,
   type ShellWorkspace,
 } from '@/lib/navigation.ts';
+import { CrmDeltaHandlers } from '@/lib/realtime/crm-deltas.tsx';
 import { WorkspaceRealtime } from '@/lib/realtime/provider.tsx';
 import { DESKTOP_QUERY, useMediaQuery, WIDE_QUERY } from '@/lib/use-media-query.ts';
 import { Sidebar } from './sidebar.tsx';
@@ -89,6 +90,7 @@ export function AppShell({
       initialCursor={realtimeCursor}
     >
       <div data-app-shell className="flex h-dvh w-full overflow-hidden bg-bg">
+        <CrmDeltaHandlers />
         {NAV_ITEMS.map((item) => (
           <NavChord key={item.id} item={item} />
         ))}

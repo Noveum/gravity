@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { WorkspaceData } from '@/features/workspace/use-workspace.ts';
 import { useContextPanel } from '@/lib/context-panel.tsx';
 import { HOTKEY_PRIORITY, useHotkey } from '@/lib/keyboard/index.ts';
+import { setLeadTrail } from '@/lib/record-trail.ts';
 import { watchWindowRefocus } from '@/lib/window-refocus.ts';
 import { asPriority } from './lead-glyphs.tsx';
 import {
@@ -156,7 +157,9 @@ export function useLeadCursor({ ordered, step, paused = false }: LeadCursorOptio
   };
 
   const openActive = () => {
-    if (active !== undefined) router.push(personHref(active));
+    if (active === undefined) return;
+    setLeadTrail(ordered);
+    router.push(personHref(active));
   };
 
   useEffect(() => {

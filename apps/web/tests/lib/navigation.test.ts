@@ -52,6 +52,11 @@ describe('navigation', () => {
     ]);
     expect(breadcrumbsFor('/onboarding')).toEqual([]);
   });
+
+  test('a record page links back to its list and never shows the raw id', () => {
+    expect(breadcrumbsFor('/people/019a2b3c')).toEqual([{ label: 'People', href: '/people' }]);
+    expect(breadcrumbsFor('/companies/c1')).toEqual([{ label: 'Companies', href: '/companies' }]);
+  });
 });
 
 describe('breadcrumbsFor with a pipeline lookup', () => {

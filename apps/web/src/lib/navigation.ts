@@ -97,6 +97,7 @@ export function breadcrumbsFor(pathname: string, lookup: BreadcrumbLookup = {}):
     }
     return [{ label: item.label, href: item.href }, { label: key }];
   }
+  if (isRecordPath(pathname)) return [{ label: item.label, href: item.href }];
   return [{ label: item.label, href: item.href }, { label: titleCase(page) }];
 }
 

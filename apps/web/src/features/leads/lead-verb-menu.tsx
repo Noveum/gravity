@@ -38,9 +38,12 @@ export interface LeadVerbMenuProps {
   readonly lead: LeadRow;
   readonly visible: boolean;
   readonly onVerb: (request: VerbRequest) => void;
+  readonly verbs?: readonly VerbMode[];
 }
 
-export function LeadVerbMenu({ lead, visible, onVerb }: LeadVerbMenuProps) {
+export function LeadVerbMenu({ lead, visible, onVerb, verbs }: LeadVerbMenuProps) {
+  const items =
+    verbs === undefined ? VERB_ITEMS : VERB_ITEMS.filter((item) => verbs.includes(item.verb));
   const trigger = useRef<HTMLButtonElement | null>(null);
   const chosen = useRef(false);
   return (
@@ -64,7 +67,7 @@ export function LeadVerbMenu({ lead, visible, onVerb }: LeadVerbMenuProps) {
           chosen.current = false;
         }}
       >
-        {VERB_ITEMS.map((item) => (
+        {items.map((item) => (
           <DropdownMenuItem
             key={item.verb}
             onSelect={() => {

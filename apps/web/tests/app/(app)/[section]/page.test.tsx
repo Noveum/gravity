@@ -22,8 +22,8 @@ beforeEach(async () => {
 
 describe('section page', () => {
   test('shows an empty state for a navigable section', async () => {
-    render(await SectionPage(params('companies')));
-    expect(screen.getByText('Companies')).toBeInTheDocument();
+    render(await SectionPage(params('deals')));
+    expect(screen.getByText('Deals')).toBeInTheDocument();
     expect(screen.getByText(/arrives in the next milestone/)).toBeInTheDocument();
   });
 

@@ -21,6 +21,7 @@ const { LeadList } = await import('@/features/leads/lead-list.tsx');
 const { ContextPanel } = await import('@/components/layout/context-panel.tsx');
 const { ContextPanelProvider } = await import('@/lib/context-panel.tsx');
 const { queryKeys } = await import('@/lib/query/keys.ts');
+const { neighbourOf, trailHref } = await import('@/lib/record-trail.ts');
 
 const bootstrap = bootstrapFixture();
 const pipeline = bootstrap.pipelines[0];
@@ -214,6 +215,16 @@ describe('LeadList', () => {
     await screen.findByTestId('lead-row-YOD-2');
     await userEvent.keyboard('jo');
     expect(navigation.push).toHaveBeenCalledWith('/people/per1?lead=l1');
+  });
+
+  test('opening a record remembers the list as the trail for [ and ]', async () => {
+    renderList();
+    await screen.findByTestId('lead-row-YOD-2');
+    await userEvent.keyboard('j{Enter}');
+    expect(navigation.push).toHaveBeenCalledWith('/people/per1?lead=l1');
+    expect(neighbourOf('/people', 'per1', -1)).toBe('per2');
+    expect(neighbourOf('/people', 'per1', 1)).toBe('per3');
+    expect(trailHref('/people', 'per3')).toBe('/people/per3?lead=l3');
   });
 
   test('the peek follows the focus, and Space or Escape closes it', async () => {

@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { db } from '@gravity/db';
+import { db, eq, schema } from '@gravity/db';
 import { createBrand } from '../../src/crm/brand-service.ts';
 import {
   archiveFieldDefinition,
@@ -150,6 +150,20 @@ describe('field key scope', () => {
     ).toHaveLength(3);
   });
 
+  test('a workspace-wide and a pipeline field created at the same moment cannot both win', async () => {
+    const context = { principal: workspace.admin };
+    const results = await Promise.allSettled([
+      createFieldDefinition(context, { ...lead, key: 'seats' }),
+      createFieldDefinition(context, { ...lead, pipelineId, key: 'seats' }),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((result) => result.status === 'rejected');
+    expect(rejected?.status === 'rejected' && rejected.reason).toMatchObject({ status: 409 });
+    expect(
+      (await listFieldDefinitions(workspace.admin)).filter((field) => field.key === 'seats'),
+    ).toHaveLength(1);
+  });
+
   test('an archived field or archived pipeline frees the key', async () => {
     const context = { principal: workspace.admin };
     const other = await createBrand(context, { name: 'Lumen' });
@@ -280,5 +294,39 @@ describe('updateFieldDefinition', () => {
     await archiveFieldDefinition(context, field.id);
     const refused = await refusal(updateFieldDefinition(context, field.id, { label: 'Back' }));
     expect(refused).toMatchObject({ status: 404 });
+  });
+});
+
+describe('listFieldDefinitions', () => {
+  test('excludes a live field whose pipeline is archived', async () => {
+    const context = { principal: workspace.admin };
+    const inPipeline = await createFieldDefinition(context, {
+      object: 'lead',
+      pipelineId,
+      key: 'tier',
+      label: 'Tier',
+      type: 'text',
+    });
+    const everywhere = await createFieldDefinition(context, {
+      object: 'lead',
+      key: 'seats',
+      label: 'Seats',
+      type: 'number',
+    });
+    expect((await listFieldDefinitions(workspace.admin)).map((field) => field.id).sort()).toEqual(
+      [inPipeline.field.id, everywhere.field.id].sort(),
+    );
+    await db
+      .update(schema.pipeline)
+      .set({ archivedAt: new Date() })
+      .where(eq(schema.pipeline.id, pipelineId));
+    const [stored] = await db
+      .select()
+      .from(schema.fieldDefinition)
+      .where(eq(schema.fieldDefinition.id, inPipeline.field.id));
+    expect(stored?.archivedAt).toBeNull();
+    expect((await listFieldDefinitions(workspace.admin)).map((field) => field.id)).toEqual([
+      everywhere.field.id,
+    ]);
   });
 });

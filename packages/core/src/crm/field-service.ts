@@ -1,4 +1,4 @@
-import { and, asc, count, db, eq, isNull, or, schema } from '@gravity/db';
+import { and, asc, count, db, eq, isNull, or, schema, sql } from '@gravity/db';
 import type { FieldObject } from '@gravity/shared/constants';
 import { conflict, notFound, validationFailed } from '@gravity/shared/errors';
 import { scopes } from '@gravity/shared/events';
@@ -12,7 +12,6 @@ import {
   fieldValuesSchema,
 } from '@gravity/shared/validators';
 import { type Executor, newId, requireRow } from '../internal.ts';
-import { lockOrganization } from '../org/organization-lock.ts';
 import { asConflict } from './conflicts.ts';
 import { livePipeline } from './lookups.ts';
 import { fieldDefinitionRowOf } from './rows.ts';
@@ -91,7 +90,9 @@ export async function createFieldDefinition(
   }
   try {
     return await withBatch(context, async (batch) => {
-      await lockOrganization(batch.tx, batch.organizationId);
+      await batch.tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`${batch.organizationId}:${parsed.object}:${parsed.key}`}, 0))`,
+      );
       if (parsed.pipelineId !== null) {
         await livePipeline(batch.tx, batch.organizationId, parsed.pipelineId, true);
       }

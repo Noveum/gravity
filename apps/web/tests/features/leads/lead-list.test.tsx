@@ -317,6 +317,24 @@ describe('LeadList', () => {
   });
 });
 
+describe('LeadList shortcut help', () => {
+  test('the shortcut help lists X with the other list keys', async () => {
+    const { ShortcutsOverlay } = await import('@/components/shortcuts-overlay.tsx');
+    renderWithClient(
+      <>
+        <Harness rows={leads} />
+        <ShortcutsOverlay open onOpenChange={() => undefined} />
+      </>,
+      { bootstrap, client: seededClient(leads) },
+    );
+    const overlay = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+    const row = within(overlay).getByText('Select or deselect').parentElement;
+    if (row === null) throw new Error('shortcut row');
+    expect(row).toHaveTextContent(/x/i);
+    expect(within(overlay).getByText('Next lead')).toBeInTheDocument();
+  });
+});
+
 describe('LeadList virtualization', () => {
   stubLayoutSize(1200, 140);
   stubLayoutProperty('clientHeight', 140);

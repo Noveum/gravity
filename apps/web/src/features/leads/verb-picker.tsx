@@ -62,7 +62,7 @@ export function returnFocusTo(anchorId: string | null): (event: Event) => void {
   };
 }
 
-function labelFilter(_value: string, search: string, keywords?: string[]): number {
+export function labelFilter(_value: string, search: string, keywords?: string[]): number {
   return defaultFilter(keywords?.join(' ') ?? '', search);
 }
 

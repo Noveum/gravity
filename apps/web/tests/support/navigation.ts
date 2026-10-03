@@ -1,4 +1,4 @@
-import { mock } from 'bun:test';
+import { afterAll, mock } from 'bun:test';
 
 export interface NavigationControls {
   pathname: string;
@@ -31,4 +31,20 @@ export function mockNavigation(pathname = '/', search = ''): NavigationControls 
     notFound: mock(),
   }));
   return controls;
+}
+
+export function watchHistoryReplace(
+  controls: NavigationControls,
+): ReturnType<typeof mock<(href: string) => void>> {
+  const replaced = mock<(href: string) => void>();
+  const original = window.history.replaceState;
+  window.history.replaceState = (_data: unknown, _unused: string, url?: string | URL | null) => {
+    const href = url === undefined || url === null ? '' : String(url);
+    replaced(href);
+    controls.search = href.split('?')[1] ?? '';
+  };
+  afterAll(() => {
+    window.history.replaceState = original;
+  });
+  return replaced;
 }

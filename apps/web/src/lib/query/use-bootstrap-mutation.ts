@@ -1,16 +1,25 @@
 'use client';
 
+import type { SyncModel } from '@gravity/shared/events';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { noteServerRow } from '@/lib/realtime/delta-bridge.tsx';
 import { patchBootstrap } from './bootstrap-cache.ts';
 import { BOOTSTRAP_ROOT, queryKeys } from './keys.ts';
 import { cancelLoadedQueries } from './pages.ts';
 import type { Bootstrap } from './schemas.ts';
 import { useRetryToast } from './use-retry-toast.ts';
 
+export interface ServedRow {
+  readonly model: SyncModel;
+  readonly id: string;
+  readonly syncId: number;
+}
+
 export interface BootstrapMutationOptions<TInput, TResult> {
   readonly mutationFn: (input: TInput) => Promise<TResult>;
   readonly optimistic?: (bootstrap: Bootstrap, input: TInput) => Bootstrap;
   readonly settle: (bootstrap: Bootstrap, result: TResult) => Bootstrap;
+  readonly served?: (result: TResult) => readonly ServedRow[];
   readonly failure: (input: TInput) => string;
 }
 
@@ -39,7 +48,12 @@ export function useBootstrapMutation<TInput, TResult>(
       client.invalidateQueries({ queryKey: [BOOTSTRAP_ROOT] }).catch(() => undefined);
       failed(options.failure(input), error, () => mutation.mutate(input));
     },
-    onSuccess: (result) => patchBootstrap(client, (bootstrap) => options.settle(bootstrap, result)),
+    onSuccess: (result) => {
+      for (const row of options.served?.(result) ?? []) {
+        noteServerRow(client, row.model, row.id, row.syncId);
+      }
+      patchBootstrap(client, (bootstrap) => options.settle(bootstrap, result));
+    },
   });
   return mutation;
 }

@@ -2,10 +2,12 @@
 
 import { leadFilterRegistry } from '@gravity/shared/filters';
 import Link from 'next/link';
-import { useEffect, useMemo } from 'react';
+import { type ReactNode, useEffect, useMemo } from 'react';
 import { EmptyState } from '@/components/ui/empty-state.tsx';
 import { ErrorState } from '@/components/ui/error-state.tsx';
 import { ListSkeleton } from '@/components/ui/list-skeleton.tsx';
+import { leadViewsFor } from '@/features/filters/list-query.ts';
+import { ListToolbar } from '@/features/filters/list-toolbar.tsx';
 import { useListQuery } from '@/features/filters/use-list-query.ts';
 import { useWorkspace } from '@/features/workspace/use-workspace.ts';
 import { useCopyLinkTarget } from '@/lib/copy-link.tsx';
@@ -24,12 +26,16 @@ export function LeadsView({ pipelineKey }: { readonly pipelineKey: string }) {
   const fields = useMemo(() => workspace.fieldsFor('lead', pipelineId), [workspace, pipelineId]);
   const registry = useMemo(() => leadFilterRegistry(fields, pipelineId), [fields, pipelineId]);
   const views = useMemo(
-    () =>
-      workspace.savedViews.filter(
-        (view) =>
-          view.object === 'lead' && (view.pipelineId === null || view.pipelineId === pipelineId),
-      ),
+    () => leadViewsFor(workspace.savedViews, pipelineId),
     [workspace.savedViews, pipelineId],
+  );
+  const stages = useMemo(
+    () => (pipelineId === null ? [] : workspace.stagesOf(pipelineId)),
+    [workspace, pipelineId],
+  );
+  const sources = useMemo(
+    () => ({ stages, members: workspace.members }),
+    [stages, workspace.members],
   );
   const listQuery = useListQuery(registry, views);
   const list = useLeadList(pipelineId, listQuery.query);
@@ -63,41 +69,55 @@ export function LeadsView({ pipelineKey }: { readonly pipelineKey: string }) {
     );
   }
   const brand = workspace.brandById.get(pipeline.brandId);
+  const framed = (state: ReactNode) => (
+    <div className="flex h-full min-h-0 flex-col">
+      <ListToolbar
+        object="lead"
+        pipelineId={pipeline.id}
+        registry={registry}
+        sources={sources}
+        state={listQuery}
+      />
+      {state}
+    </div>
+  );
 
   if (list.error !== null && !hasData) {
-    return (
+    return framed(
       <ErrorState
         title="Could not load the leads"
         error={list.error}
         onRetry={() => {
           list.refetch().catch(() => undefined);
         }}
-      />
+      />,
     );
   }
-  if (list.isPending) return loading ? <ListSkeleton /> : null;
+  if (list.isPending) return framed(loading ? <ListSkeleton /> : null);
   if (list.leads.length === 0 && !listQuery.hasFilter) {
-    return (
+    return framed(
       <EmptyState
         title={`No leads in ${brand?.name ?? 'this brand'} · ${pipeline.name} yet.`}
         description="Press C to add a person, or import a CSV."
-      />
+      />,
     );
   }
   if (list.leads.length === 0) {
-    return (
+    return framed(
       <EmptyState
         title="No leads match these filters."
-        description="Press Shift+F to clear them."
-      />
+        description="Press Shift+F to clear them, or change the filters above."
+      />,
     );
   }
-  return (
-    <LeadList
-      pipeline={pipeline}
-      stages={workspace.stagesOf(pipeline.id)}
-      leads={list.leads}
-      renderActions={(selection) => <LeadVerbs selection={selection} pipelineId={pipeline.id} />}
-    />
+  return framed(
+    <div className="min-h-0 flex-1">
+      <LeadList
+        pipeline={pipeline}
+        stages={stages}
+        leads={list.leads}
+        renderActions={(selection) => <LeadVerbs selection={selection} pipelineId={pipeline.id} />}
+      />
+    </div>,
   );
 }

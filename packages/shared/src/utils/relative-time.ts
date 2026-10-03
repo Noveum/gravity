@@ -1,5 +1,4 @@
-export function relativeTime(from: Date, now: Date = new Date()): string {
-  const seconds = Math.round((now.getTime() - from.getTime()) / 1000);
+function pastPhrase(seconds: number): string {
   if (seconds < 45) return 'just now';
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
@@ -12,4 +11,25 @@ export function relativeTime(from: Date, now: Date = new Date()): string {
   const months = Math.round(days / 30);
   if (months < 12) return `${months}mo ago`;
   return `${Math.round(days / 365)}y ago`;
+}
+
+function futurePhrase(seconds: number): string {
+  if (seconds < 45) return 'in a moment';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `in ${hours}h`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return 'tomorrow';
+  if (days < 7) return `in ${days}d`;
+  const weeks = Math.round(days / 7);
+  if (weeks < 5) return `in ${weeks}w`;
+  const months = Math.round(days / 30);
+  if (months < 12) return `in ${months}mo`;
+  return `in ${Math.round(days / 365)}y`;
+}
+
+export function relativeTime(from: Date, now: Date = new Date()): string {
+  const seconds = Math.round((now.getTime() - from.getTime()) / 1000);
+  return seconds >= 0 ? pastPhrase(seconds) : futurePhrase(-seconds);
 }

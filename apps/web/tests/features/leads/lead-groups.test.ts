@@ -79,6 +79,14 @@ describe('lead grouping', () => {
     expect(adjacentStage(stages, 'new', -1)).toBeUndefined();
   });
 
+  test('adjacentStage steps out of the trailing Other group into the last live stage', () => {
+    const last = [...stages].sort((a, b) => a.sortOrder - b.sortOrder).at(-1);
+    expect(adjacentStage(stages, OTHER_STAGE_ID, -1)?.id).toBe(last?.id);
+    expect(adjacentStage(stages, 'stage-archived-elsewhere', -1)?.id).toBe(last?.id);
+    expect(adjacentStage(stages, OTHER_STAGE_ID, 1)).toBeUndefined();
+    expect(adjacentStage([], OTHER_STAGE_ID, -1)).toBeUndefined();
+  });
+
   test('the selection wins over the focused lead, in display order', () => {
     const ordered = [leadFixture({ id: 'a' }), leadFixture({ id: 'b' }), leadFixture({ id: 'c' })];
     const [first, , third] = ordered;

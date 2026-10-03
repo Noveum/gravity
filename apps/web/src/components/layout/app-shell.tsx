@@ -1,13 +1,14 @@
 'use client';
 
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { CommandPalette } from '@/components/command-palette.tsx';
 import { ShortcutsOverlay } from '@/components/shortcuts-overlay.tsx';
 import { overlayClassName } from '@/components/ui/dialog.tsx';
+import { leadViewsFor } from '@/features/filters/list-query.ts';
 import { LeadUndoHotkeys } from '@/features/leads/lead-undo.ts';
-import { useWorkspace } from '@/features/workspace/use-workspace.ts';
+import { useWorkspace, type WorkspaceData } from '@/features/workspace/use-workspace.ts';
 import { ContextPanelProvider, useContextPanel } from '@/lib/context-panel.tsx';
 import { CopyLinkProvider, useCopyLink } from '@/lib/copy-link.tsx';
 import { useHotkey } from '@/lib/keyboard/index.ts';
@@ -17,6 +18,7 @@ import {
   isRecordPath,
   NAV_ITEMS,
   type NavItem,
+  pipelineKeyOf,
   type ShellUser,
   type ShellWorkspace,
 } from '@/lib/navigation.ts';
@@ -60,6 +62,17 @@ function ShellCommandPalette(props: {
   );
 }
 
+function openLeadViewName(
+  workspace: WorkspaceData,
+  pathname: string,
+  viewId: string | null,
+): string | undefined {
+  const key = pipelineKeyOf(pathname);
+  if (viewId === null || key === null) return undefined;
+  const pipelineId = workspace.pipelineByKey.get(key)?.id ?? null;
+  return leadViewsFor(workspace.savedViews, pipelineId).find((view) => view.id === viewId)?.name;
+}
+
 export function AppShell({
   workspace,
   user,
@@ -68,6 +81,7 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const pathname = usePathname();
+  const openViewId = useSearchParams().get('view');
   const isDesktop = useMediaQuery(DESKTOP_QUERY, true);
   const isWide = useMediaQuery(WIDE_QUERY, true);
   const [collapsePreference, setCollapsePreference] = useState<boolean | null>(null);
@@ -88,9 +102,10 @@ export function AppShell({
           ? undefined
           : { brandName: brand.name, pipelineName: pipeline.name };
       },
+      viewName: openLeadViewName(shellWorkspace, pathname, openViewId),
     };
     return breadcrumbsFor(pathname, lookup);
-  }, [pathname, shellWorkspace]);
+  }, [pathname, shellWorkspace, openViewId]);
 
   const toggleSidebar = useCallback(() => {
     if (isDesktop) setCollapsePreference(!collapsed);

@@ -69,6 +69,7 @@ export interface BreadcrumbLookup {
   readonly pipeline?: (
     key: string,
   ) => { readonly brandName: string; readonly pipelineName: string } | undefined;
+  readonly viewName?: string | undefined;
 }
 
 export function breadcrumbsFor(pathname: string, lookup: BreadcrumbLookup = {}): Breadcrumb[] {
@@ -79,6 +80,14 @@ export function breadcrumbsFor(pathname: string, lookup: BreadcrumbLookup = {}):
   if (item.id === 'leads') {
     const key = page.toUpperCase();
     const found = lookup.pipeline?.(key);
+    if (found !== undefined && lookup.viewName !== undefined) {
+      return [
+        { label: item.label, href: item.href },
+        { label: found.brandName },
+        { label: found.pipelineName, href: leadsHref(key) },
+        { label: lookup.viewName },
+      ];
+    }
     if (found !== undefined) {
       return [
         { label: item.label, href: item.href },

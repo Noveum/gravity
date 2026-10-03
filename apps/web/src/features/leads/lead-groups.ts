@@ -91,7 +91,8 @@ export function adjacentStage(
 ): StageRow | undefined {
   const ordered = liveStages(stages);
   const index = ordered.findIndex((stage) => stage.id === stageId);
-  return index === -1 ? undefined : ordered[index + direction];
+  if (index === -1) return direction === -1 ? ordered.at(-1) : undefined;
+  return ordered[index + direction];
 }
 
 export function selectionTargets(

@@ -65,6 +65,12 @@ describe('breadcrumbsFor with a pipeline lookup', () => {
       { label: 'Yodu' },
       { label: 'Prospecting' },
     ]);
+    expect(breadcrumbsFor('/leads/YOD', { ...lookup, viewName: 'Hot leads' })).toEqual([
+      { label: 'Leads', href: '/leads' },
+      { label: 'Yodu' },
+      { label: 'Prospecting', href: '/leads/YOD' },
+      { label: 'Hot leads' },
+    ]);
     expect(breadcrumbsFor('/leads/NOPE', lookup)).toEqual([
       { label: 'Leads', href: '/leads' },
       { label: 'NOPE' },

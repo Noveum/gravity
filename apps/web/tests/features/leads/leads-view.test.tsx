@@ -1,15 +1,22 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import {
+  emptyFilterGroup,
+  encodeFilter,
+  inCondition,
+  replaceCondition,
+} from '@gravity/shared/filters';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { restoreModulesAfterThisFile } from '../../../tests-support.ts';
 import { stubLayoutSize } from '../../support/layout-size.ts';
 import { leadFixture } from '../../support/lead-fixture.ts';
-import { mockNavigation } from '../../support/navigation.ts';
+import { mockNavigation, watchHistoryReplace } from '../../support/navigation.ts';
 import { renderWithClient } from '../../support/render.tsx';
 import { setViewport } from '../../support/viewport.ts';
 
 await restoreModulesAfterThisFile(['next/navigation']);
-mockNavigation('/leads/YOD');
+const navigation = mockNavigation('/leads/YOD');
+const replaced = watchHistoryReplace(navigation);
 stubLayoutSize(1200, 800);
 
 const { LeadsView } = await import('@/features/leads/leads-view.tsx');
@@ -18,7 +25,10 @@ const { ContextPanel } = await import('@/components/layout/context-panel.tsx');
 const { placeLead, removeLead } = await import('@/lib/query/lead-cache.ts');
 
 const realFetch = globalThis.fetch;
-beforeEach(() => setViewport(true));
+beforeEach(() => {
+  setViewport(true);
+  navigation.search = '';
+});
 afterEach(() => {
   globalThis.fetch = realFetch;
 });
@@ -219,5 +229,42 @@ describe('LeadsView live updates', () => {
     if (second === undefined) throw new Error('fixture lead');
     act(() => placeLead(client, { ...second, syncId: 40 }));
     expect(await screen.findByTestId('lead-row-YOD-2')).not.toHaveAttribute('data-selected');
+  });
+});
+
+describe('LeadsView filters', () => {
+  test('the toolbar stays reachable when nothing matches, and Shift+F clears', async () => {
+    const filter = replaceCondition(emptyFilterGroup(), inCondition('stage', ['ready']));
+    navigation.search = new URLSearchParams({ filter: encodeFilter(filter), q: 'ada' }).toString();
+    serve(200, { leads: [], nextCursor: null });
+    renderView();
+    expect(await screen.findByText('No leads match these filters.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Press Shift+F to clear them, or change the filters above.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Filter' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search this list' })).toHaveValue('ada');
+    expect(screen.getByText('Stage is Ready')).toBeInTheDocument();
+    await userEvent.keyboard('{Shift>}F{/Shift}');
+    expect(replaced).toHaveBeenLastCalledWith('/leads/YOD');
+  });
+
+  test('the list asks the server for the filter and the search term', async () => {
+    const filter = replaceCondition(emptyFilterGroup(), inCondition('owner', ['me']));
+    navigation.search = new URLSearchParams({ filter: encodeFilter(filter), q: 'ada' }).toString();
+    serve(200, {
+      leads: [leadFixture({ id: 'l1', key: 'YOD-1', personName: 'Ada Lovelace' })],
+      nextCursor: null,
+    });
+    renderView();
+    await screen.findByTestId('lead-row-YOD-1');
+    const calls = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const listCall = calls
+      .map((call) => String(call[0]))
+      .find((url) => url.startsWith('/api/leads?'));
+    const params = new URLSearchParams(listCall?.split('?')[1] ?? '');
+    expect(params.get('q')).toBe('ada');
+    expect(params.get('filter')).toBe(encodeFilter(filter));
+    expect(params.get('pipelineId')).toBe('p1');
   });
 });

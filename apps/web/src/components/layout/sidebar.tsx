@@ -16,6 +16,7 @@ import {
 import { NavItem } from './nav-item.tsx';
 import { SidebarBrands } from './sidebar-brands.tsx';
 import { SidebarSection } from './sidebar-section.tsx';
+import { SidebarViews } from './sidebar-views.tsx';
 import { WorkspaceSwitcher } from './workspace-switcher.tsx';
 
 export interface SidebarProps {
@@ -123,6 +124,7 @@ export function Sidebar({
               <SidebarSection title="Work">{WORK_ITEMS.map(renderItem)}</SidebarSection>
               <SidebarSection title="Records">{RECORD_ITEMS.map(renderItem)}</SidebarSection>
               <SidebarBrands collapsed={false} touch={touch} onNavigate={onNavigate} />
+              <SidebarViews collapsed={false} touch={touch} onNavigate={onNavigate} />
             </>
           )}
         </nav>

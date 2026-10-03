@@ -19,4 +19,15 @@ describe('relativeTime', () => {
     expect(relativeTime(new Date('2026-04-22T12:00:00.000Z'), now)).toBe('3mo ago');
     expect(relativeTime(new Date('2024-07-22T12:00:00.000Z'), now)).toBe('2y ago');
   });
+
+  test('reports future moments without calling them past', () => {
+    expect(relativeTime(new Date('2026-07-22T12:00:10.000Z'), now)).toBe('in a moment');
+    expect(relativeTime(new Date('2026-07-22T12:30:00.000Z'), now)).toBe('in 30m');
+    expect(relativeTime(new Date('2026-07-22T15:00:00.000Z'), now)).toBe('in 3h');
+    expect(relativeTime(new Date('2026-07-23T12:00:00.000Z'), now)).toBe('tomorrow');
+    expect(relativeTime(new Date('2026-07-25T12:00:00.000Z'), now)).toBe('in 3d');
+    expect(relativeTime(new Date('2026-08-12T12:00:00.000Z'), now)).toBe('in 3w');
+    expect(relativeTime(new Date('2026-10-22T12:00:00.000Z'), now)).toBe('in 3mo');
+    expect(relativeTime(new Date('2028-07-22T12:00:00.000Z'), now)).toBe('in 2y');
+  });
 });

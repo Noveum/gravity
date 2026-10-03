@@ -1,4 +1,3 @@
-import { decodeListQuery } from '@gravity/shared/filters';
 import { HydrationBoundary } from '@tanstack/react-query';
 import { LeadsView } from '@/features/leads/leads-view.tsx';
 import { pageContext } from '@/lib/api/handler.ts';
@@ -18,7 +17,7 @@ export default async function PipelineLeadsPage({ params, searchParams }: PagePr
       typeof value === 'string' ? [[name, value]] : [],
     ),
   ).toString();
-  const state = await dehydratedLeads(context, key, decodeListQuery(search));
+  const state = await dehydratedLeads(context, key, search);
   return (
     <HydrationBoundary state={state}>
       <LeadsView pipelineKey={key.toUpperCase()} />

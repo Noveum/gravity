@@ -1,17 +1,16 @@
 'use client';
 
 import {
-  decodeListQuery,
   encodeFilter,
   type FilterGroup,
   type FilterRegistry,
   isEmptyFilter,
   type ListQuery,
-  pruneFilter,
 } from '@gravity/shared/filters';
 import type { SavedViewRow } from '@gravity/shared/records';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { resolveListQuery, safeFilter } from './list-query.ts';
 
 export interface ListQueryState {
   readonly query: ListQuery;
@@ -27,50 +26,74 @@ export function useListQuery<T>(
   registry: FilterRegistry<T>,
   savedViews: readonly SavedViewRow[],
 ): ListQueryState {
-  const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const raw = params.toString();
   const viewId = params.get('view');
+  const latest = useRef(raw);
 
-  const query = useMemo<ListQuery>(() => {
-    const current = new URLSearchParams(raw);
-    const decoded = decodeListQuery(raw);
-    const view = savedViews.find((entry) => entry.id === current.get('view'));
-    const filter = current.has('filter') || view === undefined ? decoded.filter : view.filter;
-    return { filter: pruneFilter(filter, registry), q: decoded.q };
-  }, [raw, savedViews, registry]);
+  useEffect(() => {
+    latest.current = raw;
+  }, [raw]);
+
+  const query = useMemo(
+    () => resolveListQuery(raw, savedViews, registry),
+    [raw, savedViews, registry],
+  );
 
   const write = useCallback(
     (edit: (search: URLSearchParams) => void) => {
-      const search = new URLSearchParams(raw);
+      const search = new URLSearchParams(latest.current);
       edit(search);
       const next = search.toString();
-      router.replace(next.length === 0 ? pathname : `${pathname}?${next}`, { scroll: false });
+      latest.current = next;
+      window.history.replaceState(null, '', next.length === 0 ? pathname : `${pathname}?${next}`);
     },
-    [raw, router, pathname],
+    [pathname],
+  );
+
+  const setFilter = useCallback(
+    (filter: FilterGroup) =>
+      write((search) => {
+        const encoded = encodeFilter(safeFilter(filter, registry));
+        if (encoded.length === 0 && !search.has('view')) search.delete('filter');
+        else search.set('filter', encoded);
+      }),
+    [write, registry],
+  );
+  const setQ = useCallback(
+    (q: string) =>
+      write((search) => {
+        if (q.trim().length === 0) search.delete('q');
+        else search.set('q', q.trim());
+      }),
+    [write],
+  );
+  const clear = useCallback(
+    () =>
+      write((search) => {
+        search.delete('filter');
+        search.delete('q');
+        search.delete('view');
+      }),
+    [write],
+  );
+  const openView = useCallback(
+    (view: SavedViewRow) =>
+      write((search) => {
+        search.delete('filter');
+        search.set('view', view.id);
+      }),
+    [write],
   );
 
   return {
     query,
     viewId,
     hasFilter: !isEmptyFilter(query.filter) || query.q.length > 0,
-    setFilter: (filter) => write((search) => search.set('filter', encodeFilter(filter))),
-    setQ: (q) =>
-      write((search) => {
-        if (q.trim().length === 0) search.delete('q');
-        else search.set('q', q.trim());
-      }),
-    clear: () =>
-      write((search) => {
-        search.delete('filter');
-        search.delete('q');
-        search.delete('view');
-      }),
-    openView: (view) =>
-      write((search) => {
-        search.delete('filter');
-        search.set('view', view.id);
-      }),
+    setFilter,
+    setQ,
+    clear,
+    openView,
   };
 }

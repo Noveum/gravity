@@ -1,0 +1,104 @@
+import { afterEach, describe, expect, it } from 'bun:test';
+import { configuredRealtimeUrl, resolveRealtimeUrl } from '../../../src/lib/realtime/url.ts';
+
+describe('resolveRealtimeUrl', () => {
+  it('honours a configured url while the page is served locally', () => {
+    expect(resolveRealtimeUrl('ws://localhost:3400', 'http://localhost:3300')).toBe(
+      'ws://localhost:3400/api/ws',
+    );
+  });
+
+  it('keeps a path the configured url already carries', () => {
+    expect(resolveRealtimeUrl('ws://localhost:3400/custom', 'http://localhost:3300')).toBe(
+      'ws://localhost:3400/custom',
+    );
+  });
+
+  it('ignores a configured url once the page is served from a deployed origin', () => {
+    expect(resolveRealtimeUrl('ws://localhost:3400', 'https://gravity.example')).toBe(
+      'wss://gravity.example/api/ws',
+    );
+  });
+
+  it('treats a loopback address as local too', () => {
+    expect(resolveRealtimeUrl('ws://localhost:3400', 'http://127.0.0.1:3300')).toBe(
+      'ws://localhost:3400/api/ws',
+    );
+  });
+
+  it('treats the whole 127.0.0.0/8 range as loopback', () => {
+    expect(resolveRealtimeUrl('ws://localhost:3400', 'http://127.0.0.2:3300')).toBe(
+      'ws://localhost:3400/api/ws',
+    );
+    expect(resolveRealtimeUrl('ws://localhost:3400', 'http://127.255.255.254:3300')).toBe(
+      'ws://localhost:3400/api/ws',
+    );
+  });
+
+  it('treats the IPv6 loopback as local', () => {
+    expect(resolveRealtimeUrl('ws://localhost:3400', 'http://[::1]:3300')).toBe(
+      'ws://localhost:3400/api/ws',
+    );
+  });
+
+  it('does not mistake a hostname that merely looks like loopback for the real thing', () => {
+    expect(resolveRealtimeUrl('ws://localhost:3400', 'https://127.0.0.1.gravity.example')).toBe(
+      'wss://127.0.0.1.gravity.example/api/ws',
+    );
+    expect(resolveRealtimeUrl('ws://localhost:3400', 'https://localhost.gravity.example')).toBe(
+      'wss://localhost.gravity.example/api/ws',
+    );
+  });
+
+  it('falls back to the same origin over tls', () => {
+    expect(resolveRealtimeUrl('', 'https://gravity.example')).toBe('wss://gravity.example/api/ws');
+  });
+
+  it('keeps plain websockets on an insecure origin', () => {
+    expect(resolveRealtimeUrl('', 'http://localhost:3300')).toBe('ws://localhost:3300/api/ws');
+  });
+
+  it('preserves a port on the same origin', () => {
+    expect(resolveRealtimeUrl('', 'https://gravity.example:8443')).toBe(
+      'wss://gravity.example:8443/api/ws',
+    );
+  });
+
+  it('returns nothing when there is no origin to resolve against', () => {
+    expect(resolveRealtimeUrl('', '')).toBe('');
+  });
+});
+
+describe('configuredRealtimeUrl', () => {
+  const key = 'NEXT_PUBLIC_REALTIME_URL';
+  const saved = process.env[key];
+  const env = process.env as Record<string, string | undefined>;
+  const savedMode = env['NODE_ENV'];
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env[key];
+    else process.env[key] = saved;
+    env['NODE_ENV'] = savedMode;
+  });
+
+  it('keeps a websocket url', () => {
+    process.env[key] = 'wss://gravity.example/api/ws';
+    expect(configuredRealtimeUrl()).toBe('wss://gravity.example/api/ws');
+  });
+
+  it('ignores a configured url in production so the socket always follows the app origin', () => {
+    env['NODE_ENV'] = 'production';
+    process.env[key] = 'wss://realtime.gravity.example';
+    expect(configuredRealtimeUrl()).toBe('');
+  });
+
+  it('falls back to the same origin when the url is not a websocket', () => {
+    process.env[key] = 'https://gravity.example/api/ws';
+    expect(configuredRealtimeUrl()).toBe('');
+  });
+
+  it('falls back to the same origin when the url is malformed', () => {
+    process.env[key] = 'not a url';
+    expect(configuredRealtimeUrl()).toBe('');
+  });
+});

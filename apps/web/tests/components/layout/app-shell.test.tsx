@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { restoreModulesAfterThisFile } from '../../../tests-support.ts';
 
-await restoreModulesAfterThisFile(['next/navigation']);
+await restoreModulesAfterThisFile(['next/navigation', '@/lib/realtime/ticket.ts']);
+
+const ticketRequests: string[] = [];
+mock.module('@/lib/realtime/ticket.ts', () => ({
+  fetchRealtimeTicket: (organizationId: string) => {
+    ticketRequests.push(organizationId);
+    return new Promise<string>(() => undefined);
+  },
+}));
 
 const push = mock<(href: string) => void>();
 let pathname = '/today';
@@ -24,6 +32,7 @@ function renderShell() {
       <AppShell
         workspace={{ id: 'w1', name: 'Acme Studio', slug: 'acme-studio' }}
         user={{ id: 'u1', name: 'Ada Lovelace', email: 'ada@acme.test' }}
+        realtimeUrl=""
       >
         <p>Page body</p>
       </AppShell>
@@ -137,12 +146,19 @@ describe('AppShell', () => {
     expect(aside?.className).toContain('w-[var(--sidebar-width-collapsed)]');
   });
 
+  test('opens the live connection for the current workspace', async () => {
+    ticketRequests.length = 0;
+    renderShell();
+    await waitFor(() => expect(ticketRequests).toEqual(['w1']));
+  });
+
   test('chords are ignored while typing in a field', async () => {
     render(
       <Providers>
         <AppShell
           workspace={{ id: 'w1', name: 'Acme Studio', slug: 'acme-studio' }}
           user={{ id: 'u1', name: 'Ada Lovelace', email: 'ada@acme.test' }}
+          realtimeUrl=""
         >
           <input aria-label="Note" />
         </AppShell>

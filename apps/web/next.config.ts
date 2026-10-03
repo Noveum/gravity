@@ -6,7 +6,14 @@ import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 const appDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(appDirectory, '..', '..');
 
-const workspacePackages = ['@gravity/shared', '@gravity/db', '@gravity/core', '@gravity/services'];
+const workspacePackages = [
+  '@gravity/shared',
+  '@gravity/db',
+  '@gravity/core',
+  '@gravity/services',
+  '@gravity/realtime-client',
+  '@gravity/realtime-server',
+];
 
 const devServerOnlyBundledPackages = ['@react-email/render', '@react-email/components', 'prettier'];
 

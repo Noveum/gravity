@@ -1,0 +1,541 @@
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { randomBytes } from 'node:crypto';
+import { scopes } from '@gravity/shared/events';
+import { signRealtimeTicket } from '@gravity/shared/events/ticket';
+import { connect, type Socket } from 'bun';
+import type { Redis } from 'ioredis';
+import { createRealtimeServer, type RealtimeServer } from '../src/server.ts';
+import {
+  cleanupFixtures,
+  connectClient,
+  connectWithTicket,
+  createMember,
+  createOrganization,
+  createPublisher,
+  delay,
+  maskedTextFrame,
+  redisUrl,
+  type SeedMember,
+  syncAction,
+  ticketFor,
+  ticketSecret,
+} from '../src/test-helpers.ts';
+
+const BATCH_WINDOW_MS = 80;
+const DELTA_CHANNEL = 'gravity:delta';
+
+let server: RealtimeServer;
+let publisher: Redis;
+let orgA = '';
+let orgB = '';
+let alice: SeedMember;
+let dave: SeedMember;
+let bob: SeedMember;
+let carol: SeedMember;
+
+beforeAll(async () => {
+  orgA = await createOrganization();
+  orgB = await createOrganization();
+  alice = await createMember({ organizationId: orgA });
+  dave = await createMember({ organizationId: orgA });
+  bob = await createMember({ organizationId: orgA });
+  carol = await createMember({ organizationId: orgB });
+  publisher = createPublisher();
+  server = await createRealtimeServer({
+    redisUrl: redisUrl(),
+    batchWindowMs: BATCH_WINDOW_MS,
+  });
+});
+
+afterAll(async () => {
+  await server.close();
+  publisher.disconnect();
+  await cleanupFixtures();
+});
+
+async function publish(action: ReturnType<typeof syncAction>): Promise<void> {
+  await publisher.publish(DELTA_CHANNEL, JSON.stringify(action));
+}
+
+const HANDSHAKE_TIMEOUT_MS = 5_000;
+const HANDSHAKE_SETTLE_MS = 25;
+
+async function connectSilently(port: number, member: SeedMember): Promise<Socket<undefined>> {
+  let markUpgraded: (() => void) | undefined;
+  let failUpgrade: ((error: Error) => void) | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let received = '';
+  const upgraded = new Promise<void>((resolve, reject) => {
+    markUpgraded = resolve;
+    failUpgrade = reject;
+    timer = setTimeout(
+      () => reject(new Error('timed out upgrading raw socket')),
+      HANDSHAKE_TIMEOUT_MS,
+    );
+  });
+
+  const socket = await connect({
+    hostname: '127.0.0.1',
+    port,
+    socket: {
+      data(_socket, chunk: Buffer) {
+        received += chunk.toString('latin1');
+        const end = received.indexOf('\r\n\r\n');
+        if (end === -1) return;
+        const status = received.slice(0, received.indexOf('\r\n'));
+        if (status.startsWith('HTTP/1.1 101')) {
+          markUpgraded?.();
+          return;
+        }
+        failUpgrade?.(new Error(`raw socket did not upgrade: ${status}`));
+      },
+      close() {
+        failUpgrade?.(new Error('raw socket closed before upgrading'));
+      },
+      error(_socket, error: Error) {
+        failUpgrade?.(error);
+      },
+    },
+  });
+
+  socket.write(
+    [
+      'GET /api/ws HTTP/1.1',
+      `Host: 127.0.0.1:${port}`,
+      'Upgrade: websocket',
+      'Connection: Upgrade',
+      `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`,
+      'Sec-WebSocket-Version: 13',
+      '',
+      '',
+    ].join('\r\n'),
+  );
+
+  try {
+    await upgraded;
+  } finally {
+    clearTimeout(timer);
+  }
+  socket.write(maskedTextFrame(JSON.stringify({ type: 'auth', ticket: ticketFor(member) })));
+  await delay(HANDSHAKE_SETTLE_MS);
+  return socket;
+}
+
+describe('fan-out', () => {
+  it('delivers a delta only to connections subscribed to the scope', async () => {
+    const subscribed = await connectClient(server.port, alice);
+    await subscribed.waitFor('ready');
+    subscribed.send({ type: 'subscribe', scopes: [scopes.workspace(orgA)] });
+    await subscribed.waitFor('subscribed');
+
+    const other = await connectClient(server.port, bob);
+    await other.waitFor('ready');
+    other.send({ type: 'subscribe', scopes: [scopes.user(bob.userId)] });
+    await other.waitFor('subscribed');
+
+    await publish(
+      syncAction({
+        organizationId: orgA,
+        scopes: [scopes.workspace(orgA)],
+        modelId: 'person_fanout',
+        syncId: 10,
+      }),
+    );
+
+    const delta = await subscribed.waitFor('delta');
+    expect(delta.actions.map((action) => action.modelId)).toEqual(['person_fanout']);
+    await delay(BATCH_WINDOW_MS * 3);
+    expect(other.messages.some((message) => message.type === 'delta')).toBe(false);
+
+    subscribed.close();
+    other.close();
+  });
+
+  it('never delivers a delta from another organization', async () => {
+    const client = await connectClient(server.port, carol);
+    await client.waitFor('ready');
+    client.send({ type: 'subscribe', scopes: [scopes.workspace(orgB)] });
+    await client.waitFor('subscribed');
+
+    await publish(
+      syncAction({
+        organizationId: orgA,
+        scopes: [scopes.workspace(orgB)],
+        modelId: 'person_cross_org',
+        syncId: 11,
+      }),
+    );
+
+    await delay(BATCH_WINDOW_MS * 3);
+    expect(client.messages.some((message) => message.type === 'delta')).toBe(false);
+    client.close();
+  });
+
+  it('batches rapid actions into one delta and collapses duplicates', async () => {
+    const client = await connectClient(server.port, alice);
+    await client.waitFor('ready');
+    client.send({ type: 'subscribe', scopes: [scopes.workspace(orgA)] });
+    await client.waitFor('subscribed');
+
+    const targets = ['person_a', 'person_b', 'person_c', 'person_a', 'person_d'];
+    let syncId = 100;
+    for (const modelId of targets) {
+      syncId += 1;
+      await publish(
+        syncAction({ organizationId: orgA, scopes: [scopes.workspace(orgA)], modelId, syncId }),
+      );
+    }
+
+    const delta = await client.waitFor('delta');
+    await delay(BATCH_WINDOW_MS * 3);
+
+    const deltas = client.messages.filter((message) => message.type === 'delta');
+    expect(deltas).toHaveLength(1);
+    expect(delta.actions.map((action) => action.modelId)).toEqual([
+      'person_b',
+      'person_c',
+      'person_a',
+      'person_d',
+    ]);
+    expect(delta.actions.map((action) => action.syncId)).toEqual([102, 103, 104, 105]);
+    client.close();
+  });
+});
+
+describe('multi tab and multi tenant fan-out', () => {
+  it('delivers the same delta to both tabs of one user exactly once each', async () => {
+    const tabOne = await connectClient(server.port, alice);
+    const tabTwo = await connectClient(server.port, alice);
+    await tabOne.waitFor('ready');
+    await tabTwo.waitFor('ready');
+    tabOne.send({ type: 'subscribe', scopes: [scopes.workspace(orgA)] });
+    tabTwo.send({ type: 'subscribe', scopes: [scopes.workspace(orgA)] });
+    await tabOne.waitFor('subscribed');
+    await tabTwo.waitFor('subscribed');
+
+    await publish(
+      syncAction({
+        organizationId: orgA,
+        scopes: [scopes.workspace(orgA)],
+        modelId: 'person_two_tabs',
+        syncId: 400,
+      }),
+    );
+
+    await tabOne.waitFor('delta');
+    await tabTwo.waitFor('delta');
+    await delay(BATCH_WINDOW_MS * 3);
+
+    for (const tab of [tabOne, tabTwo]) {
+      const actions = tab.messages
+        .filter((message) => message.type === 'delta')
+        .flatMap((message) => message.actions)
+        .filter((action) => action.modelId === 'person_two_tabs');
+      expect(actions).toHaveLength(1);
+    }
+
+    tabOne.close();
+    tabTwo.close();
+  });
+
+  it('keeps two organizations apart even when both subscribe at the same moment', async () => {
+    const inside = await connectClient(server.port, alice);
+    const outside = await connectClient(server.port, carol);
+    await inside.waitFor('ready');
+    await outside.waitFor('ready');
+    inside.send({ type: 'subscribe', scopes: [scopes.workspace(orgA), scopes.user(alice.userId)] });
+    outside.send({ type: 'subscribe', scopes: [scopes.workspace(orgB), scopes.workspace(orgA)] });
+    await inside.waitFor('subscribed');
+    const outsideScopes = await outside.waitFor('subscribed');
+    expect(outsideScopes.scopes).toEqual([scopes.workspace(orgB)]);
+    expect(outsideScopes.denied).toEqual([scopes.workspace(orgA)]);
+
+    await publish(
+      syncAction({
+        organizationId: orgA,
+        scopes: [scopes.workspace(orgA)],
+        modelId: 'person_tenant_a',
+        syncId: 410,
+      }),
+    );
+    await publish(
+      syncAction({
+        organizationId: orgB,
+        scopes: [scopes.workspace(orgB)],
+        modelId: 'person_tenant_b',
+        syncId: 411,
+      }),
+    );
+
+    await inside.waitFor('delta');
+    await outside.waitFor('delta');
+    await delay(BATCH_WINDOW_MS * 3);
+
+    const insideIds = inside.messages
+      .filter((message) => message.type === 'delta')
+      .flatMap((message) => message.actions.map((action) => action.modelId));
+    const outsideIds = outside.messages
+      .filter((message) => message.type === 'delta')
+      .flatMap((message) => message.actions.map((action) => action.modelId));
+
+    expect(insideIds).toContain('person_tenant_a');
+    expect(insideIds).not.toContain('person_tenant_b');
+    expect(outsideIds).toContain('person_tenant_b');
+    expect(outsideIds).not.toContain('person_tenant_a');
+
+    inside.close();
+    outside.close();
+  });
+});
+
+describe('authorization', () => {
+  it('rejects an expired session with 4001', async () => {
+    const expired = await createMember({
+      organizationId: orgA,
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+    const client = await connectClient(server.port, expired);
+    expect(await client.waitForClose()).toBe(4001);
+  });
+
+  it('rejects a forged ticket with 4001', async () => {
+    const client = await connectWithTicket(server.port, 'forged.ticket');
+    expect(await client.waitForClose()).toBe(4001);
+  });
+
+  it('rejects a ticket for a session that no longer exists with 4001', async () => {
+    const client = await connectWithTicket(
+      server.port,
+      signRealtimeTicket(
+        {
+          userId: alice.userId,
+          organizationId: orgA,
+          sessionId: 'session_does_not_exist',
+          exp: Date.now() + 60_000,
+        },
+        ticketSecret(),
+      ),
+    );
+    expect(await client.waitForClose()).toBe(4001);
+  });
+
+  it('drops scopes for workspaces, users and records the connection may not read', async () => {
+    const client = await connectClient(server.port, alice);
+    await client.waitFor('ready');
+    client.send({
+      type: 'subscribe',
+      scopes: [
+        scopes.workspace(orgA),
+        scopes.workspace(orgB),
+        scopes.user(alice.userId),
+        scopes.user(bob.userId),
+        scopes.brand('brand_1'),
+        'team:legacy',
+        'nonsense',
+      ],
+    });
+    const subscribed = await client.waitFor('subscribed');
+    expect([...subscribed.scopes].sort()).toEqual(
+      [scopes.workspace(orgA), scopes.user(alice.userId)].sort(),
+    );
+    client.close();
+  });
+
+  it('never fans out to a connection whose subscription was refused', async () => {
+    const client = await connectClient(server.port, carol);
+    await client.waitFor('ready');
+    client.send({ type: 'subscribe', scopes: [scopes.workspace(orgA)] });
+    expect((await client.waitFor('subscribed')).scopes).toEqual([]);
+
+    await publish(
+      syncAction({
+        organizationId: orgA,
+        scopes: [scopes.workspace(orgA)],
+        modelId: 'person_refused',
+        syncId: 200,
+      }),
+    );
+    await delay(BATCH_WINDOW_MS * 3);
+    expect(client.messages.some((message) => message.type === 'delta')).toBe(false);
+    client.close();
+  });
+});
+
+describe('protocol', () => {
+  it('answers a ping with a pong', async () => {
+    const client = await connectClient(server.port, alice);
+    await client.waitFor('ready');
+    client.send({ type: 'ping' });
+    expect(await client.waitFor('pong')).toMatchObject({ type: 'pong' });
+    client.close();
+  });
+
+  it('unsubscribes and stops receiving deltas', async () => {
+    const client = await connectClient(server.port, alice);
+    await client.waitFor('ready');
+    client.send({ type: 'subscribe', scopes: [scopes.workspace(orgA)] });
+    await client.waitFor('subscribed', (message) => message.scopes.length === 1);
+    client.send({ type: 'unsubscribe', scopes: [scopes.workspace(orgA)] });
+    await client.waitFor('subscribed', (message) => message.scopes.length === 0);
+
+    await publish(
+      syncAction({
+        organizationId: orgA,
+        scopes: [scopes.workspace(orgA)],
+        modelId: 'person_after_unsubscribe',
+        syncId: 300,
+      }),
+    );
+    await delay(BATCH_WINDOW_MS * 3);
+    expect(client.messages.some((message) => message.type === 'delta')).toBe(false);
+    client.close();
+  });
+
+  it('reports an invalid message without closing the socket', async () => {
+    const client = await connectClient(server.port, alice);
+    await client.waitFor('ready');
+    client.socket.send('not json');
+    expect(await client.waitFor('error')).toMatchObject({ code: 'invalid_message' });
+    client.close();
+  });
+
+  it('throttles a connection that floods the socket, once, without closing it', async () => {
+    const strict = await createRealtimeServer({
+      redisUrl: redisUrl(),
+      messageBurst: 3,
+      messagesPerSecond: 0,
+    });
+    try {
+      const client = await connectClient(strict.port, alice);
+      await client.waitFor('ready');
+      for (let index = 0; index < 12; index += 1) client.send({ type: 'ping' });
+
+      const throttled = await client.waitFor('error');
+      expect(throttled).toMatchObject({ code: 'rate_limited' });
+      await delay(150);
+
+      expect(client.messages.filter((message) => message.type === 'pong')).toHaveLength(3);
+      expect(
+        client.messages.filter(
+          (message) => message.type === 'error' && message.code === 'rate_limited',
+        ),
+      ).toHaveLength(1);
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+      client.close();
+    } finally {
+      await strict.close();
+    }
+  });
+
+  it('answers liveness and readiness without disclosing internals', async () => {
+    for (const path of ['/livez', '/readyz', '/health']) {
+      const response = await fetch(`http://127.0.0.1:${server.port}${path}`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ status: 'ok' });
+    }
+  });
+
+  it('refuses an upgrade on any path other than the realtime path', async () => {
+    const response = await fetch(`http://127.0.0.1:${server.port}/`, {
+      headers: { connection: 'Upgrade', upgrade: 'websocket' },
+    });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ status: 'not_found' });
+  });
+});
+
+describe('presence', () => {
+  it('broadcasts to others in the scope but not to the sender', async () => {
+    const sender = await connectClient(server.port, alice);
+    await sender.waitFor('ready');
+    sender.send({ type: 'subscribe', scopes: [scopes.workspace(orgA)] });
+    await sender.waitFor('subscribed');
+
+    const watcher = await connectClient(server.port, dave);
+    await watcher.waitFor('ready');
+    watcher.send({ type: 'subscribe', scopes: [scopes.workspace(orgA)] });
+    await watcher.waitFor('subscribed');
+
+    const bystander = await connectClient(server.port, bob);
+    await bystander.waitFor('ready');
+    bystander.send({ type: 'subscribe', scopes: [scopes.user(bob.userId)] });
+    await bystander.waitFor('subscribed');
+
+    sender.send({ type: 'presence', scope: scopes.workspace(orgA), kind: 'typing' });
+
+    const received = await watcher.waitFor('presence');
+    expect(received.messages[0]).toMatchObject({
+      userId: alice.userId,
+      kind: 'typing',
+      scope: scopes.workspace(orgA),
+      organizationId: orgA,
+    });
+    await delay(BATCH_WINDOW_MS * 3);
+    expect(sender.messages.some((message) => message.type === 'presence')).toBe(false);
+    expect(bystander.messages.some((message) => message.type === 'presence')).toBe(false);
+
+    sender.close();
+    watcher.close();
+    bystander.close();
+  });
+
+  it('refuses presence on a scope the connection cannot access', async () => {
+    const client = await connectClient(server.port, carol);
+    await client.waitFor('ready');
+    client.send({ type: 'presence', scope: scopes.workspace(orgA), kind: 'viewing' });
+    expect(await client.waitFor('error')).toMatchObject({ code: 'forbidden_scope' });
+    client.close();
+  });
+
+  it('replays a live viewer to a joiner and withholds one that outlived the ttl', async () => {
+    const shortLived = await createRealtimeServer({ redisUrl: redisUrl(), presenceTtlMs: 120 });
+    try {
+      const viewer = await connectClient(shortLived.port, alice);
+      await viewer.waitFor('ready');
+      viewer.send({ type: 'presence', scope: scopes.workspace(orgA), kind: 'viewing' });
+
+      const joiner = await connectClient(shortLived.port, dave);
+      await joiner.waitFor('ready');
+      joiner.send({ type: 'subscribe', scopes: [scopes.workspace(orgA)] });
+      const replayed = await joiner.waitFor('presence');
+      expect(replayed.messages.map((message) => message.userId)).toEqual([alice.userId]);
+
+      await delay(200);
+      const late = await connectClient(shortLived.port, bob);
+      await late.waitFor('ready');
+      late.send({ type: 'subscribe', scopes: [scopes.workspace(orgA)] });
+      await late.waitFor('subscribed');
+      await delay(50);
+      expect(late.messages.some((message) => message.type === 'presence')).toBe(false);
+
+      viewer.close();
+      joiner.close();
+      late.close();
+    } finally {
+      await shortLived.close();
+    }
+  });
+});
+
+describe('liveness', () => {
+  it('terminates a connection that stops answering heartbeats', async () => {
+    const strict = await createRealtimeServer({
+      redisUrl: redisUrl(),
+      heartbeatIntervalMs: 25,
+      heartbeatTimeoutMs: 150,
+    });
+    try {
+      const silent = await connectSilently(strict.port, alice);
+      const authorizedBy = Date.now() + 3_000;
+      while (strict.stats().connections === 0) {
+        if (Date.now() > authorizedBy) throw new Error('silent socket never authenticated');
+        await delay(10);
+      }
+      await delay(600);
+      expect(strict.stats().connections).toBe(0);
+      silent.end();
+    } finally {
+      await strict.close();
+    }
+  });
+});

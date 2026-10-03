@@ -2,7 +2,7 @@
 
 import { ORG_ROLES, type OrgRole } from '@gravity/shared/constants';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { Avatar } from '@/components/ui/avatar.tsx';
 import { Badge } from '@/components/ui/badge.tsx';
@@ -18,6 +18,7 @@ import {
 import { apiFetch, messageOf } from '@/lib/api/client.ts';
 import { cn } from '@/lib/cn.ts';
 import { rowHover } from '@/lib/interaction.ts';
+import { registerDeltaHandler } from '@/lib/realtime/delta-bridge.tsx';
 
 const ROLE_LABELS: Record<OrgRole, string> = {
   admin: 'Admin',
@@ -102,6 +103,16 @@ export function MembersPanel({
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    const refresh = () => router.refresh();
+    const unregisterMember = registerDeltaHandler('member', refresh);
+    const unregisterInvitation = registerDeltaHandler('invitation', refresh);
+    return () => {
+      unregisterMember();
+      unregisterInvitation();
+    };
+  }, [router]);
 
   const inviteRoles = ORG_ROLES.filter((entry) => entry !== 'admin' || canInviteAdmins);
   const inviteRole = inviteRoles.includes(role) ? role : 'member';

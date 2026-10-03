@@ -1,0 +1,38 @@
+import type { PresenceMessage } from '@gravity/shared/events';
+
+interface PresenceEntry {
+  readonly message: PresenceMessage;
+  readonly expiresAt: number;
+}
+
+export class PresenceStore {
+  private readonly byScope = new Map<string, Map<string, PresenceEntry>>();
+
+  constructor(private readonly ttlMs: number) {}
+
+  record(message: PresenceMessage, now = Date.now()): boolean {
+    const expiresAt = Date.parse(message.at) + this.ttlMs;
+    if (!Number.isFinite(expiresAt) || expiresAt <= now) return false;
+    const scope = this.byScope.get(message.scope) ?? new Map<string, PresenceEntry>();
+    scope.set(message.userId, { message, expiresAt });
+    this.byScope.set(message.scope, scope);
+    return true;
+  }
+
+  snapshot(scope: string, now = Date.now()): PresenceMessage[] {
+    const entries = this.byScope.get(scope);
+    if (entries === undefined) return [];
+    return [...entries.values()]
+      .filter((entry) => entry.expiresAt > now)
+      .map((entry) => entry.message);
+  }
+
+  sweep(now = Date.now()): void {
+    for (const [scope, entries] of this.byScope) {
+      for (const [userId, entry] of entries) {
+        if (entry.expiresAt <= now) entries.delete(userId);
+      }
+      if (entries.size === 0) this.byScope.delete(scope);
+    }
+  }
+}

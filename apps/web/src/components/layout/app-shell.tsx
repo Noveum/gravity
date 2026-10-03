@@ -14,6 +14,7 @@ import {
   type ShellUser,
   type ShellWorkspace,
 } from '@/lib/navigation.ts';
+import { WorkspaceRealtime } from '@/lib/realtime/provider.tsx';
 import { DESKTOP_QUERY, useMediaQuery, WIDE_QUERY } from '@/lib/use-media-query.ts';
 import { Sidebar } from './sidebar.tsx';
 import { TopBar } from './top-bar.tsx';
@@ -21,6 +22,7 @@ import { TopBar } from './top-bar.tsx';
 export interface AppShellProps {
   readonly workspace: ShellWorkspace;
   readonly user: ShellUser;
+  readonly realtimeUrl: string;
   readonly children: ReactNode;
 }
 
@@ -33,7 +35,7 @@ function NavChord({ item }: { readonly item: NavItem }) {
   return null;
 }
 
-export function AppShell({ workspace, user, children }: AppShellProps) {
+export function AppShell({ workspace, user, realtimeUrl, children }: AppShellProps) {
   const pathname = usePathname();
   const isDesktop = useMediaQuery(DESKTOP_QUERY, true);
   const isWide = useMediaQuery(WIDE_QUERY, true);
@@ -73,50 +75,52 @@ export function AppShell({ workspace, user, children }: AppShellProps) {
   );
 
   return (
-    <div data-app-shell className="flex h-dvh w-full overflow-hidden bg-bg">
-      {NAV_ITEMS.map((item) => (
-        <NavChord key={item.id} item={item} />
-      ))}
+    <WorkspaceRealtime url={realtimeUrl} userId={user.id} organizationId={workspace.id}>
+      <div data-app-shell className="flex h-dvh w-full overflow-hidden bg-bg">
+        {NAV_ITEMS.map((item) => (
+          <NavChord key={item.id} item={item} />
+        ))}
 
-      <aside
-        className={
-          collapsed
-            ? 'hidden w-[var(--sidebar-width-collapsed)] shrink-0 lg:block'
-            : 'hidden w-[var(--sidebar-width)] shrink-0 lg:block'
-        }
-      >
-        {sidebar(false, null)}
-      </aside>
+        <aside
+          className={
+            collapsed
+              ? 'hidden w-[var(--sidebar-width-collapsed)] shrink-0 lg:block'
+              : 'hidden w-[var(--sidebar-width)] shrink-0 lg:block'
+          }
+        >
+          {sidebar(false, null)}
+        </aside>
 
-      <DialogPrimitive.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className={`${overlayClassName} lg:hidden`} />
-          <DialogPrimitive.Content
-            aria-label="Navigation"
-            aria-describedby={undefined}
-            className="fixed inset-y-0 left-0 z-50 w-[min(20rem,88vw)] outline-none data-[state=closed]:animate-drawer-out data-[state=open]:animate-drawer-in sm:w-[min(17rem,80vw)] lg:hidden"
-          >
-            <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
-            {sidebar(true, () => setDrawerOpen(false))}
-          </DialogPrimitive.Content>
-        </DialogPrimitive.Portal>
-      </DialogPrimitive.Root>
+        <DialogPrimitive.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className={`${overlayClassName} lg:hidden`} />
+            <DialogPrimitive.Content
+              aria-label="Navigation"
+              aria-describedby={undefined}
+              className="fixed inset-y-0 left-0 z-50 w-[min(20rem,88vw)] outline-none data-[state=closed]:animate-drawer-out data-[state=open]:animate-drawer-in sm:w-[min(17rem,80vw)] lg:hidden"
+            >
+              <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
+              {sidebar(true, () => setDrawerOpen(false))}
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar
-          breadcrumbs={breadcrumbs}
-          onOpenDrawer={() => setDrawerOpen(true)}
-          onOpenSearch={() => setPaletteOpen(true)}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TopBar
+            breadcrumbs={breadcrumbs}
+            onOpenDrawer={() => setDrawerOpen(true)}
+            onOpenSearch={() => setPaletteOpen(true)}
+          />
+          <main className="min-h-0 w-full flex-1 overflow-y-auto">{children}</main>
+        </div>
+
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          onShowShortcuts={openShortcuts}
         />
-        <main className="min-h-0 w-full flex-1 overflow-y-auto">{children}</main>
+        <ShortcutsOverlay open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       </div>
-
-      <CommandPalette
-        open={paletteOpen}
-        onOpenChange={setPaletteOpen}
-        onShowShortcuts={openShortcuts}
-      />
-      <ShortcutsOverlay open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-    </div>
+    </WorkspaceRealtime>
   );
 }

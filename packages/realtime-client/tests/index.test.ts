@@ -1,0 +1,357 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import type { PresenceMessage, ServerMessage, SyncAction } from '@gravity/shared/events';
+import { ORGANIZATION_FORBIDDEN_CLOSE_CODE, UNAUTHORIZED_CLOSE_CODE } from '@gravity/shared/events';
+import { createRealtimeClient, type RealtimeStatus } from '../src/index.ts';
+
+type CloseHandler = ((event: { code: number }) => void) | null;
+
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = [];
+  static readonly OPEN = 1;
+  readyState = 0;
+  sent: string[] = [];
+  onopen: (() => void) | null = null;
+  onclose: CloseHandler = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+
+  constructor(readonly url: string) {
+    FakeWebSocket.instances.push(this);
+  }
+
+  send(payload: string): void {
+    this.sent.push(payload);
+  }
+
+  close(code = 1000): void {
+    this.readyState = 3;
+    this.onclose?.({ code });
+  }
+
+  open(): void {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+
+  deliver(message: ServerMessage): void {
+    this.onmessage?.({ data: JSON.stringify(message) });
+  }
+
+  deliverRaw(message: unknown): void {
+    this.onmessage?.({ data: JSON.stringify(message) });
+  }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function subscribesOf(socket: FakeWebSocket | undefined): Record<string, unknown>[] {
+  return (socket?.sent ?? [])
+    .map((payload) => JSON.parse(payload) as Record<string, unknown>)
+    .filter((message) => message['type'] === 'subscribe')
+    .map(({ type: _type, ...rest }) => rest);
+}
+
+function delta(syncId: number): SyncAction {
+  return {
+    syncId,
+    organizationId: 'org_1',
+    scopes: ['workspace:org_1'],
+    action: 'update',
+    model: 'person',
+    modelId: 'person_1',
+    data: { id: 'person_1', syncId },
+    actor: { type: 'user', id: 'user_1' },
+    at: '2026-01-01T00:00:00.000Z',
+  };
+}
+
+function actionOfUnknownModel(syncId: number): Record<string, unknown> {
+  return { ...delta(syncId), model: 'pull_request', modelId: 'pull_request_1' };
+}
+
+const TICKET = 'ticket_1';
+
+function readyMessage(): ServerMessage {
+  return {
+    type: 'ready',
+    connectionId: 'connection_1',
+    userId: 'user_1',
+    organizationId: 'org_1',
+    scopes: [],
+  };
+}
+
+async function firstSocket(): Promise<FakeWebSocket> {
+  await wait(0);
+  const socket = FakeWebSocket.instances[0];
+  if (socket === undefined) throw new Error('socket was never created');
+  return socket;
+}
+
+describe('realtime client lifecycle', () => {
+  beforeEach(() => {
+    FakeWebSocket.instances = [];
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+  });
+
+  afterEach(() => {
+    FakeWebSocket.instances = [];
+  });
+
+  it('fetches a ticket, opens without it in the url, and authenticates in the first frame', async () => {
+    const statuses: RealtimeStatus[] = [];
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => Promise.resolve(TICKET),
+      onStatus: (status) => statuses.push(status),
+    });
+
+    const socket = await firstSocket();
+    expect(socket.url).toBe('ws://localhost:3400');
+    socket.open();
+
+    expect(socket.sent.map((payload) => JSON.parse(payload))).toEqual([
+      { type: 'auth', ticket: TICKET },
+    ]);
+    expect(statuses).not.toContain('open');
+
+    socket.deliver(readyMessage());
+    expect(client.status()).toBe('open');
+    client.close();
+  });
+
+  it('waits for ready before it subscribes', async () => {
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => Promise.resolve(TICKET),
+    });
+
+    const socket = await firstSocket();
+    socket.open();
+    client.subscribe(['workspace:org_1']);
+    expect(subscribesOf(socket)).toEqual([{ scopes: ['workspace:org_1'] }]);
+    client.close();
+  });
+
+  it('reconnects after a fetch failure', async () => {
+    const statuses: RealtimeStatus[] = [];
+    let attempts = 0;
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => {
+        attempts += 1;
+        return attempts === 1 ? Promise.reject(new Error('nope')) : Promise.resolve(TICKET);
+      },
+      maxBackoffMs: 10,
+      onStatus: (status) => statuses.push(status),
+    });
+
+    await wait(60);
+    const socket = await firstSocket();
+    socket.open();
+    socket.deliver(readyMessage());
+
+    expect(statuses).toContain('reconnecting');
+    expect(client.status()).toBe('open');
+    client.close();
+  });
+
+  it('treats an unauthorized close as terminal and never reconnects', async () => {
+    const statuses: RealtimeStatus[] = [];
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => Promise.resolve(TICKET),
+      maxBackoffMs: 10,
+      onStatus: (status) => statuses.push(status),
+    });
+
+    const socket = await firstSocket();
+    socket.open();
+    socket.close(UNAUTHORIZED_CLOSE_CODE);
+    await wait(60);
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(client.status()).toBe('closed');
+    expect(statuses.filter((status) => status === 'reconnecting')).toHaveLength(0);
+    client.close();
+  });
+
+  it('treats a forbidden organization close as terminal too', async () => {
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => Promise.resolve(TICKET),
+      maxBackoffMs: 10,
+    });
+
+    const socket = await firstSocket();
+    socket.open();
+    socket.close(ORGANIZATION_FORBIDDEN_CLOSE_CODE);
+    await wait(60);
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(client.status()).toBe('closed');
+    client.close();
+  });
+
+  it('reconnects after a transient close, resubscribes and asks for catch up from the watermark', async () => {
+    const resumes: number[] = [];
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => Promise.resolve(TICKET),
+      maxBackoffMs: 10,
+      onResume: (since) => resumes.push(since),
+    });
+
+    const first = await firstSocket();
+    first.open();
+    first.deliver(readyMessage());
+    client.subscribe(['workspace:org_1']);
+    first.deliver({ type: 'delta', actions: [delta(70), delta(64)] });
+    expect(client.seen()).toBe(70);
+    expect(resumes).toHaveLength(0);
+
+    first.close(1006);
+    await wait(60);
+
+    const second = FakeWebSocket.instances[1];
+    expect(second).toBeDefined();
+    second?.open();
+    second?.deliver(readyMessage());
+
+    expect(subscribesOf(second)).toEqual([{ scopes: ['workspace:org_1'] }]);
+    expect(resumes).toEqual([70]);
+    client.close();
+  });
+
+  it('drops a scope the server denied so a later reconnect stops asking for it', async () => {
+    const denied: string[][] = [];
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => Promise.resolve(TICKET),
+      maxBackoffMs: 10,
+      onDenied: (scopes) => denied.push(scopes),
+    });
+
+    const first = await firstSocket();
+    first.open();
+    first.deliver(readyMessage());
+    client.subscribe(['workspace:org_1', 'user:someone_else']);
+    first.deliver({
+      type: 'subscribed',
+      scopes: ['workspace:org_1'],
+      denied: ['user:someone_else'],
+    });
+    expect(denied).toEqual([['user:someone_else']]);
+
+    first.close(1006);
+    await wait(60);
+    const second = FakeWebSocket.instances[1];
+    second?.open();
+    second?.deliver(readyMessage());
+
+    expect(subscribesOf(second)).toEqual([{ scopes: ['workspace:org_1'] }]);
+    client.close();
+  });
+
+  it('reports presence messages without advancing the delta watermark', async () => {
+    const presence: PresenceMessage[][] = [];
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => Promise.resolve(TICKET),
+      onPresence: (messages) => presence.push(messages),
+    });
+
+    const socket = await firstSocket();
+    socket.open();
+    socket.deliver(readyMessage());
+    socket.deliver({
+      type: 'presence',
+      messages: [
+        {
+          organizationId: 'org_1',
+          scope: 'person:person_1',
+          kind: 'viewing',
+          userId: 'user_2',
+          name: 'Grace',
+          image: null,
+          at: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(presence).toHaveLength(1);
+    expect(client.seen()).toBe(0);
+    client.close();
+  });
+});
+
+describe('a delta carrying a model this build does not know', () => {
+  beforeEach(() => {
+    FakeWebSocket.instances = [];
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+  });
+
+  afterEach(() => {
+    FakeWebSocket.instances = [];
+  });
+
+  it('keeps the actions it does understand instead of dropping the batch', async () => {
+    const batches: SyncAction[][] = [];
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => Promise.resolve(TICKET),
+      maxBackoffMs: 10,
+      onDelta: (actions) => batches.push([...actions]),
+    });
+
+    const socket = await firstSocket();
+    socket.open();
+    socket.deliver(readyMessage());
+    socket.deliverRaw({
+      type: 'delta',
+      actions: [delta(70), actionOfUnknownModel(71), delta(72)],
+    });
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0]?.map((action) => action.syncId)).toEqual([70, 72]);
+    client.close();
+  });
+
+  it('advances the watermark past what it dropped, so resume does not replay it forever', async () => {
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => Promise.resolve(TICKET),
+      maxBackoffMs: 10,
+    });
+
+    const socket = await firstSocket();
+    socket.open();
+    socket.deliver(readyMessage());
+    socket.deliverRaw({ type: 'delta', actions: [delta(70), actionOfUnknownModel(71)] });
+
+    expect(client.seen()).toBe(71);
+    client.close();
+  });
+
+  it('reports nothing rather than an empty batch when it understands none of them', async () => {
+    const batches: SyncAction[][] = [];
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => Promise.resolve(TICKET),
+      maxBackoffMs: 10,
+      onDelta: (actions) => batches.push([...actions]),
+    });
+
+    const socket = await firstSocket();
+    socket.open();
+    socket.deliver(readyMessage());
+    socket.deliverRaw({ type: 'delta', actions: [actionOfUnknownModel(71)] });
+
+    expect(batches).toHaveLength(0);
+    expect(client.seen()).toBe(71);
+    client.close();
+  });
+});

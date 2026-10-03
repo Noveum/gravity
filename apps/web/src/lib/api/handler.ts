@@ -34,7 +34,7 @@ function assertWorkspaceAvailable(context: ApiContext, options: ContextOptions):
 
 const activeOrganizationSchema = z.object({ activeOrganizationId: z.string().nullish() });
 
-function activeOrganizationOf(session: ActiveSession): string | null {
+export function activeOrganizationOf(session: ActiveSession): string | null {
   const parsed = activeOrganizationSchema.safeParse(session.session);
   return parsed.success ? (parsed.data.activeOrganizationId ?? null) : null;
 }

@@ -19,6 +19,7 @@ export interface VerbPickerProps {
   readonly notice?: string | null;
   readonly onPick: (id: string) => void;
   readonly onClose: () => void;
+  readonly returnFocus?: FocusTarget;
 }
 
 export const pickerItemClassName =
@@ -50,15 +51,24 @@ export function useAnchor(anchorId: string | null): AnchorRef {
   }, [anchorId]);
 }
 
-export function returnFocusTo(anchorId: string | null): (event: Event) => void {
+export function anchorFocusTarget(anchorId: string | null): HTMLElement | null {
+  const anchor = anchorId === null ? null : document.getElementById(anchorId);
+  if (anchor === null) return null;
+  return anchor.matches(FOCUSABLE) ? anchor : anchor.querySelector<HTMLElement>(FOCUSABLE);
+}
+
+function focusLandedElsewhere(): boolean {
+  const current = document.activeElement;
+  return current !== null && current !== document.body && current.isConnected;
+}
+
+export type FocusTarget = () => HTMLElement | null;
+
+export function focusBack(target: FocusTarget): (event: Event) => void {
   return (event) => {
     event.preventDefault();
-    const anchor = anchorId === null ? null : document.getElementById(anchorId);
-    if (anchor === null) return;
-    const target = anchor.matches(FOCUSABLE)
-      ? anchor
-      : anchor.querySelector<HTMLElement>(FOCUSABLE);
-    target?.focus({ preventScroll: true });
+    if (focusLandedElsewhere()) return;
+    target()?.focus({ preventScroll: true });
   };
 }
 
@@ -74,13 +84,14 @@ export function VerbPicker({
   notice = null,
   onPick,
   onClose,
+  returnFocus = () => anchorFocusTarget(anchorId),
 }: VerbPickerProps) {
   const anchor = useAnchor(anchorId);
   return (
     <Popover
       open={open}
       onOpenChange={(next) => {
-        if (!next) onClose();
+        if (open && !next) onClose();
       }}
     >
       <PopoverAnchor virtualRef={anchor} />
@@ -88,9 +99,9 @@ export function VerbPicker({
         align="start"
         className="w-72 p-0"
         aria-label={title}
-        onCloseAutoFocus={returnFocusTo(anchorId)}
+        onCloseAutoFocus={focusBack(returnFocus)}
       >
-        <Command loop filter={labelFilter}>
+        <Command loop label={title} filter={labelFilter}>
           <Command.Input
             placeholder={title}
             className="h-9 w-full border-border border-b bg-transparent px-3 text-dense text-text outline-none placeholder:text-faint"

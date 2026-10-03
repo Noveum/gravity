@@ -3,7 +3,7 @@
 import type { BrandColor } from '@gravity/shared/constants';
 import type { LeadRow, MemberRow } from '@gravity/shared/records';
 import Link from 'next/link';
-import type { FocusEvent, KeyboardEvent, MouseEvent } from 'react';
+import type { FocusEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { Avatar } from '@/components/ui/avatar.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { RelativeTime } from '@/components/ui/relative-time.tsx';
@@ -27,6 +27,7 @@ export interface LeadRowViewProps {
   readonly onTogglePeek: () => void;
   readonly onOpenActive: () => void;
   readonly onToggleSelected: () => void;
+  readonly menu?: ReactNode;
 }
 
 function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
@@ -75,6 +76,7 @@ export function LeadRowView({
   onTogglePeek,
   onOpenActive,
   onToggleSelected,
+  menu,
 }: LeadRowViewProps) {
   const focusByUser = (event: FocusEvent<HTMLElement>) => {
     if (!isWindowRefocus(event)) onFocus();
@@ -157,6 +159,7 @@ export function LeadRowView({
         {lead.lastOutboundAt === null ? null : <RelativeTime at={lead.lastOutboundAt} />}
       </span>
       <RowOwner owner={owner} />
+      {menu}
     </div>
   );
 }

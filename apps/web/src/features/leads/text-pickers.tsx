@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover.tsx';
 import { type DateChoice, holdChoices, nextActionChoices } from './next-action-dates.ts';
-import { returnFocusTo, useAnchor } from './verb-picker.tsx';
+import { anchorFocusTarget, type FocusTarget, focusBack, useAnchor } from './verb-picker.tsx';
 
 interface ShellProps {
   readonly open: boolean;
@@ -14,6 +14,7 @@ interface ShellProps {
   readonly notice?: string | null;
   readonly onClose: () => void;
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  readonly returnFocus: FocusTarget | undefined;
   readonly children: ReactNode;
 }
 
@@ -24,6 +25,7 @@ function PickerShell({
   notice = null,
   onClose,
   onSubmit,
+  returnFocus,
   children,
 }: ShellProps) {
   const anchor = useAnchor(anchorId);
@@ -31,7 +33,7 @@ function PickerShell({
     <Popover
       open={open}
       onOpenChange={(next) => {
-        if (!next) onClose();
+        if (open && !next) onClose();
       }}
     >
       <PopoverAnchor virtualRef={anchor} />
@@ -39,7 +41,7 @@ function PickerShell({
         align="start"
         className="w-80"
         aria-label={title}
-        onCloseAutoFocus={returnFocusTo(anchorId)}
+        onCloseAutoFocus={focusBack(returnFocus ?? (() => anchorFocusTarget(anchorId)))}
       >
         <form className="flex flex-col gap-2" onSubmit={onSubmit}>
           {children}
@@ -96,6 +98,7 @@ export interface NextActionPickerProps {
   readonly notice?: string | null;
   readonly onSubmit: (value: NextActionValue) => void;
   readonly onClose: () => void;
+  readonly returnFocus?: FocusTarget;
 }
 
 export function NextActionPicker({
@@ -105,6 +108,7 @@ export function NextActionPicker({
   notice = null,
   onSubmit,
   onClose,
+  returnFocus,
 }: NextActionPickerProps) {
   const [text, setText] = useState(initial);
   const [at, setAt] = useState<string | null | undefined>(undefined);
@@ -115,6 +119,7 @@ export function NextActionPicker({
       anchorId={anchorId}
       title="Next action"
       notice={notice}
+      returnFocus={returnFocus}
       onClose={onClose}
       onSubmit={(event) => {
         event.preventDefault();
@@ -149,9 +154,17 @@ export interface HoldPickerProps {
   readonly notice?: string | null;
   readonly onSubmit: (value: HoldValue) => void;
   readonly onClose: () => void;
+  readonly returnFocus?: FocusTarget;
 }
 
-export function HoldPicker({ open, anchorId, notice = null, onSubmit, onClose }: HoldPickerProps) {
+export function HoldPicker({
+  open,
+  anchorId,
+  notice = null,
+  onSubmit,
+  onClose,
+  returnFocus,
+}: HoldPickerProps) {
   const [reason, setReason] = useState('');
   const [until, setUntil] = useState<string | null>(null);
   const [choices] = useState(() => holdChoices(new Date()));
@@ -161,6 +174,7 @@ export function HoldPicker({ open, anchorId, notice = null, onSubmit, onClose }:
       anchorId={anchorId}
       title="Hold with a reason"
       notice={notice}
+      returnFocus={returnFocus}
       onClose={onClose}
       onSubmit={(event) => {
         event.preventDefault();

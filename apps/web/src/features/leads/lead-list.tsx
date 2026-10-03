@@ -22,13 +22,17 @@ import {
 } from './lead-groups.ts';
 import { LeadPeek } from './lead-peek.tsx';
 import { LEAD_ROW_HEIGHT, LeadRowView } from './lead-row.tsx';
+import { LeadVerbMenu, type VerbRequest } from './lead-verb-menu.tsx';
 
 export const GROUP_HEADER_HEIGHT = 32;
 
 export interface LeadListSelection {
   readonly targets: readonly LeadRow[];
   readonly active: LeadRow | undefined;
+  readonly hasSelection: boolean;
   readonly selectionLeft: boolean;
+  readonly request: VerbRequest | null;
+  readonly settleRequest: () => void;
   readonly clear: () => void;
 }
 
@@ -101,6 +105,7 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
   const [selected, setSelected] = useState<readonly string[]>([]);
   const [peeking, setPeeking] = useState(false);
   const [leftFor, setLeftFor] = useState<string | null>(null);
+  const [request, setRequest] = useState<VerbRequest | null>(null);
   const previousOrder = useRef<readonly string[]>([]);
 
   useEffect(() => watchWindowRefocus(), []);
@@ -272,6 +277,11 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
     [ordered, selectedSet, active],
   );
   const clearSelection = useCallback(() => setSelected([]), []);
+  const settleRequest = useCallback(() => setRequest(null), []);
+  const requestVerb = useCallback((next: VerbRequest) => {
+    setActiveId(next.lead.id);
+    setRequest(next);
+  }, []);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -312,6 +322,15 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
                     onTogglePeek={togglePeek}
                     onOpenActive={openActive}
                     onToggleSelected={() => setSelected((current) => toggled(current, row.lead.id))}
+                    menu={
+                      renderActions === undefined ? null : (
+                        <LeadVerbMenu
+                          lead={row.lead}
+                          visible={row.lead.id === activeLeadId}
+                          onVerb={requestVerb}
+                        />
+                      )
+                    }
                   />
                 )}
               </div>
@@ -319,7 +338,15 @@ export function LeadList({ pipeline, stages, leads, renderActions }: LeadListPro
           })}
         </div>
       </div>
-      {renderActions?.({ targets, active, selectionLeft, clear: clearSelection })}
+      {renderActions?.({
+        targets,
+        active,
+        hasSelection: visibleSelected.length > 0,
+        selectionLeft,
+        request,
+        settleRequest,
+        clear: clearSelection,
+      })}
     </div>
   );
 }

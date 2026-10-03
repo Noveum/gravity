@@ -20,7 +20,7 @@ mock.module('@gravity/realtime-client/react', () => ({
   },
 }));
 
-const { DeltaBridge } = await import('@/lib/realtime/delta-bridge.tsx');
+const { DeltaBridge, cacheMayBeStale } = await import('@/lib/realtime/delta-bridge.tsx');
 
 const requests: string[] = [];
 let respond: (since: number) => SyncCatchup | Error = (since) => ({
@@ -68,6 +68,32 @@ afterEach(() => {
 });
 
 describe('DeltaBridge catch-up lifecycle', () => {
+  test('the cache counts as possibly stale until the socket is open and catch-up has settled', async () => {
+    const client = new QueryClient();
+    const mounted = mount(client, 5000);
+    expect(cacheMayBeStale(client)).toBe(true);
+    const gate: { release: (() => void) | null } = { release: null };
+    globalThis.fetch = mock(
+      () =>
+        new Promise((resolve) => {
+          gate.release = () =>
+            resolve({
+              ok: true,
+              status: 200,
+              json: () =>
+                Promise.resolve({ actions: [], truncated: false, reset: false, syncId: 5000 }),
+            });
+        }),
+    ) as unknown as typeof fetch;
+    mounted.reopen('open');
+    await waitFor(() => expect(gate.release).not.toBeNull());
+    expect(cacheMayBeStale(client)).toBe(true);
+    gate.release?.();
+    await waitFor(() => expect(cacheMayBeStale(client)).toBe(false));
+    mounted.reopen('reconnecting');
+    await waitFor(() => expect(cacheMayBeStale(client)).toBe(true));
+  });
+
   test('catches up from the seeded cursor on the first ready, not before and not twice', async () => {
     const mounted = mount(new QueryClient(), 5000);
     expect(requests).toEqual([]);

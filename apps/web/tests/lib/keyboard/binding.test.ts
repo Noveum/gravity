@@ -171,6 +171,14 @@ describe('selectMatch', () => {
     expect(selectMatch(entries, buffer, true)?.binding).toBe('mod+k');
   });
 
+  it('skips surface bindings while the key lands inside a dialog, menu or listbox', () => {
+    const surface = entry('j', { priority: HOTKEY_PRIORITY.surface });
+    const global = entry('?');
+    expect(selectMatch([surface], press([], 'j', 0), false, true)).toBeNull();
+    expect(selectMatch([surface], press([], 'j', 0), false, false)).toBe(surface);
+    expect(selectMatch([global], press([], '?', 0), false, true)).toBe(global);
+  });
+
   it('skips disabled bindings', () => {
     const buffer = press([], 'g', 0);
     expect(selectMatch([entry('g', { enabled: false })], buffer, false)).toBeNull();

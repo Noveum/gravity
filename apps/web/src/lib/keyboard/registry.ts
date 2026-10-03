@@ -61,11 +61,13 @@ export function selectMatch(
   entries: readonly HotkeyEntry[],
   buffer: readonly BufferedStep[],
   editableTarget: boolean,
+  layeredTarget = false,
 ): HotkeyEntry | null {
   let best: HotkeyEntry | null = null;
   for (const entry of entries) {
     if (!entry.enabled) continue;
     if (editableTarget && !entry.allowInInput) continue;
+    if (layeredTarget && entry.priority === HOTKEY_PRIORITY.surface) continue;
     if (!bufferMatches(entry.steps, buffer)) continue;
     if (best === null || beats(entry, best)) best = entry;
   }

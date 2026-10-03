@@ -41,14 +41,18 @@ export function useLeadList(pipelineId: string | null, query: ListQuery) {
   return { ...result, leads, search };
 }
 
+export async function fetchLead(id: string, signal?: AbortSignal): Promise<LeadRow> {
+  const path = `/api/leads/${encodeURIComponent(id)}`;
+  const result = await apiFetch(path, leadEnvelopeSchema, signal === undefined ? {} : { signal });
+  return result.lead;
+}
+
 export function useLead(id: string | null) {
   const client = useQueryClient();
   return useQuery({
     queryKey: queryKeys.lead(id ?? ''),
     enabled: id !== null,
     initialData: () => (id === null ? undefined : cachedLead(client, id)),
-    queryFn: async ({ signal }) =>
-      (await apiFetch(`/api/leads/${encodeURIComponent(id ?? '')}`, leadEnvelopeSchema, { signal }))
-        .lead,
+    queryFn: ({ signal }) => fetchLead(id ?? '', signal),
   });
 }

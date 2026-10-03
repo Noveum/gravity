@@ -38,6 +38,41 @@ function appliedStateOf(client: QueryClient): AppliedState {
   return created;
 }
 
+interface Freshness {
+  live: boolean;
+  catchingUp: number;
+}
+
+const freshnessByClient = new WeakMap<QueryClient, Freshness>();
+
+function freshnessOf(client: QueryClient): Freshness {
+  const existing = freshnessByClient.get(client);
+  if (existing !== undefined) return existing;
+  const created: Freshness = { live: false, catchingUp: 0 };
+  freshnessByClient.set(client, created);
+  return created;
+}
+
+export function markRealtimeLive(client: QueryClient, live: boolean): void {
+  freshnessOf(client).live = live;
+}
+
+export function beginCatchUp(client: QueryClient): () => void {
+  const state = freshnessOf(client);
+  state.catchingUp += 1;
+  let ended = false;
+  return () => {
+    if (ended) return;
+    ended = true;
+    state.catchingUp -= 1;
+  };
+}
+
+export function cacheMayBeStale(client: QueryClient): boolean {
+  const state = freshnessByClient.get(client);
+  return state !== undefined && (!state.live || state.catchingUp > 0);
+}
+
 export function registerDeltaHandler(model: SyncModel, handler: DeltaHandler): () => void {
   const set = handlers.get(model) ?? new Set<DeltaHandler>();
   set.add(handler);
@@ -171,6 +206,7 @@ export function DeltaBridge({ organizationId, userId, initialCursor }: DeltaBrid
     resumeAbort.current?.abort();
     const controller = new AbortController();
     resumeAbort.current = controller;
+    const endCatchUp = beginCatchUp(client);
     catchUp(
       client,
       (since, cursor) =>
@@ -178,12 +214,16 @@ export function DeltaBridge({ organizationId, userId, initialCursor }: DeltaBrid
           signal: controller.signal,
         }),
       initialCursor,
-    ).catch((error: unknown) => {
-      if (controller.signal.aborted) return;
-      console.error('Realtime catch-up failed, refetching what is on screen.', error);
-      client.invalidateQueries().catch(() => undefined);
-    });
+    )
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        console.error('Realtime catch-up failed, refetching what is on screen.', error);
+        client.invalidateQueries().catch(() => undefined);
+      })
+      .finally(endCatchUp);
   }, [client, initialCursor, organizationId]);
+
+  useEffect(() => markRealtimeLive(client, status === 'open'), [client, status]);
 
   useEffect(() => {
     if (status !== 'open' || firstReadyHandled.current) return;

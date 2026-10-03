@@ -8,6 +8,7 @@ import {
   eventToStep,
   isEditableTarget,
   isModifierKey,
+  ownsKeyboardLayer,
   pruneBuffer,
   SEQUENCE_TIMEOUT_MS,
 } from './binding.ts';
@@ -48,7 +49,12 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       const now = Date.now();
       buffer = editable ? [] : pruneBuffer(buffer, now, SEQUENCE_TIMEOUT_MS);
       buffer.push({ ...eventToStep(event), at: now });
-      const match = selectMatch(registry.getSnapshot(), buffer, editable);
+      const match = selectMatch(
+        registry.getSnapshot(),
+        buffer,
+        editable,
+        ownsKeyboardLayer(event.target),
+      );
       if (match === null) return;
       buffer = [];
       if (match.preventDefault) event.preventDefault();

@@ -9,8 +9,9 @@ import type { LeadRow } from '@gravity/shared/records';
 import { QueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query/keys.ts';
 import { cachedLead, placeLead, removeLead } from '@/lib/query/lead-cache.ts';
-import type { Bootstrap, LeadPage } from '@/lib/query/schemas.ts';
+import type { Bootstrap, LeadPage, PersonRecord } from '@/lib/query/schemas.ts';
 import { leadFixture } from '../../support/lead-fixture.ts';
+import { personFixture } from '../../support/record-fixtures.ts';
 
 function seed(client: QueryClient, pipelineId: string, search: string, leads: LeadRow[]): void {
   client.setQueryData(queryKeys.leads(pipelineId, search), {
@@ -67,6 +68,22 @@ describe('placeLead', () => {
     seed(cache, 'p1', everything, [leadFixture({ syncId: 20, priority: 1 })]);
     placeLead(cache, leadFixture({ syncId: 19, priority: 4 }));
     expect(cachedLead(cache, 'l1')?.priority).toBe(1);
+  });
+
+  test('a lead held only inside a person record keeps its newer copy', () => {
+    const cache = client();
+    seed(cache, 'p1', everything, []);
+    const record: PersonRecord = {
+      person: personFixture(),
+      employments: [],
+      leads: [leadFixture({ syncId: 30, stageId: 'ready' })],
+    };
+    cache.setQueryData(queryKeys.person('per1'), record);
+    placeLead(cache, leadFixture({ syncId: 25, stageId: 'new' }));
+    const kept = cache.getQueryData<PersonRecord>(queryKeys.person('per1'))?.leads;
+    expect(kept?.map((lead) => [lead.syncId, lead.stageId])).toEqual([[30, 'ready']]);
+    expect(idsIn(cache, 'p1', everything)).toEqual([]);
+    expect(cachedLead(cache, 'l1')?.syncId).toBe(30);
   });
 
   test('removeLead drops the row from every list', () => {

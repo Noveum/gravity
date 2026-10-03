@@ -6,7 +6,15 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { apiFetch } from './fetcher.ts';
 import { COMPANIES_ROOT, PEOPLE_ROOT, queryKeys, TIMELINE_ROOT } from './keys.ts';
-import { keepPreviousWithin } from './pages.ts';
+import { dedupePages, keepPreviousWithin } from './pages.ts';
+import {
+  readActivities,
+  readCompanies,
+  readPeople,
+  writeActivities,
+  writeCompanies,
+  writePeople,
+} from './record-cache.ts';
 import {
   companyPageSchema,
   companyRecordSchema,
@@ -15,6 +23,10 @@ import {
   timelinePageSchema,
 } from './schemas.ts';
 import { useAllPages } from './use-all-pages.ts';
+
+const newestPeople = dedupePages(readPeople, writePeople);
+const newestCompanies = dedupePages(readCompanies, writeCompanies);
+const newestActivities = dedupePages(readActivities, writeActivities);
 
 function withCursor(base: string, search: string, cursor: string | null): string {
   const params = new URLSearchParams(search);
@@ -32,6 +44,7 @@ export function usePeopleList(query: ListQuery) {
       apiFetch(withCursor('/api/people', search, pageParam), personPageSchema, { signal }),
     getNextPageParam: (page) => page.nextCursor,
     placeholderData: keepPreviousWithin([PEOPLE_ROOT]),
+    select: newestPeople,
   });
   useAllPages(result);
   const people = useMemo(
@@ -50,6 +63,7 @@ export function useCompanyList(query: ListQuery) {
       apiFetch(withCursor('/api/companies', search, pageParam), companyPageSchema, { signal }),
     getNextPageParam: (page) => page.nextCursor,
     placeholderData: keepPreviousWithin([COMPANIES_ROOT]),
+    select: newestCompanies,
   });
   useAllPages(result);
   const companies = useMemo(
@@ -88,6 +102,7 @@ export function useTimeline(
       apiFetch(withCursor('/api/timeline', search, pageParam), timelinePageSchema, { signal }),
     getNextPageParam: (page) => page.nextCursor,
     placeholderData: keepPreviousWithin([TIMELINE_ROOT, subjectType, subjectId]),
+    select: newestActivities,
   });
   const activities = useMemo(
     () => (result.data?.pages ?? []).flatMap((page) => page.activities),

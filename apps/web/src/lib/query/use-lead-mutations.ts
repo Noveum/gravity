@@ -5,7 +5,15 @@ import type { LeadChange, quickCreateSchema } from '@gravity/shared/validators';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
 import { apiFetch } from './fetcher.ts';
-import { LEAD_ROOT, LEADS_ROOT, queryKeys } from './keys.ts';
+import {
+  COMPANIES_ROOT,
+  COMPANY_ROOT,
+  LEAD_ROOT,
+  LEADS_ROOT,
+  PEOPLE_ROOT,
+  PERSON_ROOT,
+  queryKeys,
+} from './keys.ts';
 import { cachedLead, placeLead, removeLead } from './lead-cache.ts';
 import { cancelLoadedQueries } from './pages.ts';
 import { placeCompany, placePerson } from './record-cache.ts';
@@ -67,7 +75,7 @@ export function useChangeLeads() {
   const mutation = useMutation<LeadRow[], Error, ChangeLeadsInput, ChangeLeadsContext>({
     mutationFn: sendChange,
     onMutate: async (input) => {
-      await cancelLoadedQueries(client, LEADS_ROOT, LEAD_ROOT);
+      await cancelLoadedQueries(client, LEADS_ROOT, LEAD_ROOT, PERSON_ROOT, COMPANY_ROOT);
       const bootstrap = client.getQueryData<Bootstrap>(queryKeys.bootstrap);
       const previous = input.leads.map((lead) => cachedLead(client, lead.id) ?? lead);
       for (const lead of previous) {
@@ -94,6 +102,15 @@ export interface QuickCreateInput {
   readonly preview: LeadRow;
 }
 
+const QUICK_CREATE_ROOTS = [
+  LEADS_ROOT,
+  LEAD_ROOT,
+  PEOPLE_ROOT,
+  PERSON_ROOT,
+  COMPANIES_ROOT,
+  COMPANY_ROOT,
+] as const;
+
 export function useQuickCreateLead() {
   const client = useQueryClient();
   const failed = useRetryToast();
@@ -101,14 +118,15 @@ export function useQuickCreateLead() {
     mutationFn: (input: QuickCreateInput) =>
       apiFetch('/api/leads/quick', quickCreateEnvelopeSchema, { method: 'POST', body: input.body }),
     onMutate: async (input: QuickCreateInput) => {
-      await cancelLoadedQueries(client, LEADS_ROOT, LEAD_ROOT);
+      await cancelLoadedQueries(client, ...QUICK_CREATE_ROOTS);
       placeLead(client, input.preview);
     },
     onError: (error, input) => {
       removeLead(client, input.preview.id);
       failed(`Could not add ${input.preview.personName}`, error, () => mutation.mutate(input));
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
+      await cancelLoadedQueries(client, ...QUICK_CREATE_ROOTS);
       placePerson(client, result.person);
       if (result.company !== null) placeCompany(client, result.company);
       placeLead(client, result.lead);

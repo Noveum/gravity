@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  dedupePages,
   keepPreviousWithin,
   type Pages,
   placeInPages,
@@ -56,5 +57,50 @@ describe('keepPreviousWithin', () => {
     expect(keep('rows', { queryKey: ['leads', 'p1', 'q=a'] })).toBe('rows');
     expect(keep('rows', { queryKey: ['leads', 'p2', 'q=a'] })).toBeUndefined();
     expect(keep('rows', undefined)).toBeUndefined();
+  });
+});
+
+describe('dedupePages', () => {
+  interface Versioned {
+    readonly id: string;
+    readonly syncId: number;
+  }
+  interface VersionedPage {
+    readonly rows: Versioned[];
+  }
+  const dedupe = dedupePages(
+    (page: VersionedPage) => page.rows,
+    (page: VersionedPage, rows: Versioned[]): VersionedPage => ({ ...page, rows }),
+  );
+  const loaded = (...pages: Versioned[][]): Pages<VersionedPage> => ({
+    pages: pages.map((rows) => ({ rows })),
+    pageParams: pages.map(() => null),
+  });
+
+  test('keeps one copy of a row that a later page repeats, with the higher sync id', () => {
+    const deduped = dedupe(
+      loaded(
+        [
+          { id: 'x', syncId: 5 },
+          { id: 'a', syncId: 1 },
+        ],
+        [
+          { id: 'b', syncId: 1 },
+          { id: 'x', syncId: 7 },
+        ],
+      ),
+    );
+    expect(deduped.pages.map((page) => page.rows)).toEqual([
+      [
+        { id: 'x', syncId: 7 },
+        { id: 'a', syncId: 1 },
+      ],
+      [{ id: 'b', syncId: 1 }],
+    ]);
+  });
+
+  test('returns the same object when no row repeats', () => {
+    const unique = loaded([{ id: 'a', syncId: 1 }], [{ id: 'b', syncId: 1 }]);
+    expect(dedupe(unique)).toBe(unique);
   });
 });

@@ -4,8 +4,10 @@ import type { QueryClient } from '@tanstack/react-query';
 import { COMPANY_ROOT, LEAD_ROOT, LEADS_ROOT, PERSON_ROOT, queryKeys } from './keys.ts';
 import {
   cachedRows,
+  isStale,
   matchesListQuery,
   newestListed,
+  newestOf,
   newestRows,
   placeInLists,
   placeInRows,
@@ -19,8 +21,8 @@ export interface CacheContext {
   readonly now: Date;
 }
 
-const readLeads = (page: LeadPage) => page.leads;
-const writeLeads = (page: LeadPage, leads: LeadRow[]): LeadPage => ({ ...page, leads });
+export const readLeads = (page: LeadPage) => page.leads;
+export const writeLeads = (page: LeadPage, leads: LeadRow[]): LeadPage => ({ ...page, leads });
 
 function bootstrapOf(client: QueryClient): Bootstrap | undefined {
   return client.getQueryData<Bootstrap>(queryKeys.bootstrap);
@@ -45,12 +47,25 @@ export function allCachedLeads(client: QueryClient): LeadRow[] {
   return cachedRows(client, LEADS_ROOT, readLeads);
 }
 
+function leadDetails(client: QueryClient): LeadRow[] {
+  return client
+    .getQueriesData<LeadRow>({ queryKey: [LEAD_ROOT] })
+    .flatMap(([, lead]) => (lead === undefined ? [] : [lead]));
+}
+
+function leadsOnRecords(client: QueryClient): LeadRow[] {
+  return [
+    ...client.getQueriesData<PersonRecord>({ queryKey: [PERSON_ROOT] }),
+    ...client.getQueriesData<CompanyRecord>({ queryKey: [COMPANY_ROOT] }),
+  ].flatMap(([, record]) => record?.leads ?? []);
+}
+
 export function cachedLead(client: QueryClient, id: string): LeadRow | undefined {
-  const detail = client.getQueryData<LeadRow>(queryKeys.lead(id));
-  const listed = newestListed(client, LEADS_ROOT, id, readLeads);
-  if (detail === undefined) return listed;
-  if (listed === undefined) return detail;
-  return listed.syncId >= detail.syncId ? listed : detail;
+  return newestOf([
+    newestListed(client, LEADS_ROOT, id, readLeads),
+    client.getQueryData<LeadRow>(queryKeys.lead(id)),
+    ...leadsOnRecords(client).filter((lead) => lead.id === id),
+  ]);
 }
 
 interface RecordWithLeads {
@@ -92,8 +107,7 @@ function placeInRecordLeads(client: QueryClient, id: string, row: LeadRow | null
 }
 
 export function placeLead(client: QueryClient, row: LeadRow): void {
-  const cached = cachedLead(client, row.id);
-  if (cached !== undefined && row.syncId < cached.syncId) return;
+  if (isStale(cachedLead(client, row.id), row)) return;
   const fields = bootstrapOf(client)?.fields ?? [];
   const context = cacheContextOf(client);
   placeInLists(
@@ -129,12 +143,5 @@ export function patchLeads(
 }
 
 function everyCachedLead(client: QueryClient): LeadRow[] {
-  const details = client
-    .getQueriesData<LeadRow>({ queryKey: [LEAD_ROOT] })
-    .flatMap(([, lead]) => (lead === undefined ? [] : [lead]));
-  const onRecords = [
-    ...client.getQueriesData<PersonRecord>({ queryKey: [PERSON_ROOT] }),
-    ...client.getQueriesData<CompanyRecord>({ queryKey: [COMPANY_ROOT] }),
-  ].flatMap(([, record]) => record?.leads ?? []);
-  return newestRows([...allCachedLeads(client), ...details, ...onRecords]);
+  return newestRows([...allCachedLeads(client), ...leadDetails(client), ...leadsOnRecords(client)]);
 }

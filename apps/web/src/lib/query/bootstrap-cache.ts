@@ -130,6 +130,7 @@ function applyMember(client: QueryClient, bootstrap: Bootstrap, action: SyncActi
   const role = policyRole(parsed.data.role);
   return {
     ...bootstrap,
+    me: known.userId === bootstrap.me.userId ? { ...bootstrap.me, role } : bootstrap.me,
     members: bootstrap.members.map((member) =>
       member.memberId === known.memberId ? { ...member, role, syncId: parsed.data.syncId } : member,
     ),

@@ -6,10 +6,12 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import { useMemo } from 'react';
 import { apiFetch } from './fetcher.ts';
 import { LEADS_ROOT, queryKeys } from './keys.ts';
-import { cachedLead } from './lead-cache.ts';
-import { keepPreviousWithin } from './pages.ts';
+import { cachedLead, readLeads, writeLeads } from './lead-cache.ts';
+import { dedupePages, keepPreviousWithin } from './pages.ts';
 import { leadEnvelopeSchema, leadPageSchema } from './schemas.ts';
 import { useAllPages } from './use-all-pages.ts';
+
+const newestLeads = dedupePages(readLeads, writeLeads);
 
 function leadListPath(pipelineId: string, search: string, cursor: string | null): string {
   const params = new URLSearchParams(search);
@@ -29,6 +31,7 @@ export function useLeadList(pipelineId: string | null, query: ListQuery) {
       apiFetch(leadListPath(scope, search, pageParam), leadPageSchema, { signal }),
     getNextPageParam: (page) => page.nextCursor,
     placeholderData: keepPreviousWithin([LEADS_ROOT, scope]),
+    select: newestLeads,
   });
   useAllPages(result);
   const leads = useMemo<LeadRow[]>(

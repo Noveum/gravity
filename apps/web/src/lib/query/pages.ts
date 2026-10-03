@@ -62,6 +62,25 @@ function mapPages<TPage, TRow>(
   return changed ? { ...pages, pages: next } : pages;
 }
 
+export function dedupePages<TPage, TRow extends Versioned>(
+  read: ReadRows<TPage, TRow>,
+  write: WriteRows<TPage, TRow>,
+): (pages: Pages<TPage>) => Pages<TPage> {
+  return (pages) => {
+    const newest = new Map(newestRows(rowsOfPages(pages, read)).map((row) => [row.id, row]));
+    const seen = new Set<string>();
+    return mapPages(pages, read, write, (rows) => {
+      const kept = rows.flatMap((row) => {
+        if (seen.has(row.id)) return [];
+        seen.add(row.id);
+        return [newest.get(row.id) ?? row];
+      });
+      const same = kept.length === rows.length && kept.every((row, index) => row === rows[index]);
+      return same ? rows : kept;
+    });
+  };
+}
+
 export function removeFromPages<TPage, TRow extends Identified>(
   pages: Pages<TPage>,
   id: string,
@@ -141,6 +160,23 @@ export function newestRows<TRow extends Versioned>(rows: Iterable<TRow>): TRow[]
     if (known === undefined || known.syncId < row.syncId) byId.set(row.id, row);
   }
   return [...byId.values()];
+}
+
+export function newestOf<TRow extends { readonly syncId: number }>(
+  rows: Iterable<TRow | undefined>,
+): TRow | undefined {
+  let newest: TRow | undefined;
+  for (const row of rows) {
+    if (row !== undefined && (newest === undefined || newest.syncId < row.syncId)) newest = row;
+  }
+  return newest;
+}
+
+export function isStale(
+  known: { readonly syncId: number } | undefined,
+  row: { readonly syncId: number },
+): boolean {
+  return known !== undefined && row.syncId < known.syncId;
 }
 
 export function cachedRows<TPage, TRow extends Versioned>(

@@ -3,9 +3,24 @@ import { companyFilterRegistry, personFilterRegistry } from '@gravity/shared/fil
 import type { ActivityRow, CompanyRow, EmploymentRow, PersonRow } from '@gravity/shared/records';
 import type { QueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { COMPANIES_ROOT, COMPANY_ROOT, PEOPLE_ROOT, queryKeys, TIMELINE_ROOT } from './keys.ts';
+import {
+  COMPANIES_ROOT,
+  COMPANY_ROOT,
+  PEOPLE_ROOT,
+  PERSON_ROOT,
+  queryKeys,
+  TIMELINE_ROOT,
+} from './keys.ts';
 import { cacheContextOf, patchLeads } from './lead-cache.ts';
-import { cachedRows, matchesListQuery, newestListed, type Pages, placeInLists } from './pages.ts';
+import {
+  cachedRows,
+  isStale,
+  matchesListQuery,
+  newestListed,
+  newestOf,
+  type Pages,
+  placeInLists,
+} from './pages.ts';
 import type {
   Bootstrap,
   CompanyPage,
@@ -15,10 +30,13 @@ import type {
   TimelinePage,
 } from './schemas.ts';
 
-const readPeople = (page: PersonPage) => page.people;
-const writePeople = (page: PersonPage, people: PersonRow[]): PersonPage => ({ ...page, people });
-const readCompanies = (page: CompanyPage) => page.companies;
-const writeCompanies = (page: CompanyPage, companies: CompanyRow[]): CompanyPage => ({
+export const readPeople = (page: PersonPage) => page.people;
+export const writePeople = (page: PersonPage, people: PersonRow[]): PersonPage => ({
+  ...page,
+  people,
+});
+export const readCompanies = (page: CompanyPage) => page.companies;
+export const writeCompanies = (page: CompanyPage, companies: CompanyRow[]): CompanyPage => ({
   ...page,
   companies,
 });
@@ -40,14 +58,42 @@ export function allCachedCompanies(client: QueryClient): CompanyRow[] {
   return cachedRows(client, COMPANIES_ROOT, readCompanies);
 }
 
-function isStale(known: { readonly syncId: number } | undefined, row: { readonly syncId: number }) {
-  return known !== undefined && row.syncId < known.syncId;
+function companyRecords(client: QueryClient): (readonly [readonly unknown[], CompanyRecord])[] {
+  return client
+    .getQueriesData<CompanyRecord>({ queryKey: [COMPANY_ROOT] })
+    .flatMap(([key, record]) => (record === undefined ? [] : [[key, record] as const]));
+}
+
+export function cachedPerson(client: QueryClient, id: string): PersonRow | undefined {
+  return newestOf([
+    newestListed(client, PEOPLE_ROOT, id, readPeople),
+    client.getQueryData<PersonRecord>(queryKeys.person(id))?.person,
+    ...companyRecords(client).flatMap(([, record]) =>
+      record.people.filter((entry) => entry.person.id === id).map((entry) => entry.person),
+    ),
+  ]);
+}
+
+export function cachedCompany(client: QueryClient, id: string): CompanyRow | undefined {
+  return newestOf([
+    newestListed(client, COMPANIES_ROOT, id, readCompanies),
+    client.getQueryData<CompanyRecord>(queryKeys.company(id))?.company,
+  ]);
+}
+
+function cachedEmployment(client: QueryClient, id: string): EmploymentRow | undefined {
+  const personRecords = client
+    .getQueriesData<PersonRecord>({ queryKey: [PERSON_ROOT] })
+    .flatMap(([, record]) => record?.employments ?? []);
+  const onCompanies = companyRecords(client).flatMap(([, record]) =>
+    record.people.map((entry) => entry.employment),
+  );
+  return newestOf([...personRecords, ...onCompanies].filter((job) => job.id === id));
 }
 
 export function placePerson(client: QueryClient, row: PersonRow): void {
+  if (isStale(cachedPerson(client, row.id), row)) return;
   const record = client.getQueryData<PersonRecord>(queryKeys.person(row.id));
-  if (isStale(newestListed(client, PEOPLE_ROOT, row.id, readPeople), row)) return;
-  if (isStale(record?.person, row)) return;
   const registry = personFilterRegistry(fieldsOf(client));
   const context = cacheContextOf(client);
   placeInLists(
@@ -64,10 +110,8 @@ export function placePerson(client: QueryClient, row: PersonRow): void {
   if (record !== undefined) {
     client.setQueryData<PersonRecord>(queryKeys.person(row.id), { ...record, person: row });
   }
-  for (const [key, company] of client.getQueriesData<CompanyRecord>({ queryKey: [COMPANY_ROOT] })) {
-    if (company === undefined || !company.people.some((entry) => entry.person.id === row.id)) {
-      continue;
-    }
+  for (const [key, company] of companyRecords(client)) {
+    if (!company.people.some((entry) => entry.person.id === row.id)) continue;
     client.setQueryData<CompanyRecord>(key, {
       ...company,
       people: company.people.map((entry) =>
@@ -92,9 +136,8 @@ export function placePerson(client: QueryClient, row: PersonRow): void {
 }
 
 export function placeCompany(client: QueryClient, row: CompanyRow): void {
+  if (isStale(cachedCompany(client, row.id), row)) return;
   const record = client.getQueryData<CompanyRecord>(queryKeys.company(row.id));
-  if (isStale(newestListed(client, COMPANIES_ROOT, row.id, readCompanies), row)) return;
-  if (isStale(record?.company, row)) return;
   const registry = companyFilterRegistry(fieldsOf(client));
   const context = cacheContextOf(client);
   placeInLists(
@@ -118,21 +161,12 @@ export function placeCompany(client: QueryClient, row: CompanyRow): void {
   );
 }
 
-function knownPerson(client: QueryClient, id: string): PersonRow | undefined {
-  const fromRecord = client.getQueryData<PersonRecord>(queryKeys.person(id))?.person;
-  const listed = newestListed(client, PEOPLE_ROOT, id, readPeople);
-  if (fromRecord === undefined) return listed;
-  if (listed === undefined) return fromRecord;
-  return listed.syncId > fromRecord.syncId ? listed : fromRecord;
-}
-
 function placeEmploymentOnCompany(client: QueryClient, row: EmploymentRow): void {
   const key = queryKeys.company(row.companyId);
   const record = client.getQueryData<CompanyRecord>(key);
   if (record === undefined) return;
   const listed = record.people.find((entry) => entry.person.id === row.personId);
   const sameJob = listed !== undefined && listed.employment.id === row.id;
-  if (sameJob && listed.employment.syncId > row.syncId) return;
   if (!row.isCurrent) {
     if (!sameJob) return;
     client.setQueryData<CompanyRecord>(key, {
@@ -141,7 +175,7 @@ function placeEmploymentOnCompany(client: QueryClient, row: EmploymentRow): void
     });
     return;
   }
-  const person = listed?.person ?? knownPerson(client, row.personId);
+  const person = listed?.person ?? cachedPerson(client, row.personId);
   if (person === undefined) {
     client.invalidateQueries({ queryKey: key, exact: true }).catch(() => undefined);
     return;
@@ -157,10 +191,10 @@ function placeEmploymentOnCompany(client: QueryClient, row: EmploymentRow): void
 }
 
 export function applyEmployment(client: QueryClient, row: EmploymentRow): void {
+  if (isStale(cachedEmployment(client, row.id), row)) return;
   placeEmploymentOnCompany(client, row);
   const record = client.getQueryData<PersonRecord>(queryKeys.person(row.personId));
-  const knownJob = record?.employments.find((job) => job.id === row.id);
-  if (record !== undefined && !isStale(knownJob, row)) {
+  if (record !== undefined) {
     const others = record.employments.filter((job) => job.id !== row.id);
     const employments = [row, ...others].sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent));
     const person = row.isCurrent
@@ -193,6 +227,12 @@ export function applyEmployment(client: QueryClient, row: EmploymentRow): void {
     (lead) => ({ ...lead, companyId: null, companyName: null }),
   );
 }
+
+export const readActivities = (page: TimelinePage) => page.activities;
+export const writeActivities = (page: TimelinePage, activities: ActivityRow[]): TimelinePage => ({
+  ...page,
+  activities,
+});
 
 const timelineFilterSchema = z.enum(TIMELINE_FILTERS);
 

@@ -7,7 +7,7 @@ import {
   type SyncModel,
   syncActionSchema,
 } from '@gravity/shared/events';
-import { isUniqueViolation } from '../internal.ts';
+import { isTransactionConflict, isUniqueViolation } from '../internal.ts';
 import { recordSync } from '../realtime/outbox.ts';
 import { buildSyncAction } from '../realtime/publisher.ts';
 import { nextSyncId } from '../sync/sync-id.ts';
@@ -73,17 +73,32 @@ function validAction(action: SyncAction): SyncAction {
   return parsed.data;
 }
 
+const BATCH_ATTEMPTS = 3;
+const RETRY_JITTER_MS = 40;
+
+function pauseBeforeRetry(attempt: number): Promise<void> {
+  const delay = attempt * 10 + Math.random() * RETRY_JITTER_MS;
+  return new Promise((resolve) => setTimeout(resolve, delay));
+}
+
 export async function withBatch<T extends object>(
   context: WriteContext,
   run: (batch: SyncBatch) => Promise<T>,
 ): Promise<WithActions<T>> {
-  return await db.transaction(async (tx) => {
-    const batch = createSyncBatch(tx, context);
-    const result = await run(batch);
-    const actions = batch.actions().map(validAction);
-    await recordSync(tx, actions);
-    return { ...result, actions };
-  });
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await db.transaction(async (tx) => {
+        const batch = createSyncBatch(tx, context);
+        const result = await run(batch);
+        const actions = batch.actions().map(validAction);
+        await recordSync(tx, actions);
+        return { ...result, actions };
+      });
+    } catch (error: unknown) {
+      if (attempt >= BATCH_ATTEMPTS || !isTransactionConflict(error)) throw error;
+      await pauseBeforeRetry(attempt);
+    }
+  }
 }
 
 export async function retryOnUniqueViolation<T>(

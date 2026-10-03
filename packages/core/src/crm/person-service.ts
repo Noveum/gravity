@@ -12,12 +12,13 @@ import { arrayOverlaps } from 'drizzle-orm';
 import type { z } from 'zod';
 import { newId, requireRow } from '../internal.ts';
 import { diffValues, recordActivity } from './activity-service.ts';
-import { companyRowById, upsertCompanyIn } from './company-service.ts';
+import { liveCompany, upsertCompanyIn } from './company-service.ts';
 import { asConflict } from './conflicts.ts';
 import { emitPerson, reannounceLeadsOfPeopleIn, reannouncePeopleIn } from './derived-rows.ts';
 import { type EmploymentWrite, writeEmploymentIn } from './employment-service.ts';
 import { mergeFieldInputIn, NO_STORED_FIELDS } from './field-merge.ts';
 import { livePerson, personRowById } from './person-lookup.ts';
+import { companyRowOf } from './rows.ts';
 import {
   retryOnUniqueViolation,
   type SyncBatch,
@@ -106,7 +107,9 @@ async function findPersonMatch(batch: SyncBatch, input: PersonInput) {
 }
 
 async function resolveCompanyRef(batch: SyncBatch, ref: CompanyRef): Promise<CompanyRow> {
-  if ('id' in ref) return await companyRowById(batch.tx, batch.organizationId, ref.id);
+  if ('id' in ref) {
+    return companyRowOf(await liveCompany(batch.tx, batch.organizationId, ref.id, 'share'));
+  }
   const base = { size: null, segment: null, location: null, fields: {} };
   if ('domain' in ref) {
     return (

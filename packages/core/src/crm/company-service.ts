@@ -15,6 +15,7 @@ import { diffValues, recordActivity } from './activity-service.ts';
 import { asConflict } from './conflicts.ts';
 import {
   peopleCurrentlyAt,
+  reannounceEmploymentsAtIn,
   reannounceLeadsOfPeopleIn,
   reannouncePeopleIn,
 } from './derived-rows.ts';
@@ -40,6 +41,8 @@ export interface CompanyQueryOptions {
   readonly limit?: number;
 }
 
+export type RowLock = 'update' | 'share';
+
 type StoredCompany = typeof schema.company.$inferSelect;
 type CompanyPatch = z.infer<typeof companyPatchSchema>;
 
@@ -57,7 +60,7 @@ export async function liveCompany(
   executor: Executor,
   organizationId: string,
   companyId: string,
-  lock = false,
+  lock?: RowLock,
 ) {
   const query = executor
     .select()
@@ -70,7 +73,7 @@ export async function liveCompany(
       ),
     )
     .limit(1);
-  const [row] = lock ? await query.for('update') : await query;
+  const [row] = lock === undefined ? await query : await query.for(lock);
   if (row === undefined) throw notFound('That company does not exist.');
   return row;
 }
@@ -178,6 +181,7 @@ async function saveCompanyChangesIn(
     links: [{ entityType: 'company', entityId: company.id }],
   });
   if (changes['name'] !== undefined) {
+    await reannounceEmploymentsAtIn(batch, company.id, company.name);
     const people = await peopleCurrentlyAt(batch, company.id);
     await reannouncePeopleIn(batch, people);
     await reannounceLeadsOfPeopleIn(batch, people);
@@ -276,7 +280,7 @@ export async function updateCompany(
   const parsed = companyPatchSchema.parse(input);
   try {
     return await withBatch(context, async (batch) => {
-      const existing = await liveCompany(batch.tx, batch.organizationId, companyId, true);
+      const existing = await liveCompany(batch.tx, batch.organizationId, companyId, 'update');
       const merged =
         parsed.fields === undefined
           ? null

@@ -2,7 +2,6 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { db, eq, schema } from '@gravity/db';
 import { scopes } from '@gravity/shared/events';
 import { companyInputSchema } from '@gravity/shared/validators';
-import { createBrand } from '../../src/crm/brand-service.ts';
 import {
   companyRowById,
   selectCompanyRows,
@@ -10,10 +9,13 @@ import {
   upsertCompany,
   upsertCompanyIn,
 } from '../../src/crm/company-service.ts';
+import { addEmployment } from '../../src/crm/employment-service.ts';
 import { upsertPerson } from '../../src/crm/person-service.ts';
 import { withBatch } from '../../src/crm/sync-batch.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
+import { emitted, openLeadFor, required } from './record-fixtures.ts';
+import { racingRival } from './rival-connection.ts';
 
 let workspace: TestWorkspace;
 
@@ -25,23 +27,6 @@ beforeEach(async () => {
 afterAll(async () => {
   await closeRealtime();
 });
-
-async function openLeadFor(personId: string): Promise<string> {
-  const created = await createBrand({ principal: workspace.admin }, { name: 'Yodu' });
-  const stage = created.stages[0];
-  if (stage === undefined) throw new Error('The brand has no stages.');
-  const id = `lead-${personId}`;
-  await db.insert(schema.lead).values({
-    id,
-    organizationId: workspace.organizationId,
-    personId,
-    pipelineId: created.pipeline.id,
-    number: 1,
-    stageId: stage.id,
-    stageCategory: stage.category,
-  });
-  return id;
-}
 
 describe('upsertCompany', () => {
   test('matches on any domain after normalisation, unions domains and fills gaps', async () => {
@@ -127,37 +112,99 @@ describe('updateCompany', () => {
     ).rejects.toThrow('Another company already uses that domain.');
   });
 
-  test('a rename re-emits the people who work there and their leads', async () => {
+  test('a rename re-emits every job there and the people who work there now, with their leads', async () => {
     const context = { principal: workspace.admin };
     const ada = await upsertPerson(context, { name: 'Ada', company: { domain: 'acme.io' } });
-    const companyId = ada.company?.id ?? '';
-    const leadId = await openLeadFor(ada.person.id);
+    const companyId = required(ada.company?.id, 'the company Ada works at');
+    const leadId = await openLeadFor(workspace, ada.person.id);
     const renamed = await updateCompany(context, companyId, { name: 'Acme Corp' });
     expect(renamed.actions.map((action) => [action.model, action.action])).toEqual([
       ['company', 'update'],
       ['activity', 'insert'],
+      ['employment', 'update'],
       ['person', 'update'],
       ['lead', 'update'],
     ]);
-    const person = renamed.actions.find((action) => action.model === 'person');
-    expect(person?.data).toMatchObject({ id: ada.person.id, companyName: 'Acme Corp', companyId });
-    const lead = renamed.actions.find((action) => action.model === 'lead');
-    expect(lead?.data).toMatchObject({
+    expect(emitted(renamed.actions, 'person')[0]?.data).toMatchObject({
+      id: ada.person.id,
+      companyName: 'Acme Corp',
+      companyId,
+    });
+    const lead = required(emitted(renamed.actions, 'lead')[0], 'a lead action');
+    expect(lead.data).toMatchObject({
       id: leadId,
       companyId,
       companyName: 'Acme Corp',
       personName: 'Ada',
     });
-    expect(lead?.scopes).toContain(scopes.company(companyId));
+    expect(lead.scopes).toContain(scopes.company(companyId));
     const [stored] = await db.select().from(schema.lead).where(eq(schema.lead.id, leadId));
-    expect(stored?.syncId).toBe(lead?.syncId);
+    expect(stored?.syncId).toBe(lead.syncId);
+  });
+
+  test('a rename refreshes past jobs too but leaves former employees alone', async () => {
+    const context = { principal: workspace.admin };
+    const ada = await upsertPerson(context, { name: 'Ada', company: { domain: 'acme.io' } });
+    const acmeId = required(ada.company?.id, 'the company Ada works at');
+    const grace = await upsertPerson(context, { name: 'Grace', company: { id: acmeId } });
+    const globex = await upsertCompany(context, { name: 'Globex', domains: ['globex.com'] });
+    await addEmployment(context, { personId: ada.person.id, companyId: globex.company.id });
+    await openLeadFor(workspace, ada.person.id);
+    const graceLead = await openLeadFor(workspace, grace.person.id);
+    const renamed = await updateCompany(context, acmeId, { name: 'Acme Corp' });
+    const jobs = emitted(renamed.actions, 'employment');
+    expect(
+      jobs
+        .map((action) => [action.data['personId'], action.data['isCurrent']])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    ).toEqual(
+      [
+        [ada.person.id, false],
+        [grace.person.id, true],
+      ].sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    );
+    for (const job of jobs) {
+      expect(job.data['companyName']).toBe('Acme Corp');
+      const [stored] = await db
+        .select()
+        .from(schema.employment)
+        .where(eq(schema.employment.id, job.modelId));
+      expect(stored?.syncId).toBe(job.syncId);
+    }
+    expect(emitted(renamed.actions, 'person').map((action) => action.modelId)).toEqual([
+      grace.person.id,
+    ]);
+    expect(emitted(renamed.actions, 'lead').map((action) => action.modelId)).toEqual([graceLead]);
+  });
+
+  test('a re-emitted person outranks an update that committed while the rename waited', async () => {
+    const context = { principal: workspace.admin };
+    const ada = await upsertPerson(context, { name: 'Ada', company: { domain: 'acme.io' } });
+    const companyId = required(ada.company?.id, 'the company Ada works at');
+    let competing = 0;
+    const renamed = await racingRival(
+      (tx) => tx`select id from person where id = ${ada.person.id} for update`,
+      () => updateCompany(context, companyId, { name: 'Acme Corp' }),
+      async (tx) => {
+        const [row] = await tx<{ next: string }[]>`select nextval('sync_id_seq')::text as next`;
+        competing = Number(required(row, 'a sync id').next);
+        await tx`update person set sync_id = ${competing} where id = ${ada.person.id}`;
+      },
+    );
+    const person = required(emitted(renamed.actions, 'person')[0], 'a person action');
+    expect(person.syncId).toBeGreaterThan(competing);
+    const [stored] = await db
+      .select()
+      .from(schema.person)
+      .where(eq(schema.person.id, ada.person.id));
+    expect(stored?.syncId).toBe(person.syncId);
   });
 
   test('changing only the domains re-emits no person or lead', async () => {
     const context = { principal: workspace.admin };
     const ada = await upsertPerson(context, { name: 'Ada', company: { domain: 'acme.io' } });
-    await openLeadFor(ada.person.id);
-    const changed = await updateCompany(context, ada.company?.id ?? '', {
+    await openLeadFor(workspace, ada.person.id);
+    const changed = await updateCompany(context, required(ada.company?.id, 'a company'), {
       domains: ['acme.io', 'acme.dev'],
     });
     expect(changed.actions.map((action) => action.model)).toEqual(['company', 'activity']);

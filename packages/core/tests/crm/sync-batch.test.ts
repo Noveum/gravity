@@ -239,6 +239,62 @@ describe('batch validation', () => {
   });
 });
 
+describe('transaction conflicts', () => {
+  function conflictError(code: string): Error {
+    return Object.assign(new Error(`postgres error ${code}`), { code });
+  }
+
+  async function emitBrand(batch: SyncBatch): Promise<void> {
+    batch.emit({
+      syncId: await batch.nextSyncId(),
+      action: 'insert',
+      model: 'brand',
+      modelId: 'b1',
+      data: { id: 'b1' },
+      scopes: [`workspace:${batch.organizationId}`],
+    });
+  }
+
+  test('a deadlocked batch reruns from scratch and records its actions once', async () => {
+    let attempts = 0;
+    const result = await withBatch({ principal: workspace.admin }, async (batch) => {
+      attempts += 1;
+      await emitBrand(batch);
+      if (attempts === 1) {
+        throw new Error('the query failed', { cause: conflictError('40P01') });
+      }
+      return { attempts };
+    });
+    expect(attempts).toBe(2);
+    expect(result.actions).toHaveLength(1);
+    const rows = await db.select().from(schema.outbox);
+    expect(rows.map((row) => row.syncId)).toEqual(result.actions.map((action) => action.syncId));
+  });
+
+  test('a serialization failure retries twice and then gives up', async () => {
+    let attempts = 0;
+    const attempt = withBatch({ principal: workspace.admin }, async (batch) => {
+      attempts += 1;
+      await emitBrand(batch);
+      throw conflictError('40001');
+    });
+    await expect(attempt).rejects.toThrow('postgres error 40001');
+    expect(attempts).toBe(3);
+    expect(await db.select().from(schema.outbox)).toHaveLength(0);
+  });
+
+  test('any other failure is not retried', async () => {
+    let attempts = 0;
+    const attempt = withBatch({ principal: workspace.admin }, async (batch) => {
+      attempts += 1;
+      await emitBrand(batch);
+      throw conflictError('23503');
+    });
+    await expect(attempt).rejects.toThrow('postgres error 23503');
+    expect(attempts).toBe(1);
+  });
+});
+
 describe('retryOnUniqueViolation', () => {
   test('retries a unique violation once and nothing else', async () => {
     let calls = 0;

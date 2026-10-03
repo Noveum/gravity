@@ -23,16 +23,30 @@ export function requireRow<T>(row: T | undefined, message: string): T {
 }
 
 const UNIQUE_VIOLATION = '23505';
+const TRANSACTION_CONFLICTS: readonly string[] = ['40P01', '40001'];
 const CAUSE_DEPTH = 5;
 
-export function uniqueViolationOf(error: unknown): Record<string, unknown> | null {
+export function postgresErrorOf(
+  error: unknown,
+  codes: readonly string[],
+): Record<string, unknown> | null {
   let cursor: unknown = error;
   for (let depth = 0; depth < CAUSE_DEPTH; depth += 1) {
     if (typeof cursor !== 'object' || cursor === null) return null;
-    if ('code' in cursor && cursor.code === UNIQUE_VIOLATION) return { ...cursor };
+    if ('code' in cursor && typeof cursor.code === 'string' && codes.includes(cursor.code)) {
+      return { ...cursor };
+    }
     cursor = 'cause' in cursor ? cursor.cause : undefined;
   }
   return null;
+}
+
+export function uniqueViolationOf(error: unknown): Record<string, unknown> | null {
+  return postgresErrorOf(error, [UNIQUE_VIOLATION]);
+}
+
+export function isTransactionConflict(error: unknown): boolean {
+  return postgresErrorOf(error, TRANSACTION_CONFLICTS) !== null;
 }
 
 export function isUniqueViolation(error: unknown): boolean {

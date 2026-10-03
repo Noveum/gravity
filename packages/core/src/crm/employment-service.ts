@@ -1,4 +1,4 @@
-import { and, eq, schema } from '@gravity/db';
+import { and, asc, eq, inArray, type SQL, schema } from '@gravity/db';
 import { notFound } from '@gravity/shared/errors';
 import { assertCan } from '@gravity/shared/policy';
 import type { EmploymentRow } from '@gravity/shared/records';
@@ -6,10 +6,9 @@ import { type EmploymentInput, employmentInputSchema } from '@gravity/shared/val
 import { newId, requireRow } from '../internal.ts';
 import { recordActivity } from './activity-service.ts';
 import { liveCompany } from './company-service.ts';
-import { reannounceLeadsOfPeopleIn, reannouncePeopleIn } from './derived-rows.ts';
+import { emitEmployment, reannounceLeadsOfPeopleIn, reannouncePeopleIn } from './derived-rows.ts';
 import { livePerson } from './person-lookup.ts';
 import { employmentRowOf } from './rows.ts';
-import { employmentScopes } from './scopes.ts';
 import { type SyncBatch, type WithActions, withBatch } from './sync-batch.ts';
 import type { WriteContext } from './write-context.ts';
 
@@ -25,22 +24,6 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function emitEmployment(
-  batch: SyncBatch,
-  syncId: number,
-  action: 'insert' | 'update',
-  employment: EmploymentRow,
-): void {
-  batch.emit({
-    syncId,
-    action,
-    model: 'employment',
-    modelId: employment.id,
-    data: employment,
-    scopes: employmentScopes(batch.organizationId, employment.personId, employment.companyId),
-  });
-}
-
 export async function reannounceEmploymentChangeIn(
   batch: SyncBatch,
   personId: string,
@@ -48,6 +31,50 @@ export async function reannounceEmploymentChangeIn(
 ): Promise<void> {
   if (write.personChanged) await reannouncePeopleIn(batch, [personId]);
   if (write.leadsChanged) await reannounceLeadsOfPeopleIn(batch, [personId]);
+}
+
+interface LockedJob {
+  readonly employment: StoredEmployment;
+  readonly companyName: string;
+}
+
+async function lockPersonRow(batch: SyncBatch, personId: string): Promise<void> {
+  await batch.tx
+    .select({ id: schema.person.id })
+    .from(schema.person)
+    .where(
+      and(eq(schema.person.id, personId), eq(schema.person.organizationId, batch.organizationId)),
+    )
+    .for('update');
+}
+
+async function lockJobs(batch: SyncBatch, where: SQL | undefined): Promise<LockedJob[]> {
+  const jobs = await batch.tx
+    .select()
+    .from(schema.employment)
+    .where(and(eq(schema.employment.organizationId, batch.organizationId), where))
+    .orderBy(asc(schema.employment.id))
+    .for('update');
+  if (jobs.length === 0) return [];
+  const companies = await batch.tx
+    .select({ id: schema.company.id, name: schema.company.name })
+    .from(schema.company)
+    .where(
+      and(
+        eq(schema.company.organizationId, batch.organizationId),
+        inArray(
+          schema.company.id,
+          jobs.map((job) => job.companyId),
+        ),
+      ),
+    );
+  return jobs.map((employment) => ({
+    employment,
+    companyName: requireRow(
+      companies.find((company) => company.id === employment.companyId),
+      'That company does not exist.',
+    ).name,
+  }));
 }
 
 async function endIn(
@@ -95,20 +122,12 @@ export async function writeEmploymentIn(
   batch: SyncBatch,
   input: EmploymentInput,
 ): Promise<EmploymentWrite> {
-  await livePerson(batch.tx, batch.organizationId, input.personId);
-  const company = await liveCompany(batch.tx, batch.organizationId, input.companyId);
-  const current = await batch.tx
-    .select({ employment: schema.employment, companyName: schema.company.name })
-    .from(schema.employment)
-    .innerJoin(schema.company, eq(schema.company.id, schema.employment.companyId))
-    .where(
-      and(
-        eq(schema.employment.organizationId, batch.organizationId),
-        eq(schema.employment.personId, input.personId),
-        eq(schema.employment.isCurrent, true),
-      ),
-    )
-    .for('update');
+  await livePerson(batch.tx, batch.organizationId, input.personId, true);
+  const company = await liveCompany(batch.tx, batch.organizationId, input.companyId, 'share');
+  const current = await lockJobs(
+    batch,
+    and(eq(schema.employment.personId, input.personId), eq(schema.employment.isCurrent, true)),
+  );
   const same = current.find((entry) => entry.employment.companyId === company.id);
   if (same !== undefined && input.isCurrent) {
     if (input.title === null || input.title === same.employment.title) {
@@ -186,18 +205,19 @@ export async function endEmployment(
 ): Promise<WithActions<{ employment: EmploymentRow }>> {
   assertCan(context.principal, 'record:write');
   return await withBatch(context, async (batch) => {
-    const [row] = await batch.tx
-      .select({ employment: schema.employment, companyName: schema.company.name })
+    const [target] = await batch.tx
+      .select({ personId: schema.employment.personId })
       .from(schema.employment)
-      .innerJoin(schema.company, eq(schema.company.id, schema.employment.companyId))
       .where(
         and(
           eq(schema.employment.id, employmentId),
           eq(schema.employment.organizationId, batch.organizationId),
         ),
       )
-      .limit(1)
-      .for('update');
+      .limit(1);
+    if (target === undefined) throw notFound('That current job does not exist.');
+    await lockPersonRow(batch, target.personId);
+    const [row] = await lockJobs(batch, eq(schema.employment.id, employmentId));
     if (row === undefined || !row.employment.isCurrent) {
       throw notFound('That current job does not exist.');
     }

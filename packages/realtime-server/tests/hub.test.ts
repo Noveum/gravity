@@ -10,7 +10,7 @@ import {
   UNAUTHORIZED_CLOSE_CODE,
 } from '@gravity/shared/events';
 import { signRealtimeTicket } from '@gravity/shared/events/ticket';
-import { FakeRedis, resetFakeRedis } from './fake-redis.ts';
+import { FakeRedis, liveFakeRedis, resetFakeRedis } from './fake-redis.ts';
 import { FakeSocket, waitFor } from './fake-socket.ts';
 import {
   dropSeededWorkspaces,
@@ -326,6 +326,46 @@ describe('delta fan out', () => {
 
       expect(wired.socket.frames('delta')).toHaveLength(0);
       expect(wired.socket.closures).toHaveLength(0);
+    } finally {
+      await hub.close();
+    }
+  });
+});
+
+describe('redis subscriber recovery', () => {
+  function hubSubscriber(): FakeRedis {
+    const subscriber = liveFakeRedis().find(
+      (instance) => instance.options['maxRetriesPerRequest'] === null,
+    );
+    if (subscriber === undefined) throw new Error('the hub never created a subscriber');
+    return subscriber;
+  }
+
+  it('asks every open connection to catch up once the subscriber is ready again', async () => {
+    const hub = await newHub();
+    try {
+      const reader = await connect(hub, home.readerUserId, home.organizationId);
+      const visitor = await connect(hub, away.readerUserId, away.organizationId);
+
+      hubSubscriber().dropAndRecover();
+
+      expect(reader.socket.frames('resync')).toHaveLength(1);
+      expect(visitor.socket.frames('resync')).toHaveLength(1);
+      expect(reader.socket.closures).toHaveLength(0);
+      expect(hub.stats().connections).toBe(2);
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it('sends nothing on a ready that did not follow a lost connection', async () => {
+    const hub = await newHub();
+    try {
+      const reader = await connect(hub, home.readerUserId, home.organizationId);
+
+      hubSubscriber().emit('ready');
+
+      expect(reader.socket.frames('resync')).toHaveLength(0);
     } finally {
       await hub.close();
     }

@@ -43,6 +43,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     denied: z.array(z.string()).default([]),
   }),
   z.object({ type: z.literal('error'), message: z.string(), code: z.string() }),
+  z.object({ type: z.literal('resync') }),
 ]);
 
 export type ServerMessage = z.infer<typeof serverMessageSchema>;

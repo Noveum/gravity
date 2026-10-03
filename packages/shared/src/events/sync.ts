@@ -59,12 +59,14 @@ const queryCursorSchema = z.coerce.number().int().nonnegative();
 export const syncCatchupQuerySchema = z.object({
   organizationId: z.string().min(1).max(128),
   since: queryCursorSchema.default(0),
+  cursor: queryCursorSchema.optional(),
 });
 
 export const syncCatchupSchema = z.object({
   syncId: syncCursorSchema,
   actions: z.array(syncActionSchema),
   truncated: z.boolean(),
+  reset: z.boolean(),
 });
 
 export type SyncCatchup = z.infer<typeof syncCatchupSchema>;

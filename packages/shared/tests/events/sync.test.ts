@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { syncActionSchema } from '../../src/events/sync.ts';
+import { serverMessageSchema } from '../../src/events/message.ts';
+import {
+  syncActionSchema,
+  syncCatchupQuerySchema,
+  syncCatchupSchema,
+} from '../../src/events/sync.ts';
 
 const valid = {
   syncId: 7,
@@ -24,5 +29,35 @@ describe('syncActionSchema', () => {
 
   test('requires at least one scope', () => {
     expect(syncActionSchema.safeParse({ ...valid, scopes: [] }).success).toBe(false);
+  });
+});
+
+describe('syncCatchupQuerySchema', () => {
+  test('requires the workspace the caller is catching up on', () => {
+    expect(syncCatchupQuerySchema.safeParse({ since: '4' }).success).toBe(false);
+  });
+
+  test('coerces the cursors and leaves the true cursor optional', () => {
+    expect(syncCatchupQuerySchema.parse({ organizationId: 'o1', since: '4' })).toEqual({
+      organizationId: 'o1',
+      since: 4,
+    });
+    expect(
+      syncCatchupQuerySchema.parse({ organizationId: 'o1', since: '4', cursor: '1004' }),
+    ).toEqual({ organizationId: 'o1', since: 4, cursor: 1004 });
+  });
+});
+
+describe('syncCatchupSchema', () => {
+  test('requires the reset signal', () => {
+    const page = { syncId: 3, actions: [], truncated: false };
+    expect(syncCatchupSchema.safeParse(page).success).toBe(false);
+    expect(syncCatchupSchema.parse({ ...page, reset: true }).reset).toBe(true);
+  });
+});
+
+describe('serverMessageSchema', () => {
+  test('carries a resync control frame', () => {
+    expect(serverMessageSchema.parse({ type: 'resync' })).toEqual({ type: 'resync' });
   });
 });

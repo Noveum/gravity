@@ -133,6 +133,10 @@ export function createRealtimeClient(options: RealtimeClientOptions): RealtimeCl
       handleDelta(message.actions);
       return;
     }
+    if (message.type === 'resync') {
+      options.onResume?.(maxSeenSyncId);
+      return;
+    }
     if (message.type === 'presence') {
       options.onPresence?.(message.messages);
       return;

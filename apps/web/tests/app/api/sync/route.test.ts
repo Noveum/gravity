@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { newId, recordSync } from '@gravity/core';
+import { newId, pruneOutbox, recordSync } from '@gravity/core';
 import { createUser, createWorkspace, resetDatabase } from '@gravity/core/test-support';
-import { db, schema } from '@gravity/db';
+import { db, inArray, schema } from '@gravity/db';
 import { CATCHUP_LIMIT, type SyncAction } from '@gravity/shared/events';
 import { GET } from '@/app/api/sync/route.ts';
 import { signedInAs, signedOut } from '../../../../tests-support.ts';
@@ -129,6 +129,31 @@ describe('/api/sync', () => {
     await signedInAs(mine.adminUser.id, mine.organizationId);
     const response = await GET(new Request('http://localhost:3300/api/sync?since=0'));
     expect(response.status).toBe(422);
+  });
+
+  test('tells a client whose cursor is older than the pruned history to reset', async () => {
+    const mine = await createWorkspace('Mine');
+    await db.delete(schema.outbox);
+    await recordSync(db, [
+      action(mine.organizationId, 9001, 'insert'),
+      action(mine.organizationId, 9002, 'update'),
+      action(mine.organizationId, 9003, 'update'),
+    ]);
+    await db
+      .update(schema.outbox)
+      .set({ createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) })
+      .where(inArray(schema.outbox.syncId, [9001, 9002]));
+    await pruneOutbox(7 * 24 * 60 * 60_000);
+    await signedInAs(mine.adminUser.id, mine.organizationId);
+
+    const behind = await (await GET(new Request(syncUrl(mine.organizationId, 9001)))).json();
+    expect(behind).toEqual({ actions: [], truncated: false, reset: true, syncId: 9003 });
+
+    const overlapped = await (
+      await GET(new Request(`${syncUrl(mine.organizationId, 8000)}&cursor=9002`))
+    ).json();
+    expect(overlapped.reset).toBe(false);
+    expect(overlapped.actions.map((row: SyncAction) => row.syncId)).toEqual([9003]);
   });
 
   test('refuses a caller without a session', async () => {

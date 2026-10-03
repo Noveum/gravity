@@ -11,11 +11,16 @@ export async function GET(request: Request): Promise<Response> {
   return await handleRoute(async () => {
     const session = await getSession();
     if (session === null) throw unauthorized();
-    const { organizationId, since } = syncCatchupQuerySchema.parse(searchParamsOf(request));
+    const { organizationId, since, cursor } = syncCatchupQuerySchema.parse(searchParamsOf(request));
     const membership = await resolveMembership(session.user.id, organizationId);
     if (membership === null || membership.principal.organizationId !== organizationId) {
       throw forbidden('You are not a member of this workspace.');
     }
-    return await readOutboxSince({ organizationId, userId: session.user.id }, since, CATCHUP_LIMIT);
+    return await readOutboxSince(
+      { organizationId, userId: session.user.id },
+      since,
+      CATCHUP_LIMIT,
+      cursor ?? since,
+    );
   });
 }

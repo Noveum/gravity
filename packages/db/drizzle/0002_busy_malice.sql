@@ -1,0 +1,1 @@
+ALTER TABLE "organization" ADD COLUMN "outbox_pruned_sync_id" bigint DEFAULT 0 NOT NULL;

@@ -26,6 +26,7 @@ const requests: string[] = [];
 let respond: (since: number) => SyncCatchup | Error = (since) => ({
   actions: [],
   truncated: false,
+  reset: false,
   syncId: since,
 });
 
@@ -35,7 +36,7 @@ beforeEach(() => {
   requests.length = 0;
   status = 'connecting';
   resumeHandler = null;
-  respond = (since) => ({ actions: [], truncated: false, syncId: since });
+  respond = (since) => ({ actions: [], truncated: false, reset: false, syncId: since });
   globalThis.fetch = mock((input: RequestInfo | URL) => {
     const url = String(input);
     requests.push(url);
@@ -72,7 +73,9 @@ describe('DeltaBridge catch-up lifecycle', () => {
     expect(requests).toEqual([]);
 
     mounted.reopen('open');
-    await waitFor(() => expect(requests).toEqual(['/api/sync?organizationId=o1&since=4000']));
+    await waitFor(() =>
+      expect(requests).toEqual(['/api/sync?organizationId=o1&since=4000&cursor=5000']),
+    );
 
     mounted.reopen('reconnecting');
     mounted.reopen('open');
@@ -83,7 +86,7 @@ describe('DeltaBridge catch-up lifecycle', () => {
   test('catches up from zero when the workspace has no history', async () => {
     const mounted = mount(new QueryClient(), 0);
     mounted.reopen('open');
-    await waitFor(() => expect(requests).toEqual(['/api/sync?organizationId=o1&since=0']));
+    await waitFor(() => expect(requests).toEqual(['/api/sync?organizationId=o1&since=0&cursor=0']));
   });
 
   test('catches up on the workspace it subscribed with', async () => {
@@ -99,7 +102,9 @@ describe('DeltaBridge catch-up lifecycle', () => {
         <DeltaBridge organizationId="org_other" userId="u1" initialCursor={0} />
       </QueryClientProvider>,
     );
-    await waitFor(() => expect(requests).toEqual(['/api/sync?organizationId=org_other&since=0']));
+    await waitFor(() =>
+      expect(requests).toEqual(['/api/sync?organizationId=org_other&since=0&cursor=0']),
+    );
   });
 
   test('catches up again on resume, from the highest applied sync id', async () => {
@@ -114,7 +119,12 @@ describe('DeltaBridge catch-up lifecycle', () => {
       actor: { type: 'user', id: 'u2' },
       at: new Date(0).toISOString(),
     };
-    respond = (since) => ({ actions: [applied], truncated: false, syncId: since + 1 });
+    respond = (since) => ({
+      actions: [applied],
+      truncated: false,
+      reset: false,
+      syncId: since + 1,
+    });
     const mounted = mount(new QueryClient(), 5000);
     mounted.reopen('open');
     await waitFor(() => expect(requests).toHaveLength(1));
@@ -122,22 +132,40 @@ describe('DeltaBridge catch-up lifecycle', () => {
 
     resumeHandler?.();
     await waitFor(() => expect(requests).toHaveLength(2));
-    expect(requests[1]).toBe('/api/sync?organizationId=o1&since=8000');
+    expect(requests[1]).toBe('/api/sync?organizationId=o1&since=8000&cursor=9000');
   });
 
   test('keeps paging while truncated', async () => {
     respond = (since) =>
       since === 4000
-        ? { actions: [], truncated: true, syncId: 4500 }
-        : { actions: [], truncated: false, syncId: 4600 };
+        ? { actions: [], truncated: true, reset: false, syncId: 4500 }
+        : { actions: [], truncated: false, reset: false, syncId: 4600 };
     const mounted = mount(new QueryClient(), 5000);
     mounted.reopen('open');
     await waitFor(() =>
       expect(requests).toEqual([
-        '/api/sync?organizationId=o1&since=4000',
-        '/api/sync?organizationId=o1&since=4500',
+        '/api/sync?organizationId=o1&since=4000&cursor=5000',
+        '/api/sync?organizationId=o1&since=4500&cursor=5000',
       ]),
     );
+  });
+
+  test('refetches everything and jumps the cursor when the server says to reset', async () => {
+    respond = (since) =>
+      since === 4000
+        ? { actions: [], truncated: false, reset: true, syncId: 20_000 }
+        : { actions: [], truncated: false, reset: false, syncId: since };
+    const client = new QueryClient();
+    const invalidate = mock(() => Promise.resolve());
+    client.invalidateQueries = invalidate as unknown as typeof client.invalidateQueries;
+    const mounted = mount(client, 5000);
+    mounted.reopen('open');
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
+
+    resumeHandler?.();
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[1]).toBe('/api/sync?organizationId=o1&since=19000&cursor=20000');
+    expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
   test('refetches what is on screen when catch-up fails', async () => {

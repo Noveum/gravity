@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { db, eq, schema } from '@gravity/db';
+import { db, eq, inArray, schema } from '@gravity/db';
 import type { SyncAction } from '@gravity/shared/events';
 import {
   flushOutbox,
@@ -26,6 +26,23 @@ function action(syncId: number, kind: SyncAction['action'] = 'update'): SyncActi
     actor: { type: 'system', id: 'test' },
     at: new Date(0).toISOString(),
   };
+}
+
+const RETENTION_MS = 7 * 24 * 60 * 60_000;
+
+async function ageRows(syncIds: number[]): Promise<void> {
+  await db
+    .update(schema.outbox)
+    .set({ createdAt: new Date(Date.now() - RETENTION_MS - 60_000) })
+    .where(inArray(schema.outbox.syncId, syncIds));
+}
+
+async function prunedSyncIdOf(id: string): Promise<number | undefined> {
+  const [row] = await db
+    .select({ prunedSyncId: schema.organization.outboxPrunedSyncId })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, id));
+  return row?.prunedSyncId;
 }
 
 beforeEach(async () => {
@@ -186,5 +203,65 @@ describe('outbox', () => {
     expect(await pruneOutbox(7 * 24 * 60 * 60_000)).toBe(1);
     const left = await db.select().from(schema.outbox);
     expect(left.map((row) => row.syncId).sort()).toEqual([1051, 1052]);
+  });
+  test('pruneOutbox records the highest pruned sync id per workspace and never lowers it', async () => {
+    const other = (await createWorkspace('Other')).organizationId;
+    await db.delete(schema.outbox);
+    await recordSync(db, [
+      action(1060),
+      action(1062),
+      action(1063),
+      { ...action(1061), organizationId: other, scopes: [`workspace:${other}`] },
+    ]);
+    await ageRows([1060, 1061, 1062]);
+    expect(await pruneOutbox(RETENTION_MS)).toBe(3);
+    expect(await prunedSyncIdOf(organizationId)).toBe(1062);
+    expect(await prunedSyncIdOf(other)).toBe(1061);
+
+    await db
+      .update(schema.organization)
+      .set({ outboxPrunedSyncId: 5000 })
+      .where(eq(schema.organization.id, organizationId));
+    await ageRows([1063]);
+    expect(await pruneOutbox(RETENTION_MS)).toBe(1);
+    expect(await prunedSyncIdOf(organizationId)).toBe(5000);
+  });
+
+  test('readOutboxSince signals a reset when the cursor is older than what was pruned', async () => {
+    await recordSync(db, [action(1070), action(1071), action(1072), action(1073)]);
+    await ageRows([1070, 1071]);
+    await pruneOutbox(RETENTION_MS);
+
+    const page = await readOutboxSince({ organizationId, userId: 'reader' }, 1069, 10);
+    expect(page).toEqual({ actions: [], truncated: false, reset: true, syncId: 1073 });
+  });
+
+  test('readOutboxSince does not reset a cursor that already covers everything pruned', async () => {
+    await recordSync(db, [action(1080), action(1081), action(1082)]);
+    await ageRows([1080, 1081]);
+    await pruneOutbox(RETENTION_MS);
+
+    const page = await readOutboxSince({ organizationId, userId: 'reader' }, 1081, 10);
+    expect([page.reset, page.actions.map((row) => row.syncId)]).toEqual([false, [1082]]);
+  });
+
+  test('readOutboxSince judges the reset by the true cursor, not the overlap below it', async () => {
+    await recordSync(db, [action(1090), action(1091), action(1092)]);
+    await ageRows([1090]);
+    await pruneOutbox(RETENTION_MS);
+
+    const page = await readOutboxSince({ organizationId, userId: 'reader' }, 1000, 10, 1091);
+    expect([page.reset, page.actions.map((row) => row.syncId)]).toEqual([false, [1091, 1092]]);
+    const behind = await readOutboxSince({ organizationId, userId: 'reader' }, 1000, 10, 1089);
+    expect(behind.reset).toBe(true);
+  });
+
+  test('readOutboxSince never resets a reader that has no cursor yet', async () => {
+    await recordSync(db, [action(1100), action(1101)]);
+    await ageRows([1100]);
+    await pruneOutbox(RETENTION_MS);
+
+    const page = await readOutboxSince({ organizationId, userId: 'reader' }, 0, 10);
+    expect([page.reset, page.actions.map((row) => row.syncId)]).toEqual([false, [1101]]);
   });
 });

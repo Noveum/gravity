@@ -640,6 +640,19 @@ export async function createRealtimeHub(options: RealtimeHubOptions = {}): Promi
   subscriber.on('error', (error: Error): void => {
     if (!closing) logger.error('redis subscriber error', errorFields(error));
   });
+
+  let subscriberInterrupted = false;
+  subscriber.on('close', (): void => {
+    if (!closing) subscriberInterrupted = true;
+  });
+  subscriber.on('ready', (): void => {
+    if (!subscriberInterrupted || closing) return;
+    subscriberInterrupted = false;
+    logger.info('redis subscriber recovered, asking every connection to catch up', {
+      connections: connections.size,
+    });
+    for (const connection of connections.values()) connection.send({ type: 'resync' });
+  });
   publisher.on('error', (error: Error): void => {
     if (!closing) logger.error('redis publisher error', errorFields(error));
   });

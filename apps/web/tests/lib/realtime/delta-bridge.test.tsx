@@ -81,7 +81,7 @@ describe('delta bridge', () => {
 });
 
 function page(actions: SyncAction[], truncated: boolean, syncId: number): SyncCatchup {
-  return { actions, truncated, syncId };
+  return { actions, truncated, reset: false, syncId };
 }
 
 describe('catch up', () => {
@@ -111,6 +111,44 @@ describe('catch up', () => {
     expect(requested).toEqual([1500 - CATCHUP_OVERLAP]);
     expect(handler.mock.calls.map(([action]) => action.modelId)).toEqual(['late', 'b']);
     expect(lastAppliedSyncId(client)).toBe(1501);
+    unregister();
+  });
+
+  test('sends the true cursor beside the overlapped one', async () => {
+    const client = new QueryClient();
+    applyDelta({ ...base, syncId: 2400 }, client);
+    const requested: [number, number][] = [];
+    await catchUp(client, (since, cursor) => {
+      requested.push([since, cursor]);
+      return Promise.resolve(page([], false, since));
+    });
+    expect(requested).toEqual([[2400 - CATCHUP_OVERLAP, 2400]]);
+  });
+
+  test('on a reset it refetches every query, skips the page and moves the cursor', async () => {
+    const handler = mock();
+    const unregister = registerDeltaHandler('member', handler);
+    const client = new QueryClient();
+    const invalidate = mock(() => Promise.resolve());
+    client.invalidateQueries = invalidate as unknown as typeof client.invalidateQueries;
+    applyDelta({ ...base, modelId: 'a', syncId: 1500 }, client);
+    handler.mockClear();
+    let calls = 0;
+
+    await catchUp(client, () => {
+      calls += 1;
+      return Promise.resolve({
+        actions: [{ ...base, modelId: 'b', syncId: 1600 }],
+        truncated: true,
+        reset: true,
+        syncId: 9000,
+      });
+    });
+
+    expect(calls).toBe(1);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(handler).not.toHaveBeenCalled();
+    expect(lastAppliedSyncId(client)).toBe(9000);
     unregister();
   });
 

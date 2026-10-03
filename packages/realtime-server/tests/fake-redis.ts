@@ -31,11 +31,22 @@ export class FakeRedis extends EventEmitter {
     return Promise.resolve(reached);
   }
 
+  dropAndRecover(): void {
+    this.status = 'reconnecting';
+    this.emit('close');
+    this.status = 'ready';
+    this.emit('ready');
+  }
+
   disconnect(): void {
     this.status = 'end';
     this.channels.clear();
     bus.delete(this);
   }
+}
+
+export function liveFakeRedis(): FakeRedis[] {
+  return [...bus];
 }
 
 export function resetFakeRedis(): void {

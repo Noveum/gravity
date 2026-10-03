@@ -226,6 +226,28 @@ describe('realtime client lifecycle', () => {
     client.close();
   });
 
+  it('asks for catch up from the watermark when the server says it may have missed deltas', async () => {
+    const resumes: number[] = [];
+    const client = createRealtimeClient({
+      url: 'ws://localhost:3400',
+      fetchTicket: () => Promise.resolve(TICKET),
+      onResume: (since) => resumes.push(since),
+    });
+
+    const socket = await firstSocket();
+    socket.open();
+    socket.deliver(readyMessage());
+    socket.deliver({ type: 'delta', actions: [delta(81)] });
+    expect(resumes).toHaveLength(0);
+
+    socket.deliver({ type: 'resync' });
+
+    expect(resumes).toEqual([81]);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(client.status()).toBe('open');
+    client.close();
+  });
+
   it('drops a scope the server denied so a later reconnect stops asking for it', async () => {
     const denied: string[][] = [];
     const client = createRealtimeClient({

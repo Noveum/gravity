@@ -85,6 +85,7 @@ export async function republishStale(
 export interface OutboxPage {
   readonly actions: SyncAction[];
   readonly truncated: boolean;
+  readonly reset: boolean;
   readonly syncId: number;
 }
 
@@ -93,10 +94,20 @@ export interface OutboxReader {
   readonly userId: string;
 }
 
+async function prunedThrough(organizationId: string): Promise<number> {
+  const [row] = await db
+    .select({ prunedSyncId: schema.organization.outboxPrunedSyncId })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, organizationId))
+    .limit(1);
+  return row?.prunedSyncId ?? 0;
+}
+
 export async function readOutboxSince(
   reader: OutboxReader,
   since: number,
   limit: number,
+  cursor: number = since,
 ): Promise<OutboxPage> {
   const readable = [scopes.workspace(reader.organizationId), scopes.user(reader.userId)];
   const rows = await db
@@ -111,11 +122,17 @@ export async function readOutboxSince(
     )
     .orderBy(asc(schema.outbox.syncId))
     .limit(limit + 1);
+  const pruned = await prunedThrough(reader.organizationId);
+  if (cursor > 0 && pruned > cursor) {
+    const latest = await latestOutboxSyncId(reader.organizationId);
+    return { actions: [], truncated: false, reset: true, syncId: Math.max(latest, pruned) };
+  }
   const page = rows.slice(0, limit);
   const last = page.at(-1);
   return {
     actions: toActions(page),
     truncated: rows.length > limit,
+    reset: false,
     syncId: last === undefined ? since : last.syncId,
   };
 }
@@ -129,9 +146,26 @@ export async function latestOutboxSyncId(organizationId: string): Promise<number
 }
 
 export async function pruneOutbox(olderThanMs: number): Promise<number> {
-  const removed = await db
-    .delete(schema.outbox)
-    .where(lt(schema.outbox.createdAt, new Date(Date.now() - olderThanMs)))
-    .returning({ syncId: schema.outbox.syncId });
-  return removed.length;
+  return await db.transaction(async (tx) => {
+    const removed = await tx
+      .delete(schema.outbox)
+      .where(lt(schema.outbox.createdAt, new Date(Date.now() - olderThanMs)))
+      .returning({ syncId: schema.outbox.syncId, organizationId: schema.outbox.organizationId });
+    const highestPruned = new Map<string, number>();
+    for (const row of removed) {
+      highestPruned.set(
+        row.organizationId,
+        Math.max(highestPruned.get(row.organizationId) ?? 0, row.syncId),
+      );
+    }
+    for (const [organizationId, syncId] of highestPruned) {
+      await tx
+        .update(schema.organization)
+        .set({
+          outboxPrunedSyncId: sql`greatest(${schema.organization.outboxPrunedSyncId}, ${syncId})`,
+        })
+        .where(eq(schema.organization.id, organizationId));
+    }
+    return removed.length;
+  });
 }

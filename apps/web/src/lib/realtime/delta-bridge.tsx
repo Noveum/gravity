@@ -59,17 +59,29 @@ export function lastAppliedSyncId(client: QueryClient): number {
   return appliedByClient.get(client)?.cursor ?? 0;
 }
 
+function advanceCursor(client: QueryClient, syncId: number): void {
+  const state = appliedStateOf(client);
+  if (syncId > state.cursor) state.cursor = syncId;
+}
+
 export async function catchUp(
   client: QueryClient,
-  fetchPage: (since: number) => Promise<SyncCatchup>,
+  fetchPage: (since: number, cursor: number) => Promise<SyncCatchup>,
   seededCursor = 0,
 ): Promise<void> {
-  let since = Math.max(0, Math.max(lastAppliedSyncId(client), seededCursor) - CATCHUP_OVERLAP);
+  let cursor = Math.max(lastAppliedSyncId(client), seededCursor);
+  let since = Math.max(0, cursor - CATCHUP_OVERLAP);
   for (;;) {
-    const page = await fetchPage(since);
+    const page = await fetchPage(since, cursor);
+    if (page.reset) {
+      advanceCursor(client, page.syncId);
+      await client.invalidateQueries();
+      return;
+    }
     for (const action of page.actions) applyDelta(action, client);
     if (!page.truncated || page.syncId <= since) return;
     since = page.syncId;
+    cursor = Math.max(cursor, page.syncId);
   }
 }
 
@@ -82,6 +94,15 @@ export function useDeltaSink(): (action: SyncAction) => void {
     [client],
   );
   return useCallback((action: SyncAction) => applyDelta(action, client), [client]);
+}
+
+function catchUpPath(organizationId: string, since: number, cursor: number): string {
+  const query = new URLSearchParams({
+    organizationId,
+    since: String(since),
+    cursor: String(cursor),
+  });
+  return `/api/sync?${query}`;
 }
 
 export interface DeltaBridgeProps {
@@ -121,12 +142,10 @@ export function DeltaBridge({ organizationId, userId, initialCursor }: DeltaBrid
     resumeAbort.current = controller;
     catchUp(
       client,
-      (since) =>
-        apiFetch(
-          `/api/sync?${new URLSearchParams({ organizationId, since: String(since) })}`,
-          syncCatchupSchema,
-          { signal: controller.signal },
-        ),
+      (since, cursor) =>
+        apiFetch(catchUpPath(organizationId, since, cursor), syncCatchupSchema, {
+          signal: controller.signal,
+        }),
       initialCursor,
     ).catch((error: unknown) => {
       if (controller.signal.aborted) return;

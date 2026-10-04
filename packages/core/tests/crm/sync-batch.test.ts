@@ -464,7 +464,7 @@ describe('cappedTransaction', () => {
         }),
       { accessMode: 'read only' },
     );
-    await expect(attempt).rejects.toThrow();
+    await expect(attempt).rejects.toMatchObject({ cause: { code: '25006' } });
     expect(
       await db.select().from(schema.outbox).where(eq(schema.outbox.syncId, 990_002)),
     ).toHaveLength(0);
@@ -472,17 +472,38 @@ describe('cappedTransaction', () => {
 });
 
 describe('transaction ownership', () => {
-  const OWNS_ITS_TRANSACTION = new Set(['crm/sync-batch.ts', 'realtime/outbox.ts']);
+  const OPENS_ITS_OWN_TRANSACTIONS = new Map<string, { count: number; reason: string }>([
+    [
+      'core/crm/sync-batch.ts',
+      { count: 2, reason: 'cappedTransaction itself and the withBatch retry loop' },
+    ],
+    ['core/realtime/outbox.ts', { count: 1, reason: 'outbox prune, writes no sync rows' }],
+  ]);
+  const TRANSACTION_CALL = /\.\s*transaction\s*\(/g;
+  const SOURCE_ROOTS = [
+    ['core', new URL('../../src/', import.meta.url)],
+    ['services', new URL('../../../services/src/', import.meta.url)],
+    ['web', new URL('../../../../apps/web/src/', import.meta.url)],
+  ] as const;
 
-  test('no core module opens an uncapped transaction', async () => {
-    const root = new URL('../../src/', import.meta.url);
-    const files = await readdir(root, { recursive: true });
-    const offenders: string[] = [];
-    for (const file of files) {
-      if (!file.endsWith('.ts') || OWNS_ITS_TRANSACTION.has(file)) continue;
-      const text = await readFile(new URL(file, root), 'utf8');
-      if (text.includes('db.transaction(')) offenders.push(file);
+  async function transactionCalls(): Promise<Map<string, number>> {
+    const found = new Map<string, number>();
+    for (const [name, root] of SOURCE_ROOTS) {
+      const files = await readdir(root, { recursive: true });
+      for (const file of files) {
+        if (!(file.endsWith('.ts') || file.endsWith('.tsx'))) continue;
+        const text = await readFile(new URL(file, root), 'utf8');
+        const count = text.match(TRANSACTION_CALL)?.length ?? 0;
+        if (count > 0) found.set(`${name}/${file}`, count);
+      }
     }
-    expect(offenders).toEqual([]);
+    return found;
+  }
+
+  test('only the allowlisted modules open a transaction, each as often as it is allowed', async () => {
+    const expected = new Map(
+      [...OPENS_ITS_OWN_TRANSACTIONS].map(([file, { count }]) => [file, count] as const),
+    );
+    expect(await transactionCalls()).toEqual(expected);
   });
 });

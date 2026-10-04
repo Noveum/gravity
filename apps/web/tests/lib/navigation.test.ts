@@ -46,6 +46,7 @@ describe('navigation', () => {
 
   test('breadcrumbs name the section and its page', () => {
     expect(breadcrumbsFor('/today')).toEqual([{ label: 'Today' }]);
+    expect(breadcrumbsFor('/import')).toEqual([{ label: 'Import' }]);
     expect(breadcrumbsFor('/settings/members')).toEqual([
       { label: 'Settings', href: '/settings/members' },
       { label: 'Members' },

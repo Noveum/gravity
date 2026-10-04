@@ -13,7 +13,7 @@ An open-source, realtime, keyboard-first CRM for teams that do a lot of outreach
 
 The web app runs on http://localhost:3300 and the realtime socket on ws://localhost:3400.
 
-`bun run import csv people.csv --workspace <slug> --as <email> --target people` dry runs an import; add `--commit` to write it.
+`bun run import csv people.csv --workspace <slug> --as <email> --target people` dry runs an import; add `--commit` to write it. The same import runs in the app at `/import`: `O` chooses a file, `Cmd+Enter` previews and then imports, `Esc` steps back.
 
 `bun run db:push` does not notice when a unique index loses its `where` clause. A dev
 database created by push before migration 0004 keeps the old partial

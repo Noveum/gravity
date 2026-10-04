@@ -76,6 +76,7 @@ export interface BreadcrumbLookup {
 
 export function breadcrumbsFor(pathname: string, lookup: BreadcrumbLookup = {}): Breadcrumb[] {
   const [section, page] = pathname.split('/').filter((segment) => segment.length > 0);
+  if (section === 'import') return [{ label: 'Import' }];
   const item = section === undefined ? undefined : navItemFor(section);
   if (item === undefined) return [];
   if (page === undefined) return [{ label: item.label }];

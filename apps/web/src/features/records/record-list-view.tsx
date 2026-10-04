@@ -1,7 +1,7 @@
 'use client';
 
 import type { FilterRegistry } from '@gravity/shared/filters';
-import { useEffect, useMemo } from 'react';
+import { type ReactNode, useEffect, useMemo } from 'react';
 import { EmptyState } from '@/components/ui/empty-state.tsx';
 import { ErrorState } from '@/components/ui/error-state.tsx';
 import { ListToolbar } from '@/features/filters/list-toolbar.tsx';
@@ -31,6 +31,7 @@ export interface RecordListCopy {
   readonly emptyTitle: string;
   readonly emptyDescription: string;
   readonly filteredTitle: string;
+  readonly emptyAction?: ReactNode;
 }
 
 export interface RecordListResult {
@@ -79,7 +80,13 @@ export function RecordListView<T extends { readonly id: string }>({
     }
     if (result.isPending) return loading ? <RecordListSkeleton /> : null;
     if (list.rows.length === 0 && !state.hasFilter) {
-      return <EmptyState title={copy.emptyTitle} description={copy.emptyDescription} />;
+      return (
+        <EmptyState
+          title={copy.emptyTitle}
+          description={copy.emptyDescription}
+          action={copy.emptyAction}
+        />
+      );
     }
     if (list.rows.length === 0) {
       return <EmptyState title={copy.filteredTitle} description="Press Shift+F to clear them." />;

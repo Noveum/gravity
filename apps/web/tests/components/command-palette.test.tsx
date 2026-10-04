@@ -44,4 +44,17 @@ describe('paletteCommands', () => {
     command?.run();
     expect(copy).toHaveBeenCalledTimes(1);
   });
+
+  test('offers the import page', () => {
+    const navigate = mock();
+    paletteCommands(navigate)
+      .find((command) => command.id === 'import')
+      ?.run();
+    expect(navigate).toHaveBeenCalledWith('/import');
+  });
+
+  test('leaves the import page out for a role that cannot run imports', () => {
+    const ids = paletteCommands(mock(), { canImport: false }).map((command) => command.id);
+    expect(ids).not.toContain('import');
+  });
 });

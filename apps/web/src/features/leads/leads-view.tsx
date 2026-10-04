@@ -12,6 +12,7 @@ import { Tooltip } from '@/components/ui/tooltip.tsx';
 import { leadViewsFor } from '@/features/filters/list-query.ts';
 import { ListToolbar } from '@/features/filters/list-toolbar.tsx';
 import { useListQuery } from '@/features/filters/use-list-query.ts';
+import { ImportLink } from '@/features/import/import-link.tsx';
 import { useWorkspace } from '@/features/workspace/use-workspace.ts';
 import { useCopyLinkTarget } from '@/lib/copy-link.tsx';
 import { useHotkey } from '@/lib/keyboard/index.ts';
@@ -136,6 +137,7 @@ export function LeadsView({ pipelineKey }: { readonly pipelineKey: string }) {
       <EmptyState
         title={`No leads in ${brand?.name ?? 'this brand'} · ${pipeline.name} yet.`}
         description="Press C to add a person, or import a CSV."
+        action={<ImportLink href={`/import?target=leads&pipeline=${pipeline.key}`} />}
       />,
     );
   }

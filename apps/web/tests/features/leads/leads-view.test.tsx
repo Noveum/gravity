@@ -68,6 +68,22 @@ describe('LeadsView states', () => {
     renderView();
     expect(await screen.findByText('No leads in Yodu · Prospecting yet.')).toBeInTheDocument();
     expect(screen.getByText('Press C to add a person, or import a CSV.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Import a file' })).toHaveAttribute(
+      'href',
+      '/import?target=leads&pipeline=YOD',
+    );
+  });
+
+  test('an empty pipeline offers no import to a role that cannot run one', async () => {
+    serve(200, { leads: [], nextCursor: null });
+    renderWithClient(
+      <ContextPanelProvider>
+        <LeadsView pipelineKey="YOD" />
+      </ContextPanelProvider>,
+      { bootstrap: bootstrapFixture({ me: { userId: 'u1', role: 'contributor' } }) },
+    );
+    expect(await screen.findByText('No leads in Yodu · Prospecting yet.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Import a file' })).not.toBeInTheDocument();
   });
 
   test('shows nothing for the first 300ms, then a skeleton', async () => {

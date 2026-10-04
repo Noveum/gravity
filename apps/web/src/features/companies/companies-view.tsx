@@ -3,6 +3,7 @@
 import { companyFilterRegistry } from '@gravity/shared/filters';
 import type { CompanyRow } from '@gravity/shared/records';
 import { useMemo } from 'react';
+import { ImportLink } from '@/features/import/import-link.tsx';
 import type { RecordColumn } from '@/features/records/record-list.tsx';
 import { RecordListView, useRecordListQuery } from '@/features/records/record-list-view.tsx';
 import { useWorkspace } from '@/features/workspace/use-workspace.ts';
@@ -13,6 +14,7 @@ const COPY = {
   emptyTitle: 'No companies yet.',
   emptyDescription: 'Companies appear when you add people with a work email or domain.',
   filteredTitle: 'No companies match these filters.',
+  emptyAction: <ImportLink href="/import?target=companies" />,
 } as const;
 
 const COLUMNS: readonly RecordColumn<CompanyRow>[] = [

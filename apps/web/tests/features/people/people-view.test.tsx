@@ -131,6 +131,10 @@ describe('PeopleView', () => {
     renderWithClient(<PeopleView />);
     expect(await screen.findByText('No people yet.')).toBeInTheDocument();
     expect(screen.getByText('Press C to add a person, or import a CSV.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Import a file' })).toHaveAttribute(
+      'href',
+      '/import?target=people',
+    );
   });
 
   test('a filter that matches nobody offers Shift+F', async () => {

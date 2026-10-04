@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 import { Kbd } from '@/components/ui/kbd.tsx';
 import { MAX_LIST_SEARCH_LENGTH } from '@/features/filters/list-query.ts';
 import { personHref } from '@/features/leads/lead-groups.ts';
+import { useCan } from '@/features/workspace/use-can.ts';
 import { COPY_FOR_AGENT_BINDING } from '@/lib/copy-for-agent.tsx';
 import { COPY_LINK_BINDING } from '@/lib/copy-link.tsx';
 import { formatBinding, useHotkey } from '@/lib/keyboard/index.ts';
@@ -51,6 +52,7 @@ export interface PaletteActions {
   readonly toggleContextPanel?: (() => void) | undefined;
   readonly copyLink?: (() => void) | undefined;
   readonly copyForAgent?: (() => void) | undefined;
+  readonly canImport?: boolean;
 }
 
 function optionalCommand(
@@ -72,6 +74,16 @@ export function paletteCommands(
       shortcut: item.chord,
       run: () => navigate(item.href),
     })),
+    ...(actions.canImport === false
+      ? []
+      : [
+          {
+            id: 'import',
+            label: 'Import a CSV or JSON file',
+            group: 'Navigate',
+            run: () => navigate('/import'),
+          },
+        ]),
     ...optionalCommand(actions.toggleContextPanel, {
       id: 'toggle-context-panel',
       label: 'Toggle context panel',
@@ -153,6 +165,7 @@ export function CommandPalette({
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
   const client = useQueryClient();
+  const canImport = useCan('import:run');
   const [term, setTerm] = useState('');
   const local = useMemo(
     () => (open ? searchCachedRecords(client, term) : EMPTY_HITS),
@@ -173,10 +186,12 @@ export function CommandPalette({
           toggleContextPanel: onToggleContextPanel,
           copyLink: onCopyLink,
           copyForAgent: onCopyForAgent,
+          canImport,
         }),
       ),
     [
       router,
+      canImport,
       setTheme,
       resolvedTheme,
       onShowShortcuts,

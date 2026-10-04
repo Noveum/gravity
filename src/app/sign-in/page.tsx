@@ -1,3 +1,4 @@
+import { emailSignInEnabled } from "@crm/auth/email";
 import { enabledProviders } from "@crm/auth/server";
 import { isDemoMode } from "@crm/database/client";
 import t from "@crm/i18n/translations/en.json";
@@ -10,6 +11,7 @@ export default function Page() {
       <SignIn
         providers={isDemoMode() ? [] : enabledProviders()}
         demo={isDemoMode()}
+        emailEnabled={!isDemoMode() && emailSignInEnabled()}
       />
     </Suspense>
   );

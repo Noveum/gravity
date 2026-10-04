@@ -219,6 +219,93 @@ test("social login blocks duplicate clicks and rejects unsafe callback origins",
   expect(screen.getByRole("alert").textContent).toBe(t.errors.INVALID_INPUT);
 });
 
+test("email-only installations offer sign-in and keep a failed email ready to retry", async () => {
+  request.mockRejectedValueOnce(new Error("EMAIL_DELIVERY_UNAVAILABLE"));
+  render(<SignIn providers={[]} demo={false} emailEnabled />);
+  expect(screen.queryByText(t.authUnavailable)).toBeNull();
+  const email = screen.getByLabelText(t.emailAddress) as HTMLInputElement;
+  fireEvent.change(email, { target: { value: "owner@example.test" } });
+  fireEvent.submit(email.closest("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(screen.getByRole("alert").textContent).toBe(
+      t.errors.EMAIL_DELIVERY_UNAVAILABLE,
+    ),
+  );
+  expect(email.value).toBe("owner@example.test");
+  expect(screen.queryByLabelText(t.signInCode)).toBeNull();
+});
+
+test("OTP form freezes the recipient, suppresses duplicate sends and preserves assistant authorization", async () => {
+  query = new URLSearchParams(
+    "sig=signed&client_id=assistant&code_challenge=challenge&callbackURL=https://elsewhere.example",
+  );
+  const sending = deferred();
+  request.mockReturnValueOnce(sending.promise);
+  render(<SignIn providers={["google"]} demo={false} emailEnabled />);
+  const email = screen.getByLabelText(t.emailAddress) as HTMLInputElement;
+  fireEvent.change(email, { target: { value: "Owner@Example.test" } });
+  const form = email.closest("form") as HTMLFormElement;
+  fireEvent.submit(form);
+  fireEvent.submit(form);
+  expect(request).toHaveBeenCalledOnce();
+  expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toEqual({
+    email: "owner@example.test",
+    type: "sign-in",
+  });
+  await act(async () => sending.resolve({ success: true }));
+  const code = screen.getByLabelText(t.signInCode) as HTMLInputElement;
+  expect(document.activeElement).toBe(code);
+  expect(screen.queryByLabelText(t.emailAddress)).toBeNull();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: t.resendCodeIn.replace("{seconds}", "60"),
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  request.mockRejectedValueOnce(new Error("INVALID_OTP"));
+  fireEvent.change(code, { target: { value: "123456" } });
+  fireEvent.submit(form);
+  await waitFor(() =>
+    expect(screen.getByRole("alert").textContent).toBe(t.errors.INVALID_OTP),
+  );
+  expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toEqual({
+    email: "owner@example.test",
+    otp: "123456",
+    oauth_query: query.toString(),
+  });
+  expect(code.value).toBe("123456");
+  fireEvent.click(screen.getByRole("button", { name: t.changeEmail }));
+  expect(
+    (screen.getByLabelText(t.emailAddress) as HTMLInputElement).value,
+  ).toBe("Owner@Example.test");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("email sign-in destinations preserve safe paths and reject external or malformed callbacks", async () => {
+  const { signInDestination } = await import(
+    "../src/components/sign-in-destination"
+  );
+  for (const callback of [
+    "https://elsewhere.example/",
+    "//elsewhere.example/",
+    "javascript:invalid",
+    "http://[",
+  ])
+    expect(
+      signInDestination(
+        new URLSearchParams({ callbackURL: callback }),
+        "https://crm.example.test",
+      ),
+    ).toBe("/");
+  expect(
+    signInDestination(
+      new URLSearchParams({ callbackURL: "/onboarding?from=login" }),
+      "https://crm.example.test",
+    ),
+  ).toBe("/onboarding?from=login");
+});
+
 const connectionData = {
   products: [{ id: "p", name: "Product" }],
   grants: [{ id: "g", productIds: ["p"] }],

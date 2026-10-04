@@ -100,13 +100,24 @@ describe('a lead that is no longer live', () => {
   });
 });
 
+function fullLineCount(context: Parameters<typeof renderRecordContext>[0]): number {
+  return renderRecordContext(context, { maxTokens: 1_000_000, links }).split('\n').length;
+}
+
+function expectOmitted(text: string, fullLines: number, maxTokens: number): void {
+  const lines = text.split('\n');
+  const kept = lines.length - 1;
+  expect(lines.at(-1)).toBe(`(${fullLines - kept} more lines omitted to fit ${maxTokens} tokens)`);
+  expect(fullLines - kept).toBeGreaterThan(0);
+}
+
 describe('renderRecordContext', () => {
   test('renders names and links rather than ids', async () => {
     const context = await getRecordContext(workspace.admin, { type: 'lead', id: leadId });
     const text = renderRecordContext(context, { maxTokens: 8000, links });
     expect(text).toContain('Person: Ada Lovelace <ada@vela.example>');
     expect(text).toContain(`Link: https://crm.example.com/people/${personId}`);
-    expect(text).toContain('Works as: CTO at Vela Robotics');
+    expect(text).toContain('Works as: "CTO" at "Vela Robotics"');
     expect(text).toContain(
       '- LUM-1 (in focus) · Prospecting · stage Contacted (open) · owner Ada Admin · priority High',
     );
@@ -119,7 +130,7 @@ describe('renderRecordContext', () => {
     const text = renderRecordContext(context, { maxTokens: 8000, links });
     expect(text).toContain('Company: Vela Robotics');
     expect(text).toContain('Domains: vela.example');
-    expect(text).toContain(`- Ada Lovelace, CTO https://crm.example.com/people/${personId}`);
+    expect(text).toContain(`- "Ada Lovelace", "CTO" https://crm.example.com/people/${personId}`);
     expect(text).toContain('- LUM-1 · "Ada Lovelace" · Prospecting');
   });
 
@@ -170,14 +181,12 @@ describe('renderRecordContext', () => {
     const context = await getRecordContext(workspace.admin, { type: 'person', id: personId });
     const person = context.person;
     if (person === null) throw new Error('missing person');
-    const text = renderRecordContext(
-      { ...context, person: { ...person, phones: ['5'.repeat(5000)] } },
-      { maxTokens: 200, links },
-    );
+    const shown = { ...context, person: { ...person, phones: ['5'.repeat(5000)] } };
+    const text = renderRecordContext(shown, { maxTokens: 200, links });
     expect(text.length).toBeLessThanOrEqual(800);
     expect(text).toContain('Person: Ada Lovelace');
     expect(text).not.toContain('Phones:');
-    expect(text).toMatch(/\n\(\d+ more lines omitted to fit 200 tokens\)$/);
+    expectOmitted(text, fullLineCount(shown), 200);
   });
 
   test('a cut never leaves half of a link', async () => {
@@ -189,27 +198,26 @@ describe('renderRecordContext', () => {
       id: `${lead.id}-${index}`,
       key: `LUM-${index + 1}`,
     }));
-    const text = renderRecordContext({ ...context, leads: many }, { maxTokens: 200, links });
+    const shown = { ...context, leads: many };
+    const text = renderRecordContext(shown, { maxTokens: 200, links });
     expect(text.length).toBeLessThanOrEqual(800);
     const entries = text.split('\n').filter((line) => line.startsWith('- LUM-'));
     expect(entries.length).toBeGreaterThan(0);
     for (const entry of entries) {
       expect(entry).toMatch(/ · https:\/\/crm\.example\.com\/l\/LUM-\d+\?w=acme$/);
     }
-    expect(text).toMatch(/\n\(\d+ more lines omitted to fit 200 tokens\)$/);
+    expectOmitted(text, fullLineCount(shown), 200);
   });
 
   test('a first line longer than the whole budget is clipped and says so', async () => {
     const context = await getRecordContext(workspace.admin, { type: 'person', id: personId });
     const person = context.person;
     if (person === null) throw new Error('missing person');
-    const text = renderRecordContext(
-      { ...context, person: { ...person, name: 'N'.repeat(5000) } },
-      { maxTokens: 200, links },
-    );
+    const shown = { ...context, person: { ...person, name: 'N'.repeat(5000) } };
+    const text = renderRecordContext(shown, { maxTokens: 200, links });
     expect(text.length).toBeLessThanOrEqual(800);
     expect(text.startsWith('Person: NNN')).toBe(true);
-    expect(text).toMatch(/\n\(\d+ more lines omitted to fit 200 tokens\)$/);
+    expectOmitted(text, fullLineCount(shown), 200);
   });
 
   test('when no entry fits the notice says entries, not older entries', async () => {
@@ -317,6 +325,41 @@ describe('text that tries to pass as structure', () => {
     expect(text.replaceAll('\n', '')).not.toMatch(/\p{Cc}/u);
     expect(text.split('\n').filter((line) => line.startsWith('Leads:'))).toHaveLength(1);
     expect(text).toContain('Location: Berlin Leads: [31m red 2J');
+  });
+});
+
+describe('text that hides its direction or width', () => {
+  test('format characters such as bidi overrides and zero-width marks are removed', async () => {
+    const context = await getRecordContext(workspace.admin, { type: 'lead', id: leadId });
+    const person = context.person;
+    if (person === null) throw new Error('missing person');
+    const text = renderRecordContext(
+      {
+        ...context,
+        person: { ...person, location: 'Ber\u202Elin\u200B\u2066x\u2069', name: 'Ada\uFEFF' },
+      },
+      { maxTokens: 8000, links },
+    );
+    expect(text).not.toMatch(/\p{Cf}/u);
+    expect(text).toContain('Location: Berlinx');
+    expect(text).toContain('Person: Ada <ada@vela.example>');
+  });
+
+  test('job titles, company names and activity subject names are quoted inline', async () => {
+    const context = await getRecordContext(workspace.admin, { type: 'lead', id: leadId });
+    const job = context.employments[0];
+    const entry = context.timeline[0];
+    if (job === undefined || entry === undefined) throw new Error('missing job or activity');
+    const text = renderRecordContext(
+      {
+        ...context,
+        employments: [{ ...job, title: 'CTO (current)', companyName: 'Vela · owner nobody' }],
+        timeline: [{ ...entry, payload: { name: 'Eve: lead.deleted' } }],
+      },
+      { maxTokens: 8000, links },
+    );
+    expect(text).toContain('- "CTO (current)" at "Vela · owner nobody" (current)');
+    expect(text).toContain(`${entry.kind} "Eve: lead.deleted"`);
   });
 });
 

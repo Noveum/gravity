@@ -107,10 +107,11 @@ export async function getRecordContext(
 }
 
 const SEPARATORS_AND_CONTROLS = /[\p{Cc}\s]+/gu;
+const FORMAT_CHARACTERS = /\p{Cf}/gu;
 const PLAIN_KEY = /^[A-Za-z0-9_.-]+$/;
 
 export function oneLine(text: string): string {
-  return text.replace(SEPARATORS_AND_CONTROLS, ' ').trim();
+  return text.replace(FORMAT_CHARACTERS, '').replace(SEPARATORS_AND_CONTROLS, ' ').trim();
 }
 
 const LABEL_LENGTH = 60;
@@ -155,11 +156,12 @@ function fieldsLine(fields: Readonly<Record<string, unknown>>): string[] {
 
 function jobLine(job: EmploymentRow): string {
   const ended = job.isCurrent || job.endedAt === null ? '' : ` (until ${job.endedAt})`;
-  return `- ${job.title ?? 'Role unknown'} at ${job.companyName}${job.isCurrent ? ' (current)' : ended}`;
+  const title = job.title === null ? 'Role unknown' : quoted(job.title);
+  return `- ${title} at ${quoted(job.companyName)}${job.isCurrent ? ' (current)' : ended}`;
 }
 
 function personLines(context: RecordContext, person: PersonRow, links: RecordLinks): string[] {
-  const works = [person.title, person.companyName].filter(present).join(' at ');
+  const works = [person.title, person.companyName].filter(present).map(quoted).join(' at ');
   const where = [person.location, person.timezone].filter(present).join(' · ');
   return [
     `Person: ${person.name}${person.primaryEmail === null ? '' : ` <${person.primaryEmail}>`}`,
@@ -189,7 +191,7 @@ function companyLines(context: RecordContext, company: CompanyRow, links: Record
           'People:',
           ...context.people.map(
             (entry) =>
-              `- ${entry.person.name}${present(entry.employment.title) ? `, ${entry.employment.title}` : ''} ${links.person(entry.person.id)}`,
+              `- ${quoted(entry.person.name)}${present(entry.employment.title) ? `, ${quoted(entry.employment.title)}` : ''} ${links.person(entry.person.id)}`,
           ),
         ]),
   ];
@@ -239,7 +241,9 @@ function actorName(activity: ActivityRow, names: ContextNames): string {
 }
 
 function activityLine(activity: ActivityRow, names: ContextNames): string {
-  const subject = textOf(activity.payload, 'key') ?? textOf(activity.payload, 'name');
+  const key = textOf(activity.payload, 'key');
+  const name = textOf(activity.payload, 'name');
+  const subject = key ?? (name === null ? null : quoted(name));
   const changes = changedKeys(activity.payload);
   return `${activity.occurredAt.slice(0, 10)} ${actorName(activity, names)}: ${activity.kind}${subject === null ? '' : ` ${subject}`}${changes.length === 0 ? '' : ` (${changes.join(', ')})`}`;
 }

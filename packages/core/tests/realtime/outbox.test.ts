@@ -1,7 +1,10 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { db, eq, inArray, schema } from '@gravity/db';
+import { db, eq, inArray, schema, sql } from '@gravity/db';
 import type { SyncAction } from '@gravity/shared/events';
+import postgres from 'postgres';
 import {
+  CATCHUP_WINDOW_SECONDS,
+  catchUpSince,
   flushOutbox,
   latestOutboxSyncId,
   pruneOutbox,
@@ -263,5 +266,73 @@ describe('outbox', () => {
 
     const page = await readOutboxSince({ organizationId, userId: 'reader' }, 0, 10);
     expect([page.reset, page.actions.map((row) => row.syncId)]).toEqual([false, [1101]]);
+  });
+
+  test('catch-up from the highest cursor returns a lower sync id committed after 1001 higher ones', async () => {
+    const rival = postgres(String(process.env['DATABASE_URL']), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    let release = (): void => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let allocated = (_syncId: number): void => undefined;
+    const lateSyncId = new Promise<number>((resolve) => {
+      allocated = resolve;
+    });
+    const late = rival.begin(async (tx) => {
+      const [row] = await tx<{ sync_id: string }[]>`select nextval('sync_id_seq') as sync_id`;
+      const syncId = Number(row?.sync_id);
+      await tx`insert into outbox (sync_id, organization_id, payload)
+        values (${syncId}, ${organizationId}, ${tx.json(JSON.parse(JSON.stringify(action(syncId))))})`;
+      allocated(syncId);
+      await released;
+    });
+    try {
+      const early = await lateSyncId;
+      try {
+        const allocations = await db.execute<{ sync_id: string }>(
+          sql`select nextval('sync_id_seq') as sync_id from generate_series(1, 1001)`,
+        );
+        await recordSync(
+          db,
+          allocations.map((row) => action(Number(row.sync_id))),
+        );
+      } finally {
+        release();
+      }
+      await late;
+      const highest = await latestOutboxSyncId(organizationId);
+      expect(highest - early).toBeGreaterThan(1000);
+
+      const since = await catchUpSince(organizationId, highest);
+      const page = await readOutboxSince({ organizationId, userId: 'reader' }, since, 500, highest);
+      expect(page.actions[0]?.syncId).toBe(early);
+    } finally {
+      release();
+      await rival.end();
+    }
+  });
+
+  test('catch-up starts at the oldest row created within the window before the cursor row', async () => {
+    await recordSync(db, [action(2001), action(2002), action(2003), action(2004)]);
+    const at = (seconds: number) => new Date(Date.now() - seconds * 1000);
+    await db
+      .update(schema.outbox)
+      .set({ createdAt: at(CATCHUP_WINDOW_SECONDS + 30) })
+      .where(eq(schema.outbox.syncId, 2001));
+    await db
+      .update(schema.outbox)
+      .set({ createdAt: at(CATCHUP_WINDOW_SECONDS - 10) })
+      .where(eq(schema.outbox.syncId, 2002));
+    expect(await catchUpSince(organizationId, 2004)).toBe(2001);
+    expect(await catchUpSince(organizationId, 2002)).toBe(2000);
+  });
+
+  test('catch-up starts at the cursor when no row at or below it is left', async () => {
+    await recordSync(db, [action(3005)]);
+    expect(await catchUpSince(organizationId, 3004)).toBe(3004);
+    expect(await catchUpSince(organizationId, 0)).toBe(0);
   });
 });

@@ -137,6 +137,29 @@ export async function readOutboxSince(
   };
 }
 
+export const CATCHUP_WINDOW_SECONDS = 60;
+
+export async function catchUpSince(organizationId: string, cursor: number): Promise<number> {
+  if (cursor <= 0) return 0;
+  const rows = await db.execute<{ earliest: string | null }>(sql`
+    with anchor as (
+      select created_at from outbox
+      where organization_id = ${organizationId} and sync_id <= ${cursor}
+      order by sync_id desc
+      limit 1
+    )
+    select min(outbox.sync_id) as earliest
+    from outbox, anchor
+    where outbox.organization_id = ${organizationId}
+      and outbox.sync_id <= ${cursor}
+      and outbox.created_at >= anchor.created_at - make_interval(secs => ${CATCHUP_WINDOW_SECONDS})
+      and outbox.created_at <= anchor.created_at + make_interval(secs => ${CATCHUP_WINDOW_SECONDS})
+  `);
+  const earliest = rows[0]?.earliest;
+  if (earliest === null || earliest === undefined) return cursor;
+  return Math.min(cursor, Number(earliest) - 1);
+}
+
 export async function latestOutboxSyncId(organizationId: string): Promise<number> {
   const [row] = await db
     .select({ latest: sql<string | null>`max(${schema.outbox.syncId})` })

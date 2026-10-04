@@ -3,7 +3,6 @@ import type { SyncAction, SyncCatchup } from '@gravity/shared/events';
 import { QueryClient } from '@tanstack/react-query';
 import {
   applyDelta,
-  CATCHUP_OVERLAP,
   catchUp,
   isSuperseded,
   lastAppliedSyncId,
@@ -121,16 +120,16 @@ describe('mutation responses', () => {
 });
 
 describe('catch up', () => {
-  test('asks for an overlap below the cursor and applies what it missed', async () => {
+  test('lets the server choose the window behind the cursor and applies what it missed', async () => {
     const handler = mock();
     const unregister = registerDeltaHandler('member', handler);
     const client = new QueryClient();
     applyDelta({ ...base, modelId: 'a', syncId: 1500 }, client);
     handler.mockClear();
-    const requested: number[] = [];
+    const requested: [number | null, number][] = [];
 
-    await catchUp(client, (since) => {
-      requested.push(since);
+    await catchUp(client, (since, cursor) => {
+      requested.push([since, cursor]);
       return Promise.resolve(
         page(
           [
@@ -144,21 +143,21 @@ describe('catch up', () => {
       );
     });
 
-    expect(requested).toEqual([1500 - CATCHUP_OVERLAP]);
+    expect(requested).toEqual([[null, 1500]]);
     expect(handler.mock.calls.map(([action]) => action.modelId)).toEqual(['late', 'b']);
     expect(lastAppliedSyncId(client)).toBe(1501);
     unregister();
   });
 
-  test('sends the true cursor beside the overlapped one', async () => {
+  test('sends only the true cursor on the first page, with no fixed overlap', async () => {
     const client = new QueryClient();
     applyDelta({ ...base, syncId: 2400 }, client);
-    const requested: [number, number][] = [];
+    const requested: [number | null, number][] = [];
     await catchUp(client, (since, cursor) => {
       requested.push([since, cursor]);
-      return Promise.resolve(page([], false, since));
+      return Promise.resolve(page([], false, 2400));
     });
-    expect(requested).toEqual([[2400 - CATCHUP_OVERLAP, 2400]]);
+    expect(requested).toEqual([[null, 2400]]);
   });
 
   test('on a reset it refetches every query, skips the page and moves the cursor', async () => {
@@ -188,20 +187,9 @@ describe('catch up', () => {
     unregister();
   });
 
-  test('never asks below zero', async () => {
-    const client = new QueryClient();
-    applyDelta({ ...base, syncId: 40 }, client);
-    const requested: number[] = [];
-    await catchUp(client, (since) => {
-      requested.push(since);
-      return Promise.resolve(page([], false, since));
-    });
-    expect(requested).toEqual([0]);
-  });
-
   test('keeps paging while the response is truncated', async () => {
     const client = new QueryClient();
-    const requested: number[] = [];
+    const requested: (number | null)[] = [];
     const pages = [
       page([{ ...base, modelId: 'a', syncId: 3 }], true, 3),
       page([{ ...base, modelId: 'b', syncId: 7 }], true, 7),
@@ -213,7 +201,7 @@ describe('catch up', () => {
       if (next === undefined) throw new Error('asked for too many pages');
       return Promise.resolve(next);
     });
-    expect(requested).toEqual([0, 3, 7]);
+    expect(requested).toEqual([null, 3, 7]);
     expect(lastAppliedSyncId(client)).toBe(9);
   });
 
@@ -222,7 +210,7 @@ describe('catch up', () => {
     let calls = 0;
     await catchUp(client, (since) => {
       calls += 1;
-      return Promise.resolve(page([], true, since));
+      return Promise.resolve(page([], true, since ?? 0));
     });
     expect(calls).toBe(1);
   });

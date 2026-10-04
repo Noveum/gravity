@@ -23,12 +23,16 @@ mock.module('@gravity/realtime-client/react', () => ({
 const { DeltaBridge, cacheMayBeStale } = await import('@/lib/realtime/delta-bridge.tsx');
 
 const requests: string[] = [];
-let respond: (since: number) => SyncCatchup | Error = (since) => ({
+type Respond = (since: number | null, cursor: number) => SyncCatchup | Error;
+
+const quiet: Respond = (since, cursor) => ({
   actions: [],
   truncated: false,
   reset: false,
-  syncId: since,
+  syncId: since ?? cursor,
 });
+
+let respond: Respond = quiet;
 
 const savedFetch = globalThis.fetch;
 
@@ -36,12 +40,13 @@ beforeEach(() => {
   requests.length = 0;
   status = 'connecting';
   resumeHandler = null;
-  respond = (since) => ({ actions: [], truncated: false, reset: false, syncId: since });
+  respond = quiet;
   globalThis.fetch = mock((input: RequestInfo | URL) => {
     const url = String(input);
     requests.push(url);
-    const since = Number(new URL(url, 'http://localhost').searchParams.get('since'));
-    const answer = respond(since);
+    const params = new URL(url, 'http://localhost').searchParams;
+    const since = params.get('since');
+    const answer = respond(since === null ? null : Number(since), Number(params.get('cursor')));
     if (answer instanceof Error) return Promise.reject(answer);
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(answer) });
   }) as unknown as typeof fetch;
@@ -99,9 +104,7 @@ describe('DeltaBridge catch-up lifecycle', () => {
     expect(requests).toEqual([]);
 
     mounted.reopen('open');
-    await waitFor(() =>
-      expect(requests).toEqual(['/api/sync?organizationId=o1&since=4000&cursor=5000']),
-    );
+    await waitFor(() => expect(requests).toEqual(['/api/sync?organizationId=o1&cursor=5000']));
 
     mounted.reopen('reconnecting');
     mounted.reopen('open');
@@ -112,7 +115,7 @@ describe('DeltaBridge catch-up lifecycle', () => {
   test('catches up from zero when the workspace has no history', async () => {
     const mounted = mount(new QueryClient(), 0);
     mounted.reopen('open');
-    await waitFor(() => expect(requests).toEqual(['/api/sync?organizationId=o1&since=0&cursor=0']));
+    await waitFor(() => expect(requests).toEqual(['/api/sync?organizationId=o1&cursor=0']));
   });
 
   test('catches up on the workspace it subscribed with', async () => {
@@ -128,9 +131,7 @@ describe('DeltaBridge catch-up lifecycle', () => {
         <DeltaBridge organizationId="org_other" userId="u1" initialCursor={0} />
       </QueryClientProvider>,
     );
-    await waitFor(() =>
-      expect(requests).toEqual(['/api/sync?organizationId=org_other&since=0&cursor=0']),
-    );
+    await waitFor(() => expect(requests).toEqual(['/api/sync?organizationId=org_other&cursor=0']));
   });
 
   test('catches up again on resume, from the highest applied sync id', async () => {
@@ -145,11 +146,11 @@ describe('DeltaBridge catch-up lifecycle', () => {
       actor: { type: 'user', id: 'u2' },
       at: new Date(0).toISOString(),
     };
-    respond = (since) => ({
+    respond = (since, cursor) => ({
       actions: [applied],
       truncated: false,
       reset: false,
-      syncId: since + 1,
+      syncId: (since ?? cursor) + 1,
     });
     const mounted = mount(new QueryClient(), 5000);
     mounted.reopen('open');
@@ -158,29 +159,40 @@ describe('DeltaBridge catch-up lifecycle', () => {
 
     resumeHandler?.();
     await waitFor(() => expect(requests).toHaveLength(2));
-    expect(requests[1]).toBe('/api/sync?organizationId=o1&since=8000&cursor=9000');
+    expect(requests[1]).toBe('/api/sync?organizationId=o1&cursor=9000');
   });
 
   test('keeps paging while truncated', async () => {
+    const missed: SyncAction = {
+      syncId: 4500,
+      organizationId: 'o1',
+      scopes: ['workspace:o1'],
+      action: 'update',
+      model: 'member',
+      modelId: 'm1',
+      data: {},
+      actor: { type: 'user', id: 'u2' },
+      at: new Date(0).toISOString(),
+    };
     respond = (since) =>
-      since === 4000
-        ? { actions: [], truncated: true, reset: false, syncId: 4500 }
+      since === null
+        ? { actions: [missed], truncated: true, reset: false, syncId: 4500 }
         : { actions: [], truncated: false, reset: false, syncId: 4600 };
     const mounted = mount(new QueryClient(), 5000);
     mounted.reopen('open');
     await waitFor(() =>
       expect(requests).toEqual([
-        '/api/sync?organizationId=o1&since=4000&cursor=5000',
-        '/api/sync?organizationId=o1&since=4500&cursor=5000',
+        '/api/sync?organizationId=o1&cursor=5000',
+        '/api/sync?organizationId=o1&cursor=5000&since=4500',
       ]),
     );
   });
 
   test('refetches everything and jumps the cursor when the server says to reset', async () => {
-    respond = (since) =>
-      since === 4000
+    respond = (since, cursor) =>
+      cursor === 5000
         ? { actions: [], truncated: false, reset: true, syncId: 20_000 }
-        : { actions: [], truncated: false, reset: false, syncId: since };
+        : quiet(since, cursor);
     const client = new QueryClient();
     const invalidate = mock(() => Promise.resolve());
     client.invalidateQueries = invalidate as unknown as typeof client.invalidateQueries;
@@ -190,7 +202,7 @@ describe('DeltaBridge catch-up lifecycle', () => {
 
     resumeHandler?.();
     await waitFor(() => expect(requests).toHaveLength(2));
-    expect(requests[1]).toBe('/api/sync?organizationId=o1&since=19000&cursor=20000');
+    expect(requests[1]).toBe('/api/sync?organizationId=o1&cursor=20000');
     expect(invalidate).toHaveBeenCalledTimes(1);
   });
 

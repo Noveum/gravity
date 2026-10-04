@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { db, eq, schema } from '@gravity/db';
+import { db, eq, schema, sql } from '@gravity/db';
 import { retryOnUniqueViolation, type SyncBatch, withBatch } from '../../src/crm/sync-batch.ts';
 import { newId } from '../../src/internal.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
@@ -102,6 +102,23 @@ async function brandCount(): Promise<number> {
 }
 
 describe('the write transaction', () => {
+  test('cannot live longer than 30 seconds, and the cap ends with it', async () => {
+    const settingsOf = async (executor: Pick<typeof db, 'execute'>) => {
+      const [row] = await executor.execute<Record<string, string>>(sql`
+        select
+          current_setting('statement_timeout') as statement,
+          current_setting('idle_in_transaction_session_timeout') as idle,
+          current_setting('transaction_timeout') as lifetime
+      `);
+      return row;
+    };
+    const inside = await withBatch({ principal: workspace.admin }, async (batch) => ({
+      settings: await settingsOf(batch.tx),
+    }));
+    expect(inside.settings).toEqual({ statement: '30s', idle: '30s', lifetime: '30s' });
+    expect(await settingsOf(db)).toEqual({ statement: '0', idle: '0', lifetime: '0' });
+  });
+
   test('a throw after a real write leaves neither the row nor an outbox row', async () => {
     await expect(
       withBatch({ principal: workspace.admin }, async (batch) => {

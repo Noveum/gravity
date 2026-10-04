@@ -46,6 +46,13 @@ describe('syncCatchupQuerySchema', () => {
       syncCatchupQuerySchema.parse({ organizationId: 'o1', since: '4', cursor: '1004' }),
     ).toEqual({ organizationId: 'o1', since: 4, cursor: 1004 });
   });
+
+  test('leaves since out when only the cursor is sent, so the server picks the window', () => {
+    expect(syncCatchupQuerySchema.parse({ organizationId: 'o1', cursor: '1004' })).toEqual({
+      organizationId: 'o1',
+      cursor: 1004,
+    });
+  });
 });
 
 describe('syncCatchupSchema', () => {

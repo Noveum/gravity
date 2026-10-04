@@ -19,8 +19,6 @@ import { apiFetch } from '@/lib/api/client.ts';
 
 export type DeltaHandler = (action: SyncAction, client: QueryClient) => void;
 
-export const CATCHUP_OVERLAP = 1000;
-
 interface AppliedState {
   readonly byRecord: Map<string, number>;
   readonly answered: Map<string, number>;
@@ -132,11 +130,11 @@ function advanceCursor(client: QueryClient, syncId: number): void {
 
 export async function catchUp(
   client: QueryClient,
-  fetchPage: (since: number, cursor: number) => Promise<SyncCatchup>,
+  fetchPage: (since: number | null, cursor: number) => Promise<SyncCatchup>,
   seededCursor = 0,
 ): Promise<void> {
   let cursor = Math.max(lastAppliedSyncId(client), seededCursor);
-  let since = Math.max(0, cursor - CATCHUP_OVERLAP);
+  let since: number | null = null;
   for (;;) {
     const page = await fetchPage(since, cursor);
     if (page.reset) {
@@ -145,7 +143,8 @@ export async function catchUp(
       return;
     }
     for (const action of page.actions) applyDelta(action, client);
-    if (!page.truncated || page.syncId <= since) return;
+    const stalled = page.actions.length === 0 || (since !== null && page.syncId <= since);
+    if (!page.truncated || stalled) return;
     since = page.syncId;
     cursor = Math.max(cursor, page.syncId);
   }
@@ -162,12 +161,9 @@ export function useDeltaSink(): (action: SyncAction) => void {
   return useCallback((action: SyncAction) => applyDelta(action, client), [client]);
 }
 
-function catchUpPath(organizationId: string, since: number, cursor: number): string {
-  const query = new URLSearchParams({
-    organizationId,
-    since: String(since),
-    cursor: String(cursor),
-  });
+function catchUpPath(organizationId: string, since: number | null, cursor: number): string {
+  const query = new URLSearchParams({ organizationId, cursor: String(cursor) });
+  if (since !== null) query.set('since', String(since));
   return `/api/sync?${query}`;
 }
 

@@ -58,7 +58,7 @@ const queryCursorSchema = z.coerce.number().int().nonnegative();
 
 export const syncCatchupQuerySchema = z.object({
   organizationId: z.string().min(1).max(128),
-  since: queryCursorSchema.default(0),
+  since: queryCursorSchema.optional(),
   cursor: queryCursorSchema.optional(),
 });
 

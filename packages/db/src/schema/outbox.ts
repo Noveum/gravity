@@ -15,6 +15,7 @@ export const outbox = pgTable(
   },
   (table) => [
     index('outbox_org_sync_idx').on(table.organizationId, table.syncId),
+    index('outbox_org_created_idx').on(table.organizationId, table.createdAt),
     index('outbox_unpublished_idx').on(table.createdAt).where(sql`${table.publishedAt} is null`),
   ],
 );

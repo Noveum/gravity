@@ -48,6 +48,26 @@ describe('/api/sync', () => {
     expect(body.syncId).toBe(5003);
   });
 
+  test('with only a cursor it starts at the oldest row created within a minute of the cursor row', async () => {
+    const mine = await createWorkspace('Mine');
+    await db.delete(schema.outbox);
+    await recordSync(db, [
+      action(mine.organizationId, 4000, 'update'),
+      action(mine.organizationId, 4101, 'update'),
+      action(mine.organizationId, 4102, 'update'),
+      action(mine.organizationId, 4103, 'update'),
+    ]);
+    await db
+      .update(schema.outbox)
+      .set({ createdAt: new Date(Date.now() - 5 * 60_000) })
+      .where(inArray(schema.outbox.syncId, [4000]));
+    await signedInAs(mine.adminUser.id, mine.organizationId);
+    const url = `http://localhost:3300/api/sync?organizationId=${mine.organizationId}&cursor=4102`;
+    const body = await (await GET(new Request(url))).json();
+    expect(body.actions.map((row: SyncAction) => row.syncId)).toEqual([4101, 4102, 4103]);
+    expect(body.reset).toBe(false);
+  });
+
   test('keeps user-scoped actions for their owner only', async () => {
     const mine = await createWorkspace('Mine');
     const colleague = await createUser('Colleague');

@@ -1,4 +1,4 @@
-import { db, type Transaction } from '@gravity/db';
+import { db, sql, type Transaction } from '@gravity/db';
 import { internal, validationFailed } from '@gravity/shared/errors';
 import {
   originClientIdSchema,
@@ -73,6 +73,19 @@ function validAction(action: SyncAction): SyncAction {
   return parsed.data;
 }
 
+export const WRITE_TRANSACTION_TIMEOUT = '30s';
+
+async function capTransactionLifetime(tx: Transaction): Promise<void> {
+  await tx.execute(sql`
+    select
+      set_config('statement_timeout', ${WRITE_TRANSACTION_TIMEOUT}, true),
+      set_config('idle_in_transaction_session_timeout', ${WRITE_TRANSACTION_TIMEOUT}, true),
+      case when current_setting('server_version_num')::int >= 170000
+        then set_config('transaction_timeout', ${WRITE_TRANSACTION_TIMEOUT}, true)
+      end
+  `);
+}
+
 const BATCH_ATTEMPTS = 3;
 const RETRY_JITTER_MS = 40;
 
@@ -88,6 +101,7 @@ export async function withBatch<T extends object>(
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await db.transaction(async (tx) => {
+        await capTransactionLifetime(tx);
         const batch = createSyncBatch(tx, context);
         const result = await run(batch);
         const actions = batch.actions().map(validAction);

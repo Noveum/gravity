@@ -213,7 +213,16 @@ class CsvScanner {
     if (this.headers === null) throw validationFailed('This file is empty.');
     if (this.rowCount > this.limits.maxRows) throw tooManyRows(this.rowCount, this.limits);
     if (this.rowCount === 0) throw validationFailed('This file has a header but no rows.');
-    return { headers: this.labels, rows: this.rows };
+    return { headers: this.paddedLabels(this.headers), rows: this.rows };
+  }
+
+  private paddedLabels(headers: readonly string[]): string[] {
+    const widest = this.rows.reduce((width, row) => Math.max(width, row.length), headers.length);
+    if (widest === headers.length) return this.labels;
+    return uniqueHeaders([
+      ...headers,
+      ...Array.from({ length: widest - headers.length }, () => ''),
+    ]);
   }
 
   private step(text: string, index: number): number {
@@ -380,7 +389,7 @@ export function parseJsonRecords(content: string, limits: ImportLimits): ImportT
       assertCleanText(key);
       if (key.length > MAX_IMPORT_HEADER_LENGTH) {
         throw validationFailed(
-          `Column ${keys.length + 1} of the keys is longer than ${MAX_IMPORT_HEADER_LENGTH} characters. It starts with "${key.slice(0, 40)}".`,
+          `Column ${keys.length + 1} of the keys is longer than ${MAX_IMPORT_HEADER_LENGTH} characters. It starts with "${[...key].slice(0, 40).join('')}".`,
         );
       }
       seen.add(key);

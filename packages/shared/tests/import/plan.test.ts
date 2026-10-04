@@ -212,9 +212,18 @@ describe('planImport', () => {
     expect(rows.map((row) => row.duplicateOf)).toEqual([null, null, null, 1, null]);
   });
 
-  test('flags cells beyond the header', () => {
+  test('flags cells beyond the header of a table that has no name for them', () => {
+    const [row] = planImport(
+      { headers: ['Name'], rows: [['Ada', 'surprise']] },
+      { Name: 'person.name' },
+      { ...setup, target: 'people' },
+    );
+    expect(row?.issues[0]?.message).toBe('This row has 2 cells but the header has 1.');
+  });
+
+  test('a CSV cell beyond the header becomes its own column, ignored unless mapped', () => {
     const [row] = plan(`${HEADER}Ada,L,a@v.example,,,,,,,,,,surprise\n`);
-    expect(row?.issues[0]?.message).toBe('This row has 13 cells but the header has 12.');
+    expect(row?.issues).toEqual([]);
   });
 
   test('plans companies on their own and dedupes them by domain', () => {

@@ -138,8 +138,19 @@ describe('parseCsv', () => {
     expect(() => parseCsv(`A\nb\n,${widest}x\n`, limits)).toThrow(/Row 2 has 5001 cells/);
   });
 
-  test('keeps cells beyond the header so the planner can flag them', () => {
-    expect(parseCsv('A,B\n1,2,3\n', limits).rows).toEqual([['1', '2', '3']]);
+  test('keeps cells beyond the header and names their columns, so no column is lost', () => {
+    const table = parseCsv('A,B\n1,2,3\n4,5\n', limits);
+    expect(table.headers).toEqual(['A', 'B', 'Column 3']);
+    expect(table.rows).toEqual([
+      ['1', '2', '3'],
+      ['4', '5'],
+    ]);
+  });
+
+  test('a header with trailing blank cells is padded to the widest row', () => {
+    const table = parseCsv('Name,Email,,\nAda,ada@vela.example,VIP,warm\nGrace,,,\n', limits);
+    expect(table.headers).toEqual(['Name', 'Email', 'Column 3', 'Column 4']);
+    expect(table.rows[0]).toEqual(['Ada', 'ada@vela.example', 'VIP', 'warm']);
   });
 });
 
@@ -284,6 +295,13 @@ describe('header length', () => {
     expect(refused.message).toStartWith('Column 2 of the keys is longer than 500 characters.');
     expect(refused.message.length).toBeLessThan(200);
     expect(refused.message).not.toContain(header);
+  });
+
+  test('the over-long key message is cut by code point, never inside a character', () => {
+    const key = `a${'\u{1F600}'.repeat(300)}`;
+    const refused = refusal(() => parseJsonRecords(JSON.stringify([{ [key]: 1 }]), limits));
+    expect(refused.message).toContain(`starts with "a${'\u{1F600}'.repeat(39)}"`);
+    expect(refused.message).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
   });
 
   test('separating duplicate headers never pushes one past the cap', () => {

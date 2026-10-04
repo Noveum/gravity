@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { ImportView } from '@/features/import/import-view.tsx';
 import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
 import { serveJson } from '../../support/fetch.ts';
@@ -418,6 +419,80 @@ describe('rows without an identity', () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText('New')).toHaveLength(3);
     expect(screen.getByRole('button', { name: /^Import 3 rows/ })).toBeInTheDocument();
+  });
+});
+
+describe('focus and late answers', () => {
+  test('step headings keep the visible focus ring', async () => {
+    route();
+    view();
+    await choose();
+    const heading = await screen.findByRole('heading', { name: 'Map the columns' });
+    expect(heading.className).not.toContain('outline-none');
+    expect(screen.getByRole('heading', { name: 'Import', level: 1 }).className).not.toContain(
+      'outline-none',
+    );
+  });
+
+  test('strict mode does not move focus when the page first renders', () => {
+    route();
+    renderWithClient(
+      <StrictMode>
+        <ImportView initialTarget="leads" initialPipelineKey="YOD" />
+      </StrictMode>,
+    );
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  test('a preview that lands after Escape never brings the preview back', async () => {
+    let calls = 0;
+    let release: (response: Response) => void = () => undefined;
+    const answer = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+    globalThis.fetch = (async (input: string) => {
+      calls += 1;
+      const path = new URL(input, 'http://localhost:3300').pathname;
+      if (path === '/api/imports') {
+        return answer(
+          { error: { code: 'internal', message: 'Something went wrong on our side.' } },
+          500,
+        );
+      }
+      if (calls === 1) return answer(report('preview'));
+      return await new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+    }) as unknown as typeof fetch;
+    view();
+    await choose();
+    await userEvent.keyboard(SUBMIT);
+    await screen.findByText('2 new');
+    await userEvent.keyboard(SUBMIT);
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Preview the same file again/ }),
+    );
+    await waitFor(() => expect(calls).toBe(3));
+    await userEvent.keyboard('{Escape}');
+    expect(await screen.findByRole('heading', { name: 'Map the columns' })).toBeInTheDocument();
+    await act(async () => {
+      release(answer(report('preview')));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(screen.queryByRole('heading', { name: 'Check the preview' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Map the columns' })).toBeInTheDocument();
+  });
+
+  test('the action buttons sit outside the live region of the preview', async () => {
+    route();
+    view();
+    await choose();
+    await userEvent.keyboard(SUBMIT);
+    const heading = await screen.findByRole('heading', { name: 'Check the preview' });
+    const live = heading.closest('[aria-live]');
+    expect(live?.querySelector('button')).toBeNull();
   });
 });
 

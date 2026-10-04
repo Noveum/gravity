@@ -6,9 +6,9 @@ export function useStepFocus(signal: object) {
   const target = useRef<HTMLHeadingElement | null>(null);
   const seen = useRef<object | null>(null);
   useEffect(() => {
-    const first = seen.current === null;
+    const previous = seen.current;
     seen.current = signal;
-    if (!first) target.current?.focus();
+    if (previous !== null && previous !== signal) target.current?.focus();
   }, [signal]);
   return target;
 }

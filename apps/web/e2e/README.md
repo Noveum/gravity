@@ -27,3 +27,13 @@ global setup creates for it, because the realtime smoke test expects its own
 pipeline to start empty. It checks that a teammate's open list receives the rows
 within a 10 second poll without reading `/api/leads`, and that a second run of the
 same file adds nothing.
+
+The performance test enforces the UI spec budgets: a keystroke to the visible change under
+16ms and a route change from the cache under 100ms, each checked against the median of its
+samples. Both are timed inside the page, from a capture-phase `keydown` to the
+`MutationObserver` callback that sees the result, so Playwright's own round trips do not
+count. The route sample holds the People list response for 1.5 seconds, so a row that shows
+inside the budget can only have come from the cache. It seeds 40 leads per run into a third
+brand and pipeline that global setup creates for it, and prints the medians and every
+sample. The budgets hold against `next dev` with React strict mode on, which is the slower
+case, so no check is limited to a production build.

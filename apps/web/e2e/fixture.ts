@@ -15,6 +15,9 @@ export const e2eFixtureSchema = z.object({
   importBrandName: z.string().min(1),
   importPipelineKey: z.string().min(2),
   importPipelineId: z.string().min(1),
+  perfBrandName: z.string().min(1),
+  perfPipelineKey: z.string().min(2),
+  perfPipelineId: z.string().min(1),
 });
 export type E2EFixture = z.infer<typeof e2eFixtureSchema>;
 

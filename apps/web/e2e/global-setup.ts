@@ -25,6 +25,8 @@ export default async function globalSetup(): Promise<void> {
   const brand = await createBrand({ principal: admin }, { name: brandName });
   const importBrandName = `Harbor ${suffix}`;
   const importBrand = await createBrand({ principal: admin }, { name: importBrandName });
+  const perfBrandName = `Beacon ${suffix}`;
+  const perfBrand = await createBrand({ principal: admin }, { name: perfBrandName });
   const personName = `Mira Castell ${suffix}`;
   await upsertPerson(
     { principal: admin },
@@ -41,5 +43,8 @@ export default async function globalSetup(): Promise<void> {
     importBrandName,
     importPipelineKey: importBrand.pipeline.key,
     importPipelineId: importBrand.pipeline.id,
+    perfBrandName,
+    perfPipelineKey: perfBrand.pipeline.key,
+    perfPipelineId: perfBrand.pipeline.id,
   });
 }

@@ -399,18 +399,18 @@
     "product": "Product",
     "docsLabel": "Docs",
     "blogLabel": "Journal",
-    "source": "Source code",
+    "source": "GitHub",
     "openApp": "Open workspace",
     "skip": "Skip to content",
     "navLabel": "Gravity website",
-    "footer": "Gravity by Noveum \u00b7 Apache-2.0",
-    "previewBadge": "Foundation preview",
-    "eyebrow": "Open-source CRM for teams with more than one product",
-    "heroTitle": "Every follow-up. All the context.",
-    "heroDescription": "Know who needs a reply, what you promised, and what happens next. Gravity keeps people, product relationships and sales work together, with context your team and AI assistant can read.",
-    "tryDemo": "Explore the workspace",
+    "footer": "Gravity by Noveum \u00b7 Open source \u00b7 Apache-2.0",
+    "previewBadge": "Early preview",
+    "eyebrow": "Open-source CRM for founders and small sales teams",
+    "heroTitle": "Know who to follow up with next.",
+    "heroDescription": "Organize outreach, replies and meeting follow-ups around a clear next step. Keep the person, conversation and product context together, so your team and AI assistant can pick up where you left off.",
+    "tryDemo": "Explore the preview",
     "readSetup": "Read the setup guide",
-    "heroNote": "Local preview with fictional data. Live inbox connections are being built.",
+    "heroNote": "Apache-2.0 licensed. Self-hostable. The local preview uses fictional data.",
     "previewLabel": "Illustrative workflow with fictional data",
     "previewOrg": "Northstar Collective",
     "previewProduct": "AI Platform",
@@ -439,39 +439,39 @@
         "time": "Friday"
       }
     ],
-    "previewContext": "The reason behind the next step",
+    "previewContext": "Why this follow-up matters",
     "previewMessage": "We can review the evaluation setup on Monday. Please send your shortlist.",
-    "previewCaption": "Conversation, product context and next action in the same view.",
-    "previewHistory": "Partial history is labeled. Your assistant sees only what its grant permits.",
-    "featureEyebrow": "Built around the next conversation",
-    "featureTitle": "A clearer way to work every relationship.",
+    "previewCaption": "See the person, the conversation and the next step together.",
+    "previewHistory": "History can be partial. Assistant access stays within the products you share.",
+    "featureEyebrow": "Built for the daily work of selling",
+    "featureTitle": "Keep the details behind each next step.",
     "features": [
       {
-        "title": "Start with what needs attention.",
-        "body": "Handle replies, commitments and scheduled reviews in one queue. Keep daily outreach work separate from your opportunity board."
+        "title": "See who needs your attention.",
+        "body": "Work through replies, promises and scheduled follow-ups in a daily queue. See the owner, deadline and reason for each next step."
       },
       {
-        "title": "One person. Separate product relationships.",
-        "body": "Keep the identity together and the purpose, owner and context distinct. Each organization has its own records; each product has its own sales work."
+        "title": "Sell several products without mixing the details.",
+        "body": "Keep one contact with separate relationships for each product. Track the purpose, owner and conversation in the right context."
       },
       {
-        "title": "Give your assistant useful context.",
-        "body": "Read people, companies, conversations and sales materials through OAuth MCP. Choose one organization and the products to share, then revoke access when needed."
+        "title": "Carry the context into your next meeting.",
+        "body": "Keep conversation history, research and product materials close to the person. Review meeting commitments and assign the next step."
       },
       {
-        "title": "Stay in the flow.",
-        "body": "Move through records with the keyboard, resize the inspector and switch products instantly. Live updates preserve unsaved drafts and expose conflicts."
+        "title": "Move through the work with your keyboard.",
+        "body": "Jump between views, search records and open the details you need. Resize the workspace to fit your screen; live updates preserve your unsaved drafts."
       }
     ],
-    "mcpEyebrow": "An assistant that can catch up",
-    "mcpTitle": "Bring the relationship into your next prompt.",
-    "mcpDescription": "Ask for a meeting brief or the context behind a follow-up. Gravity exposes read-only tools through the same permissions as the app. You decide which products the assistant can see.",
-    "mcpPrompt": "\u201cBrief me on Mira, what we promised, and the materials relevant to her evaluation.\u201d",
-    "mcpBoundary": "OAuth is implemented and tested locally. A configured HTTPS installation and live client qualification are required for Codex or Claude Code.",
+    "mcpEyebrow": "Your assistant, with the context to help",
+    "mcpTitle": "Give your assistant the relationship behind the task.",
+    "mcpDescription": "Ask for a meeting brief, the history behind a follow-up, or the materials to review. Read-only MCP gives your assistant access to CRM context through the same permissions as the app. You choose the organization and products to share.",
+    "mcpPrompt": "\u201cCatch me up on Mira\u2019s evaluation. What did we promise, what changed, and which materials should I review?\u201d",
+    "mcpBoundary": "Read-only OAuth MCP is implemented. A configured HTTPS installation and live connection testing are needed for Codex and Claude Code.",
     "mcpLink": "Connect an assistant",
-    "statusTitle": "See what is ready\u2014and what comes next.",
-    "statusDescription": "The preview is useful for reviewing the model and workflows. Finish deployment and account qualification before putting real company data into it.",
-    "readyTitle": "In the preview",
+    "statusTitle": "Explore what works today. See what we\u2019re building next.",
+    "statusDescription": "Gravity is in active development. The preview lets you explore the core workflows; live account connections and production setup are the next steps.",
+    "readyTitle": "Available in the preview",
     "readyItems": [
       "Organizations and products",
       "People, company context and next actions",
@@ -480,7 +480,7 @@
       "Read-only OAuth MCP",
       "Keyboard navigation, themes and live updates"
     ],
-    "nextTitle": "In progress",
+    "nextTitle": "On the roadmap",
     "nextItems": [
       "Live Gmail and LinkedIn replies",
       "Google Calendar and Fireflies import",
@@ -488,31 +488,39 @@
       "Durable synchronization and recovery",
       "Production deployment and backups"
     ],
-    "journalTitle": "Notes on better sales work",
-    "journalDescription": "Practical guides for follow-ups, product context and assistant access.",
+    "journalTitle": "A closer look at the sales workflow",
+    "journalDescription": "Ideas for keeping follow-ups clear, product relationships separate and your assistant informed.",
     "allArticles": "Read the journal",
     "readArticle": "Read article",
-    "faqTitle": "A few things to know",
+    "faqTitle": "Before you get started",
     "faqs": [
       {
-        "question": "Can I use Gravity for real sales data today?",
-        "answer": "This release is a foundation preview. The local demo has a fixed fictional identity. Use fictional data until a production database, authentication, permissions, private storage and restore procedure have been qualified."
+        "question": "Who is Gravity for?",
+        "answer": "Founders and small B2B sales teams doing hands-on outreach and follow-ups. It is especially useful when you sell several products or hand conversations between teammates. Technical teams can self-host and extend the source."
+      },
+      {
+        "question": "Can I self-host and modify Gravity?",
+        "answer": "Yes. Gravity is licensed under Apache 2.0. You can run, inspect and modify the code under that license. Start with the local setup guide, then review the deployment guide before putting it on your infrastructure."
+      },
+      {
+        "question": "Can I connect Codex or Claude Code?",
+        "answer": "Gravity implements read-only OAuth MCP. Connect a configured HTTPS installation, sign in and choose the products to share. Actual Codex and Claude Code connections still need live qualification. CRM API keys are not implemented."
+      },
+      {
+        "question": "Are Gmail, LinkedIn and Calendar connected?",
+        "answer": "Live mailbox, LinkedIn and Calendar connections are on the roadmap. The preview includes fictional conversations and a tested incoming-reply adapter; it does not sync your accounts."
       },
       {
         "question": "Does Gravity send outreach for me?",
-        "answer": "No message dispatch is implemented in the preview. Due dates, approvals and sequence views help organize work; they do not send a message."
+        "answer": "Sending is not available in the current preview. You can organize next actions and review drafts. Completing a task or approving a draft does not send a message."
       },
       {
-        "question": "Do I need an API key for MCP?",
-        "answer": "The current MCP path uses OAuth. Sign in, select an organization and products, and review read-only consent. Personal API keys are not implemented. Provider webhook HMAC is a separate mechanism."
-      },
-      {
-        "question": "Is the source open source?",
-        "answer": "The source carries Apache-2.0 and is designed for self-hosting and contributions. Hosting and mailbox providers may have their own costs. Repository access is managed separately from the source license."
+        "question": "Can I add real sales data yet?",
+        "answer": "Use fictional data in the local preview. Before real data, qualify your production database, sign-in, team permissions, private storage and backup restore. The deployment guide lists the remaining checks."
       }
     ],
-    "finalTitle": "Keep the next step connected to the relationship.",
-    "finalDescription": "Explore the preview, read the setup guide, or help build the next slice.",
+    "finalTitle": "Build your sales workflow on Gravity.",
+    "finalDescription": "Run the preview locally, explore the workflows and adapt the source to how your team sells.",
     "docsTitle": "Gravity documentation",
     "docsDescription": "Set up a workspace, understand the boundaries and connect an assistant when your installation is ready.",
     "blogTitle": "The Gravity journal",
@@ -536,7 +544,7 @@
               "Install Node.js 22.12 or newer and Bun 1.3.14, clone Gravity, then install the locked dependencies and start the app. The demo migrates and seeds a local PGlite database with fictional records. No paid provider is needed.",
               "Keep this fixed-identity demo for fictional data. A real database or production environment disables the demo identity."
             ],
-            "code": "bun install --frozen-lockfile\nbun run dev"
+            "code": "git clone https://github.com/Noveum/gravity.git\ncd gravity\nbun install --frozen-lockfile\nbun run dev"
           },
           {
             "id": "workspace",
@@ -754,6 +762,27 @@
             ]
           }
         ]
+      }
+    ],
+    "metaTitle": "Open-source CRM for founder-led sales",
+    "metaDescription": "Gravity is an open-source CRM for founders and small sales teams. Organize follow-ups, keep product context and connect AI assistants through OAuth MCP.",
+    "runLocally": "Run Gravity locally",
+    "viewSource": "View on GitHub",
+    "openSourceEyebrow": "Open source from the start",
+    "openSourceTitle": "A CRM you can run, understand and change.",
+    "openSourceDescription": "Gravity is licensed under Apache 2.0. Inspect the source, self-host the application and adapt it to how your team sells.",
+    "openSourceValues": [
+      {
+        "title": "Choose your infrastructure.",
+        "body": "Use your own PostgreSQL and deployment. The setup guide covers authentication, storage and the checks needed before adding real data."
+      },
+      {
+        "title": "Shape your sales workflow.",
+        "body": "Extend the data model, workflows and integrations in the source. Build around the way your team works as your needs evolve."
+      },
+      {
+        "title": "Share context on your terms.",
+        "body": "Keep organizations separate and give an assistant access to selected products. Revoke its grant when it no longer needs access."
       }
     ]
   }

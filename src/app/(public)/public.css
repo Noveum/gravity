@@ -25,6 +25,7 @@
 .public-site h3 {
   color: var(--ink);
   line-height: 1.15;
+  text-wrap: balance;
 }
 .public-site h1 {
   font-size: clamp(38px, 5.5vw, 72px);
@@ -321,8 +322,13 @@
   font-size: 11px;
   background: var(--side);
 }
-.site-preview-caption span {
+.site-preview-caption > a {
   margin-left: auto;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 .site-section {
   padding: 80px 0;
@@ -684,7 +690,7 @@
     flex-direction: column;
     gap: 2px;
   }
-  .site-preview-caption span {
+  .site-preview-caption > a {
     margin-left: 0;
   }
   .site-section {
@@ -718,5 +724,22 @@
   }
   .site-footer span {
     width: 100%;
+  }
+}
+
+.site-open-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+}
+.site-open-grid h3 {
+  margin-top: 0;
+}
+.site-open-source > .site-inline-link {
+  margin-top: 32px;
+}
+@media (max-width: 800px) {
+  .site-open-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
   }
 }

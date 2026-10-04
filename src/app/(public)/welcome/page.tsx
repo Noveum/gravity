@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 export const metadata = publicMetadata(
-  t.heroTitle,
-  t.heroDescription,
+  t.metaTitle,
+  t.metaDescription,
   "/welcome",
 );
 const icons = [MessageSquare, GitBranch, ShieldCheck, Command];
@@ -30,16 +30,16 @@ export default function Page() {
           <h1>{t.heroTitle}</h1>
           <p className="site-lede">{t.heroDescription}</p>
           <div className="site-actions">
-            <Link className="site-button" href="/">
-              {t.tryDemo}
+            <Link className="site-button" href="/docs/getting-started">
+              {t.runLocally}
               <ArrowRight size={16} />
             </Link>
-            <Link
+            <a
               className="site-button site-secondary"
-              href="/docs/getting-started"
+              href="https://github.com/Noveum/gravity"
             >
-              {t.readSetup}
-            </Link>
+              {t.viewSource}
+            </a>
           </div>
           <p className="site-note">{t.heroNote}</p>
         </div>
@@ -93,7 +93,10 @@ export default function Page() {
         </div>
         <p className="site-preview-caption">
           {t.previewCaption}
-          <span>{t.previewLabel}</span>
+          <Link href="/">
+            {t.tryDemo}
+            <ArrowRight size={12} />
+          </Link>
         </p>
       </section>
       <section id="product" className="site-section">
@@ -127,6 +130,26 @@ export default function Page() {
           <blockquote>{t.mcpPrompt}</blockquote>
           <p>{t.mcpBoundary}</p>
         </div>
+      </section>
+      <section className="site-section site-open-source">
+        <p className="site-eyebrow">{t.openSourceEyebrow}</p>
+        <h2>{t.openSourceTitle}</h2>
+        <p className="site-section-intro">{t.openSourceDescription}</p>
+        <div className="site-feature-grid site-open-grid">
+          {t.openSourceValues.map((value) => (
+            <article key={value.title}>
+              <h3>{value.title}</h3>
+              <p>{value.body}</p>
+            </article>
+          ))}
+        </div>
+        <a
+          className="site-inline-link"
+          href="https://github.com/Noveum/gravity"
+        >
+          {t.viewSource}
+          <ArrowRight size={15} />
+        </a>
       </section>
       <section className="site-section">
         <h2>{t.statusTitle}</h2>
@@ -197,14 +220,14 @@ export default function Page() {
         <p>{t.finalDescription}</p>
         <div className="site-actions">
           <Link className="site-button" href="/docs/getting-started">
-            {t.readSetup}
+            {t.runLocally}
             <ArrowRight size={16} />
           </Link>
           <a
             className="site-button site-secondary"
             href="https://github.com/Noveum/gravity"
           >
-            {t.source}
+            {t.viewSource}
           </a>
         </div>
       </section>

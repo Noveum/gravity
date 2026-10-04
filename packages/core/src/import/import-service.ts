@@ -1,10 +1,12 @@
 import { and, db, eq, isNull, ne, type SQL, schema } from '@gravity/db';
-import { toDomainError, validationFailed } from '@gravity/shared/errors';
+import { internal, toDomainError, validationFailed } from '@gravity/shared/errors';
 import type { Actor, SyncAction } from '@gravity/shared/events';
 import {
   HTTP_IMPORT_LIMITS,
+  IMPORT_CHUNK_MS,
   IMPORT_CHUNK_ROWS,
   IMPORT_PREVIEW_CHUNK_ROWS,
+  type ImportIssueCode,
   type ImportLimits,
   type ImportReport,
   type ImportRequest,
@@ -12,14 +14,13 @@ import {
   type ImportSetup,
   importRequestSchema,
   mappingIssues,
-  type PlannedLead,
   type PlannedRow,
   parseImportTable,
   planImport,
   totalsOf,
 } from '@gravity/shared/import';
 import { assertCan, type Principal } from '@gravity/shared/policy';
-import type { LeadRow } from '@gravity/shared/records';
+import type { CompanyRow, LeadRow } from '@gravity/shared/records';
 import {
   type CompanyInput,
   type FieldValue,
@@ -34,21 +35,21 @@ import {
   findCompanyMatch,
   mergedCompanyValues,
   type StoredCompany,
-  upsertCompanyIn,
+  writeCompanyIn,
 } from '../crm/company-service.ts';
 import { asConflict } from '../crm/conflicts.ts';
 import { loadFieldDefinitions } from '../crm/field-service.ts';
 import { selectLeadRows } from '../crm/lead-rows.ts';
-import { createLeadIn, openLeadFor } from '../crm/lead-service.ts';
+import { createLeadsIn, type LeadDraft } from '../crm/lead-service.ts';
 import { livePipeline, liveStagesOf } from '../crm/lookups.ts';
 import { personRowById } from '../crm/person-lookup.ts';
 import {
   findPersonMatch,
+  type KnownPerson,
   mergedPersonValues,
   PERSON_DIFF_KEYS,
-  type PersonMatch,
   type StoredPerson,
-  upsertPersonIn,
+  writePersonIn,
 } from '../crm/person-service.ts';
 import { companyRowOf } from '../crm/rows.ts';
 import {
@@ -75,6 +76,8 @@ export function importActor(principal: Principal, userName: string): Actor {
 export interface ImportPreviewOptions {
   readonly limits?: ImportLimits;
   readonly chunkRows?: number;
+  readonly deadline?: number;
+  readonly now?: () => number;
 }
 
 export interface ImportRunOptions extends ImportPreviewOptions {
@@ -107,6 +110,9 @@ interface Assessment {
   readonly company: CompanyInput | null;
   readonly preferredId: string | null;
   readonly createLead: boolean;
+  readonly match: KnownPerson | null;
+  readonly companyMatch: StoredCompany | undefined;
+  readonly writes: boolean;
 }
 
 interface CompanyAssessment {
@@ -116,7 +122,23 @@ interface CompanyAssessment {
   readonly kept: string[];
 }
 
-const NOTHING = { person: null, company: null, preferredId: null, createLead: false } as const;
+const NOTHING = {
+  person: null,
+  company: null,
+  preferredId: null,
+  createLead: false,
+  match: null,
+  companyMatch: undefined,
+  writes: false,
+} as const;
+
+const FILL_ONLY_KEYS = [
+  'name',
+  'linkedinUrl',
+  'linkedinProviderId',
+  'location',
+  'timezone',
+] as const;
 
 function emptySimulation(): Simulation {
   return { companies: new Set(), people: new Map() };
@@ -199,6 +221,7 @@ function outcomeOf(
 
 function skippedOutcome(
   row: PlannedRow,
+  code: ImportIssueCode,
   message: string,
   extra: Partial<ImportRowOutcome> = {},
 ): Assessment {
@@ -206,7 +229,7 @@ function skippedOutcome(
     ...NOTHING,
     outcome: outcomeOf(row, 'skipped', {
       ...extra,
-      issues: [{ row: row.row, column: null, message }],
+      issues: [{ row: row.row, column: null, code, message }],
     }),
   };
 }
@@ -261,7 +284,8 @@ async function assessCompany(
       kept: keptKeys(existing.fields, merged.suggestions),
     };
   }
-  const planned = companyLookupKeys(input).some((key) => simulation.companies.has(key));
+  const planned =
+    !context.lock && companyLookupKeys(input).some((key) => simulation.companies.has(key));
   return { outcome: planned ? 'match' : 'create', existing: undefined, changes: [], kept: [] };
 }
 
@@ -276,11 +300,18 @@ async function assessCompanyRow(
   const company = await assessCompany(executor, context, input, simulation);
   const matchedBy = input.domains.length > 0 ? 'domain' : 'name';
   if (company.outcome === 'create') {
-    return { ...NOTHING, company: input, outcome: outcomeOf(row, 'create', { company: 'create' }) };
+    return {
+      ...NOTHING,
+      company: input,
+      writes: true,
+      outcome: outcomeOf(row, 'create', { company: 'create' }),
+    };
   }
   return {
     ...NOTHING,
     company: input,
+    companyMatch: company.existing,
+    writes: company.changes.length > 0,
     outcome: outcomeOf(row, company.changes.length > 0 ? 'merge' : 'unchanged', {
       matchedBy,
       recordId: company.existing?.id ?? null,
@@ -350,28 +381,18 @@ async function existingLeadFor(
   organizationId: string,
   personId: string,
   pipelineId: string,
-  planned: PlannedLead,
 ): Promise<LeadRow | undefined> {
-  const open = await openLeadFor(executor, organizationId, personId, pipelineId);
-  const closedStart = planned.stageCategory === 'won' || planned.stageCategory === 'lost';
-  if (open !== undefined || !closedStart || planned.stageId === undefined) return open;
-  const [closed] = await selectLeadRows(
+  const [lead] = await selectLeadRows(
     executor,
     organizationId,
     and(
       eq(schema.lead.personId, personId),
       eq(schema.lead.pipelineId, pipelineId),
-      eq(schema.lead.stageId, planned.stageId),
       isNull(schema.lead.archivedAt),
     ),
     { limit: 1 },
   );
-  return closed;
-}
-
-interface PersonMatchResult {
-  readonly row: StoredPerson;
-  readonly matchedBy: PersonMatch;
+  return lead;
 }
 
 interface Delta {
@@ -382,6 +403,8 @@ interface Delta {
 interface EmployerAssessment extends Delta {
   readonly person: PersonInput;
   readonly company: CompanyInput | null;
+  readonly companyMatch: StoredCompany | undefined;
+  readonly companyChanged: boolean;
   readonly outcome: ImportRowOutcome['company'];
 }
 
@@ -395,14 +418,24 @@ async function refusalOf(
   context: ImportContext,
   row: PlannedRow,
   planned: PersonInput,
-  match: PersonMatchResult,
+  match: KnownPerson,
   simulation: Simulation,
 ): Promise<Assessment | null> {
   const matched = { matchedBy: match.matchedBy, recordId: match.row.id };
   const earlier = simulation.people.get(match.row.id);
-  if (earlier !== undefined) return skippedOutcome(row, `Same record as row ${earlier}.`, matched);
+  if (earlier !== undefined) {
+    return skippedOutcome(row, 'same_record', `Same record as row ${earlier}.`, matched);
+  }
   const conflict = await claimConflict(executor, context.organizationId, match.row, planned);
-  return conflict === null ? null : skippedOutcome(row, conflict, matched);
+  return conflict === null ? null : skippedOutcome(row, 'conflict', conflict, matched);
+}
+
+function declinedKeys(existing: StoredPerson, planned: PersonInput): string[] {
+  return FILL_ONLY_KEYS.filter((key) => {
+    const incoming = planned[key];
+    const current = existing[key];
+    return incoming !== null && current !== null && incoming !== current;
+  });
 }
 
 function personDelta(context: ImportContext, existing: StoredPerson, planned: PersonInput): Delta {
@@ -421,7 +454,19 @@ function personDelta(context: ImportContext, existing: StoredPerson, planned: Pe
       existing.fields,
       merged.fields,
     ),
-    kept: keptKeys(existing.fields, merged.suggestions),
+    kept: [...declinedKeys(existing, planned), ...keptKeys(existing.fields, merged.suggestions)],
+  };
+}
+
+function noEmployer(planned: PersonInput): EmployerAssessment {
+  return {
+    person: planned,
+    company: null,
+    companyMatch: undefined,
+    companyChanged: false,
+    outcome: 'none',
+    changes: [],
+    kept: [],
   };
 }
 
@@ -434,18 +479,18 @@ async function employerOf(
   simulation: Simulation,
 ): Promise<EmployerAssessment> {
   const assessed = await assessCompany(executor, context, company, simulation);
-  const unchanged = { person: planned, company, outcome: assessed.outcome };
+  const unchanged = {
+    person: planned,
+    company,
+    companyMatch: assessed.existing,
+    companyChanged: assessed.outcome === 'create' || assessed.changes.length > 0,
+    outcome: assessed.outcome,
+  };
   if (existing === null) return { ...unchanged, changes: [], kept: [] };
   const current = await personRowById(executor, context.organizationId, existing.id);
   if (current.companyId === null) return { ...unchanged, changes: ['company'], kept: [] };
   if (assessed.existing === undefined || current.companyId !== assessed.existing.id) {
-    return {
-      person: { ...planned, company: null, title: null },
-      company: null,
-      outcome: 'none',
-      changes: [],
-      kept: ['company'],
-    };
+    return { ...noEmployer({ ...planned, company: null, title: null }), kept: ['company'] };
   }
   if (planned.title === null || planned.title === current.title) {
     return { ...unchanged, changes: [], kept: [] };
@@ -465,13 +510,7 @@ async function leadOf(
     return { lead: 'none', leadKey: null };
   }
   if (existing === null) return { lead: 'create', leadKey: null };
-  const lead = await existingLeadFor(
-    executor,
-    context.organizationId,
-    existing.id,
-    pipelineId,
-    row.lead,
-  );
+  const lead = await existingLeadFor(executor, context.organizationId, existing.id, pipelineId);
   return lead === undefined
     ? { lead: 'create', leadKey: null }
     : { lead: 'exists', leadKey: lead.key };
@@ -480,6 +519,19 @@ async function leadOf(
 function personStatus(matched: boolean, changes: readonly string[]): ImportRowOutcome['status'] {
   if (!matched) return 'create';
   return changes.length > 0 ? 'merge' : 'unchanged';
+}
+
+function writesAnything(
+  row: PlannedRow,
+  match: KnownPerson | null,
+  preferredId: string | null,
+  status: ImportRowOutcome['status'],
+  employer: EmployerAssessment,
+  lead: LeadAssessment,
+): boolean {
+  if (match === null || status !== 'unchanged' || lead.lead === 'create') return true;
+  if (employer.companyChanged) return true;
+  return row.sourceId !== null && preferredId !== match.row.id;
 }
 
 async function assessPersonRow(
@@ -507,16 +559,20 @@ async function assessPersonRow(
     existing === null ? { changes: [], kept: [] } : personDelta(context, existing, planned);
   const employer =
     row.company === null
-      ? { person: planned, company: null, outcome: 'none' as const, changes: [], kept: [] }
+      ? noEmployer(planned)
       : await employerOf(executor, context, planned, row.company, existing, simulation);
   const lead = await leadOf(executor, context, row, existing);
   const changes = [...delta.changes, ...employer.changes];
+  const status = personStatus(match !== null, changes);
   return {
     person: employer.person,
     company: employer.company,
     preferredId,
     createLead: lead.lead === 'create',
-    outcome: outcomeOf(row, personStatus(match !== null, changes), {
+    match,
+    companyMatch: employer.companyMatch,
+    writes: writesAnything(row, match, preferredId, status, employer, lead),
+    outcome: outcomeOf(row, status, {
       matchedBy: match?.matchedBy ?? null,
       recordId: existing?.id ?? null,
       changes,
@@ -535,11 +591,16 @@ async function assessRow(
   simulation: Simulation,
 ): Promise<Assessment> {
   if (row.issues.length > 0) return { ...NOTHING, outcome: outcomeOf(row, 'invalid') };
-  if (row.duplicateOf !== null)
-    return skippedOutcome(row, `Same record as row ${row.duplicateOf}.`);
+  if (row.duplicateOf !== null) {
+    return skippedOutcome(row, 'same_record', `Same record as row ${row.duplicateOf}.`);
+  }
   return context.setup.target === 'companies'
     ? await assessCompanyRow(executor, context, row, simulation)
     : await assessPersonRow(executor, context, row, simulation);
+}
+
+function rememberedPerson(context: ImportContext, assessed: Assessment): string | null {
+  return context.setup.target === 'companies' ? null : assessed.outcome.recordId;
 }
 
 async function previewRowIn(
@@ -549,32 +610,51 @@ async function previewRowIn(
   simulation: Simulation,
 ): Promise<ImportRowOutcome> {
   const assessed = await assessRow(tx, context, row, simulation);
-  remember(
-    simulation,
-    assessed,
-    context.setup.target === 'companies' ? null : assessed.outcome.recordId,
-  );
+  remember(simulation, assessed, rememberedPerson(context, assessed));
   return assessed.outcome;
 }
 
-async function commitRowIn(
+interface CommittedRow {
+  readonly outcome: ImportRowOutcome;
+  readonly lead: LeadDraft | null;
+}
+
+function leadDraftOf(personId: string, row: PlannedRow): LeadDraft | null {
+  if (row.lead === null) return null;
+  return {
+    personId,
+    stageId: row.lead.stageId,
+    ownerId: row.lead.ownerId,
+    priority: row.lead.priority,
+    source: 'import',
+    nextAction: row.lead.nextAction,
+    nextActionAt: row.lead.nextActionAt,
+    fields: row.lead.fields,
+  };
+}
+
+function writtenCompany(company: CompanyRow | null): Promise<CompanyRow> {
+  return company === null
+    ? Promise.reject(internal('The company of this import row was not written.'))
+    : Promise.resolve(company);
+}
+
+async function commitPersonIn(
   batch: SyncBatch,
   context: ImportContext,
   row: PlannedRow,
+  assessed: Assessment,
   simulation: Simulation,
-): Promise<ImportRowOutcome> {
-  const assessed = await assessRow(batch.tx, context, row, simulation);
+): Promise<CommittedRow> {
   const { outcome } = assessed;
-  if (!isWritten(outcome)) return outcome;
-  if (context.setup.target === 'companies') {
-    if (assessed.company === null) return outcome;
-    const written = await upsertCompanyIn(batch, assessed.company);
-    remember(simulation, assessed, null);
-    return { ...outcome, recordId: written.company.id };
-  }
-  if (assessed.person === null) return outcome;
-  if (assessed.company !== null) await upsertCompanyIn(batch, assessed.company);
-  const written = await upsertPersonIn(batch, assessed.person, assessed.preferredId);
+  if (assessed.person === null) return { outcome, lead: null };
+  const company =
+    assessed.company === null
+      ? null
+      : (await writeCompanyIn(batch, assessed.company, assessed.companyMatch)).company;
+  const written = await writePersonIn(batch, assessed.person, assessed.match, () =>
+    writtenCompany(company),
+  );
   const personId = written.person.id;
   if (row.sourceId !== null && assessed.preferredId !== personId) {
     await linkImportSource(
@@ -586,22 +666,32 @@ async function commitRowIn(
     );
   }
   remember(simulation, assessed, personId);
-  const pipelineId = context.setup.pipelineId;
-  if (!assessed.createLead || row.lead === null || pipelineId === null) {
-    return { ...outcome, recordId: personId };
+  return {
+    outcome: { ...outcome, recordId: personId },
+    lead: assessed.createLead ? leadDraftOf(personId, row) : null,
+  };
+}
+
+async function commitRowIn(
+  batch: SyncBatch,
+  context: ImportContext,
+  row: PlannedRow,
+  simulation: Simulation,
+): Promise<CommittedRow> {
+  const assessed = await assessRow(batch.tx, context, row, simulation);
+  const { outcome } = assessed;
+  if (!isWritten(outcome)) return { outcome, lead: null };
+  if (!assessed.writes) {
+    remember(simulation, assessed, rememberedPerson(context, assessed));
+    return { outcome, lead: null };
   }
-  const lead = await createLeadIn(batch, {
-    personId,
-    pipelineId,
-    stageId: row.lead.stageId,
-    ownerId: row.lead.ownerId,
-    priority: row.lead.priority,
-    source: 'import',
-    nextAction: row.lead.nextAction,
-    nextActionAt: row.lead.nextActionAt,
-    fields: row.lead.fields,
-  });
-  return { ...outcome, recordId: personId, leadKey: lead.key };
+  if (context.setup.target !== 'companies') {
+    return await commitPersonIn(batch, context, row, assessed, simulation);
+  }
+  if (assessed.company === null) return { outcome, lead: null };
+  const written = await writeCompanyIn(batch, assessed.company, assessed.companyMatch);
+  remember(simulation, assessed, null);
+  return { outcome: { ...outcome, recordId: written.company.id }, lead: null };
 }
 
 async function loadSetup(principal: Principal, request: ImportRequest): Promise<ImportSetup> {
@@ -665,13 +755,53 @@ function importContextOf(
   };
 }
 
-function chunksOf<T>(items: readonly T[], size: number): T[][] {
-  const step = Number.isInteger(size) && size > 0 ? size : 1;
-  const chunks: T[][] = [];
-  for (let index = 0; index < items.length; index += step) {
-    chunks.push(items.slice(index, index + step));
+interface ChunkPlan {
+  readonly rows: number;
+  readonly now: () => number;
+  readonly deadline: number | undefined;
+}
+
+function chunkPlanOf(options: ImportPreviewOptions, defaultRows: number): ChunkPlan {
+  const rows = options.chunkRows ?? defaultRows;
+  return {
+    rows: Number.isInteger(rows) && rows > 0 ? rows : 1,
+    now: options.now ?? Date.now,
+    deadline: options.deadline,
+  };
+}
+
+function pastDeadline(plan: ChunkPlan): boolean {
+  return plan.deadline !== undefined && plan.now() >= plan.deadline;
+}
+
+async function takeChunk<T>(
+  rows: readonly PlannedRow[],
+  start: number,
+  plan: ChunkPlan,
+  handle: (row: PlannedRow) => Promise<T>,
+): Promise<T[]> {
+  const startedAt = plan.now();
+  const taken: T[] = [];
+  for (let index = start; index < rows.length; index += 1) {
+    const later = index > start;
+    if (later && (index - start >= plan.rows || plan.now() - startedAt >= IMPORT_CHUNK_MS)) break;
+    const row = rows[index];
+    if (row === undefined) break;
+    taken.push(await handle(row));
   }
-  return chunks;
+  return taken;
+}
+
+function stoppedAt(
+  rows: readonly PlannedRow[],
+  done: readonly ImportRowOutcome[],
+  next: number,
+  rest: string,
+): ImportReport['failure'] {
+  const last = done.at(-1)?.row;
+  const where =
+    last === undefined ? `Stopped before row ${rows[next]?.row ?? 1}` : `Stopped after row ${last}`;
+  return { row: null, message: `${where} to stay within the time limit. ${rest}` };
 }
 
 function reportOf(
@@ -703,15 +833,23 @@ export async function previewImport(
     importActor(principal, principal.userId),
     false,
   );
+  const plan = chunkPlanOf(options, IMPORT_PREVIEW_CHUNK_ROWS);
   const simulation = emptySimulation();
   const outcomes: ImportRowOutcome[] = [];
-  for (const chunk of chunksOf(prepared.rows, options.chunkRows ?? IMPORT_PREVIEW_CHUNK_ROWS)) {
+  while (outcomes.length < prepared.rows.length) {
+    if (pastDeadline(plan)) {
+      const rest = 'The rows after it were not checked.';
+      return reportOf(
+        'preview',
+        prepared,
+        outcomes,
+        stoppedAt(prepared.rows, outcomes, outcomes.length, rest),
+      );
+    }
+    const start = outcomes.length;
     const assessed = await cappedTransaction(
-      async (tx) => {
-        const rows: ImportRowOutcome[] = [];
-        for (const row of chunk) rows.push(await previewRowIn(tx, context, row, simulation));
-        return rows;
-      },
+      (tx) =>
+        takeChunk(prepared.rows, start, plan, (row) => previewRowIn(tx, context, row, simulation)),
       { accessMode: 'read only' },
     );
     outcomes.push(...assessed);
@@ -719,13 +857,34 @@ export async function previewImport(
   return reportOf('preview', prepared, outcomes, null);
 }
 
-function failureOf(error: unknown, firstRow: number, failingRow: number): ImportReport['failure'] {
+interface ChunkProgress {
+  blamed: number | null;
+  last: number;
+}
+
+function rangeText(first: number, last: number): string {
+  return first === last
+    ? `Row ${first} was not imported; the rows before it were.`
+    : `Rows ${first} to ${last} were not imported; the rows before them were.`;
+}
+
+function failureOf(
+  error: unknown,
+  firstRow: number,
+  progress: ChunkProgress,
+): ImportReport['failure'] {
   const domain = toDomainError(asConflict(error));
   if (domain.status >= 500) console.error('An import chunk failed and was rolled back.', error);
   const reason = domain.status >= 500 ? 'Something went wrong on our side.' : domain.message;
+  if (progress.blamed === null) {
+    return {
+      row: null,
+      message: `${reason} ${rangeText(firstRow, progress.last)} Run the same file again to continue.`,
+    };
+  }
   return {
-    row: failingRow,
-    message: `${reason} Nothing from row ${firstRow} on was imported; the rows before it were. Fix row ${failingRow} and run the same file again to continue.`,
+    row: progress.blamed,
+    message: `${reason} Nothing from row ${firstRow} on was imported; the rows before it were. Fix row ${progress.blamed} and run the same file again to continue.`,
   };
 }
 
@@ -744,6 +903,43 @@ async function publishChunk(
   }
 }
 
+async function writeChunkIn(
+  batch: SyncBatch,
+  context: ImportContext,
+  rows: readonly PlannedRow[],
+  start: number,
+  plan: ChunkPlan,
+  simulation: Simulation,
+  progress: ChunkProgress,
+): Promise<ImportRowOutcome[]> {
+  const pending: { readonly index: number; readonly row: number; readonly draft: LeadDraft }[] = [];
+  let index = 0;
+  const outcomes = await takeChunk(rows, start, plan, async (row) => {
+    progress.blamed = row.row;
+    progress.last = row.row;
+    const committed = await commitRowIn(batch, context, row, simulation);
+    if (committed.lead !== null) pending.push({ index, row: row.row, draft: committed.lead });
+    index += 1;
+    progress.blamed = null;
+    return committed.outcome;
+  });
+  const pipelineId = context.setup.pipelineId;
+  if (pending.length === 0 || pipelineId === null) return outcomes;
+  const leads = await createLeadsIn(
+    batch,
+    pipelineId,
+    pending.map((entry) => entry.draft),
+    (position) => {
+      progress.blamed = position === null ? null : (pending[position]?.row ?? null);
+    },
+  );
+  const keys = new Map(pending.map((entry, position) => [entry.index, leads[position]?.key]));
+  return outcomes.map((outcome, position) => {
+    const key = keys.get(position);
+    return key === undefined ? outcome : { ...outcome, leadKey: key };
+  });
+}
+
 export async function commitImport(
   context: WriteContext,
   input: unknown,
@@ -758,27 +954,43 @@ export async function commitImport(
     options.limits ?? HTTP_IMPORT_LIMITS,
   );
   const importContext = importContextOf(context.principal, prepared, actor, true);
+  const plan = chunkPlanOf(options, IMPORT_CHUNK_ROWS);
   let simulation = emptySimulation();
   const outcomes: ImportRowOutcome[] = [];
-  for (const chunk of chunksOf(prepared.rows, options.chunkRows ?? IMPORT_CHUNK_ROWS)) {
-    const firstRow = chunk[0]?.row ?? 0;
-    let failingRow = firstRow;
+  while (outcomes.length < prepared.rows.length) {
+    const start = outcomes.length;
+    if (pastDeadline(plan)) {
+      const rest = 'Run the same file again to continue.';
+      return reportOf(
+        'commit',
+        prepared,
+        outcomes,
+        stoppedAt(prepared.rows, outcomes, start, rest),
+      );
+    }
+    const firstRow = prepared.rows[start]?.row ?? 0;
+    const progress: ChunkProgress = { blamed: null, last: firstRow };
     let attempt = simulation;
     let written: { rows: ImportRowOutcome[]; actions: SyncAction[] };
     try {
       written = await retryOnUniqueViolation(() =>
         withBatch(writeContext, async (batch) => {
           attempt = forkSimulation(simulation);
-          const rows: ImportRowOutcome[] = [];
-          for (const row of chunk) {
-            failingRow = row.row;
-            rows.push(await commitRowIn(batch, importContext, row, attempt));
-          }
+          progress.blamed = null;
+          const rows = await writeChunkIn(
+            batch,
+            importContext,
+            prepared.rows,
+            start,
+            plan,
+            attempt,
+            progress,
+          );
           return { rows };
         }),
       );
     } catch (error: unknown) {
-      return reportOf('commit', prepared, outcomes, failureOf(error, firstRow, failingRow));
+      return reportOf('commit', prepared, outcomes, failureOf(error, firstRow, progress));
     }
     simulation = attempt;
     outcomes.push(...written.rows);

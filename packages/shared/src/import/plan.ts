@@ -15,11 +15,13 @@ import {
   type ImportFieldObject,
   type ImportMapping,
 } from './mapping.ts';
+import type { ImportIssueCode } from './report.ts';
 import type { ImportTable } from './table.ts';
 
 export interface ImportIssue {
   readonly row: number;
   readonly column: string | null;
+  readonly code: ImportIssueCode;
   readonly message: string;
 }
 
@@ -105,7 +107,7 @@ class RowIssues {
   }
 
   add(column: string | null, message: string): void {
-    this.list.push({ row: this.row, column, message });
+    this.list.push({ row: this.row, column, code: 'invalid', message });
   }
 }
 

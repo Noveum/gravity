@@ -13,9 +13,13 @@ export const IMPORT_MATCHES = [
   'name',
 ] as const;
 
+export const IMPORT_ISSUE_CODES = ['invalid', 'same_record', 'conflict'] as const;
+export type ImportIssueCode = (typeof IMPORT_ISSUE_CODES)[number];
+
 export const importIssueSchema = z.object({
   row: z.number().int(),
   column: z.string().nullable(),
+  code: z.enum(IMPORT_ISSUE_CODES),
   message: z.string(),
 });
 
@@ -54,7 +58,7 @@ export const importReportSchema = z.object({
   target: z.enum(IMPORT_TARGETS),
   totals: importTotalsSchema,
   rows: z.array(importRowOutcomeSchema),
-  failure: z.object({ row: z.number().int(), message: z.string() }).nullable(),
+  failure: z.object({ row: z.number().int().nullable(), message: z.string() }).nullable(),
 });
 export type ImportReport = z.infer<typeof importReportSchema>;
 

@@ -63,7 +63,7 @@ describe('runImportCli', () => {
     const dry = harness({ 'people.csv': CSV });
     expect(await runImportCli(argv(), dry.io)).toBe(0);
     expect(dry.lines[0]).toBe(
-      'Dry run: 1 rows, 1 new, 0 merged, 0 unchanged, 0 skipped, 0 invalid, 0 companies created, 1 leads created, 0 leads already open.',
+      'Dry run: 1 rows, 1 new, 0 merged, 0 unchanged, 0 skipped, 0 invalid, 0 companies created, 1 leads created, 0 leads already in the pipeline.',
     );
     expect(dry.lines.at(-1)).toBe('Nothing was written. Run again with --commit to import.');
     expect(await db.select().from(schema.person)).toHaveLength(0);

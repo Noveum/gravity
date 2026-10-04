@@ -256,7 +256,7 @@ describe('ImportView', () => {
     await choose();
     await userEvent.keyboard(SUBMIT);
     expect(await screen.findByText('2 unchanged')).toBeInTheDocument();
-    expect(screen.getByText('YOD-1 already open')).toBeInTheDocument();
+    expect(screen.getByText('YOD-1 already in pipeline')).toBeInTheDocument();
     expect(screen.getByText('Matched by email')).toBeInTheDocument();
     expect(screen.getByText('Matched by source id')).toBeInTheDocument();
     expect(
@@ -270,7 +270,14 @@ describe('ImportView', () => {
       outcome(1, 'Ada Lovelace', {
         status: 'skipped',
         lead: 'none',
-        issues: [{ row: 1, column: null, message: 'Bea Bauer already uses ada@vela.example.' }],
+        issues: [
+          {
+            row: 1,
+            column: null,
+            code: 'conflict',
+            message: 'Bea Bauer already uses ada@vela.example.',
+          },
+        ],
       }),
       outcome(2, 'Grace Hopper', { status: 'merge', kept: ['company'], lead: 'none' }),
     ];
@@ -322,6 +329,28 @@ describe('ImportView', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Stopped at row 2: Fix row 2 and run the same file again to continue.',
     );
+  });
+
+  test('an import stopped at the time limit says so without blaming a row', async () => {
+    const stopped =
+      'Stopped after row 1 to stay within the time limit. Run the same file again to continue.';
+    serveJson((url) => {
+      if (url.pathname.endsWith('/preview')) return { body: report('preview') };
+      const done = report('commit');
+      return {
+        body: {
+          report: { ...done.report, status: 'partial', failure: { row: null, message: stopped } },
+        },
+      };
+    });
+    renderWithClient(<ImportView initialTarget="leads" initialPipelineKey="YOD" />);
+    await choose();
+    await userEvent.keyboard(SUBMIT);
+    await screen.findByText('2 new');
+    await userEvent.keyboard(SUBMIT);
+    expect(await screen.findByText('The import stopped part way')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(stopped);
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Stopped at row');
   });
 
   test('a role without import rights is told why', () => {

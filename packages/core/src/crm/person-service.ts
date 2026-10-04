@@ -276,6 +276,11 @@ function patchedPerson(
   };
 }
 
+export interface KnownPerson {
+  readonly row: StoredPerson;
+  readonly matchedBy: PersonMatch;
+}
+
 export async function upsertPersonIn(
   batch: SyncBatch,
   raw: PersonInput,
@@ -286,11 +291,21 @@ export async function upsertPersonIn(
     lock: true,
     preferredId,
   });
+  return await writePersonIn(batch, input, match, (ref) => resolveCompanyRef(batch, ref));
+}
+
+export async function writePersonIn(
+  batch: SyncBatch,
+  raw: PersonInput,
+  match: KnownPerson | null,
+  companyOf: (ref: CompanyRef) => Promise<CompanyRow>,
+): Promise<PersonUpsert> {
+  const input: PersonInput = { ...raw, emails: lowercased(raw.emails) };
   const written =
     match === null
       ? await insertPersonIn(batch, input)
       : { personId: match.row.id, pending: await mergePersonIn(batch, match.row, input) };
-  const company = input.company === null ? null : await resolveCompanyRef(batch, input.company);
+  const company = input.company === null ? null : await companyOf(input.company);
   const job = await writeCurrentJobIn(batch, written.personId, company, input.title);
   let person = await personRowById(batch.tx, batch.organizationId, written.personId);
   if (written.pending !== null) {

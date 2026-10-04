@@ -21,6 +21,7 @@ export const MAX_IMPORT_CELL_LENGTH = 5_000;
 export const MAX_IMPORT_HEADER_LENGTH = 500;
 export const IMPORT_CHUNK_ROWS = 100;
 export const IMPORT_PREVIEW_CHUNK_ROWS = 500;
+export const IMPORT_CHUNK_MS = 10_000;
 
 export interface ImportLimits {
   readonly maxBytes: number;

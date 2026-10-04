@@ -122,7 +122,7 @@ function mappingOf(bytes: Uint8Array): ImportMapping {
 function summaryOf(report: ImportReport): string[] {
   const totals = report.totals;
   return [
-    `${report.mode === 'preview' ? 'Dry run' : 'Imported'}: ${totals.rows} rows, ${totals.created} new, ${totals.merged} merged, ${totals.unchanged} unchanged, ${totals.skipped} skipped, ${totals.invalid} invalid, ${totals.companiesCreated} companies created, ${totals.leadsCreated} leads created, ${totals.leadsExisting} leads already open.`,
+    `${report.mode === 'preview' ? 'Dry run' : 'Imported'}: ${totals.rows} rows, ${totals.created} new, ${totals.merged} merged, ${totals.unchanged} unchanged, ${totals.skipped} skipped, ${totals.invalid} invalid, ${totals.companiesCreated} companies created, ${totals.leadsCreated} leads created, ${totals.leadsExisting} leads already in the pipeline.`,
     ...report.rows.flatMap((row) =>
       row.issues.map(
         (issue) =>
@@ -131,7 +131,11 @@ function summaryOf(report: ImportReport): string[] {
     ),
     ...(report.failure === null
       ? []
-      : [`Stopped at row ${report.failure.row}: ${report.failure.message}`]),
+      : [
+          report.failure.row === null
+            ? report.failure.message
+            : `Stopped at row ${report.failure.row}: ${report.failure.message}`,
+        ]),
   ];
 }
 

@@ -1,12 +1,15 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { and, db, eq, schema, sql } from '@gravity/db';
+import type { SyncAction } from '@gravity/shared/events';
 import type { ImportReport } from '@gravity/shared/import';
 import type { Principal } from '@gravity/shared/policy';
+import postgres from 'postgres';
 import { createBrand } from '../../src/crm/brand-service.ts';
 import { createFieldDefinition } from '../../src/crm/field-service.ts';
-import { createLead } from '../../src/crm/lead-service.ts';
+import { changeLead, createLead, quickCreateLead } from '../../src/crm/lead-service.ts';
 import { updatePerson, upsertPerson } from '../../src/crm/person-service.ts';
 import { getPersonRecord } from '../../src/crm/record-service.ts';
+import { companyScopes, leadScopes, personScopes } from '../../src/crm/scopes.ts';
 import { archiveStage } from '../../src/crm/stage-service.ts';
 import { commitImport, importActor, previewImport } from '../../src/import/import-service.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
@@ -17,6 +20,7 @@ import {
   resetDatabase,
   type TestWorkspace,
 } from '../../src/test-support.ts';
+import { writerBackendPid } from '../support/rival-connection.ts';
 
 const HEADER = 'Name,Email,Company,Domain,Title,Stage,Owner,Tier,Ref';
 const MAPPING = {
@@ -36,6 +40,8 @@ let teammate: Principal;
 let teammateEmail = '';
 let pipelineId = '';
 let researchingId = '';
+let qualifiedId = '';
+let notFitId = '';
 
 beforeEach(async () => {
   await resetDatabase();
@@ -44,6 +50,8 @@ beforeEach(async () => {
   const brand = await createBrand(context, { name: 'Lumen', pipelineKey: 'LUM' });
   pipelineId = brand.pipeline.id;
   researchingId = brand.stages.find((stage) => stage.name === 'Researching')?.id ?? '';
+  qualifiedId = brand.stages.find((stage) => stage.name === 'Qualified')?.id ?? '';
+  notFitId = brand.stages.find((stage) => stage.name === 'Closed: not a fit')?.id ?? '';
   await createFieldDefinition(context, {
     object: 'person',
     key: 'tier',
@@ -115,6 +123,37 @@ async function linksOf(organizationId: string, sourceId: string) {
         eq(schema.importSource.sourceId, sourceId),
       ),
     );
+}
+
+function steppingClock(step: number): () => number {
+  let current = 0;
+  return () => {
+    const value = current;
+    current += step;
+    return value;
+  };
+}
+
+async function withFailingTrigger<T>(table: string, run: () => Promise<T>): Promise<T> {
+  await db.execute(
+    sql.raw(`
+      create or replace function import_test_refuse() returns trigger as $$
+      begin raise exception 'refused by test trigger'; end;
+      $$ language plpgsql;
+      create trigger import_test_refuse before insert on ${table}
+        for each row execute function import_test_refuse();
+    `),
+  );
+  try {
+    return await run();
+  } finally {
+    await db.execute(
+      sql.raw(`
+        drop trigger if exists import_test_refuse on ${table};
+        drop function if exists import_test_refuse();
+      `),
+    );
+  }
 }
 
 describe('importActor', () => {
@@ -255,7 +294,7 @@ describe('commitImport', () => {
     );
     expect(report.rows[1]).toMatchObject({
       status: 'skipped',
-      issues: [{ row: 2, column: null, message: 'Same record as row 1.' }],
+      issues: [{ row: 2, column: null, code: 'same_record', message: 'Same record as row 1.' }],
     });
     expect(await count('person')).toBe(1);
   });
@@ -273,7 +312,7 @@ describe('commitImport', () => {
     expect(commit.rows[1]).toMatchObject({
       status: 'skipped',
       recordId: quinn.person.id,
-      issues: [{ row: 2, column: null, message: 'Same record as row 1.' }],
+      issues: [{ row: 2, column: null, code: 'same_record', message: 'Same record as row 1.' }],
     });
     expect(commit.status).toBe('completed');
     expect(await count('lead')).toBe(1);
@@ -440,9 +479,15 @@ describe('commitImport', () => {
         changes: [],
         lead: 'none',
       });
-      expect(report.rows[0]?.issues[0]?.message).toBe(
-        'Bea Bauer already uses bea@vela.example, so this row was not merged into Nameless Ref.',
-      );
+      expect(report.rows[0]?.issues).toEqual([
+        {
+          row: 1,
+          column: null,
+          code: 'conflict',
+          message:
+            'Bea Bauer already uses bea@vela.example, so this row was not merged into Nameless Ref.',
+        },
+      ]);
       expect(report.rows[1]?.status).toBe('create');
     }
     expect(commit.status).toBe('completed');
@@ -605,6 +650,227 @@ describe('commitImport', () => {
     expect(shape(report)).toEqual([['create', null, 'none', 'none']]);
     expect(await count('lead')).toBe(0);
     expect(await count('person')).toBe(1);
+  });
+
+  test('a chunk closes after ten seconds of work and the next one carries on', async () => {
+    const published: number[] = [];
+    const input = request([
+      'A One,a1@vela.example,,,,,,,',
+      'A Two,a2@vela.example,,,,,,,',
+      'A Three,a3@vela.example,,,,,,,',
+      'A Four,a4@vela.example,,,,,,,',
+      'A Five,a5@vela.example,,,,,,,',
+    ]);
+    const preview = await previewImport(workspace.admin, input, { now: steppingClock(4000) });
+    expect(preview.status).toBe('completed');
+    expect(preview.rows.map((row) => row.row)).toEqual([1, 2, 3, 4, 5]);
+    const report = await run(input, {
+      now: steppingClock(4000),
+      publish: (actions) => {
+        published.push(
+          new Set(actions.filter((a) => a.model === 'lead').map((a) => a.modelId)).size,
+        );
+        return Promise.resolve();
+      },
+    });
+    expect(report.status).toBe('completed');
+    expect(report.rows.map((row) => row.row)).toEqual([1, 2, 3, 4, 5]);
+    expect(published).toEqual([3, 2]);
+    expect(await count('lead')).toBe(5);
+  });
+
+  test('preview and commit stop at the deadline with a partial report', async () => {
+    const input = request([
+      'A One,a1@vela.example,,,,,,,',
+      'A Two,a2@vela.example,,,,,,,',
+      'A Three,a3@vela.example,,,,,,,',
+    ]);
+    const options = { chunkRows: 1, deadline: 10_000 };
+    const preview = await previewImport(workspace.admin, input, {
+      ...options,
+      now: steppingClock(4000),
+    });
+    expect(preview.status).toBe('partial');
+    expect(preview.rows.map((row) => row.row)).toEqual([1, 2]);
+    expect(preview.failure).toEqual({
+      row: null,
+      message:
+        'Stopped after row 2 to stay within the time limit. The rows after it were not checked.',
+    });
+    const commit = await run(input, { ...options, now: steppingClock(4000) });
+    expect(commit.status).toBe('partial');
+    expect(commit.rows.map((row) => row.row)).toEqual([1, 2]);
+    expect(commit.failure).toEqual({
+      row: null,
+      message:
+        'Stopped after row 2 to stay within the time limit. Run the same file again to continue.',
+    });
+    expect(await count('lead')).toBe(2);
+    const rest = await run(input);
+    expect(rest.rows.map((row) => row.status)).toEqual(['unchanged', 'unchanged', 'create']);
+    expect(await count('lead')).toBe(3);
+  });
+
+  test('a person with a closed lead in the pipeline never gets a second one', async () => {
+    const won = await run(request(['Ada Lovelace,ada@vela.example,,,,Qualified,,,']));
+    const [adaLead] = await db
+      .select()
+      .from(schema.lead)
+      .where(eq(schema.lead.personId, won.rows[0]?.recordId ?? ''));
+    await changeLead({ principal: workspace.admin }, adaLead?.id ?? '', {
+      type: 'close',
+      stageId: notFitId,
+    });
+    const openRow = await run(request(['Grace Hopper,grace@vela.example,,,,New,,,']));
+    const [graceLead] = await db
+      .select()
+      .from(schema.lead)
+      .where(eq(schema.lead.personId, openRow.rows[0]?.recordId ?? ''));
+    await changeLead({ principal: workspace.admin }, graceLead?.id ?? '', {
+      type: 'close',
+      stageId: qualifiedId,
+    });
+    const input = request([
+      'Ada Lovelace,ada@vela.example,,,,Qualified,,,',
+      'Grace Hopper,grace@vela.example,,,,New,,,',
+    ]);
+    const preview = await previewImport(workspace.admin, input);
+    const again = await run(input);
+    for (const report of [preview, again]) {
+      expect(report.rows.map((row) => [row.lead, row.leadKey])).toEqual([
+        ['exists', 'LUM-1'],
+        ['exists', 'LUM-2'],
+      ]);
+    }
+    expect(await count('lead')).toBe(2);
+  });
+
+  test('a teammate can create a lead in the pipeline while a chunk is being written', async () => {
+    const rows = Array.from(
+      { length: 60 },
+      (_, index) => `P${index},p${index}@vela.example,,,,,,,`,
+    );
+    const writer = await writerBackendPid();
+    const rival = postgres(String(process.env['DATABASE_URL']), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    try {
+      const probe = (async () => {
+        for (let attempt = 0; attempt < 500; attempt += 1) {
+          const [state] = await rival<{ open: boolean }[]>`
+            select xact_start is not null as open from pg_stat_activity where pid = ${writer}`;
+          if (state?.open === true) break;
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        return await rival.begin(async (tx) => {
+          await tx`set local lock_timeout = '200ms'`;
+          const [bumped] = await tx<{ counter: number }[]>`
+            update pipeline set lead_counter = lead_counter where id = ${pipelineId}
+            returning lead_counter as counter`;
+          return bumped?.counter ?? null;
+        });
+      })();
+      const [report, probed] = await Promise.all([run(request(rows)), probe]);
+      expect(report.status).toBe('completed');
+      expect(probed).toBe(0);
+    } finally {
+      await rival.end();
+    }
+    const quick = await quickCreateLead(
+      { principal: workspace.admin },
+      { pipelineId, person: { name: 'Quick One', emails: ['quick@vela.example'] } },
+    );
+    expect(quick.lead.key).toBe('LUM-61');
+  });
+
+  test('a failure after the rows were written blames no row', async () => {
+    const quiet = spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const report = await withFailingTrigger('outbox', () =>
+        run(request(['A One,a1@vela.example,,,,,,,', 'A Two,a2@vela.example,,,,,,,'])),
+      );
+      expect(report.status).toBe('partial');
+      expect(report.failure).toEqual({
+        row: null,
+        message:
+          'Something went wrong on our side. Rows 1 to 2 were not imported; the rows before them were. Run the same file again to continue.',
+      });
+      expect(await count('person')).toBe(0);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
+  test('every standard property the import declines to overwrite is reported as kept', async () => {
+    const context = { principal: workspace.admin };
+    await upsertPerson(context, {
+      name: 'Ada Lovelace',
+      emails: ['ada@vela.example'],
+      location: 'London',
+      timezone: 'Europe/London',
+      linkedinUrl: 'https://www.linkedin.com/in/ada',
+    });
+    const input = {
+      format: 'csv',
+      content: [
+        'Name,Email,Location,Timezone,LinkedIn',
+        'Ada King,ada@vela.example,Paris,Europe/Paris,https://www.linkedin.com/in/ada-king',
+      ].join('\n'),
+      target: 'people',
+      mapping: {
+        Name: 'person.name',
+        Email: 'person.email',
+        Location: 'person.location',
+        Timezone: 'person.timezone',
+        LinkedIn: 'person.linkedinUrl',
+      },
+    };
+    const preview = await previewImport(workspace.admin, input);
+    const commit = await run(input);
+    for (const report of [preview, commit]) {
+      expect(report.rows[0]).toMatchObject({
+        status: 'unchanged',
+        changes: [],
+        kept: ['name', 'linkedinUrl', 'location', 'timezone'],
+      });
+    }
+  });
+
+  test('published actions carry the scopes their emitters give', async () => {
+    const published: SyncAction[] = [];
+    await run(request(['Ada Lovelace,ada@vela.example,Vela Robotics,vela.example,CTO,,,gold,r1']), {
+      publish: (actions) => {
+        published.push(...actions);
+        return Promise.resolve();
+      },
+    });
+    const org = workspace.organizationId;
+    const models = new Set(published.map((action) => action.model));
+    expect([...models].sort()).toEqual(['activity', 'company', 'employment', 'lead', 'person']);
+    for (const action of published) {
+      const data = action.data;
+      if (action.model === 'person')
+        expect(action.scopes).toEqual(personScopes(org, action.modelId));
+      if (action.model === 'company')
+        expect(action.scopes).toEqual(companyScopes(org, action.modelId));
+      if (action.model === 'lead') {
+        expect(action.scopes).toEqual(
+          leadScopes(org, {
+            brandId: String(data['brandId']),
+            pipelineId: String(data['pipelineId']),
+            personId: String(data['personId']),
+            companyId: typeof data['companyId'] === 'string' ? data['companyId'] : null,
+          }),
+        );
+        expect(data['companyId']).toBeTruthy();
+      }
+      if (action.model === 'activity') {
+        expect(action.scopes[0]).toBe(`workspace:${org}`);
+        expect(action.scopes.length).toBeGreaterThan(1);
+      }
+    }
   });
 
   test('refuses a file over the row limit before planning', async () => {

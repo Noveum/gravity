@@ -42,7 +42,7 @@ function shownRows(rows: readonly ImportRowOutcome[]): readonly ImportRowOutcome
 }
 
 function leadText(row: ImportRowOutcome, preview: boolean): string {
-  if (row.lead === 'exists') return `${row.leadKey ?? 'Open lead'} already open`;
+  if (row.lead === 'exists') return `${row.leadKey ?? 'A lead'} already in pipeline`;
   if (row.lead === 'create') return preview ? 'New lead' : (row.leadKey ?? 'New lead');
   return '';
 }
@@ -78,7 +78,7 @@ export function ImportReportView({ report }: { readonly report: ImportReport }) 
     [totals.invalid, 'invalid'],
     [totals.companiesCreated, preview ? 'companies to create' : 'companies created'],
     [totals.leadsCreated, preview ? 'leads to create' : 'leads created'],
-    [totals.leadsExisting, 'leads already open'],
+    [totals.leadsExisting, 'leads already in pipeline'],
   ];
   const shown = shownRows(report.rows);
   return (
@@ -94,7 +94,9 @@ export function ImportReportView({ report }: { readonly report: ImportReport }) 
       </ul>
       {report.failure === null ? null : (
         <p role="alert" className="text-danger text-dense">
-          Stopped at row {report.failure.row}: {report.failure.message}
+          {report.failure.row === null
+            ? report.failure.message
+            : `Stopped at row ${report.failure.row}: ${report.failure.message}`}
         </p>
       )}
       <table className="w-full table-fixed text-dense">

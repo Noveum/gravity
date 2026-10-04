@@ -241,6 +241,15 @@ async function insertCompanyIn(batch: SyncBatch, input: CompanyInput): Promise<C
 export async function upsertCompanyIn(batch: SyncBatch, raw: CompanyInput): Promise<CompanyUpsert> {
   const input: CompanyInput = { ...raw, domains: lowercased(raw.domains) };
   const existing = await findCompanyMatch(batch.tx, batch.organizationId, input, true);
+  return await writeCompanyIn(batch, input, existing);
+}
+
+export async function writeCompanyIn(
+  batch: SyncBatch,
+  raw: CompanyInput,
+  existing: StoredCompany | undefined,
+): Promise<CompanyUpsert> {
+  const input: CompanyInput = { ...raw, domains: lowercased(raw.domains) };
   if (existing === undefined)
     return { company: await insertCompanyIn(batch, input), created: true };
   const merged = await mergeFieldInputIn(batch, 'company', existing, input.fields);

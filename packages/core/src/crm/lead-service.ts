@@ -14,8 +14,10 @@ import {
 } from '@gravity/shared/records';
 import { parseLeadKey } from '@gravity/shared/utils';
 import {
+  type FieldMerge,
   type FieldValue,
   fieldsMetaSchema,
+  fieldValuesSchema,
   type LeadChange,
   type LeadCreate,
   type LeadPatch,
@@ -28,7 +30,7 @@ import {
 import { type Executor, newId, requireRow } from '../internal.ts';
 import { diffValues, recordActivity } from './activity-service.ts';
 import { asConflict, violatedConstraint } from './conflicts.ts';
-import { validateFieldInput } from './field-service.ts';
+import { loadFieldDefinitions, validateFieldInput } from './field-service.ts';
 import { leadRowById, selectLeadRows } from './lead-rows.ts';
 import { assertMember, livePipeline, liveStagesOf } from './lookups.ts';
 import { livePerson } from './person-lookup.ts';
@@ -228,6 +230,133 @@ export async function createLeadIn(batch: SyncBatch, input: LeadCreate): Promise
     links: leadLinks(lead),
   });
   return lead;
+}
+
+export interface LeadDraft {
+  readonly personId: string;
+  readonly stageId: string | undefined;
+  readonly ownerId: string | null | undefined;
+  readonly priority: number;
+  readonly source: string;
+  readonly nextAction: string | null;
+  readonly nextActionAt: string | null;
+  readonly fields: Readonly<Record<string, unknown>>;
+}
+
+interface PreparedLead {
+  readonly id: string;
+  readonly draft: LeadDraft;
+  readonly stage: StageRow;
+  readonly ownerId: string | null;
+  readonly fields: FieldMerge;
+  readonly syncId: number;
+}
+
+async function prepareLeadsIn(
+  batch: SyncBatch,
+  pipelineId: string,
+  drafts: readonly LeadDraft[],
+  checking: (index: number | null) => void,
+): Promise<PreparedLead[]> {
+  const organizationId = batch.organizationId;
+  const stages = await lockedStagesOf(batch, [pipelineId]);
+  const values = fieldValuesSchema(
+    await loadFieldDefinitions(batch.tx, organizationId, 'lead', pipelineId),
+  );
+  const members = new Set<string>();
+  const actor = writeActor(batch.context);
+  const now = new Date();
+  const prepared: PreparedLead[] = [];
+  for (const [index, draft] of drafts.entries()) {
+    checking(index);
+    const stage = startingStage(stages, draft.stageId);
+    const ownerId = draft.ownerId === undefined ? batch.context.principal.userId : draft.ownerId;
+    if (ownerId !== null && !members.has(ownerId)) {
+      await assertMember(batch.tx, organizationId, ownerId);
+      members.add(ownerId);
+    }
+    const fields = Object.keys(draft.fields).length === 0 ? {} : values.parse(draft.fields);
+    prepared.push({
+      id: newId(),
+      draft,
+      stage,
+      ownerId,
+      fields: mergeFields({}, {}, fields, actor, now),
+      syncId: await batch.nextSyncId(),
+    });
+  }
+  checking(null);
+  return prepared;
+}
+
+async function reserveLeadNumbers(
+  batch: SyncBatch,
+  pipelineId: string,
+  count: number,
+): Promise<number> {
+  const [counter] = await batch.tx
+    .update(schema.pipeline)
+    .set({ leadCounter: sql`${schema.pipeline.leadCounter} + ${count}` })
+    .where(eq(schema.pipeline.id, pipelineId))
+    .returning({ number: schema.pipeline.leadCounter });
+  return requireRow(counter, 'That pipeline does not exist.').number - count + 1;
+}
+
+export async function createLeadsIn(
+  batch: SyncBatch,
+  pipelineId: string,
+  drafts: readonly LeadDraft[],
+  checking: (index: number | null) => void = () => undefined,
+): Promise<LeadRow[]> {
+  if (drafts.length === 0) return [];
+  const organizationId = batch.organizationId;
+  const pipeline = await livePipeline(batch.tx, organizationId, pipelineId);
+  const prepared = await prepareLeadsIn(batch, pipeline.id, drafts, checking);
+  const first = await reserveLeadNumbers(batch, pipeline.id, prepared.length);
+  await batch.tx.insert(schema.lead).values(
+    prepared.map((entry, index) => ({
+      id: entry.id,
+      organizationId,
+      personId: entry.draft.personId,
+      pipelineId: pipeline.id,
+      number: first + index,
+      ownerId: entry.ownerId,
+      stageId: entry.stage.id,
+      stageCategory: entry.stage.category,
+      source: entry.draft.source,
+      priority: entry.draft.priority,
+      nextAction: entry.draft.nextAction,
+      nextActionAt: toDate(entry.draft.nextActionAt),
+      fields: entry.fields.fields,
+      fieldsMeta: entry.fields.meta,
+      syncId: entry.syncId,
+    })),
+  );
+  const rows = await selectLeadRows(
+    batch.tx,
+    organizationId,
+    inArray(
+      schema.lead.id,
+      prepared.map((entry) => entry.id),
+    ),
+  );
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const leads: LeadRow[] = [];
+  for (const entry of prepared) {
+    const lead = requireRow(byId.get(entry.id), 'The lead could not be created.');
+    emitLead(batch, entry.syncId, 'insert', lead);
+    await recordActivity(batch, {
+      kind: 'lead.created',
+      payload: {
+        leadId: lead.id,
+        key: lead.key,
+        stage: { id: entry.stage.id, name: entry.stage.name },
+      },
+      links: leadLinks(lead),
+    });
+    leads.push(lead);
+  }
+  return leads;
 }
 
 export async function createLead(

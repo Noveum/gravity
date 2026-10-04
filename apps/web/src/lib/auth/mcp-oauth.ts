@@ -1,6 +1,6 @@
 import { bindMcpCredential, cappedTransaction, unbindMcpCredential } from '@gravity/core';
 import { and, db, eq, isNull, schema } from '@gravity/db';
-import { MCP_OAUTH_SCOPES } from '@gravity/shared/constants';
+import { grantsReads, grantsWrites, MCP_OAUTH_SCOPES } from '@gravity/shared/constants';
 import { isAllowedLogoUri, isAllowedRedirectUri } from '@gravity/shared/utils';
 import { z } from 'zod';
 import { readCappedBytes } from '@/lib/api/capped-body.ts';
@@ -34,6 +34,7 @@ type OAuthErrorCode =
   | 'invalid_grant'
   | 'invalid_redirect_uri'
   | 'invalid_request'
+  | 'invalid_scope'
   | 'invalid_target'
   | 'server_error'
   | 'unsupported_grant_type';
@@ -124,6 +125,10 @@ export function refuseUnsafeAuthorize(search: URLSearchParams): Response | null 
     return oauthError('invalid_request', 'An S256 PKCE code challenge is required.');
   }
   if (!sameResource(search.getAll('resource'))) return targetRefusal();
+  const scope = search.get('scope');
+  if (scope !== null && !(grantsReads(scope) || grantsWrites(scope))) {
+    return oauthError('invalid_scope', 'Ask for gravity.read, gravity.write or both.');
+  }
   return null;
 }
 

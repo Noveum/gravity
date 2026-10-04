@@ -1,5 +1,10 @@
 import { verifyMcpAccessToken } from '@gravity/core';
-import { GRAVITY_READ_SCOPE, grantsReads, grantsWrites } from '@gravity/shared/constants';
+import {
+  GRAVITY_READ_SCOPE,
+  GRAVITY_WRITE_SCOPE,
+  grantsReads,
+  grantsWrites,
+} from '@gravity/shared/constants';
 import { forbidden, toDomainError, unauthorized } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
 import { recordLinks } from '@gravity/shared/utils';
@@ -20,6 +25,7 @@ const NO_SCOPE_MESSAGE =
 const INVALID_TOKEN_REASON = 'invalid_token';
 const NO_TOKEN_MESSAGE = 'Connect this client to Gravity to use its tools.';
 const BEARER_PREFIX = 'bearer ';
+const CHALLENGE_SCOPES = `${GRAVITY_READ_SCOPE} ${GRAVITY_WRITE_SCOPE}`;
 
 const INSTRUCTIONS = [
   'Gravity is an outreach CRM. A person exists once; each pursuit of that person in a pipeline is a lead with an identifier such as ABC-12.',
@@ -111,7 +117,9 @@ function refusal(error: unknown, presented: boolean, options: McpServerOptions):
   if (domain.status === 401) {
     const challenge = wwwAuthenticate(
       options.publicUrl,
-      presented ? { error: INVALID_TOKEN_REASON } : {},
+      presented
+        ? { error: INVALID_TOKEN_REASON, scope: CHALLENGE_SCOPES }
+        : { scope: CHALLENGE_SCOPES },
     );
     return rpcError(401, message, { 'WWW-Authenticate': challenge });
   }

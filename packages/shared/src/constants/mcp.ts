@@ -16,6 +16,8 @@ export const MCP_OAUTH_SCOPES = [
   ...GRAVITY_SCOPES,
 ] as const;
 
+export const MCP_DEFAULT_SCOPE = `openid offline_access ${GRAVITY_READ_SCOPE}`;
+
 export const MCP_SCOPE_LABELS: Readonly<Record<string, string>> = {
   [GRAVITY_READ_SCOPE]:
     'Read people, companies, leads, pipelines and saved views in the workspace you choose',

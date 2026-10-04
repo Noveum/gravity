@@ -12,7 +12,7 @@ import {
   sendEmail,
   signInCodeEmail,
 } from '@gravity/services/email';
-import { MCP_OAUTH_SCOPES } from '@gravity/shared/constants';
+import { MCP_DEFAULT_SCOPE, MCP_OAUTH_SCOPES } from '@gravity/shared/constants';
 import { DomainError } from '@gravity/shared/errors';
 import { signInCodeRequestSchema } from '@gravity/shared/validators';
 import { type BetterAuthPlugin, betterAuth } from 'better-auth';
@@ -296,6 +296,7 @@ export const auth = betterAuth({
         allowDynamicClientRegistration: true,
         requirePKCE: true,
         scopes: [...MCP_OAUTH_SCOPES],
+        defaultScope: MCP_DEFAULT_SCOPE,
       },
     }),
     nextCookies(),

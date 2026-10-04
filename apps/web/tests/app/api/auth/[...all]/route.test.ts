@@ -146,6 +146,62 @@ describe('authorize', () => {
     expect(JSON.parse(pending?.value ?? '{}')).toMatchObject({ requireConsent: true });
   });
 
+  test('a client that omits scope is asked for gravity.read and reaches a read token', async () => {
+    const search = pkceSearch({ resource: mcpServerUrl() });
+    search.delete('scope');
+    const response = await start(search);
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get('location') ?? '', APP_ORIGIN);
+    expect(location.pathname).toBe('/oauth/authorize');
+    const consentCode = location.searchParams.get('consent_code') ?? '';
+    const [pending] = await db.select().from(schema.verification);
+    expect(JSON.parse(pending?.value ?? '{}')).toMatchObject({
+      scope: ['openid', 'offline_access', 'gravity.read'],
+    });
+    const approved = await finalizeMcpConsent({
+      userId: workspace.adminUser.id,
+      consentCode,
+      accept: true,
+      organizationId: workspace.organizationId,
+      allowApproval: false,
+    });
+    const code = new URL(approved.redirectUri).searchParams.get('code') ?? '';
+    const issued = await authPost(
+      tokenRequest({
+        grant_type: 'authorization_code',
+        code,
+        client_id: CLIENT_ID,
+        redirect_uri: CALLBACK_URL,
+        code_verifier: MCP_TEST_CODE_VERIFIER,
+      }),
+    );
+    expect(issued.status).toBe(200);
+    const body = (await issued.json()) as { access_token: string; scope: string };
+    expect(body.scope.split(' ')).toContain('gravity.read');
+    const verified = await verifyMcpAccessToken(body.access_token);
+    expect(verified.scopes.split(' ')).toContain('gravity.read');
+  });
+
+  test('a request naming no Gravity scope is refused before sign-in or consent', async () => {
+    for (const signedIn of [true, false]) {
+      for (const scope of ['openid profile email', 'openid gravity.approve']) {
+        const response = await start(pkceSearch({ scope }), signedIn);
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({
+          error: 'invalid_scope',
+          error_description: 'Ask for gravity.read, gravity.write or both.',
+        });
+      }
+      const response = await start(pkceSearch({ scope: 'openid profile email' }), signedIn);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        error: 'invalid_scope',
+        error_description: 'Ask for gravity.read, gravity.write or both.',
+      });
+    }
+    expect(await db.select().from(schema.verification)).toHaveLength(0);
+  });
+
   test('a signed out user is sent to sign in with consent still forced', async () => {
     const response = await start(pkceSearch({ prompt: 'login' }), false);
     expect(response.status).toBe(302);

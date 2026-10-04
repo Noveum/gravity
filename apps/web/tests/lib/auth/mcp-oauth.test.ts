@@ -20,6 +20,19 @@ describe('refuseUnsafeAuthorize', () => {
     expect(refuseUnsafeAuthorize(search({ resource: mcpServerUrl() }))).toBeNull();
   });
 
+  test('passes a request without scope, which better-auth fills with gravity.read', () => {
+    const unscoped = search({});
+    unscoped.delete('scope');
+    expect(refuseUnsafeAuthorize(unscoped)).toBeNull();
+    expect(refuseUnsafeAuthorize(search({ scope: 'gravity.write' }))).toBeNull();
+  });
+
+  test('refuses a scope that names neither gravity.read nor gravity.write', async () => {
+    const refused = refuseUnsafeAuthorize(search({ scope: 'openid offline_access' }));
+    expect(refused?.status).toBe(400);
+    expect(await refused?.json()).toMatchObject({ error: 'invalid_scope' });
+  });
+
   test('refuses a resource that is not this MCP server', async () => {
     const refused = refuseUnsafeAuthorize(search({ resource: 'https://other.example.com/mcp' }));
     expect(refused?.status).toBe(400);

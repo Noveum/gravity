@@ -30,7 +30,7 @@ describe('/mcp', () => {
     );
     expect(response.status).toBe(401);
     expect(response.headers.get('www-authenticate')).toBe(
-      'Bearer resource_metadata="http://localhost:3300/.well-known/oauth-protected-resource/mcp"',
+      'Bearer scope="gravity.read gravity.write", resource_metadata="http://localhost:3300/.well-known/oauth-protected-resource/mcp"',
     );
   });
 
@@ -40,7 +40,7 @@ describe('/mcp', () => {
     );
     expect(response.status).toBe(401);
     expect(response.headers.get('www-authenticate')).toBe(
-      `Bearer resource_metadata="${CANONICAL}/.well-known/oauth-protected-resource/mcp"`,
+      `Bearer scope="gravity.read gravity.write", resource_metadata="${CANONICAL}/.well-known/oauth-protected-resource/mcp"`,
     );
   });
 

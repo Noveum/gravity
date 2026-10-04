@@ -23,8 +23,9 @@ afterAll(async () => {
 });
 
 const RESOURCE_METADATA = 'http://localhost:3300/.well-known/oauth-protected-resource/mcp';
-const RESOURCE_CHALLENGE = `Bearer resource_metadata="${RESOURCE_METADATA}"`;
-const INVALID_TOKEN_CHALLENGE = `Bearer error="invalid_token", resource_metadata="${RESOURCE_METADATA}"`;
+const SCOPES = 'scope="gravity.read gravity.write"';
+const RESOURCE_CHALLENGE = `Bearer ${SCOPES}, resource_metadata="${RESOURCE_METADATA}"`;
+const INVALID_TOKEN_CHALLENGE = `Bearer error="invalid_token", ${SCOPES}, resource_metadata="${RESOURCE_METADATA}"`;
 
 function listTools(headers: Record<string, string>): Promise<Response> {
   return callMcp(rpcRequest('tools/list', { headers }));

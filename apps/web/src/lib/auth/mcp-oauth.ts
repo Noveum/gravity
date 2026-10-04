@@ -53,7 +53,7 @@ function bodyTooLarge(): Response {
 async function cappedBody(request: Request): Promise<string | null> {
   const declared = Number(request.headers.get('content-length') ?? '0');
   if (declared > UNAUTHENTICATED_BODY_LIMIT_BYTES) return null;
-  const reader = request.clone().body?.getReader();
+  const reader = request.body?.getReader();
   if (reader === undefined) return '';
   const chunks: Uint8Array[] = [];
   let size = 0;

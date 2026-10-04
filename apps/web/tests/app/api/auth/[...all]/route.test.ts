@@ -417,6 +417,38 @@ describe('dynamic client registration', () => {
     expect(await db.select().from(schema.oauthApplication)).toHaveLength(1);
   });
 
+  test('a streamed body above 64KB with no content-length ends with 413', async () => {
+    await withNativeFetch(async () => {
+      for (const path of ['/api/auth/mcp/register', '/api/auth/mcp/token']) {
+        const chunk = new TextEncoder().encode('x'.repeat(16 * 1024));
+        let sent = 0;
+        const body = new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (sent === 10) {
+              controller.close();
+              return;
+            }
+            sent += 1;
+            controller.enqueue(chunk);
+          },
+        });
+        const request = new Request(`${APP_ORIGIN}${path}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.30' },
+          body,
+          duplex: 'half',
+        } as RequestInit & { duplex: 'half' });
+        expect(request.headers.get('content-length')).toBeNull();
+        const outcome = await Promise.race([
+          authPost(request).then((response) => response.status),
+          Bun.sleep(3_000).then(() => 'timed out'),
+        ]);
+        expect({ path, outcome }).toEqual({ path, outcome: 413 });
+      }
+    });
+    expect(await db.select().from(schema.oauthApplication)).toHaveLength(1);
+  });
+
   test('limits registrations per address', async () => {
     await withNativeFetch(async () => {
       const context = await auth.$context;

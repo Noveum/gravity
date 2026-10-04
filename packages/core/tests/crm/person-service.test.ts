@@ -10,6 +10,7 @@ import {
   updatePerson,
   upsertPerson,
   upsertPersonIn,
+  writePersonIn,
 } from '../../src/crm/person-service.ts';
 import { withBatch } from '../../src/crm/sync-batch.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
@@ -514,5 +515,43 @@ describe('findPersonMatch', () => {
       timezone: 'Europe/London',
       emails: ['ada@vela.example', 'ada@home.example'],
     });
+  });
+});
+
+describe('writePersonIn', () => {
+  const companyOf = () => Promise.reject(new Error('no company expected'));
+
+  test('inserts a person when there is no match and emits its insert', async () => {
+    const input = personInputSchema.parse({ name: 'Nia North', emails: ['NIA@quill.example'] });
+    const written = await withBatch({ principal: workspace.admin }, async (batch) => ({
+      result: await writePersonIn(batch, input, null, companyOf),
+    }));
+    expect(written.result).toMatchObject({ created: true, matchedBy: null });
+    expect(written.result.person.emails).toEqual(['nia@quill.example']);
+    expect(emitted(written.actions, 'person').map((action) => action.action)).toEqual(['insert']);
+  });
+
+  test('merges into the matched person and reports how it matched', async () => {
+    const first = await upsertPerson(
+      { principal: workspace.admin },
+      { name: 'Nia North', emails: ['nia@quill.example'] },
+    );
+    const match = await findPersonMatch(
+      db,
+      workspace.organizationId,
+      personInputSchema.parse({ name: 'Nia', emails: ['nia@quill.example'] }),
+      { lock: false },
+    );
+    const input = personInputSchema.parse({
+      name: 'Nia North',
+      emails: ['nia@quill.example', 'nia@north.example'],
+    });
+    const written = await withBatch({ principal: workspace.admin }, async (batch) => ({
+      result: await writePersonIn(batch, input, match, companyOf),
+    }));
+    expect(written.result).toMatchObject({ created: false, matchedBy: 'email' });
+    expect(written.result.person.id).toBe(first.person.id);
+    expect(written.result.person.emails).toEqual(['nia@quill.example', 'nia@north.example']);
+    expect(emitted(written.actions, 'person').map((action) => action.action)).toEqual(['update']);
   });
 });

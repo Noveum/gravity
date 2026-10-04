@@ -1044,7 +1044,15 @@ describe('commitImport', () => {
         expect(data['companyId']).toBeTruthy();
       }
       if (action.model === 'activity') {
-        expect(action.scopes[0]).toBe(`workspace:${org}`);
+        const links = data['links'] as { entityType: string; entityId: string }[];
+        expect(action.scopes).toEqual([
+          `workspace:${org}`,
+          ...links.flatMap((link) =>
+            link.entityType === 'person' || link.entityType === 'company'
+              ? [`${link.entityType}:${link.entityId}`]
+              : [],
+          ),
+        ]);
         expect(action.scopes.length).toBeGreaterThan(1);
       }
     }

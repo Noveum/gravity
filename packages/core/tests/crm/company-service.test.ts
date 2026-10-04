@@ -10,6 +10,7 @@ import {
   updateCompany,
   upsertCompany,
   upsertCompanyIn,
+  writeCompanyIn,
 } from '../../src/crm/company-service.ts';
 import { addEmployment } from '../../src/crm/employment-service.ts';
 import { upsertPerson } from '../../src/crm/person-service.ts';
@@ -287,5 +288,33 @@ describe('findCompanyMatch', () => {
       .set({ archivedAt: new Date() })
       .where(eq(schema.company.id, created.company.id));
     expect(await findCompanyMatch(db, workspace.organizationId, input, false)).toBeUndefined();
+  });
+});
+
+describe('writeCompanyIn', () => {
+  test('inserts without a match and merges into the given match', async () => {
+    const context = { principal: workspace.admin };
+    const input = companyInputSchema.parse({ name: 'Quill Labs', domains: ['QUILL.example'] });
+    const created = await withBatch(context, async (batch) => ({
+      result: await writeCompanyIn(batch, input, undefined),
+    }));
+    expect(created.result.created).toBe(true);
+    expect(created.result.company.domains).toEqual(['quill.example']);
+    expect(emitted(created.actions, 'company').map((action) => action.action)).toEqual(['insert']);
+    const existing = required(
+      await findCompanyMatch(db, workspace.organizationId, input, false),
+      'stored company',
+    );
+    const merged = await withBatch(context, async (batch) => ({
+      result: await writeCompanyIn(
+        batch,
+        companyInputSchema.parse({ name: 'Quill Labs', domains: ['quill.example'], size: '11-50' }),
+        existing,
+      ),
+    }));
+    expect(merged.result.created).toBe(false);
+    expect(merged.result.company.id).toBe(created.result.company.id);
+    expect(merged.result.company.size).toBe('11-50');
+    expect(emitted(merged.actions, 'company').map((action) => action.action)).toEqual(['update']);
   });
 });

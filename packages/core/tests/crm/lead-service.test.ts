@@ -655,3 +655,49 @@ describe('getLeadByKey', () => {
     );
   });
 });
+
+describe('createLeadsIn', () => {
+  function draft(overrides: Partial<Parameters<typeof createLeadsIn>[2][number]> = {}) {
+    return {
+      personId,
+      stageId: undefined,
+      ownerId: undefined,
+      priority: 0,
+      source: 'import',
+      nextAction: null,
+      nextActionAt: null,
+      fields: {},
+      ...overrides,
+    };
+  }
+
+  test('numbers the leads in one bump, starts them in the first open stage and records each', async () => {
+    const graceId = await person('Grace Hopper', 'grace@navy.mil');
+    const created = await withBatch(context(), async (batch) => ({
+      leads: await createLeadsIn(batch, pipelineId, [draft(), draft({ personId: graceId })]),
+    }));
+    expect(created.leads.map((lead) => lead.key)).toEqual(['YOD-1', 'YOD-2']);
+    expect(created.leads.every((lead) => lead.stageId === stageNamed('New'))).toBe(true);
+    expect(created.leads.every((lead) => lead.ownerId === workspace.admin.userId)).toBe(true);
+    expect(await leadCounter()).toBe(2);
+    const activities = created.actions.filter((action) => action.model === 'activity');
+    expect(activities.map((action) => action.data['kind'])).toEqual([
+      'lead.created',
+      'lead.created',
+    ]);
+  });
+
+  test('an owner from outside the workspace refuses the whole batch and burns no number', async () => {
+    const other = await createWorkspace('Other');
+    await expect(
+      withBatch(context(), async (batch) => ({
+        leads: await createLeadsIn(batch, pipelineId, [
+          draft(),
+          draft({ ownerId: other.adminUser.id }),
+        ]),
+      })),
+    ).rejects.toMatchObject({ code: 'validation_failed' });
+    expect(await leadCounter()).toBe(0);
+    expect(await db.select().from(schema.lead)).toHaveLength(0);
+  });
+});

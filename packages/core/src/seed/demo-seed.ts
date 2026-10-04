@@ -1,7 +1,10 @@
-import { and, db, eq, schema } from '@gravity/db';
+import { and, db, eq, inArray, isNotNull, isNull, schema } from '@gravity/db';
 import type { BrandColor } from '@gravity/shared/constants';
-import { conflict } from '@gravity/shared/errors';
+import { conflict, validationFailed } from '@gravity/shared/errors';
+import type { SyncAction } from '@gravity/shared/events';
 import type { Principal } from '@gravity/shared/policy';
+import { organizationCreateSchema } from '@gravity/shared/validators';
+import { z } from 'zod';
 import { createBrand } from '../crm/brand-service.ts';
 import { createFieldDefinition, listFieldDefinitions } from '../crm/field-service.ts';
 import { listPipelines } from '../crm/pipeline-service.ts';
@@ -10,12 +13,19 @@ import { commitImport } from '../import/import-service.ts';
 import { newId } from '../internal.ts';
 import { acceptInvite, createInvite } from '../org/invite-service.ts';
 import { findPrincipal, resolvePrincipal } from '../org/member-service.ts';
-import { assertEmailDomainAllowed, createOrganization } from '../org/organization-service.ts';
+import {
+  assertEmailDomainAllowed,
+  createOrganization,
+  type OrganizationRow,
+} from '../org/organization-service.ts';
+import { flushOutbox } from '../realtime/outbox.ts';
+import { assertSeedDomain } from './seed-guard.ts';
 
 export interface DemoSeedOptions {
   readonly slug: string;
   readonly domain: string;
   readonly reuse?: boolean;
+  readonly allowRealDomain?: boolean;
 }
 
 export const DEMO_SEED_DEFAULTS = { slug: 'demo', domain: 'gravity.test' } as const;
@@ -39,6 +49,9 @@ export interface DemoSeedResult {
   readonly leads: number;
 }
 
+export const DEMO_SEED_MARKER = 'gravity-demo-seed';
+const DEMO_WORKSPACE_NAME = 'Demo Outreach';
+const demoMarkerSchema = z.object({ createdBy: z.literal(DEMO_SEED_MARKER) });
 const IMPORT_SOURCE = 'demo-seed';
 const OWNER_TOKEN = '{owner}';
 const TEAMMATE_TOKEN = '{teammate}';
@@ -124,15 +137,28 @@ async function userByEmail(email: string) {
   return row;
 }
 
-async function ensureUser(name: string, email: string, handle: string) {
+async function assertHandleIsFree(handle: string, email: string): Promise<void> {
+  const [holder] = await db
+    .select({ email: schema.user.email })
+    .from(schema.user)
+    .where(eq(schema.user.handle, handle))
+    .limit(1);
+  if (holder !== undefined && holder.email !== email) {
+    throw conflict(
+      `The handle ${handle} belongs to another account. Seed with another --slug or --domain.`,
+    );
+  }
+}
+
+async function createMissingUser(name: string, email: string, handle: string) {
   const existing = await userByEmail(email);
-  if (existing !== undefined) return existing;
+  if (existing !== undefined) return { user: existing, created: false };
   const [created] = await db
     .insert(schema.user)
     .values({ id: newId(), name, email, handle, emailVerified: true })
     .returning();
   if (created === undefined) throw new Error(`Could not create the demo user ${email}.`);
-  return created;
+  return { user: created, created: true };
 }
 
 function sourceIdOf(row: string): string {
@@ -150,15 +176,59 @@ function csvOf(brand: DemoBrand, ownerEmail: string, teammateEmail: string): str
   return [HEADER, ...rows].join('\n');
 }
 
-async function adminOf(organizationId: string, ownerEmail: string, slug: string) {
+async function assertReusable(organization: OrganizationRow, ownerEmail: string) {
+  const notOurs = conflict(
+    `The workspace ${organization.slug} was not created by this seed, so it is left alone. Pass --slug to seed another one.`,
+  );
+  if (!isMarked(organization.metadata)) throw notOurs;
   const owner = await userByEmail(ownerEmail);
-  const principal = owner === undefined ? null : await findPrincipal(owner.id, organizationId);
-  if (owner === undefined || principal === null || principal.role !== 'admin') {
+  const principal = owner === undefined ? null : await findPrincipal(owner.id, organization.id);
+  if (owner === undefined || principal === null || principal.role !== 'admin') throw notOurs;
+  const keys = DEMO_BRANDS.map((brand) => brand.key);
+  const [archivedPipeline] = await db
+    .select({ key: schema.pipeline.key })
+    .from(schema.pipeline)
+    .where(
+      and(
+        eq(schema.pipeline.organizationId, organization.id),
+        inArray(schema.pipeline.key, keys),
+        isNotNull(schema.pipeline.archivedAt),
+      ),
+    )
+    .limit(1);
+  if (archivedPipeline !== undefined) {
     throw conflict(
-      `The workspace ${slug} was not created by this seed (${ownerEmail} is not its admin), so it is left alone. Pass --slug to seed another one.`,
+      `The ${archivedPipeline.key} pipeline in ${organization.slug} was archived and pipeline keys are never reused, so the seed cannot complete it. Seed another workspace with --slug.`,
+    );
+  }
+  const [archivedField] = await db
+    .select({ id: schema.fieldDefinition.id })
+    .from(schema.fieldDefinition)
+    .where(
+      and(
+        eq(schema.fieldDefinition.organizationId, organization.id),
+        eq(schema.fieldDefinition.object, 'person'),
+        eq(schema.fieldDefinition.key, 'seniority'),
+        isNotNull(schema.fieldDefinition.archivedAt),
+      ),
+    )
+    .limit(1);
+  if (archivedField !== undefined) {
+    throw conflict(
+      `The seniority field in ${organization.slug} was archived, so the seed cannot complete it. Seed another workspace with --slug.`,
     );
   }
   return owner;
+}
+
+function isMarked(metadata: string | null): boolean {
+  if (metadata === null) return false;
+  try {
+    const parsed: unknown = JSON.parse(metadata);
+    return demoMarkerSchema.safeParse(parsed).success;
+  } catch {
+    return false;
+  }
 }
 
 async function ensureTeammate(
@@ -243,32 +313,84 @@ async function organizationOf(slug: string) {
   return row;
 }
 
+async function createDemoOrganization(
+  slug: string,
+  owner: { name: string; email: string; handle: string },
+  teammate: { name: string; email: string; handle: string },
+) {
+  const made: string[] = [];
+  try {
+    const ownerUser = await createMissingUser(owner.name, owner.email, owner.handle);
+    if (ownerUser.created) made.push(ownerUser.user.id);
+    const teammateUser = await createMissingUser(teammate.name, teammate.email, teammate.handle);
+    if (teammateUser.created) made.push(teammateUser.user.id);
+    const created = await createOrganization(
+      ownerUser.user.id,
+      { name: DEMO_WORKSPACE_NAME, slug },
+      { metadata: JSON.stringify({ createdBy: DEMO_SEED_MARKER }) },
+    );
+    return { organizationId: created.organization.id, ownerUser: ownerUser.user };
+  } catch (error: unknown) {
+    if (made.length > 0) await db.delete(schema.user).where(inArray(schema.user.id, made));
+    throw error;
+  }
+}
+
+function validSlug(slug: string): string {
+  const parsed = organizationCreateSchema.safeParse({ name: DEMO_WORKSPACE_NAME, slug });
+  if (!parsed.success) {
+    throw validationFailed(
+      parsed.error.issues[0]?.message ?? 'That workspace address is not valid.',
+    );
+  }
+  return parsed.data.slug;
+}
+
+export async function publishSeededOutbox(
+  organizationId: string,
+  publish?: (actions: SyncAction[]) => Promise<boolean>,
+): Promise<number> {
+  const pending = await db
+    .select({ syncId: schema.outbox.syncId })
+    .from(schema.outbox)
+    .where(
+      and(eq(schema.outbox.organizationId, organizationId), isNull(schema.outbox.publishedAt)),
+    );
+  return await flushOutbox(
+    pending.map((row) => row.syncId),
+    publish,
+  );
+}
+
 export async function seedDemoWorkspace(
   options: DemoSeedOptions = DEMO_SEED_DEFAULTS,
 ): Promise<DemoSeedResult> {
-  const ownerEmail = `alex@${options.domain}`;
-  const teammateEmail = `sam@${options.domain}`;
+  const slug = validSlug(options.slug);
+  const domain = assertSeedDomain(options.domain, options.allowRealDomain === true);
+  const ownerEmail = `alex@${domain}`;
+  const teammateEmail = `sam@${domain}`;
   assertEmailDomainAllowed(ownerEmail);
   assertEmailDomainAllowed(teammateEmail);
-  const existing = await organizationOf(options.slug);
+  const owner = { name: 'Alex Rivera', email: ownerEmail, handle: `${slug}-alex` };
+  const teammate = { name: 'Sam Okafor', email: teammateEmail, handle: `${slug}-sam` };
+  await assertHandleIsFree(owner.handle, owner.email);
+  await assertHandleIsFree(teammate.handle, teammate.email);
+  const existing = await organizationOf(slug);
   if (existing !== undefined && options.reuse !== true) {
     throw conflict(
-      `A workspace with the slug ${options.slug} already exists. Pass --slug to seed another one, or --reuse to complete that demo workspace.`,
+      `A workspace with the slug ${slug} already exists. Pass --slug to seed another one, or --reuse to complete a demo workspace this seed made.`,
     );
   }
   const reused = existing !== undefined;
-  const teammate = await ensureUser('Sam Okafor', teammateEmail, `${options.slug}-sam`);
-  const ownerUser =
+  const { organizationId, ownerUser } =
     existing === undefined
-      ? await ensureUser('Alex Rivera', ownerEmail, `${options.slug}-alex`)
-      : await adminOf(existing.id, ownerEmail, options.slug);
-  const organizationId =
-    existing?.id ??
-    (await createOrganization(ownerUser.id, { name: 'Demo Outreach', slug: options.slug }))
-      .organization.id;
-  const owner = await resolvePrincipal(ownerUser.id, organizationId);
-  await ensureTeammate(owner, teammate);
-  const context: WriteContext = { principal: owner };
+      ? await createDemoOrganization(slug, owner, teammate)
+      : { organizationId: existing.id, ownerUser: await assertReusable(existing, ownerEmail) };
+  const teammateUser = (await createMissingUser(teammate.name, teammate.email, teammate.handle))
+    .user;
+  const principal = await resolvePrincipal(ownerUser.id, organizationId);
+  await ensureTeammate(principal, teammateUser);
+  const context: WriteContext = { principal };
   await ensureSeniorityField(context);
   for (const brand of DEMO_BRANDS) {
     const pipelineId = await ensurePipeline(context, brand);
@@ -282,7 +404,7 @@ export async function seedDemoWorkspace(
   }
   return {
     organizationId,
-    slug: options.slug,
+    slug,
     ownerEmail,
     teammateEmail,
     reused,

@@ -1,20 +1,18 @@
-import { closeRealtime } from '../realtime/publisher.ts';
-import { DEMO_SEED_DEFAULTS, seedDemoWorkspace } from './demo-seed.ts';
-
-function flag(name: string): string | undefined {
-  const index = process.argv.indexOf(`--${name}`);
-  return index === -1 ? undefined : process.argv[index + 1];
-}
-
-const options = {
-  slug: flag('slug') ?? DEMO_SEED_DEFAULTS.slug,
-  domain: flag('domain') ?? DEMO_SEED_DEFAULTS.domain,
-  reuse: process.argv.includes('--reuse'),
-};
+import { assertLocalSeedTarget, parseSeedArgs } from './seed-guard.ts';
 
 let code = 0;
+let closeRealtime: (() => Promise<void>) | null = null;
 try {
-  const result = await seedDemoWorkspace(options);
+  const args = parseSeedArgs(process.argv.slice(2));
+  assertLocalSeedTarget(
+    { nodeEnv: process.env['NODE_ENV'], databaseUrl: process.env['DATABASE_URL'] },
+    args.allowRemote,
+  );
+  const { seedDemoWorkspace, publishSeededOutbox } = await import('./demo-seed.ts');
+  const publisher = await import('../realtime/publisher.ts');
+  closeRealtime = publisher.closeRealtime;
+  const result = await seedDemoWorkspace(args);
+  await publishSeededOutbox(result.organizationId);
   const verb = result.reused ? 'Completed' : 'Seeded';
   console.info(
     `${verb} ${result.slug}: ${result.brands} brands, ${result.people} people, ${result.leads} leads.`,
@@ -24,5 +22,5 @@ try {
   console.error(error instanceof Error ? error.message : String(error));
   code = 1;
 }
-await closeRealtime();
+if (closeRealtime !== null) await closeRealtime();
 process.exit(code);

@@ -36,9 +36,14 @@ function organizationUpdateValues(
   };
 }
 
+export interface CreateOrganizationOptions {
+  readonly metadata?: string;
+}
+
 export async function createOrganization(
   userId: string,
   input: unknown,
+  options: CreateOrganizationOptions = {},
 ): Promise<OrganizationBootstrap> {
   const parsed = organizationCreateSchema.parse(input);
 
@@ -58,6 +63,7 @@ export async function createOrganization(
         id: newId(),
         name: parsed.name,
         slug: parsed.slug,
+        ...(options.metadata === undefined ? {} : { metadata: options.metadata }),
         syncId: organizationSyncId,
       })
       .returning();

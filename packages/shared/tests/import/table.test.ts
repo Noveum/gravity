@@ -138,9 +138,9 @@ describe('parseCsv', () => {
     expect(() => parseCsv(`A\nb\n,${widest}x\n`, limits)).toThrow(/Row 2 has 5001 cells/);
   });
 
-  test('keeps cells beyond the header and names their columns, so no column is lost', () => {
+  test('keeps cells beyond a header that ends in a named column, unnamed, so the planner flags them', () => {
     const table = parseCsv('A,B\n1,2,3\n4,5\n', limits);
-    expect(table.headers).toEqual(['A', 'B', 'Column 3']);
+    expect(table.headers).toEqual(['A', 'B']);
     expect(table.rows).toEqual([
       ['1', '2', '3'],
       ['4', '5'],

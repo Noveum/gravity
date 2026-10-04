@@ -1058,6 +1058,18 @@ describe('commitImport', () => {
     }
   });
 
+  test('an unquoted comma inside a value makes the row invalid instead of a bogus company', async () => {
+    const report = await run({
+      format: 'csv',
+      content: 'Name,Title,Company\nGrace,VP, Sales,Navy Labs\nAda,CTO,Vela Robotics\n',
+      target: 'people',
+      mapping: { Name: 'person.name', Title: 'person.title', Company: 'company.name' },
+    });
+    expect(report.rows.map((row) => row.status)).toEqual(['invalid', 'create']);
+    const companies = await db.select({ name: schema.company.name }).from(schema.company);
+    expect(companies.map((company) => company.name)).toEqual(['Vela Robotics']);
+  });
+
   test('refuses a file over the row limit before planning', async () => {
     await expect(
       run(

@@ -221,8 +221,28 @@ describe('planImport', () => {
     expect(row?.issues[0]?.message).toBe('This row has 2 cells but the header has 1.');
   });
 
-  test('a CSV cell beyond the header becomes its own column, ignored unless mapped', () => {
+  test('flags cells beyond a header that ends in a named column', () => {
     const [row] = plan(`${HEADER}Ada,L,a@v.example,,,,,,,,,,surprise\n`);
+    expect(row?.issues[0]?.message).toBe('This row has 13 cells but the header has 12.');
+  });
+
+  test('an unquoted comma inside a value is flagged, never shifted into the next column', () => {
+    const rows = planImport(
+      parseCsv('Name,Title,Company\nGrace,VP, Sales,Navy Labs\n', HTTP_IMPORT_LIMITS),
+      { Name: 'person.name', Title: 'person.title', Company: 'company.name' },
+      { ...setup, target: 'people' },
+    );
+    expect(rows[0]?.issues.map((issue) => issue.message)).toEqual([
+      'This row has 4 cells but the header has 3.',
+    ]);
+  });
+
+  test('a header ending in blank cells names the extra columns, ignored unless mapped', () => {
+    const [row] = planImport(
+      parseCsv('Name,Email,,\nAda,ada@v.example,VIP,warm\n', HTTP_IMPORT_LIMITS),
+      { Name: 'person.name', Email: 'person.email' },
+      { ...setup, target: 'people' },
+    );
     expect(row?.issues).toEqual([]);
   });
 

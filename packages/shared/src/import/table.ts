@@ -182,6 +182,7 @@ class CsvScanner {
   private readonly rows: string[][] = [];
   private headers: string[] | null = null;
   private labels: string[] = [];
+  private headerHadBlankTail = false;
   private rowCount = 0;
   private record: string[] = [];
   private width = 0;
@@ -217,6 +218,7 @@ class CsvScanner {
   }
 
   private paddedLabels(headers: readonly string[]): string[] {
+    if (!this.headerHadBlankTail) return this.labels;
     const widest = this.rows.reduce((width, row) => Math.max(width, row.length), headers.length);
     if (widest === headers.length) return this.labels;
     return uniqueHeaders([
@@ -288,6 +290,7 @@ class CsvScanner {
   private finishRecord(): void {
     this.finishCell();
     const cellCount = this.filled;
+    const blankTail = this.width > cellCount;
     const cells = this.record.slice(0, cellCount);
     const skipped = this.blank;
     this.record = [];
@@ -299,6 +302,7 @@ class CsvScanner {
     if (this.headers === null) {
       this.headers = cells;
       this.labels = uniqueHeaders(cells);
+      this.headerHadBlankTail = blankTail;
       return;
     }
     this.rowCount += 1;

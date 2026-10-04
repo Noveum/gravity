@@ -189,7 +189,7 @@ const SYNONYMS: readonly (readonly [ImportStandardColumn, readonly string[]])[] 
   ['lead.priority', ['priority']],
   ['lead.nextAction', ['next action', 'next step']],
   ['lead.nextActionAt', ['next action date', 'next action at', 'follow up date', 'due']],
-  ['sourceId', ['id', 'source id', 'external id', 'record id']],
+  ['sourceId', ['source id', 'external id']],
 ];
 
 function normalizedHeader(header: string): string {

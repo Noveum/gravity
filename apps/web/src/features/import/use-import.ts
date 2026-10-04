@@ -20,6 +20,8 @@ export interface ImportDraft {
   readonly mapping: ImportMapping;
   readonly source: string;
   readonly defaultOwner: ImportDefaultOwner;
+  readonly startRow: number;
+  readonly rowLimit: number | null;
 }
 
 const responseSchema = z.object({ report: importReportSchema });

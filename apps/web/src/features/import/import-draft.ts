@@ -1,6 +1,7 @@
 import {
   decodeImportBytes,
   HTTP_IMPORT_LIMITS,
+  IMPORT_DEFAULT_SOURCE,
   type ImportFormat,
   type ImportMapping,
   type ImportTable,
@@ -82,8 +83,10 @@ export function draftOf(inputs: ImportInputs, file: LoadedFile): ImportDraft {
     target: inputs.target,
     pipelineId: inputs.target === 'leads' ? inputs.pipelineId : null,
     mapping: inputs.mapping,
-    source: inputs.source,
+    source: inputs.source.trim() === '' ? IMPORT_DEFAULT_SOURCE : inputs.source,
     defaultOwner: 'me',
+    startRow: 1,
+    rowLimit: null,
   };
 }
 

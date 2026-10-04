@@ -100,6 +100,7 @@ export function SourceBar({
           <Input
             id={id}
             value={source}
+            placeholder="import"
             disabled={locked}
             onChange={(event) => onSource(event.target.value)}
             className="w-40"

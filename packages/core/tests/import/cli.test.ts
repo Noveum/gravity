@@ -268,8 +268,9 @@ describe('runImportCli', () => {
         runImportCli(argv('--commit'), run.io),
       );
       expect(code).toBe(1);
-      expect(run.lines.at(-1)).toStartWith('Stopped at row 2: ');
-      expect(run.lines.at(-1)).toContain('Fix row 2 and run the same file again to continue.');
+      expect(run.lines.at(-2)).toStartWith('Stopped at row 2: ');
+      expect(run.lines.at(-2)).toContain('Fix row 2, then continue from row 1.');
+      expect(run.lines.at(-1)).toBe('To continue, run it again with --from-row 1.');
     } finally {
       quiet.mockRestore();
     }
@@ -283,12 +284,50 @@ describe('runImportCli', () => {
         runImportCli(argv('--commit'), run.io),
       );
       expect(code).toBe(1);
-      expect(run.lines.at(-1)).toStartWith('Something went wrong on our side.');
-      expect(run.lines.at(-1)).toEndWith('Run the same file again to continue.');
+      expect(run.lines.at(-2)).toStartWith('Something went wrong on our side.');
+      expect(run.lines.at(-2)).toEndWith('Continue from row 1.');
+      expect(run.lines.at(-1)).toBe('To continue, run it again with --from-row 1.');
       expect(run.lines.some((line) => line.startsWith('Stopped at row'))).toBe(false);
     } finally {
       quiet.mockRestore();
     }
+  });
+
+  test('--from-row starts the import at that row', async () => {
+    const file =
+      'Full Name,Work Email\nAda Lovelace,ada@vela.example\nGrace Hopper,grace@vela.example\nMira Castell,mira@vela.example\n';
+    const run = harness({ 'people.csv': file });
+    expect(await runImportCli(argv('--from-row', '2', '--commit'), run.io)).toBe(0);
+    expect(run.lines[0]).toStartWith('Imported: 2 rows, 2 new');
+    const stored = await db.select().from(schema.person).orderBy(schema.person.name);
+    expect(stored.map((person) => person.name)).toEqual(['Grace Hopper', 'Mira Castell']);
+    const past = harness({ 'people.csv': file });
+    expect(await runImportCli(argv('--from-row', '9'), past.io)).toBe(1);
+    expect(past.lines).toEqual(['This file has 3 rows, so it cannot start at row 9.']);
+    expect(() => parseCliArgs([...argv(), '--from-row', 'two'])).toThrow('fromRow');
+    expect(() => parseCliArgs([...argv(), '--from-row', '0'])).toThrow('fromRow');
+  });
+
+  test('a source id column needs a --source name', async () => {
+    const files = {
+      'people.csv': 'Ref,Full Name\n7,Ada Lovelace\n',
+      'map.json': JSON.stringify({ columns: { Ref: 'sourceId', 'Full Name': 'person.name' } }),
+    };
+    const unnamed = harness(files);
+    expect(await runImportCli(argv('--mapping', 'map.json', '--commit'), unnamed.io)).toBe(1);
+    expect(unnamed.lines).toEqual([
+      'source: Name the source of these ids, such as hubspot or crm-2026, so they never match ids from another file.',
+    ]);
+    expect(await db.select().from(schema.person)).toHaveLength(0);
+    const named = harness(files);
+    expect(
+      await runImportCli(
+        argv('--mapping', 'map.json', '--source', 'hubspot', '--commit'),
+        named.io,
+      ),
+    ).toBe(0);
+    const [link] = await db.select().from(schema.importSource);
+    expect([link?.source, link?.sourceId]).toEqual(['hubspot', '7']);
   });
 
   test('parseCliArgs refuses a flag without a value', () => {

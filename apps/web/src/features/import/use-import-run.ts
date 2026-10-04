@@ -31,11 +31,18 @@ function rowCount(count: number): string {
   return `${count} row${count === 1 ? '' : 's'}`;
 }
 
+export function previewedDraft(staged: Staged): ImportDraft {
+  return staged.report.status === 'partial'
+    ? { ...staged.draft, rowLimit: staged.report.totals.processed }
+    : staged.draft;
+}
+
 export function useImportRun(inputs: ImportInputs, workspace: WorkspaceData) {
   const { toast } = useToast();
   const preview = useImportPreview();
   const commit = useImportCommit();
   const requested = useRef<ImportInputs | null>(null);
+  const previews = useRef(0);
   const sending = useRef(false);
   const [commitFailed, setCommitFailed] = useState(false);
   const [staged, setStaged] = useState<Staged | null>(null);
@@ -49,20 +56,20 @@ export function useImportRun(inputs: ImportInputs, workspace: WorkspaceData) {
       ? failure.message
       : null;
 
-  function runPreview(): void {
-    const { file } = inputs;
-    if (file === null || requested.current === inputs) return;
-    const draft = draftOf(inputs, file);
-    const first = importIssues(inputs, file, workspace)[0];
-    if (first !== undefined) {
-      setFailure({ message: first, inputs });
-      return;
-    }
-    setFailure(null);
+  function previewDraft(draft: ImportDraft): void {
+    previews.current += 1;
+    const ticket = previews.current;
     requested.current = inputs;
+    setFailure(null);
     preview.mutate(draft, {
-      onSuccess: (report) => setStaged({ report, draft, inputs }),
+      onSuccess: (report) => {
+        if (previews.current !== ticket) return;
+        setCommitFailed(false);
+        setDone(null);
+        setStaged({ report, draft, inputs });
+      },
       onError: (error) => {
+        if (previews.current !== ticket) return;
         requested.current = null;
         setFailure({
           message: messageOf(error, 'The preview did not complete. Try again.'),
@@ -70,6 +77,22 @@ export function useImportRun(inputs: ImportInputs, workspace: WorkspaceData) {
         });
       },
     });
+  }
+
+  function forgetPreview(): void {
+    previews.current += 1;
+    requested.current = null;
+  }
+
+  function runPreview(): void {
+    const { file } = inputs;
+    if (file === null || requested.current === inputs) return;
+    const first = importIssues(inputs, file, workspace)[0];
+    if (first !== undefined) {
+      setFailure({ message: first, inputs });
+      return;
+    }
+    previewDraft(draftOf(inputs, file));
   }
 
   function commitDraft(draft: ImportDraft): void {
@@ -98,7 +121,9 @@ export function useImportRun(inputs: ImportInputs, workspace: WorkspaceData) {
         setCommitFailed(retry);
         setFailure({
           message: `${messageOf(error, 'The import did not complete.')}${
-            retry ? ' Some batches may already be saved. Run the same file again to continue.' : ''
+            retry
+              ? ' Some batches may already be saved. Preview the file again to see what is left.'
+              : ''
           }`,
           inputs: null,
         });
@@ -107,12 +132,20 @@ export function useImportRun(inputs: ImportInputs, workspace: WorkspaceData) {
   }
 
   function runCommit(): void {
-    if (showing === null || rowsToWrite(showing.report) === 0) return;
-    commitDraft(showing.draft);
+    if (showing === null || preview.isPending) return;
+    if (commitFailed) {
+      previewDraft({ ...showing.draft, rowLimit: null });
+      return;
+    }
+    if (rowsToWrite(showing.report) === 0) return;
+    commitDraft(previewedDraft(showing));
   }
 
   function runAgain(): void {
-    if (done?.report.status === 'partial') commitDraft(done.draft);
+    const resumeFromRow = done?.report.resumeFromRow ?? null;
+    if (done === null || done.report.status !== 'partial' || resumeFromRow === null) return;
+    if (preview.isPending || committing) return;
+    previewDraft({ ...done.draft, startRow: resumeFromRow, rowLimit: null });
   }
 
   return {
@@ -129,13 +162,13 @@ export function useImportRun(inputs: ImportInputs, workspace: WorkspaceData) {
     fail: (message: string | null) =>
       setFailure(message === null ? null : { message, inputs: null }),
     dismissPreview: () => {
-      requested.current = null;
+      forgetPreview();
       setCommitFailed(false);
       setFailure(null);
       setStaged(null);
     },
     reset: () => {
-      requested.current = null;
+      forgetPreview();
       setCommitFailed(false);
       setStaged(null);
       setDone(null);

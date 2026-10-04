@@ -17,7 +17,7 @@ export interface ImportViewProps {
 function PageHeading({ headingRef }: { readonly headingRef: Ref<HTMLHeadingElement> | undefined }) {
   return (
     <header className="flex flex-col gap-1">
-      <h1 ref={headingRef} tabIndex={-1} className="font-medium text-lg text-text outline-none">
+      <h1 ref={headingRef} tabIndex={-1} className="font-medium text-lg text-text">
         Import
       </h1>
       <p className="text-dense text-muted">
@@ -102,7 +102,7 @@ export function ImportView({ initialTarget, initialPipelineKey }: ImportViewProp
             <EmptyState
               icon={<FileUp />}
               title="Choose a CSV or JSON file."
-              description={`${IMPORT_LIMITS_COPY} People match by source id, email and LinkedIn URL, and companies by domain, so running the same file again adds nothing new.`}
+              description={`${IMPORT_LIMITS_COPY} People match by source id, email and LinkedIn URL, and companies by domain, so running the same file again only adds rows that have none of those.`}
             />
           ) : null}
           {file !== null && run.staged === null && run.done === null ? (

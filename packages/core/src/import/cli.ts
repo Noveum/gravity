@@ -3,6 +3,7 @@ import {
   assertImportFileSize,
   CLI_IMPORT_LIMITS,
   decodeImportBytes,
+  IMPORT_DEFAULT_SOURCE,
   IMPORT_FORMATS,
   IMPORT_TARGETS,
   type ImportLimits,
@@ -29,7 +30,7 @@ export interface CliIo {
 }
 
 const USAGE =
-  'Usage: bun run import <csv|json> <file> --workspace <slug> --as <email> --target <people|companies|leads> [--pipeline <KEY>] [--mapping <file.json>] [--source <name>] [--commit]';
+  'Usage: bun run import <csv|json> <file> --workspace <slug> --as <email> --target <people|companies|leads> [--pipeline <KEY>] [--mapping <file.json>] [--source <name>] [--from-row <n>] [--commit]';
 
 const MAPPING_FILE_LIMITS = { maxBytes: 1_000_000, maxRows: 1 } as const;
 
@@ -42,6 +43,11 @@ const argsSchema = z.object({
   pipeline: z.string().min(1).optional(),
   mapping: z.string().min(1).optional(),
   source: z.string().min(1).optional(),
+  fromRow: z
+    .string()
+    .regex(/^[1-9][0-9]{0,5}$/, 'Use a row number from 1.')
+    .transform(Number)
+    .optional(),
   commit: z.boolean(),
 });
 export type CliArgs = z.infer<typeof argsSchema>;
@@ -79,6 +85,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     pipeline: flags.get('pipeline'),
     mapping: flags.get('mapping'),
     source: flags.get('source'),
+    fromRow: flags.get('from-row'),
     commit,
   });
   if (parsed.success) return parsed.data;
@@ -182,8 +189,9 @@ export async function runImportCli(argv: readonly string[], io: CliIo): Promise<
       target: args.target,
       pipelineId,
       mapping,
-      source: args.source ?? 'import',
+      source: args.source ?? IMPORT_DEFAULT_SOURCE,
       defaultOwner: 'me',
+      startRow: args.fromRow ?? 1,
     };
     const report = args.commit
       ? await commitImport({ principal }, request, {
@@ -195,6 +203,9 @@ export async function runImportCli(argv: readonly string[], io: CliIo): Promise<
         })
       : await previewImport(principal, request, { limits: CLI_IMPORT_LIMITS });
     for (const line of summaryOf(report)) io.print(line);
+    if (report.resumeFromRow !== null) {
+      io.print(`To continue, run it again with --from-row ${report.resumeFromRow}.`);
+    }
     if (!args.commit) io.print('Nothing was written. Run again with --commit to import.');
     return report.status === 'completed' ? 0 : 1;
   } catch (error: unknown) {

@@ -29,7 +29,7 @@ function StepHeading({
   readonly children: string;
 }) {
   return (
-    <h2 ref={headingRef} tabIndex={-1} className="font-medium text-sm text-text outline-none">
+    <h2 ref={headingRef} tabIndex={-1} className="font-medium text-sm text-text">
       {children}
     </h2>
   );
@@ -88,10 +88,17 @@ export function PreviewStep({
   readonly onCommit: () => void;
 }) {
   const writable = rowsToWrite(staged.report);
+  const previewedOnly = staged.report.status === 'partial';
+  const startRow = staged.draft.startRow;
   return (
-    <div aria-live="polite" className="flex flex-col gap-3">
-      <StepHeading headingRef={headingRef}>Check the preview</StepHeading>
-      <ImportReportView report={staged.report} />
+    <div className="flex flex-col gap-3">
+      <div aria-live="polite" className="flex flex-col gap-3">
+        <StepHeading headingRef={headingRef}>Check the preview</StepHeading>
+        {startRow > 1 ? (
+          <p className="text-dense text-muted">{`From row ${startRow} of the file, where the last import stopped.`}</p>
+        ) : null}
+        <ImportReportView report={staged.report} />
+      </div>
       <div className="flex items-center justify-end gap-2">
         {writable === 0 ? (
           <p className="mr-auto text-dense text-muted">
@@ -104,13 +111,19 @@ export function PreviewStep({
         </Button>
         {writable === 0 ? null : (
           <Button variant="primary" onClick={onCommit}>
-            {commitFailed ? 'Run the same file again' : `Import ${counted(writable, 'row')}`}
+            {commitLabel(commitFailed, writable, previewedOnly)}
             <Kbd keys={['mod', 'enter']} aria-hidden="true" />
           </Button>
         )}
       </div>
     </div>
   );
+}
+
+function commitLabel(commitFailed: boolean, writable: number, previewedOnly: boolean): string {
+  if (commitFailed) return 'Preview the same file again';
+  const rows = `Import ${counted(writable, 'row')}`;
+  return previewedOnly ? `${rows}, previewed rows only` : rows;
 }
 
 function listFor(workspace: WorkspaceData, draft: Done['draft']): { href: string; label: string } {
@@ -139,22 +152,25 @@ export function ResultStep({
   readonly onAnother: () => void;
 }) {
   const list = listFor(workspace, done.draft);
+  const resumeFromRow = done.report.status === 'partial' ? done.report.resumeFromRow : null;
   return (
-    <div aria-live="polite" className="flex flex-col gap-3">
-      <StepHeading headingRef={headingRef}>Import result</StepHeading>
-      <ImportReportView report={done.report} />
+    <div className="flex flex-col gap-3">
+      <div aria-live="polite" className="flex flex-col gap-3">
+        <StepHeading headingRef={headingRef}>Import result</StepHeading>
+        <ImportReportView report={done.report} />
+      </div>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onAnother}>
           Import another file
           <Kbd keys={['n']} aria-hidden="true" />
         </Button>
-        {done.report.status === 'partial' ? (
+        {resumeFromRow === null ? null : (
           <Button variant="primary" onClick={onRerun}>
-            Run the same file again
+            {`Run the same file again from row ${resumeFromRow}`}
             <Kbd keys={['mod', 'enter']} aria-hidden="true" />
           </Button>
-        ) : null}
-        <Button asChild variant={done.report.status === 'partial' ? 'secondary' : 'primary'}>
+        )}
+        <Button asChild variant={resumeFromRow === null ? 'primary' : 'secondary'}>
           <Link href={list.href}>{list.label}</Link>
         </Button>
       </div>

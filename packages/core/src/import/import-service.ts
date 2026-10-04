@@ -97,6 +97,7 @@ interface ImportContext {
 interface PreparedImport {
   readonly request: ImportRequest;
   readonly rows: readonly PlannedRow[];
+  readonly remaining: readonly PlannedRow[];
 }
 
 interface Simulation {
@@ -426,8 +427,38 @@ async function refusalOf(
   if (earlier !== undefined) {
     return skippedOutcome(row, 'same_record', `Same record as row ${earlier}.`, matched);
   }
-  const conflict = await claimConflict(executor, context.organizationId, match.row, planned);
+  const disagreement =
+    match.matchedBy === 'source_id' && row.sourceId !== null
+      ? sourceDisagreement(row.sourceId, match.row, planned)
+      : null;
+  const conflict =
+    disagreement ?? (await claimConflict(executor, context.organizationId, match.row, planned));
   return conflict === null ? null : skippedOutcome(row, 'conflict', conflict, matched);
+}
+
+function sourceDisagreement(
+  sourceId: string,
+  linked: StoredPerson,
+  planned: PersonInput,
+): string | null {
+  const incoming = planned.emails[0];
+  const known = linked.emails.map((email) => email.toLowerCase());
+  if (
+    incoming !== undefined &&
+    linked.primaryEmail !== null &&
+    !known.includes(incoming.toLowerCase())
+  ) {
+    return `Source id ${sourceId} belongs to ${linked.name}, whose email is ${linked.primaryEmail}, not ${incoming}, so this row was not merged.`;
+  }
+  const provider = planned.linkedinProviderId;
+  if (
+    provider !== null &&
+    linked.linkedinProviderId !== null &&
+    provider !== linked.linkedinProviderId
+  ) {
+    return `Source id ${sourceId} belongs to ${linked.name}, whose LinkedIn account is ${linked.linkedinProviderId}, not ${provider}, so this row was not merged.`;
+  }
+  return null;
 }
 
 function declinedKeys(existing: StoredPerson, planned: PersonInput): string[] {
@@ -516,6 +547,20 @@ async function leadOf(
     : { lead: 'exists', leadKey: lead.key };
 }
 
+const NO_IDENTITY =
+  'This row has no email, LinkedIn or source id, so importing the whole file again would add it twice.';
+
+function identityWarnings(row: PlannedRow, planned: PersonInput): ImportRowOutcome['issues'] {
+  const identified =
+    row.sourceId !== null ||
+    planned.emails.length > 0 ||
+    planned.linkedinUrl !== null ||
+    planned.linkedinProviderId !== null;
+  return identified
+    ? []
+    : [{ row: row.row, column: null, code: 'no_identity', message: NO_IDENTITY }];
+}
+
 function personStatus(matched: boolean, changes: readonly string[]): ImportRowOutcome['status'] {
   if (!matched) return 'create';
   return changes.length > 0 ? 'merge' : 'unchanged';
@@ -580,6 +625,7 @@ async function assessPersonRow(
       company: employer.outcome,
       lead: lead.lead,
       leadKey: lead.leadKey,
+      issues: status === 'create' ? identityWarnings(row, planned) : [],
     }),
   };
 }
@@ -736,7 +782,20 @@ async function prepareImport(
   });
   const first = issues[0];
   if (first !== undefined) throw validationFailed(first, { details: { issues } });
-  return { request, setup, rows: planImport(table, request.mapping, setup) };
+  const planned = planImport(table, request.mapping, setup);
+  if (request.startRow > planned.length) {
+    throw validationFailed(
+      `This file has ${counted(planned.length, 'row')}, so it cannot start at row ${request.startRow}.`,
+    );
+  }
+  const remaining = planned.slice(request.startRow - 1);
+  const rows =
+    request.rowLimit === null ? remaining : remaining.slice(0, Math.max(request.rowLimit, 0));
+  return { request, setup, rows, remaining };
+}
+
+function counted(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 function importContextOf(
@@ -792,16 +851,34 @@ async function takeChunk<T>(
   return taken;
 }
 
+function nextRowOf(prepared: PreparedImport, done: number): number {
+  return prepared.remaining[done]?.row ?? prepared.request.startRow + done;
+}
+
 function stoppedAt(
-  rows: readonly PlannedRow[],
+  mode: ImportReport['mode'],
+  prepared: PreparedImport,
   done: readonly ImportRowOutcome[],
-  next: number,
-  rest: string,
 ): ImportReport['failure'] {
+  const next = nextRowOf(prepared, done.length);
   const last = done.at(-1)?.row;
-  const where =
-    last === undefined ? `Stopped before row ${rows[next]?.row ?? 1}` : `Stopped after row ${last}`;
+  const where = last === undefined ? `Stopped before row ${next}` : `Stopped after row ${last}`;
+  const rest =
+    mode === 'preview' ? 'The rows after it were not checked.' : `Continue from row ${next}.`;
   return { row: null, message: `${where} to stay within the time limit. ${rest}` };
+}
+
+function limitReached(
+  mode: ImportReport['mode'],
+  prepared: PreparedImport,
+  done: number,
+): ImportReport['failure'] {
+  const next = nextRowOf(prepared, done);
+  const what =
+    mode === 'preview'
+      ? `Checked the first ${counted(done, 'row')}.`
+      : `Imported the ${counted(done, 'row')} the preview checked.`;
+  return { row: null, message: `${what} Continue from row ${next}.` };
 }
 
 function reportOf(
@@ -810,13 +887,17 @@ function reportOf(
   rows: readonly ImportRowOutcome[],
   failure: ImportReport['failure'],
 ): ImportReport {
+  const stopped =
+    failure ??
+    (rows.length < prepared.remaining.length ? limitReached(mode, prepared, rows.length) : null);
   return {
     mode,
-    status: failure === null ? 'completed' : 'partial',
+    status: stopped === null ? 'completed' : 'partial',
     target: prepared.request.target,
-    totals: totalsOf(rows, prepared.rows.length),
+    totals: totalsOf(rows, prepared.remaining.length),
     rows: [...rows],
-    failure,
+    failure: stopped,
+    resumeFromRow: stopped === null ? null : nextRowOf(prepared, rows.length),
   };
 }
 
@@ -838,13 +919,7 @@ export async function previewImport(
   const outcomes: ImportRowOutcome[] = [];
   while (outcomes.length < prepared.rows.length) {
     if (pastDeadline(plan)) {
-      const rest = 'The rows after it were not checked.';
-      return reportOf(
-        'preview',
-        prepared,
-        outcomes,
-        stoppedAt(prepared.rows, outcomes, outcomes.length, rest),
-      );
+      return reportOf('preview', prepared, outcomes, stoppedAt('preview', prepared, outcomes));
     }
     const start = outcomes.length;
     const assessed = await cappedTransaction(
@@ -879,12 +954,12 @@ function failureOf(
   if (progress.blamed === null) {
     return {
       row: null,
-      message: `${reason} ${rangeText(firstRow, progress.last)} Run the same file again to continue.`,
+      message: `${reason} ${rangeText(firstRow, progress.last)} Continue from row ${firstRow}.`,
     };
   }
   return {
     row: progress.blamed,
-    message: `${reason} Nothing from row ${firstRow} on was imported; the rows before it were. Fix row ${progress.blamed} and run the same file again to continue.`,
+    message: `${reason} Nothing from row ${firstRow} on was imported; the rows before it were. Fix row ${progress.blamed}, then continue from row ${firstRow}.`,
   };
 }
 
@@ -960,13 +1035,7 @@ export async function commitImport(
   while (outcomes.length < prepared.rows.length) {
     const start = outcomes.length;
     if (pastDeadline(plan)) {
-      const rest = 'Run the same file again to continue.';
-      return reportOf(
-        'commit',
-        prepared,
-        outcomes,
-        stoppedAt(prepared.rows, outcomes, start, rest),
-      );
+      return reportOf('commit', prepared, outcomes, stoppedAt('commit', prepared, outcomes));
     }
     const firstRow = prepared.rows[start]?.row ?? 0;
     const progress: ChunkProgress = { blamed: null, last: firstRow };

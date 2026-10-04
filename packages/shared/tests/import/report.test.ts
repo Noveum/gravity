@@ -63,8 +63,13 @@ describe('report schemas', () => {
       totals: totalsOf([row], 1),
       rows: [row],
       failure: null,
+      resumeFromRow: null,
     };
     expect(importReportSchema.parse(report)).toEqual(report);
     expect(importRowOutcomeSchema.safeParse({ ...row, matchedBy: 'phone' }).success).toBe(false);
+    const stopped: ImportReport = { ...report, status: 'partial', resumeFromRow: 4 };
+    expect(importReportSchema.parse(stopped)).toEqual(stopped);
+    const { resumeFromRow: _dropped, ...withoutResume } = report;
+    expect(importReportSchema.safeParse(withoutResume).success).toBe(false);
   });
 });

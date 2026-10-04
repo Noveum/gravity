@@ -90,6 +90,9 @@ export function ImportReportView({ report }: { readonly report: ImportReport }) 
     [totals.leadsExisting, 'leads already in pipeline'],
   ];
   const shown = shownRows(report.rows);
+  const unidentified = report.rows.filter((row) =>
+    row.issues.some((issue) => issue.code === 'no_identity'),
+  ).length;
   return (
     <section aria-label={preview ? 'Preview' : 'Result'} className="flex flex-col gap-3">
       <ul aria-label="Totals" className="flex flex-wrap gap-2">
@@ -112,6 +115,11 @@ export function ImportReportView({ report }: { readonly report: ImportReport }) 
             </p>
           )}
         </div>
+      ) : null}
+      {unidentified > 0 ? (
+        <p className="text-dense text-muted">
+          {`${unidentified === 1 ? '1 row has' : `${unidentified} rows have`} no email, LinkedIn or source id. Importing the whole file again would add ${unidentified === 1 ? 'it' : 'them'} twice.`}
+        </p>
       ) : null}
       <table className="w-full table-fixed text-dense">
         <caption className="sr-only">

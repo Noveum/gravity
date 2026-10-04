@@ -63,6 +63,16 @@ describe('suggestMapping', () => {
     });
   });
 
+  test('never maps a bare id header to the source id', () => {
+    expect(suggestMapping(['ID', 'Record ID', 'Source ID', 'Name'], 'people', definitions)).toEqual(
+      { ID: 'ignore', 'Record ID': 'ignore', 'Source ID': 'sourceId', Name: 'person.name' },
+    );
+    expect(suggestMapping(['External id', 'id'], 'leads', definitions)).toEqual({
+      'External id': 'sourceId',
+      id: 'ignore',
+    });
+  });
+
   test('keeps a header named like an object prototype key', () => {
     const mapping = suggestMapping(['__proto__', 'constructor', 'Name'], 'people', definitions);
     expect(Object.keys(mapping)).toEqual(['__proto__', 'constructor', 'Name']);

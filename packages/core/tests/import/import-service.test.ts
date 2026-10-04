@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { and, db, eq, schema, sql } from '@gravity/db';
 import type { SyncAction } from '@gravity/shared/events';
-import type { ImportReport } from '@gravity/shared/import';
+import { type ImportReport, suggestMapping } from '@gravity/shared/import';
 import type { Principal } from '@gravity/shared/policy';
 import postgres from 'postgres';
 import { createBrand } from '../../src/crm/brand-service.ts';
@@ -496,6 +496,79 @@ describe('commitImport', () => {
     expect(nameless.person.emails).toEqual([]);
   });
 
+  test('two files with a 1 to N ID column and the suggested mapping make four people', async () => {
+    const fileOf = (rows: readonly string[]) => ['ID,Name,Email', ...rows].join('\n');
+    const suggested = suggestMapping(['ID', 'Name', 'Email'], 'people', []);
+    expect(suggested['ID']).toBe('ignore');
+    const people = (content: string) => ({
+      format: 'csv',
+      content,
+      target: 'people',
+      mapping: suggested,
+    });
+    await run(people(fileOf(['1,Alice,alice@a.example', '2,Arun,arun@a.example'])));
+    const second = await run(people(fileOf(['1,Bob,bob@b.example', '2,Bea,bea@b.example'])));
+    expect(second.rows.map((row) => row.status)).toEqual(['create', 'create']);
+    const stored = await db.select().from(schema.person).orderBy(schema.person.name);
+    expect(stored.map((person) => [person.name, person.emails])).toEqual([
+      ['Alice', ['alice@a.example']],
+      ['Arun', ['arun@a.example']],
+      ['Bea', ['bea@b.example']],
+      ['Bob', ['bob@b.example']],
+    ]);
+  });
+
+  test('a source id linked to someone with another email is a conflict, never a merge', async () => {
+    const people = (rows: readonly string[]) => ({
+      format: 'csv',
+      content: ['ID,Name,Email,LinkedIn id', ...rows].join('\n'),
+      target: 'people',
+      mapping: {
+        ID: 'sourceId',
+        Name: 'person.name',
+        Email: 'person.email',
+        'LinkedIn id': 'person.linkedinProviderId',
+      },
+      source: 'crm',
+    });
+    const first = await run(people(['1,Alice,alice@a.example,', '2,Arun,,ACoAAArun']));
+    const aliceId = first.rows[0]?.recordId ?? 'missing';
+    const arunId = first.rows[1]?.recordId ?? 'missing';
+    const second = people(['1,Bob,bob@b.example,', '2,Bea,,ACoAABea']);
+    const preview = await previewImport(workspace.admin, second);
+    const commit = await run(second);
+    for (const report of [preview, commit]) {
+      expect(report.rows.map((row) => [row.status, row.matchedBy, row.recordId])).toEqual([
+        ['skipped', 'source_id', aliceId],
+        ['skipped', 'source_id', arunId],
+      ]);
+      expect(report.rows[0]?.issues).toEqual([
+        {
+          row: 1,
+          column: null,
+          code: 'conflict',
+          message:
+            'Source id 1 belongs to Alice, whose email is alice@a.example, not bob@b.example, so this row was not merged.',
+        },
+      ]);
+      expect(report.rows[1]?.issues[0]?.message).toBe(
+        'Source id 2 belongs to Arun, whose LinkedIn account is ACoAAArun, not ACoAABea, so this row was not merged.',
+      );
+    }
+    const same = await run(people(['1,Alice,ALICE@a.example,', '2,Arun,arun@a.example,ACoAAArun']));
+    expect(same.rows.map((row) => [row.status, row.matchedBy, row.recordId])).toEqual([
+      ['unchanged', 'source_id', aliceId],
+      ['merge', 'source_id', arunId],
+    ]);
+    const stored = await db.select().from(schema.person).orderBy(schema.person.name);
+    expect(stored.map((person) => [person.name, person.emails, person.linkedinProviderId])).toEqual(
+      [
+        ['Alice', ['alice@a.example'], null],
+        ['Arun', ['arun@a.example'], 'ACoAAArun'],
+      ],
+    );
+  });
+
   test('a role without import rights is refused', async () => {
     const contributor = await createMemberPrincipal(workspace, 'contributor');
     await expect(
@@ -526,10 +599,11 @@ describe('commitImport', () => {
     expect(report.status).toBe('partial');
     expect(report.rows).toHaveLength(2);
     expect(report.totals).toMatchObject({ rows: 4, processed: 2, created: 2 });
+    expect(report.resumeFromRow).toBe(3);
     expect(report.failure).toEqual({
       row: 3,
       message:
-        'That stage is not in this pipeline. Nothing from row 3 on was imported; the rows before it were. Fix row 3 and run the same file again to continue.',
+        'That stage is not in this pipeline. Nothing from row 3 on was imported; the rows before it were. Fix row 3, then continue from row 3.',
     });
     expect(await count('lead')).toBe(2);
     expect(await count('person')).toBe(2);
@@ -573,7 +647,7 @@ describe('commitImport', () => {
       expect(report.failure).toEqual({
         row: 3,
         message:
-          'Something went wrong on our side. Nothing from row 1 on was imported; the rows before it were. Fix row 3 and run the same file again to continue.',
+          'Something went wrong on our side. Nothing from row 1 on was imported; the rows before it were. Fix row 3, then continue from row 1.',
       });
       expect(quiet).toHaveBeenCalledTimes(1);
       expect(await count('person')).toBe(0);
@@ -700,15 +774,99 @@ describe('commitImport', () => {
     const commit = await run(input, { ...options, now: steppingClock(4000) });
     expect(commit.status).toBe('partial');
     expect(commit.rows.map((row) => row.row)).toEqual([1, 2]);
+    expect([preview.resumeFromRow, commit.resumeFromRow]).toEqual([3, 3]);
     expect(commit.failure).toEqual({
       row: null,
-      message:
-        'Stopped after row 2 to stay within the time limit. Run the same file again to continue.',
+      message: 'Stopped after row 2 to stay within the time limit. Continue from row 3.',
     });
     expect(await count('lead')).toBe(2);
     const rest = await run(input);
     expect(rest.rows.map((row) => row.status)).toEqual(['unchanged', 'unchanged', 'create']);
     expect(await count('lead')).toBe(3);
+  });
+
+  test('resuming from the stopped row never duplicates rows without an identity', async () => {
+    const input = request(Array.from({ length: 6 }, (_, index) => `Nameless ${index + 1},,,,,,,,`));
+    const cut = await run(input, { chunkRows: 3, deadline: 10_000, now: steppingClock(4000) });
+    expect(cut.status).toBe('partial');
+    expect(cut.rows.map((row) => row.row)).toEqual([1, 2, 3]);
+    expect(cut.resumeFromRow).toBe(4);
+    expect(cut.failure?.message).toBe(
+      'Stopped after row 3 to stay within the time limit. Continue from row 4.',
+    );
+    const resume = { ...input, startRow: cut.resumeFromRow };
+    const preview = await previewImport(workspace.admin, resume);
+    expect(preview.rows.map((row) => [row.row, row.status])).toEqual([
+      [4, 'create'],
+      [5, 'create'],
+      [6, 'create'],
+    ]);
+    expect(preview.totals).toMatchObject({ rows: 3, processed: 3 });
+    const rest = await run(resume);
+    expect(rest.status).toBe('completed');
+    expect(rest.resumeFromRow).toBeNull();
+    expect(rest.rows.map((row) => row.row)).toEqual([4, 5, 6]);
+    expect(await count('person')).toBe(6);
+    expect(await count('lead')).toBe(6);
+  });
+
+  test('a row without an email, LinkedIn or source id carries a warning and is still created', async () => {
+    const report = await previewImport(
+      workspace.admin,
+      request([
+        'Nameless One,,,,,,,,',
+        'Ada Lovelace,ada@vela.example,,,,,,,',
+        'Nameless Ref,,,,,,,,r7',
+      ]),
+    );
+    expect(report.rows.map((row) => [row.status, row.issues.map((issue) => issue.code)])).toEqual([
+      ['create', ['no_identity']],
+      ['create', []],
+      ['create', []],
+    ]);
+    expect(report.rows[0]?.issues[0]).toEqual({
+      row: 1,
+      column: null,
+      code: 'no_identity',
+      message:
+        'This row has no email, LinkedIn or source id, so importing the whole file again would add it twice.',
+    });
+    expect(report.totals).toMatchObject({ created: 3, invalid: 0, skipped: 0 });
+  });
+
+  test('a row limit commits only the rows the preview checked and says where to continue', async () => {
+    const input = request(
+      Array.from({ length: 5 }, (_, index) => `A ${index + 1},a${index + 1}@vela.example,,,,,,,`),
+    );
+    const preview = await previewImport(workspace.admin, input, {
+      chunkRows: 2,
+      deadline: 10_000,
+      now: steppingClock(6000),
+    });
+    expect(preview.status).toBe('partial');
+    expect(preview.totals.processed).toBe(2);
+    const commit = await run({ ...input, rowLimit: preview.totals.processed });
+    expect(commit.status).toBe('partial');
+    expect(commit.rows.map((row) => row.row)).toEqual([1, 2]);
+    expect(commit.totals).toMatchObject({ rows: 5, processed: 2, created: 2 });
+    expect(commit.resumeFromRow).toBe(3);
+    expect(commit.failure).toEqual({
+      row: null,
+      message: 'Imported the 2 rows the preview checked. Continue from row 3.',
+    });
+    expect(await count('person')).toBe(2);
+    const whole = await run({ ...input, rowLimit: 5 });
+    expect(whole.status).toBe('completed');
+    expect(whole.resumeFromRow).toBeNull();
+  });
+
+  test('refuses a start row past the end of the file', async () => {
+    await expect(
+      previewImport(workspace.admin, { ...request(['Ada,ada@vela.example,,,,,,,']), startRow: 2 }),
+    ).rejects.toMatchObject({
+      code: 'validation_failed',
+      message: 'This file has 1 row, so it cannot start at row 2.',
+    });
   });
 
   test('a person with a closed lead in the pipeline never gets a second one', async () => {
@@ -795,7 +953,7 @@ describe('commitImport', () => {
       expect(report.failure).toEqual({
         row: null,
         message:
-          'Something went wrong on our side. Rows 1 to 2 were not imported; the rows before them were. Run the same file again to continue.',
+          'Something went wrong on our side. Rows 1 to 2 were not imported; the rows before them were. Continue from row 1.',
       });
       expect(await count('person')).toBe(0);
     } finally {

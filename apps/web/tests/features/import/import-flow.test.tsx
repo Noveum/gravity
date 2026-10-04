@@ -22,6 +22,10 @@ const unchanged = [
   }),
 ];
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null ? { ...value } : {};
+}
+
 function view(target: 'leads' | 'people' = 'leads') {
   return renderWithClient(
     <ImportView initialTarget={target} initialPipelineKey={target === 'leads' ? 'YOD' : null} />,
@@ -142,8 +146,7 @@ describe('focus across the steps', () => {
 });
 
 describe('partial imports and the result screen', () => {
-  const stopped =
-    'Stopped after row 1 to stay within the time limit. Run the same file again to continue.';
+  const stopped = 'Stopped after row 1 to stay within the time limit. Continue from row 2.';
 
   function partialRoute() {
     return serveJson((url) => ({
@@ -156,7 +159,7 @@ describe('partial imports and the result screen', () => {
     }));
   }
 
-  test('a partial report says how far it got and offers the same file again', async () => {
+  test('a partial report says how far it got and previews the rest from the stopped row', async () => {
     const sent = partialRoute();
     view();
     await choose();
@@ -165,14 +168,25 @@ describe('partial imports and the result screen', () => {
     await userEvent.keyboard(SUBMIT);
     expect(await screen.findByText('Processed 1 of 2 rows')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(stopped);
-    await userEvent.click(screen.getByRole('button', { name: /Run the same file again/ }));
-    await waitFor(() =>
-      expect(sent.filter((request) => request.url === '/api/imports')).toHaveLength(2),
+    await userEvent.click(
+      screen.getByRole('button', { name: /Run the same file again from row 2/ }),
     );
-    expect(sent[2]?.body).toEqual(sent[1]?.body);
+    expect(await screen.findByRole('heading', { name: 'Check the preview' })).toHaveFocus();
+    expect(
+      screen.getByText('From row 2 of the file, where the last import stopped.'),
+    ).toBeInTheDocument();
+    expect(sent.map((request) => request.url)).toEqual([
+      '/api/imports/preview',
+      '/api/imports',
+      '/api/imports/preview',
+    ]);
+    expect(sent[2]?.body).toEqual({ ...asRecord(sent[1]?.body), startRow: 2, rowLimit: null });
+    await userEvent.keyboard(SUBMIT);
+    await waitFor(() => expect(sent).toHaveLength(4));
+    expect(sent[3]).toMatchObject({ url: '/api/imports', body: { startRow: 2, rowLimit: null } });
   });
 
-  test('Cmd+Enter on a partial result runs the same file again', async () => {
+  test('Cmd+Enter on a partial result previews from the stopped row', async () => {
     const sent = partialRoute();
     view();
     await choose();
@@ -182,7 +196,48 @@ describe('partial imports and the result screen', () => {
     await screen.findByText('Processed 1 of 2 rows');
     await userEvent.keyboard(SUBMIT);
     await waitFor(() => expect(sent).toHaveLength(3));
-    expect(sent[2]?.url).toBe('/api/imports');
+    expect(sent[2]).toMatchObject({ url: '/api/imports/preview', body: { startRow: 2 } });
+  });
+
+  test('a partial preview commits only the rows it checked and the button says so', async () => {
+    const sent = serveJson((url) => ({
+      body: url.pathname.endsWith('/preview')
+        ? partial(
+            [outcome(1, 'Ada Lovelace')],
+            2,
+            {
+              row: null,
+              message:
+                'Stopped after row 1 to stay within the time limit. The rows after it were not checked.',
+            },
+            'preview',
+          )
+        : report('commit', [outcome(1, 'Ada Lovelace')]),
+    }));
+    view();
+    await choose();
+    await userEvent.keyboard(SUBMIT);
+    await userEvent.click(
+      await screen.findByRole('button', { name: /^Import 1 row, previewed rows only/ }),
+    );
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent[1]).toMatchObject({ url: '/api/imports', body: { startRow: 1, rowLimit: 1 } });
+  });
+
+  test('a source id column needs a source name before the preview', async () => {
+    const sent = route();
+    view();
+    await choose('Source ID,Full Name\n7,Ada Lovelace\n', 'ids.csv');
+    expect(await screen.findByLabelText('Field for Source ID')).toHaveValue('sourceId');
+    await userEvent.keyboard(SUBMIT);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Name the source of these ids, such as hubspot or crm-2026',
+    );
+    expect(sent).toHaveLength(0);
+    await userEvent.type(screen.getByLabelText('Source name'), 'hubspot');
+    await userEvent.keyboard(SUBMIT);
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]?.body).toMatchObject({ source: 'hubspot' });
   });
 
   test('Cmd+Enter on a finished result does nothing', async () => {
@@ -240,7 +295,7 @@ describe('partial imports and the result screen', () => {
     );
   });
 
-  test('a commit request that fails says batches may be saved and offers the same file again', async () => {
+  test('a commit request that fails says batches may be saved and previews the file again', async () => {
     const sent = serveJson((url) =>
       url.pathname.endsWith('/preview')
         ? { body: report('preview') }
@@ -257,8 +312,9 @@ describe('partial imports and the result screen', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Some batches may already be saved.',
     );
-    await userEvent.click(screen.getByRole('button', { name: /Run the same file again/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Preview the same file again/ }));
     await waitFor(() => expect(sent).toHaveLength(3));
+    expect(sent[2]).toMatchObject({ url: '/api/imports/preview', body: { rowLimit: null } });
   });
 
   test('a refused commit says nothing was saved by it', async () => {
@@ -335,6 +391,33 @@ describe('the outcome table', () => {
     expect(screen.getByText('Bad Row')).toBeInTheDocument();
     expect(screen.queryByText('Person 200')).not.toBeInTheDocument();
     expect(screen.getAllByRole('row')).toHaveLength(201);
+  });
+});
+
+describe('rows without an identity', () => {
+  test('the report flags them and says a rerun of the whole file would add them twice', async () => {
+    const warning = {
+      column: null,
+      code: 'no_identity',
+      message:
+        'This row has no email, LinkedIn or source id, so importing the whole file again would add it twice.',
+    };
+    const rows = [
+      outcome(1, 'Nameless One', { issues: [{ row: 1, ...warning }] }),
+      outcome(2, 'Nameless Two', { issues: [{ row: 2, ...warning }] }),
+      outcome(3, 'Ada Lovelace'),
+    ];
+    route(report('commit', rows), rows);
+    view();
+    await choose();
+    await userEvent.keyboard(SUBMIT);
+    expect(
+      await screen.findByText(
+        '2 rows have no email, LinkedIn or source id. Importing the whole file again would add them twice.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('New')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: /^Import 3 rows/ })).toBeInTheDocument();
   });
 });
 

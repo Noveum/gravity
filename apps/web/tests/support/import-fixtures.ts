@@ -48,6 +48,7 @@ export function report(
       },
       rows,
       failure: null,
+      resumeFromRow: null as number | null,
     },
   };
 }
@@ -56,14 +57,16 @@ export function partial(
   rows: Record<string, unknown>[],
   planned: number,
   failure: { row: number | null; message: string },
+  mode: 'preview' | 'commit' = 'commit',
 ) {
-  const done = report('commit', rows);
+  const done = report(mode, rows);
   return {
     report: {
       ...done.report,
       status: 'partial',
       totals: { ...done.report.totals, rows: planned },
       failure,
+      resumeFromRow: rows.length + 1,
     },
   };
 }

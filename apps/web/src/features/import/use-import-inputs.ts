@@ -18,7 +18,7 @@ export function useImportInputs(initialTarget: ImportTarget, initialPipelineKey:
   const [pipelineId, setPipelineId] = useState<string | null>(
     workspace.pipelineByKey.get(initialPipelineKey ?? '')?.id ?? workspace.pipelines[0]?.id ?? null,
   );
-  const [source, setSource] = useState('import');
+  const [source, setSource] = useState('');
   const [file, setFile] = useState<LoadedFile | null>(null);
   const [mapping, setMapping] = useState<ImportMapping>({});
   const inputs = useMemo<ImportInputs>(

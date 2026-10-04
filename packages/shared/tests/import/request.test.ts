@@ -42,4 +42,27 @@ describe('importRequestSchema', () => {
         .success,
     ).toBe(false);
   });
+
+  test('a source id column needs a source name of its own', () => {
+    const ids = { ...base, target: 'people', mapping: { Name: 'person.name', Ref: 'sourceId' } };
+    const unnamed = importRequestSchema.safeParse(ids);
+    expect(unnamed.success).toBe(false);
+    expect(unnamed.error?.issues[0]?.path).toEqual(['source']);
+    expect(importRequestSchema.safeParse({ ...ids, source: 'import' }).success).toBe(false);
+    expect(importRequestSchema.safeParse({ ...ids, source: ' Import ' }).success).toBe(false);
+    expect(importRequestSchema.parse({ ...ids, source: 'hubspot' }).source).toBe('hubspot');
+    expect(importRequestSchema.parse({ ...base, target: 'people' }).source).toBe('import');
+  });
+
+  test('a run can start at a row and stop after a number of rows', () => {
+    const people = { ...base, target: 'people' };
+    expect(importRequestSchema.parse(people)).toMatchObject({ startRow: 1, rowLimit: null });
+    expect(importRequestSchema.parse({ ...people, startRow: 4, rowLimit: 500 })).toMatchObject({
+      startRow: 4,
+      rowLimit: 500,
+    });
+    for (const bad of [{ startRow: 0 }, { startRow: 1.5 }, { rowLimit: 0 }, { startRow: '4' }]) {
+      expect(importRequestSchema.safeParse({ ...people, ...bad }).success).toBe(false);
+    }
+  });
 });

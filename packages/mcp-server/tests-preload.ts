@@ -9,3 +9,4 @@ process.env['DATABASE_POOL_MAX'] = '2';
 if ((process.env['BETTER_AUTH_SECRET'] ?? '').length < 16) {
   process.env['BETTER_AUTH_SECRET'] = 'gravity-test-secret-0123456789abcdef';
 }
+process.env['GRAVITY_QUIET_LOGS'] = 'true';

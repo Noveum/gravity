@@ -22,8 +22,9 @@ afterAll(async () => {
   await closeRealtime();
 });
 
-const RESOURCE_CHALLENGE =
-  'Bearer resource_metadata="http://localhost:3300/.well-known/oauth-protected-resource/mcp"';
+const RESOURCE_METADATA = 'http://localhost:3300/.well-known/oauth-protected-resource/mcp';
+const RESOURCE_CHALLENGE = `Bearer resource_metadata="${RESOURCE_METADATA}"`;
+const INVALID_TOKEN_CHALLENGE = `Bearer error="invalid_token", resource_metadata="${RESOURCE_METADATA}"`;
 
 function listTools(headers: Record<string, string>): Promise<Response> {
   return callMcp(rpcRequest('tools/list', { headers }));
@@ -37,10 +38,18 @@ describe('authentication', () => {
     expect(await response.json()).toMatchObject({ jsonrpc: '2.0', id: null });
   });
 
-  test('a token that is not ours gets 401 and the same challenge', async () => {
+  test('a token that is not ours gets 401 naming the token invalid', async () => {
     const response = await listTools({ authorization: 'Bearer not-a-gravity-token' });
     expect(response.status).toBe(401);
-    expect(response.headers.get('www-authenticate')).toBe(RESOURCE_CHALLENGE);
+    expect(response.headers.get('www-authenticate')).toBe(INVALID_TOKEN_CHALLENGE);
+  });
+
+  test('an empty bearer or another scheme counts as no token, with no error code', async () => {
+    for (const authorization of ['Bearer   ', 'Basic dXNlcjpwYXNz']) {
+      const response = await listTools({ authorization });
+      expect(response.status).toBe(401);
+      expect(response.headers.get('www-authenticate')).toBe(RESOURCE_CHALLENGE);
+    }
   });
 
   test('GET is refused with 405', async () => {
@@ -58,12 +67,12 @@ describe('authentication', () => {
     const response = await listTools({ authorization: `Bearer ${minted.token}` });
     expect(response.status).toBe(403);
     expect(response.headers.get('www-authenticate')).toBe(
-      'Bearer error="insufficient_scope", scope="gravity.read"',
+      `Bearer error="insufficient_scope", scope="gravity.read", resource_metadata="${RESOURCE_METADATA}"`,
     );
     expect(JSON.stringify(await response.json())).not.toContain('describe_workspace');
   });
 
-  test('a revoked connection gets 401', async () => {
+  test('a revoked connection gets 401 naming the token invalid', async () => {
     const minted = await mintMcpToken(workspace.organizationId, workspace.adminUser.id);
     await db
       .update(schema.mcpGrant)
@@ -71,7 +80,7 @@ describe('authentication', () => {
       .where(eq(schema.mcpGrant.id, minted.grantId));
     const response = await listTools({ authorization: `Bearer ${minted.token}` });
     expect(response.status).toBe(401);
-    expect(response.headers.get('www-authenticate')).toBe(RESOURCE_CHALLENGE);
+    expect(response.headers.get('www-authenticate')).toBe(INVALID_TOKEN_CHALLENGE);
   });
 
   test('a member removed from the workspace is refused without a scope challenge', async () => {

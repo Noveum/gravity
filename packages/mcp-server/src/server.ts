@@ -17,7 +17,9 @@ const JSONRPC_SERVER_ERROR = -32000;
 const INSUFFICIENT_SCOPE_REASON = 'insufficient_scope';
 const NO_SCOPE_MESSAGE =
   'This connection holds neither the gravity.read nor the gravity.write scope. Reconnect and grant at least one.';
-const INSUFFICIENT_SCOPE_CHALLENGE = `Bearer error="${INSUFFICIENT_SCOPE_REASON}", scope="${GRAVITY_READ_SCOPE}"`;
+const INVALID_TOKEN_REASON = 'invalid_token';
+const NO_TOKEN_MESSAGE = 'Connect this client to Gravity to use its tools.';
+const BEARER_PREFIX = 'bearer ';
 
 const INSTRUCTIONS = [
   'Gravity is an outreach CRM. A person exists once; each pursuit of that person in a pipeline is a lead with an identifier such as ABC-12.',
@@ -26,9 +28,14 @@ const INSTRUCTIONS = [
   'Every tool acts as the person who connected this client, inside the one workspace they chose when connecting. Each answer links to the record in the web app.',
 ].join(' ');
 
-export function wwwAuthenticate(publicUrl: string): string {
+export function wwwAuthenticate(
+  publicUrl: string,
+  parameters: Readonly<Record<string, string>> = {},
+): string {
   const base = publicUrl.replace(/\/+$/, '');
-  return `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource/mcp"`;
+  const metadata = `${base}/.well-known/oauth-protected-resource/mcp`;
+  const pairs = Object.entries({ ...parameters, resource_metadata: metadata });
+  return `Bearer ${pairs.map(([name, value]) => `${name}="${value}"`).join(', ')}`;
 }
 
 export interface McpServerOptions {
@@ -50,12 +57,11 @@ export function createGravityMcpServer(
   return server;
 }
 
-function bearerToken(request: Request): string {
+function presentedToken(request: Request): string | null {
   const header = request.headers.get('authorization') ?? '';
-  if (!header.toLowerCase().startsWith('bearer ')) {
-    throw unauthorized('Connect this client to Gravity to use its tools.');
-  }
-  return header.slice('bearer '.length).trim();
+  if (!header.toLowerCase().startsWith(BEARER_PREFIX)) return null;
+  const token = header.slice(BEARER_PREFIX.length).trim();
+  return token.length === 0 ? null : token;
 }
 
 function rpcError(status: number, message: string, headers: Record<string, string> = {}): Response {
@@ -65,8 +71,13 @@ function rpcError(status: number, message: string, headers: Record<string, strin
   );
 }
 
-async function dispatch(request: Request, options: McpServerOptions): Promise<Response> {
-  const identity = await verifyMcpAccessToken(bearerToken(request));
+async function dispatch(
+  request: Request,
+  token: string | null,
+  options: McpServerOptions,
+): Promise<Response> {
+  if (token === null) throw unauthorized(NO_TOKEN_MESSAGE);
+  const identity = await verifyMcpAccessToken(token);
   if (!(grantsReads(identity.scopes) || grantsWrites(identity.scopes))) {
     throw forbidden(NO_SCOPE_MESSAGE, { details: { reason: INSUFFICIENT_SCOPE_REASON } });
   }
@@ -91,17 +102,25 @@ async function dispatch(request: Request, options: McpServerOptions): Promise<Re
   }
 }
 
-function refusal(error: unknown, options: McpServerOptions): Response {
+function refusal(error: unknown, presented: boolean, options: McpServerOptions): Response {
   const domain = toDomainError(error);
   const fields = { code: domain.code, ...errorFields(error) };
   if (domain.status >= 500) logger.error('request failed', fields);
   else logger.warn('request refused', fields);
   const message = domain.status >= 500 ? 'Something went wrong on our side.' : domain.message;
   if (domain.status === 401) {
-    return rpcError(401, message, { 'WWW-Authenticate': wwwAuthenticate(options.publicUrl) });
+    const challenge = wwwAuthenticate(
+      options.publicUrl,
+      presented ? { error: INVALID_TOKEN_REASON } : {},
+    );
+    return rpcError(401, message, { 'WWW-Authenticate': challenge });
   }
   if (domain.status === 403 && domain.details?.['reason'] === INSUFFICIENT_SCOPE_REASON) {
-    return rpcError(403, message, { 'WWW-Authenticate': INSUFFICIENT_SCOPE_CHALLENGE });
+    const challenge = wwwAuthenticate(options.publicUrl, {
+      error: INSUFFICIENT_SCOPE_REASON,
+      scope: GRAVITY_READ_SCOPE,
+    });
+    return rpcError(403, message, { 'WWW-Authenticate': challenge });
   }
   return rpcError(domain.status, message);
 }
@@ -113,9 +132,10 @@ export async function handleMcpRequest(
   if (request.method !== 'POST') {
     return rpcError(405, 'This endpoint only accepts POST.', { allow: 'POST' });
   }
+  const token = presentedToken(request);
   try {
-    return await dispatch(request, options);
+    return await dispatch(request, token, options);
   } catch (error: unknown) {
-    return refusal(error, options);
+    return refusal(error, token !== null, options);
   }
 }

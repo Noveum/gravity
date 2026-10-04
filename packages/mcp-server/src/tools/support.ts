@@ -68,7 +68,9 @@ function asDomainError(error: unknown): DomainError {
 
 export function failed(name: string, error: unknown): CallToolResult {
   const domain = asDomainError(error);
-  logger.warn('tool failed', { tool: name, code: domain.code, ...errorFields(error) });
+  const fields = { tool: name, code: domain.code, ...errorFields(error) };
+  if (domain.status >= 500) logger.error('tool failed', fields);
+  else logger.warn('tool failed', fields);
   const body =
     domain.status >= 500
       ? { error: { code: domain.code, message: 'Something went wrong on our side.' } }

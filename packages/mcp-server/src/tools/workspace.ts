@@ -9,6 +9,7 @@ import {
   listStages,
   memberRowOf,
 } from '@gravity/core';
+import { CONTEXT_TOKENS } from '@gravity/shared/constants';
 import type { FieldDefinitionRow } from '@gravity/shared/records';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext } from './index.ts';
@@ -16,6 +17,29 @@ import { defineTool } from './support.ts';
 
 const FILTER_EXAMPLE =
   '{"kind":"group","combinator":"and","children":[{"kind":"condition","property":"stage","operator":"in","values":["<stage id>"]}]}';
+
+const CHARS_PER_TOKEN = 4;
+const PLAYBOOK_TEXT_CHARS = CONTEXT_TOKENS.max * CHARS_PER_TOKEN;
+const PLAYBOOK_INDENT = '    ';
+
+function cutAt(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const code = text.charCodeAt(limit - 1);
+  const end = code >= 0xd800 && code <= 0xdbff ? limit - 1 : limit;
+  return text.slice(0, end);
+}
+
+function playbookLines(body: string, limit: number): string[] {
+  const trimmed = body.trim();
+  if (trimmed.length === 0) return [];
+  const shown = cutAt(trimmed, limit);
+  const lines = shown.split(/\r?\n/).map((line) => `${PLAYBOOK_INDENT}${line}`);
+  if (shown.length === trimmed.length) return lines;
+  return [
+    ...lines,
+    `${PLAYBOOK_INDENT}(playbook cut to fit ${limit} characters; the full text is in brands[].playbook.body)`,
+  ];
+}
 
 function fieldView(field: FieldDefinitionRow) {
   return {
@@ -91,6 +115,8 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
             })),
         };
       });
+      const withBodies = playbooks.filter((playbook) => playbook.body.trim().length > 0).length;
+      const playbookShare = Math.floor(PLAYBOOK_TEXT_CHARS / Math.max(1, withBodies));
       const memberViews = members.map(memberRowOf).map((member) => ({
         userId: member.userId,
         name: member.name,
@@ -113,6 +139,7 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
         `You are ${principal.role}.`,
         ...brandViews.flatMap((brand) => [
           `Brand ${brand.name}${brand.playbook === null ? '' : `, playbook v${brand.playbook.version}`}`,
+          ...playbookLines(brand.playbook?.body ?? '', playbookShare),
           ...brand.pipelines.flatMap((pipeline) => [
             `  Pipeline ${pipeline.key} ${pipeline.name} (${pipeline.kind}) ${pipeline.url}`,
             `    Stages: ${pipeline.stages.map((stage) => `${stage.name} [${stage.category}] ${stage.id}`).join('; ')}`,

@@ -6,3 +6,4 @@ await ensureLaneDatabase(databaseUrl, 'gravity_test_rts');
 process.env['DATABASE_URL'] = databaseUrl;
 process.env['REDIS_URL'] = process.env['REDIS_URL'] || 'redis://localhost:6382';
 process.env['DATABASE_POOL_MAX'] = '2';
+process.env['GRAVITY_QUIET_LOGS'] = 'true';

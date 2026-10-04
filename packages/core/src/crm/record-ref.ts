@@ -14,6 +14,12 @@ export interface ResolvedRecordRef {
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SHOWN_REF_LENGTH = 80;
+const LINKEDIN_HOST = /(?:^|\.)linkedin\.com$/;
+const HOST_WITH_PATH = /^(?:[a-z][a-z0-9+.-]*:\/\/)?[^/?#]+[/?#]./i;
+
+function isLinkedinPage(ref: string, domain: string): boolean {
+  return LINKEDIN_HOST.test(domain) && HOST_WITH_PATH.test(ref);
+}
 
 function nothingMatches(ref: string) {
   return notFound(
@@ -115,6 +121,7 @@ export async function resolveRecordRef(
   }
   const domain = ref.includes('.') && !/\s/.test(ref) ? normalizeDomain(ref) : null;
   if (domain !== null) {
+    if (isLinkedinPage(ref, domain)) throw nothingMatches(ref);
     return found(
       'company',
       await companyWhere(organizationId, arrayOverlaps(schema.company.domains, [domain])),

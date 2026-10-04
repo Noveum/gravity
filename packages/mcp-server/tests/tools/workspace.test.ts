@@ -7,10 +7,27 @@ import {
   resetDatabase,
   type TestWorkspace,
 } from '@gravity/core/test-support';
+import { db, eq, schema } from '@gravity/db';
+import { CONTEXT_TOKENS } from '@gravity/shared/constants';
 import { connect, type TestClient } from '../../src/test-helpers.ts';
 
 let workspace: TestWorkspace;
 let client: TestClient;
+let brandId = '';
+
+async function publishPlaybook(body: string): Promise<void> {
+  await db.insert(schema.playbookVersion).values({
+    id: crypto.randomUUID(),
+    organizationId: workspace.organizationId,
+    brandId,
+    version: 2,
+    body,
+  });
+  await db
+    .update(schema.brand)
+    .set({ currentPlaybookVersion: 2 })
+    .where(eq(schema.brand.id, brandId));
+}
 
 interface BrandView {
   name: string;
@@ -23,6 +40,7 @@ beforeEach(async () => {
   workspace = await createWorkspace('Nimbus');
   const context = { principal: workspace.admin };
   const brand = await createBrand(context, { name: 'Lumen', pipelineKey: 'LUM' });
+  brandId = brand.brand.id;
   await createFieldDefinition(context, {
     object: 'person',
     key: 'seniority',
@@ -104,5 +122,26 @@ describe('describe_workspace', () => {
     } finally {
       await elsewhere.close();
     }
+  });
+
+  test('puts each playbook body in the text, not only in the structured content', async () => {
+    await publishPlaybook('Lead with the audit.\nNever pitch on the first touch.');
+    const { text, data } = await client.result('describe_workspace');
+    expect(text).toContain('Brand Lumen, playbook v2');
+    expect(text).toContain('    Lead with the audit.\n    Never pitch on the first touch.');
+    expect((data['brands'] as BrandView[])[0]?.playbook).toEqual({
+      version: 2,
+      body: 'Lead with the audit.\nNever pitch on the first touch.',
+    });
+  });
+
+  test('cuts a playbook that would blow the token budget and says where the rest is', async () => {
+    const body = 'Audit first. '.repeat(20_000);
+    await publishPlaybook(body);
+    const { text, data } = await client.result('describe_workspace');
+    expect(text.length).toBeLessThan(CONTEXT_TOKENS.max * 4 + 8_000);
+    expect(text).toContain('Audit first.');
+    expect(text).toContain('playbook cut to fit');
+    expect((data['brands'] as BrandView[])[0]?.playbook).toEqual({ version: 2, body });
   });
 });

@@ -118,6 +118,30 @@ describe('resolveRecordRef', () => {
     });
   });
 
+  test('a LinkedIn company or school URL never matches the company whose domain is linkedin.com', async () => {
+    const context = { principal: workspace.admin };
+    const linkedin = await upsertPerson(context, {
+      name: 'Reid Recruiter',
+      emails: ['reid@linkedin.com'],
+      company: { domain: 'linkedin.com', name: 'LinkedIn' },
+    });
+    const linkedinCompanyId = linkedin.company?.id ?? '';
+    for (const ref of [
+      'https://www.linkedin.com/company/vela-robotics',
+      'linkedin.com/company/vela-robotics/',
+      'https://www.linkedin.com/school/stanford-university',
+      'https://uk.linkedin.com/company/vela-robotics?trk=x',
+    ]) {
+      await expect(resolveRecordRef(workspace.admin, ref)).rejects.toMatchObject({
+        code: 'not_found',
+      });
+    }
+    expect(await resolveRecordRef(workspace.admin, 'linkedin.com')).toEqual({
+      type: 'company',
+      id: linkedinCompanyId,
+    });
+  });
+
   test('asks for a reference when given nothing', async () => {
     await expect(resolveRecordRef(workspace.admin, '   ')).rejects.toMatchObject({
       code: 'validation_failed',

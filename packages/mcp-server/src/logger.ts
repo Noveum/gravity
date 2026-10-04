@@ -4,7 +4,10 @@ type LogFields = Record<string, unknown>;
 
 type LogLevel = 'info' | 'warn' | 'error';
 
+export const QUIET_LOGS_ENV = 'GRAVITY_QUIET_LOGS';
+
 function write(level: LogLevel, message: string, fields: LogFields | undefined): void {
+  if (process.env[QUIET_LOGS_ENV] === 'true') return;
   const line = JSON.stringify({
     level,
     message,

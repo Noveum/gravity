@@ -40,12 +40,15 @@ interface Sent {
 
 const sent: Sent[] = [];
 const held: (() => void)[] = [];
+let readsInFlight = 0;
+let peakReadsInFlight = 0;
 const serverRows = new Map<string, LeadRow>();
+let known: readonly LeadRow[] = leads;
 let holding = false;
 const realFetch = globalThis.fetch;
 
 function patchedRow(id: string, change: Record<string, unknown>): LeadRow {
-  const base = leads.find((lead) => lead.id === id) ?? leadFixture();
+  const base = known.find((lead) => lead.id === id) ?? leadFixture();
   const patch = (change['patch'] ?? {}) as Partial<LeadRow>;
   return { ...base, ...patch, syncId: base.syncId + 10 + sent.length };
 }
@@ -53,7 +56,7 @@ function patchedRow(id: string, change: Record<string, unknown>): LeadRow {
 function respond(url: string, method: string, body: Record<string, unknown>): Response {
   const id = url.split('/').at(-1) ?? '';
   if (method === 'GET') {
-    const lead = serverRows.get(id) ?? leads.find((row) => row.id === id) ?? leadFixture();
+    const lead = serverRows.get(id) ?? known.find((row) => row.id === id) ?? leadFixture();
     return new Response(JSON.stringify({ lead }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -75,6 +78,9 @@ function respond(url: string, method: string, body: Record<string, unknown>): Re
 beforeEach(() => {
   sent.length = 0;
   held.length = 0;
+  readsInFlight = 0;
+  peakReadsInFlight = 0;
+  known = leads;
   holding = false;
   clearLeadHistory();
   setViewport(true);
@@ -85,8 +91,16 @@ beforeEach(() => {
     sent.push({ url, method, body });
     const response = respond(url, method, body);
     if (!holding) return Promise.resolve(response);
+    const isRead = method === 'GET';
+    if (isRead) {
+      readsInFlight += 1;
+      peakReadsInFlight = Math.max(peakReadsInFlight, readsInFlight);
+    }
     return new Promise<Response>((resolve) => {
-      held.push(() => resolve(response));
+      held.push(() => {
+        if (isRead) readsInFlight -= 1;
+        resolve(response);
+      });
     });
   }) as unknown as typeof fetch;
 });
@@ -477,31 +491,47 @@ describe('LeadVerbs', () => {
 
   test('undo while realtime is not live re-reads at most 8 leads at a time', async () => {
     const rows = manyLeads(20);
+    known = rows;
     const { client } = renderWithVerbs({ rows });
     markRealtimeLive(client, false);
     await screen.findByTestId('lead-row-YOD-20');
     await userEvent.keyboard('{Meta>}a{/Meta}p');
     await userEvent.type(await screen.findByPlaceholderText('Set priority'), 'high{Enter}');
     await waitFor(() => expect(writes()).toHaveLength(1));
-    await screen.findByText(/Set priority to High on 20 leads/);
+    await screen.findByText('Set priority to High on 20 leads');
+    const firstWrite = writes()[0];
+    if (firstWrite === undefined) throw new Error('the priority change was not written');
+    const applied = (firstWrite.body['change'] as { patch: Partial<LeadRow> }).patch;
+    for (const row of rows) serverRows.set(row.id, { ...row, ...applied, syncId: row.syncId + 10 });
+    const reads = () => sent.filter((request) => request.method === 'GET').length;
     holding = true;
     await userEvent.keyboard('{Meta>}z{/Meta}');
     await waitFor(() => expect(held).toHaveLength(8));
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
-    expect(held).toHaveLength(8);
-    let reads = 8;
-    while (held.length > 0) {
-      const next = held.splice(0, held.length);
-      await act(async () => {
-        for (const release of next) release();
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-      reads = sent.filter((request) => request.method === 'GET').length;
+    expect(reads()).toBe(8);
+    for (let released = 0; released < 20; released += 1) {
+      if (reads() === 20) holding = false;
+      const release = held.shift();
+      if (release === undefined) throw new Error('no read in flight to release');
+      await act(async () => release());
+      await waitFor(() => expect(reads()).toBe(Math.min(20, 9 + released)));
       expect(held.length).toBeLessThanOrEqual(8);
     }
-    expect(reads).toBe(20);
+    expect(reads()).toBe(20);
+    expect(
+      sent
+        .filter((request) => request.method === 'GET')
+        .map((request) => request.url)
+        .sort(),
+    ).toEqual(rows.map((row) => `/api/leads/${row.id}`).sort());
+    expect(peakReadsInFlight).toBe(8);
+    await waitFor(() => expect(writes().length).toBeGreaterThan(1));
+    const undone = writes().slice(1);
+    const undoneIds = undone.flatMap((request) =>
+      request.url.endsWith('/bulk')
+        ? (request.body['leadIds'] as string[])
+        : [request.url.split('/').at(-1) ?? ''],
+    );
+    expect(undoneIds.sort()).toEqual(rows.map((row) => row.id).sort());
   });
 
   test('more than 500 leads is refused with a clear message', async () => {

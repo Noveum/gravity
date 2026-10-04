@@ -197,7 +197,7 @@ describe('field permissions and foreign ids', () => {
       for (const attempt of attempts) {
         expect(await refusal(attempt)).toMatchObject({
           status: 403,
-          message: 'Your role cannot field manage.',
+          message: 'Your role cannot manage fields.',
         });
       }
     }
@@ -362,7 +362,7 @@ describe('unarchiveFieldDefinition', () => {
     for (const principal of [guest, contributor]) {
       expect(await refusal(unarchiveFieldDefinition({ principal }, field.id))).toMatchObject({
         status: 403,
-        message: 'Your role cannot field manage.',
+        message: 'Your role cannot manage fields.',
       });
     }
     expect(

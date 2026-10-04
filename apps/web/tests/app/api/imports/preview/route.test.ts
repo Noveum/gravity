@@ -8,7 +8,8 @@ import {
   type TestWorkspace,
 } from '@gravity/core/test-support';
 import { db, schema } from '@gravity/db';
-import { POST } from '@/app/api/imports/preview/route.ts';
+import { IMPORT_CHUNK_MS } from '@gravity/shared/import';
+import { maxDuration, POST } from '@/app/api/imports/preview/route.ts';
 import {
   IMPORT_PREVIEW_BUDGET_MS,
   IMPORT_PREVIEW_RATE,
@@ -180,6 +181,23 @@ describe('/api/imports/preview', () => {
     expect(await errorCode(response)).toBe('rate_limited');
   });
 
+  test('a well-formed request the service refuses spends exactly one unit', async () => {
+    const refused = await preview({ ...BODY, pipelineId, startRow: 99 });
+    expect(refused.status).toBe(422);
+    for (let index = 1; index < IMPORT_PREVIEW_RATE.max; index += 1) {
+      const decision = await consumeRequestRateLimit(
+        importRateKey('preview', workspace.admin),
+        IMPORT_PREVIEW_RATE,
+      );
+      expect(decision.allowed).toBe(true);
+    }
+    const spent = await consumeRequestRateLimit(
+      importRateKey('preview', workspace.admin),
+      IMPORT_PREVIEW_RATE,
+    );
+    expect(spent.allowed).toBe(false);
+  });
+
   test('requests that cannot be read do not spend the budget', async () => {
     await preview('x'.repeat(MAX_IMPORT_REQUEST_BYTES + 1));
     await preview('{"format":');
@@ -215,7 +233,9 @@ describe('/api/imports/preview', () => {
       const deadline = previewSpy.mock.calls[0]?.[2]?.deadline ?? 0;
       expect(deadline).toBeGreaterThanOrEqual(before + IMPORT_PREVIEW_BUDGET_MS);
       expect(deadline).toBeLessThanOrEqual(Date.now() + IMPORT_PREVIEW_BUDGET_MS);
-      expect(IMPORT_PREVIEW_BUDGET_MS).toBeLessThan(60_000);
+      expect(IMPORT_PREVIEW_BUDGET_MS + IMPORT_CHUNK_MS).toBeLessThanOrEqual(
+        maxDuration * 1000 - 10_000,
+      );
     } finally {
       previewSpy.mockRestore();
     }

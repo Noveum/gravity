@@ -252,7 +252,7 @@ describe('runImportCli', () => {
       );
       expect(await runImportCli(words, run.io)).toBe(1);
       expect(run.lines).toHaveLength(1);
-      expect(run.lines[0]).toBe('Your role cannot import run.');
+      expect(run.lines[0]).toBe('Your role cannot run imports.');
     }
     expect(await db.select().from(schema.person)).toHaveLength(0);
   });

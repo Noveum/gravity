@@ -116,7 +116,7 @@ describe('createPipeline', () => {
     const before = await configurationFootprint();
     await expect(
       createPipeline({ principal: guest }, { brandId, name: 'Nope', key: 'NOP' }),
-    ).rejects.toThrow('Your role cannot pipeline manage.');
+    ).rejects.toThrow('Your role cannot manage pipelines.');
     expect(await configurationFootprint()).toEqual(before);
   });
 });
@@ -165,7 +165,7 @@ describe('updatePipeline', () => {
     const guest = await createMemberPrincipal(workspace, 'guest');
     await expect(
       updatePipeline({ principal: guest }, firstPipelineId, { name: 'Nope' }),
-    ).rejects.toThrow('Your role cannot pipeline manage.');
+    ).rejects.toThrow('Your role cannot manage pipelines.');
     const [row] = await listPipelines(workspace.admin);
     expect(row?.name).toBe('Prospecting');
   });
@@ -215,7 +215,7 @@ describe('archivePipeline', () => {
   test('a guest cannot archive and a foreign workspace gets a 404', async () => {
     const guest = await createMemberPrincipal(workspace, 'guest');
     await expect(archivePipeline({ principal: guest }, firstPipelineId)).rejects.toThrow(
-      'Your role cannot pipeline manage.',
+      'Your role cannot manage pipelines.',
     );
     const other = await createWorkspace('Other');
     await expect(archivePipeline({ principal: other.admin }, firstPipelineId)).rejects.toThrow(

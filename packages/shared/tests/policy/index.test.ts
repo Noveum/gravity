@@ -4,6 +4,8 @@ import {
   assertCan,
   can,
   canAssignRole,
+  PERMISSION_ACTIONS,
+  PERMISSIONS,
   type Principal,
   usableMcpScopes,
 } from '../../src/policy/index.ts';
@@ -56,6 +58,21 @@ describe('usableMcpScopes', () => {
   test('a role that can write records keeps write', () => {
     for (const role of ['contributor', 'member', 'admin'] as const) {
       expect(usableMcpScopes(role, asked)).toEqual(asked);
+    }
+  });
+});
+
+describe('permission labels', () => {
+  test('a refusal names the action in plain words', () => {
+    const guest: Principal = { userId: 'u', organizationId: 'o', role: 'guest' };
+    expect(() => assertCan(guest, 'import:run')).toThrow('Your role cannot run imports.');
+    expect(() => assertCan(guest, 'record:write')).toThrow('Your role cannot edit records.');
+    expect(() => assertCan(guest, 'pipeline:manage')).toThrow('Your role cannot manage pipelines.');
+  });
+
+  test('every permission has a label', () => {
+    for (const permission of PERMISSIONS) {
+      expect(PERMISSION_ACTIONS[permission].length).toBeGreaterThan(0);
     }
   });
 });

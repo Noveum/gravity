@@ -8,7 +8,8 @@ import {
   type TestWorkspace,
 } from '@gravity/core/test-support';
 import { db, schema } from '@gravity/db';
-import { POST } from '@/app/api/imports/route.ts';
+import { IMPORT_CHUNK_MS } from '@gravity/shared/import';
+import { maxDuration, POST } from '@/app/api/imports/route.ts';
 import {
   IMPORT_COMMIT_BUDGET_MS,
   IMPORT_COMMIT_RATE,
@@ -138,7 +139,9 @@ describe('/api/imports', () => {
       const deadline = commitSpy.mock.calls[0]?.[2].deadline ?? 0;
       expect(deadline).toBeGreaterThanOrEqual(before + IMPORT_COMMIT_BUDGET_MS);
       expect(deadline).toBeLessThanOrEqual(Date.now() + IMPORT_COMMIT_BUDGET_MS);
-      expect(IMPORT_COMMIT_BUDGET_MS).toBeLessThan(300_000);
+      expect(IMPORT_COMMIT_BUDGET_MS + IMPORT_CHUNK_MS).toBeLessThanOrEqual(
+        maxDuration * 1000 - 10_000,
+      );
     } finally {
       commitSpy.mockRestore();
     }

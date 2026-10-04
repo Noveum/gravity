@@ -1,6 +1,7 @@
 'use client';
 
 import { IMPORT_CHUNK_ROWS, type ImportTarget } from '@gravity/shared/import';
+import { PERMISSION_ACTIONS } from '@gravity/shared/policy';
 import { FileUp } from 'lucide-react';
 import type { Ref } from 'react';
 import { EmptyState } from '@/components/ui/empty-state.tsx';
@@ -79,7 +80,9 @@ export function ImportView({ initialTarget, initialPipelineKey }: ImportViewProp
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-6">
       <PageHeading headingRef={flow.step === 'choose' ? flow.focusTarget : undefined} />
       {flow.canImport ? null : (
-        <Alert message="Your role cannot run imports. Ask a member or an admin of this workspace." />
+        <Alert
+          message={`Your role cannot ${PERMISSION_ACTIONS['import:run']}. Ask a member or an admin of this workspace.`}
+        />
       )}
       {flow.canImport ? (
         <>

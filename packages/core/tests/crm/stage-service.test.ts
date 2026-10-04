@@ -143,7 +143,7 @@ describe('stages', () => {
       for (const attempt of attempts) {
         expect(await refusal(attempt)).toMatchObject({
           status: 403,
-          message: 'Your role cannot pipeline manage.',
+          message: 'Your role cannot manage pipelines.',
         });
       }
     }
@@ -225,7 +225,7 @@ describe('unarchiveStage', () => {
     for (const principal of [guest, contributor]) {
       expect(await refusal(unarchiveStage({ principal }, target))).toMatchObject({
         status: 403,
-        message: 'Your role cannot pipeline manage.',
+        message: 'Your role cannot manage pipelines.',
       });
     }
     expect(await refusal(unarchiveStage({ principal: foreign.admin }, target))).toMatchObject({

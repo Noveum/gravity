@@ -18,6 +18,21 @@ export const PERMISSIONS = [
 
 export type Permission = (typeof PERMISSIONS)[number];
 
+export const PERMISSION_ACTIONS: Readonly<Record<Permission, string>> = {
+  'record:read': 'read records',
+  'record:write': 'edit records',
+  'record:delete': 'delete records',
+  'view:manage': 'manage saved views',
+  'import:run': 'run imports',
+  'pipeline:manage': 'manage pipelines',
+  'field:manage': 'manage fields',
+  'member:invite': 'invite members',
+  'member:manage': 'manage members',
+  'integration:manage': 'manage integrations',
+  'workspace:manage': 'manage the workspace',
+  'workspace:delete': 'delete the workspace',
+};
+
 const GUEST: readonly Permission[] = ['record:read'];
 
 const CONTRIBUTOR: readonly Permission[] = [...GUEST, 'record:write', 'view:manage'];
@@ -66,7 +81,7 @@ export function can(principal: Principal, permission: Permission): boolean {
 
 export function assertCan(principal: Principal, permission: Permission): void {
   if (!can(principal, permission)) {
-    throw forbidden(`Your role cannot ${permission.replace(':', ' ')}.`, {
+    throw forbidden(`Your role cannot ${PERMISSION_ACTIONS[permission]}.`, {
       details: { permission, role: principal.role },
     });
   }

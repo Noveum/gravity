@@ -267,7 +267,7 @@ describe('useChangeLeads', () => {
     server.answer(403, {
       error: {
         code: 'forbidden',
-        message: 'Your role cannot record write.',
+        message: 'Your role cannot edit records.',
         details: { permission: 'record:write', role: 'guest' },
       },
     });
@@ -275,7 +275,7 @@ describe('useChangeLeads', () => {
     expect(cachedLead(client, 'l1')?.stageId).toBe('new');
     expect(await screen.findByText('Could not update 2 leads')).toBeInTheDocument();
     expect(
-      screen.getByText('Your role cannot record write. Ask an admin for the contributor role.'),
+      screen.getByText('Your role cannot edit records. Ask an admin for the contributor role.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry' }) === null).toBe(true);
   });

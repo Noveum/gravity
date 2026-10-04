@@ -35,6 +35,11 @@ export function isRefusal(error: unknown): error is ApiError {
   return error instanceof ApiError && REFUSAL_STATUSES.includes(error.status);
 }
 
+export function isRetryable(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  return error.status >= 500 || error.code === 'internal';
+}
+
 export interface RequestOptions {
   readonly method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   readonly body?: unknown;

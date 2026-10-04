@@ -2,7 +2,8 @@
 
 import { useCallback } from 'react';
 import { useToast } from '@/components/ui/toast.tsx';
-import { messageOf } from './fetcher.ts';
+import { describeFailure } from '@/features/workspace/role-hint.ts';
+import { isRetryable } from './fetcher.ts';
 
 export type RetryToast = (title: string, error: unknown, retry: () => void) => void;
 
@@ -12,9 +13,9 @@ export function useRetryToast(): RetryToast {
     (title, error, retry) =>
       toast({
         title,
-        description: messageOf(error),
+        description: describeFailure(error),
         tone: 'danger',
-        action: { label: 'Retry', onSelect: retry },
+        ...(isRetryable(error) ? { action: { label: 'Retry', onSelect: retry } } : {}),
       }),
     [toast],
   );

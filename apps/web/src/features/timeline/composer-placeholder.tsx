@@ -2,17 +2,21 @@
 
 import { useId, useRef } from 'react';
 import { Textarea } from '@/components/ui/textarea.tsx';
+import { useCan } from '@/features/workspace/use-can.ts';
 import { HOTKEY_PRIORITY, useHotkey } from '@/lib/keyboard/index.ts';
 
 export function ComposerPlaceholder({ onEscape }: { readonly onEscape: () => void }) {
   const id = useId();
   const box = useRef<HTMLTextAreaElement | null>(null);
+  const canWrite = useCan('record:write');
   useHotkey('n', () => box.current?.focus(), {
     label: 'Add a note',
     section: 'Records',
     scope: 'records',
     priority: HOTKEY_PRIORITY.surface,
+    enabled: canWrite,
   });
+  if (!canWrite) return null;
   return (
     <div className="flex shrink-0 flex-col gap-1 border-border border-t p-3">
       <label htmlFor={id} className="text-faint text-xs">

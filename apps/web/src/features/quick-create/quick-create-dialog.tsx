@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input.tsx';
 import { Kbd } from '@/components/ui/kbd.tsx';
 import { MAX_LIST_SEARCH_LENGTH } from '@/features/filters/list-query.ts';
 import { focusBack } from '@/features/leads/verb-picker.tsx';
+import { useCan } from '@/features/workspace/use-can.ts';
 import { useWorkspace, type WorkspaceData } from '@/features/workspace/use-workspace.ts';
 import { HOTKEY_PRIORITY, KEYBOARD_PASSTHROUGH, useHotkey } from '@/lib/keyboard/index.ts';
 import { lastPipelineKey } from '@/lib/last-pipeline.ts';
@@ -379,6 +380,9 @@ function layerIsOpen(): boolean {
 }
 
 export function QuickCreate() {
+  const workspaceKnown = useWorkspace().ready;
+  const canWrite = useCan('record:write');
+  const readOnly = workspaceKnown && !canWrite;
   const [session, setSession] = useState<Reopened | null>(null);
   const opener = useRef<HTMLElement | null>(null);
   const open = useRef(false);
@@ -406,7 +410,7 @@ export function QuickCreate() {
       label: 'Quick create',
       section: 'General',
       priority: HOTKEY_PRIORITY.surface,
-      enabled: session === null,
+      enabled: !readOnly && session === null,
     },
   );
   if (session === null) return null;

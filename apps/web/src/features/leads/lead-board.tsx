@@ -27,6 +27,7 @@ import {
 } from 'react';
 import { RelativeTime } from '@/components/ui/relative-time.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
+import { useCan } from '@/features/workspace/use-can.ts';
 import { useWorkspace } from '@/features/workspace/use-workspace.ts';
 import { cn } from '@/lib/cn.ts';
 import { cardHover } from '@/lib/interaction.ts';
@@ -123,9 +124,11 @@ function cardLabel(lead: LeadRow): string {
 }
 
 function BoardCard({ lead, owner, active, selected, handlers }: BoardCardProps) {
+  const movable = useCan('record:write');
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: lead.id,
-    attributes: { role: 'article', roleDescription: 'movable card' },
+    disabled: !movable,
+    attributes: { role: 'article', roleDescription: movable ? 'movable card' : 'card' },
   });
   const card = {
     ...attributes,
@@ -162,7 +165,7 @@ function BoardCard({ lead, owner, active, selected, handlers }: BoardCardProps) 
           'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent',
           isDragging
             ? 'border border-accent border-dashed bg-accent-soft/40 [&>*]:invisible'
-            : 'cursor-grab',
+            : movable && 'cursor-grab',
         )}
       >
         <BoardCardView lead={lead} owner={owner} active={active} selected={selected} />
@@ -271,6 +274,7 @@ export interface LeadBoardProps {
 
 export function LeadBoard({ pipeline, stages, leads }: LeadBoardProps) {
   const workspace = useWorkspace();
+  const canWrite = useCan('record:write');
   const commit = useCommitLeadChange();
   const registry = useHotkeyRegistry();
   const columns = useMemo(
@@ -385,10 +389,12 @@ export function LeadBoard({ pipeline, stages, leads }: LeadBoardProps) {
   useHotkey('shift+right', () => shift(1), {
     ...LEAD_SURFACE,
     label: 'Move the card one stage right',
+    enabled: canWrite,
   });
   useHotkey('shift+left', () => shift(-1), {
     ...LEAD_SURFACE,
     label: 'Move the card one stage left',
+    enabled: canWrite,
   });
 
   const sensors = useSensors(

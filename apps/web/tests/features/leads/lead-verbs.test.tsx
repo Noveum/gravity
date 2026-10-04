@@ -403,6 +403,22 @@ describe('LeadVerbs', () => {
     expect(await screen.findByText('Set priority to High on YOD-1')).toBeInTheDocument();
   });
 
+  test('a guest gets no verbs: no row menu, no bulk verbs, and the verb keys do nothing', async () => {
+    renderWithVerbs({ bootstrap: bootstrapFixture({ me: { userId: 'u3', role: 'guest' } }) });
+    await screen.findByTestId('lead-row-YOD-1');
+    expect(screen.queryByRole('button', { name: 'More actions for YOD-1' })).toBeNull();
+    await userEvent.keyboard('s');
+    await userEvent.keyboard('p');
+    await userEvent.keyboard('{Shift>}h{/Shift}');
+    expect(screen.queryByPlaceholderText('Move to stage')).toBeNull();
+    expect(screen.queryByPlaceholderText('Set priority')).toBeNull();
+    await userEvent.keyboard('x');
+    await userEvent.keyboard('j');
+    await userEvent.keyboard('x');
+    expect(screen.queryByRole('button', { name: 'Stage' })).toBeNull();
+    expect(writes()).toHaveLength(0);
+  });
+
   test('the bulk bar has a Next action button and its picker returns focus to it', async () => {
     renderWithVerbs();
     await screen.findByTestId('lead-row-YOD-2');

@@ -17,6 +17,7 @@ import type { LeadChange } from '@gravity/shared/validators';
 import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from '@/components/ui/avatar.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import { useCan } from '@/features/workspace/use-can.ts';
 import { useWorkspace } from '@/features/workspace/use-workspace.ts';
 import { HOTKEY_PRIORITY, useHotkey } from '@/lib/keyboard/index.ts';
 import { PriorityGlyph, StageGlyph } from './lead-glyphs.tsx';
@@ -94,6 +95,7 @@ export function LeadVerbs({
   verbs = ALL_VERBS,
 }: LeadVerbsProps) {
   const workspace = useWorkspace();
+  const canWrite = useCan('record:write');
   const commit = useCommitLeadChange();
   const [mode, setMode] = useState<VerbMode | null>(null);
   const [subject, setSubject] = useState<Subject | null>(null);
@@ -115,12 +117,16 @@ export function LeadVerbs({
 
   useEffect(() => {
     if (request === null) return;
+    if (!canWrite) {
+      settleRequest();
+      return;
+    }
     origin.current = request.origin;
     setSubject({ leads: [request.lead], announce: request.announce ?? true });
     setPending(null);
     setMode(request.verb);
     settleRequest();
-  }, [request, settleRequest]);
+  }, [request, settleRequest, canWrite]);
 
   const close = () => {
     setMode(null);
@@ -160,7 +166,7 @@ export function LeadVerbs({
   };
 
   const openFrom = (next: VerbMode, from: HTMLElement | null) => {
-    if (selection.targets.length === 0) return;
+    if (!canWrite || selection.targets.length === 0) return;
     origin.current = from;
     setSubject(from === null ? null : { leads: selection.targets, announce: false });
     setPending(null);
@@ -170,7 +176,7 @@ export function LeadVerbs({
   const clicked = (next: VerbMode) => (event: MouseEvent<HTMLButtonElement>) =>
     openFrom(next, event.currentTarget);
   const enabled = (verb: VerbMode) =>
-    verbs.includes(verb) && selection.targets.length > 0 && mode === null;
+    canWrite && verbs.includes(verb) && selection.targets.length > 0 && mode === null;
 
   useHotkey('s', opener('stage'), {
     ...SURFACE,
@@ -246,7 +252,7 @@ export function LeadVerbs({
           .
         </p>
       ) : null}
-      {selection.targets.length > 1 ? (
+      {canWrite && selection.targets.length > 1 ? (
         <section
           aria-label="Selected leads"
           className="hidden items-center gap-1 border-border border-t bg-surface px-3 py-2 text-dense min-[900px]:flex"

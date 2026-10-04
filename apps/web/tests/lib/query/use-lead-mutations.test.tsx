@@ -153,7 +153,7 @@ describe('useChangeLeads', () => {
     expect(cachedLead(client, 'l1')?.stageId).toBe('ready');
   });
 
-  test('rolls back after the server refuses and Retry sends the change again', async () => {
+  test('rolls back after the server refuses and shows its message with no Retry', async () => {
     const { client, result } = setup();
     act(() => {
       result.current.mutate({ leads: [leadFixture()], change: toReady });
@@ -171,8 +171,20 @@ describe('useChangeLeads', () => {
     expect(
       screen.getByText('Ada Lovelace already has an open lead in this pipeline: YOD-2.'),
     ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' }) === null).toBe(true);
+  });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  test('rolls back after a server error and Retry sends the change again', async () => {
+    const { client, result } = setup();
+    act(() => {
+      result.current.mutate({ leads: [leadFixture()], change: toReady });
+    });
+    await waitFor(() => expect(server.waiting()).toBe(1));
+    server.answer(500, {
+      error: { code: 'internal', message: 'Something went wrong on our side.' },
+    });
+    await waitFor(() => expect(cachedLead(client, 'l1')?.stageId).toBe('new'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(cachedLead(client, 'l1')?.stageId).toBe('ready'));
     await waitFor(() => expect(server.waiting()).toBe(1));
     expect(server.sent).toHaveLength(2);
@@ -212,11 +224,20 @@ describe('useChangeLeads', () => {
     });
     await waitFor(() => expect(cachedLead(client, 'l2')?.stageId).toBe('ready'));
     await waitFor(() => expect(server.waiting()).toBe(1));
-    server.answer(403, { error: { code: 'forbidden', message: 'Your role cannot record write.' } });
+    server.answer(403, {
+      error: {
+        code: 'forbidden',
+        message: 'Your role cannot record write.',
+        details: { permission: 'record:write', role: 'guest' },
+      },
+    });
     await waitFor(() => expect(cachedLead(client, 'l2')?.stageId).toBe('new'));
     expect(cachedLead(client, 'l1')?.stageId).toBe('new');
     expect(await screen.findByText('Could not update 2 leads')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Your role cannot record write. Ask an admin for the contributor role.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' }) === null).toBe(true);
   });
 });
 
@@ -239,7 +260,7 @@ describe('useQuickCreateLead', () => {
     expect(cachedPeople(client)).toEqual(['per2']);
   });
 
-  test('removes the preview when the server refuses and offers Retry', async () => {
+  test('removes the preview when the server refuses, with no Retry', async () => {
     const { client, result } = setupQuickCreate();
     act(() => {
       result.current.mutate({ body: quickBody, preview });
@@ -249,7 +270,7 @@ describe('useQuickCreateLead', () => {
     server.answer(409, { error: { code: 'conflict', message: 'That id is already in use.' } });
     await waitFor(() => expect(cachedLead(client, 'l3')).toBeUndefined());
     expect(await screen.findByText('Could not add Grace Hopper')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' }) === null).toBe(true);
     expect(cachedLead(client, 'l1')?.stageId).toBe('new');
   });
 });

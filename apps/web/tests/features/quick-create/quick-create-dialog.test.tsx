@@ -109,6 +109,14 @@ function leadIdOf(sent: readonly { url: string; body: unknown }[]): string {
 }
 
 describe('QuickCreate', () => {
+  test('C does nothing for a guest, who cannot write records', async () => {
+    renderWithClient(<QuickCreate />, {
+      bootstrap: bootstrapFixture({ me: { userId: 'u3', role: 'guest' } }),
+    });
+    await userEvent.keyboard('c');
+    expect(screen.queryByRole('dialog') === null).toBe(true);
+  });
+
   test('C opens it and a known email shows the existing person before the server answers', async () => {
     serveJson(() => ({ body: { people: [], companies: [] } }));
     renderQuickCreate();

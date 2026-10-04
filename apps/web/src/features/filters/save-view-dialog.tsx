@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { useToast } from '@/components/ui/toast.tsx';
+import { useCan } from '@/features/workspace/use-can.ts';
 import { useWorkspace } from '@/features/workspace/use-workspace.ts';
 import { useHotkey } from '@/lib/keyboard/index.ts';
 import { upsertById } from '@/lib/query/bootstrap-cache.ts';
@@ -48,6 +49,7 @@ export function SaveViewDialog({
   onSaved,
 }: SaveViewDialogProps) {
   const workspace = useWorkspace();
+  const canManage = useCan('view:manage');
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -118,6 +120,7 @@ export function SaveViewDialog({
       section: 'Records',
       scope: 'filters',
       allowInInput: true,
+      enabled: canManage,
     },
   );
 

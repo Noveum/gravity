@@ -71,6 +71,18 @@ describe('SaveViewDialog', () => {
     expect(onSaved.mock.calls[0]?.[0]).toMatchObject({ name: 'Ready to send', syncId: 9 });
   });
 
+  test('Cmd+S does nothing for a guest, who cannot manage views', async () => {
+    const fetched = mock(() => Promise.resolve(respond({})));
+    globalThis.fetch = fetched as unknown as typeof fetch;
+    renderWithClient(
+      <SaveViewDialog object="lead" pipelineId="p1" filter={filter} viewId={null} />,
+      { bootstrap: bootstrapFixture({ me: { userId: 'u3', role: 'guest' } }) },
+    );
+    await userEvent.keyboard('{Meta>}s{/Meta}');
+    expect(screen.queryByRole('dialog') === null).toBe(true);
+    expect(fetched).not.toHaveBeenCalled();
+  });
+
   test('Cmd+S on a view you own updates it, and says Saved only once the server agrees', async () => {
     const owned: SavedViewRow = {
       id: 'v1',

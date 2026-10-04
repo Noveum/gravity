@@ -101,7 +101,7 @@ describe('useBootstrapMutation', () => {
     await waitFor(() => expect(brandName()).toBe('Yodu Studio'));
   });
 
-  test('restores the previous bootstrap after a refusal and Retry resends', async () => {
+  test('restores the previous bootstrap after a refusal and shows the message with no Retry', async () => {
     const { brandName, result } = setup();
     act(() => {
       result.current.mutate({ id: 'b1', name: 'Yodu Labs' });
@@ -112,8 +112,18 @@ describe('useBootstrapMutation', () => {
     await waitFor(() => expect(brandName()).toBe('Yodu'));
     expect(await screen.findByText('Could not rename the brand to Yodu Labs')).toBeInTheDocument();
     expect(screen.getByText('That name is taken.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' }) === null).toBe(true);
+  });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  test('restores the previous bootstrap after a server error and Retry resends', async () => {
+    const { brandName, result } = setup();
+    act(() => {
+      result.current.mutate({ id: 'b1', name: 'Yodu Labs' });
+    });
+    await waitFor(() => expect(server.waiting()).toBe(1));
+    server.answer(503, { error: { code: 'internal', message: 'Try again shortly.' } });
+    await waitFor(() => expect(brandName()).toBe('Yodu'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(brandName()).toBe('Yodu Labs'));
     await waitFor(() => expect(server.waiting()).toBe(1));
     expect(server.sent).toHaveLength(2);

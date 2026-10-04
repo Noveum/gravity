@@ -14,6 +14,7 @@ export interface EditableFieldProps {
   readonly type?: EditableFieldType;
   readonly required?: boolean;
   readonly inline?: boolean;
+  readonly readOnly?: boolean;
   readonly onSave: (value: string) => void;
 }
 
@@ -57,7 +58,31 @@ function Frame({
   );
 }
 
-export function EditableField({
+function ReadOnlyField({
+  label,
+  value,
+  placeholder = 'Empty',
+  inline = false,
+}: EditableFieldProps) {
+  return (
+    <Frame inline={inline} label={inline ? null : label}>
+      <span
+        className={cn(
+          'min-w-0 flex-1 truncate px-1 leading-6',
+          value === '' ? 'text-faint' : 'text-text',
+        )}
+      >
+        {value === '' ? placeholder : value}
+      </span>
+    </Frame>
+  );
+}
+
+export function EditableField(props: EditableFieldProps) {
+  return props.readOnly === true ? <ReadOnlyField {...props} /> : <InlineEditor {...props} />;
+}
+
+function InlineEditor({
   label,
   value,
   placeholder = 'Empty',

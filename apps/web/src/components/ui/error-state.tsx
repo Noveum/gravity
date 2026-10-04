@@ -1,9 +1,7 @@
 'use client';
 
-import { PERMISSIONS, type Permission } from '@gravity/shared/policy';
 import { CircleAlert } from 'lucide-react';
-import { minimumRoleFor } from '@/features/workspace/role-hint.ts';
-import { ApiError, messageOf } from '@/lib/query/fetcher.ts';
+import { describeFailure } from '@/features/workspace/role-hint.ts';
 import { Button } from './button.tsx';
 import { EmptyState } from './empty-state.tsx';
 
@@ -13,18 +11,11 @@ export interface ErrorStateProps {
   readonly onRetry?: () => void;
 }
 
-function permissionOf(error: unknown): Permission | null {
-  if (!(error instanceof ApiError) || error.code !== 'forbidden') return null;
-  const permission = error.details?.['permission'];
-  return PERMISSIONS.find((entry) => entry === permission) ?? null;
-}
-
 export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
-  const permission = permissionOf(error);
-  const description =
-    permission === null
-      ? messageOf(error, 'The request did not complete. Check your connection and retry.')
-      : `${messageOf(error)} Ask an admin for the ${minimumRoleFor(permission)} role.`;
+  const description = describeFailure(
+    error,
+    'The request did not complete. Check your connection and retry.',
+  );
   return (
     <EmptyState
       icon={<CircleAlert />}

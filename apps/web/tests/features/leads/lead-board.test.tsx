@@ -82,13 +82,13 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-function renderBoard(leads: readonly LeadRow[] = [leadFixture()]) {
+function renderBoard(leads: readonly LeadRow[] = [leadFixture()], shown = bootstrap) {
   return renderWithClient(
     <ContextPanelProvider>
       <LeadUndoHotkeys workspaceId="o1" />
       <LeadBoard pipeline={pipeline} stages={bootstrap.stages} leads={leads} />
     </ContextPanelProvider>,
-    { bootstrap },
+    { bootstrap: shown },
   );
 }
 
@@ -111,6 +111,18 @@ describe('LeadBoard', () => {
       url: '/api/leads/l1',
       body: { type: 'update', patch: { stageId: 'stage-researching' } },
     });
+  });
+
+  test('a guest cannot move cards: Shift+arrows and M do nothing and cards are not draggable', async () => {
+    renderBoard([leadFixture()], bootstrapFixture({ me: { userId: 'u3', role: 'guest' } }));
+    const card = await screen.findByTestId('board-card-YOD-1');
+    await userEvent.keyboard('{Shift>}{ArrowRight}{/Shift}');
+    act(() => card.focus());
+    await userEvent.keyboard('m');
+    await userEvent.keyboard('{ArrowRight}{Enter}');
+    expect(card).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.queryByRole('button', { name: 'More actions for YOD-1' })).toBeNull();
+    expect(sent).toHaveLength(0);
   });
 
   test('Shift+Left moves the focused card one stage back', async () => {

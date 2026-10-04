@@ -10,6 +10,7 @@ import { LeadVerbs } from '@/features/leads/lead-verbs.tsx';
 import type { LeadListSelection } from '@/features/leads/use-lead-cursor.tsx';
 import { ComposerPlaceholder } from '@/features/timeline/composer-placeholder.tsx';
 import { Timeline } from '@/features/timeline/timeline.tsx';
+import { useCan } from '@/features/workspace/use-can.ts';
 import { useCopyLinkTarget } from '@/lib/copy-link.tsx';
 import { useDelayedFlag } from '@/lib/use-delayed-flag.ts';
 import { watchWindowRefocus } from '@/lib/window-refocus.ts';
@@ -66,6 +67,7 @@ export function RecordLayout({
   focusLeadId,
   linkFor,
 }: RecordLayoutProps) {
+  const canWrite = useCan('record:write');
   const [focusedId, setFocusedId] = useState<string | null>(focusLeadId);
   const focused = leads.find((lead) => lead.id === focusedId) ?? leads[0];
   const { selection, requestVerb } = useRecordSelection(focused);
@@ -91,7 +93,9 @@ export function RecordLayout({
         <section aria-label="Leads" className="flex flex-col gap-2">
           <h2 className={recordHeadingClass}>Leads</h2>
           {leads.length === 0 ? (
-            <p className="text-dense text-muted">No leads yet. Press C to add one.</p>
+            <p className="text-dense text-muted">
+              {canWrite ? 'No leads yet. Press C to add one.' : 'No leads yet.'}
+            </p>
           ) : null}
           {leads.map((lead) => (
             <LeadCard

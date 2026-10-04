@@ -10,6 +10,7 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.tsx';
+import { useCan } from '@/features/workspace/use-can.ts';
 import { cn } from '@/lib/cn.ts';
 import { revealOnHover } from '@/lib/interaction.ts';
 
@@ -45,6 +46,8 @@ export interface LeadVerbMenuProps {
 export function LeadVerbMenu({ lead, visible, onVerb, unkeyed = [] }: LeadVerbMenuProps) {
   const trigger = useRef<HTMLButtonElement | null>(null);
   const chosen = useRef(false);
+  const canWrite = useCan('record:write');
+  if (!canWrite) return null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger

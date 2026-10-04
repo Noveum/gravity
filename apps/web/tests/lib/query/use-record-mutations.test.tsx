@@ -127,19 +127,21 @@ describe('useUpdatePerson', () => {
     await waitFor(() => expect(cachedPerson(client, 'per1')?.syncId).toBe(6));
   });
 
-  test('rolls back to the cached person, not the caller copy, and Retry resends', async () => {
+  test('rolls back to the cached person, not the caller copy, and Retry resends a server error', async () => {
     const { client, result } = setup();
     act(() => {
       result.current.mutate({ person: staleCaller, patch: { name: 'Ada King' } });
     });
     await waitFor(() => expect(cachedPerson(client, 'per1')?.name).toBe('Ada King'));
     await waitFor(() => expect(server.waiting()).toBe(1));
-    server.answer(422, { error: { code: 'validation_failed', message: 'Give it a name.' } });
+    server.answer(500, {
+      error: { code: 'internal', message: 'Something went wrong on our side.' },
+    });
     await waitFor(() => expect(cachedPerson(client, 'per1')?.name).toBe('Ada Lovelace'));
     expect(cachedPerson(client, 'per1')?.location).toBeNull();
     expect(cachedLead(client, 'l1')?.personName).toBe('Ada Lovelace');
     expect(await screen.findByText('Could not update Ada Lovelace')).toBeInTheDocument();
-    expect(screen.getByText('Give it a name.')).toBeInTheDocument();
+    expect(screen.getByText('Something went wrong on our side.')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(cachedPerson(client, 'per1')?.name).toBe('Ada King'));
@@ -172,14 +174,14 @@ describe('useUpdateCompany', () => {
     await waitFor(() => expect(cachedCompany(client, 'c1')?.syncId).toBe(6));
   });
 
-  test('rolls back to the cached company after a refusal and Retry resends', async () => {
+  test('rolls back to the cached company after a server error and Retry resends', async () => {
     const { client, result } = setup();
     act(() => {
       result.current.mutate({ company: staleCompany, patch: { name: 'Acme Labs' } });
     });
     await waitFor(() => expect(cachedCompany(client, 'c1')?.name).toBe('Acme Labs'));
     await waitFor(() => expect(server.waiting()).toBe(1));
-    server.answer(403, { error: { code: 'forbidden', message: 'Your role cannot record write.' } });
+    server.answer(502, { error: { code: 'internal', message: 'Bad gateway.' } });
     await waitFor(() => expect(cachedCompany(client, 'c1')?.name).toBe('Acme'));
     expect(cachedCompany(client, 'c1')?.segment).toBeNull();
     expect(cachedLead(client, 'l1')?.companyName).toBe('Acme');

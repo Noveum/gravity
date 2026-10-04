@@ -70,11 +70,12 @@ function serve() {
   });
 }
 
-function renderRecord(focusLeadId: string | null = null) {
+function renderRecord(focusLeadId: string | null = null, bootstrap = bootstrapFixture()) {
   return renderWithClient(
     <ContextPanelProvider>
       <PersonRecord personId="per1" focusLeadId={focusLeadId} />
     </ContextPanelProvider>,
+    { bootstrap },
   );
 }
 
@@ -114,6 +115,21 @@ describe('PersonRecord', () => {
     );
     expect(screen.getByRole('button', { name: /Facts/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('group', { name: 'Timeline filter' }).tagName).toBe('FIELDSET');
+  });
+
+  test('a guest sees read-only fields, no lead menus and no note composer', async () => {
+    const sent = serve();
+    renderRecord(null, bootstrapFixture({ me: { userId: 'u3', role: 'guest' } }));
+    const attributes = await screen.findByTestId('record-attributes');
+    expect(within(attributes).getByText('London')).toBeInTheDocument();
+    expect(within(attributes).queryByRole('button', { name: 'Edit Name' }) === null).toBe(true);
+    expect(within(attributes).queryByRole('switch') === null).toBe(true);
+    expect(screen.queryByRole('button', { name: 'More actions for YOD-1' }) === null).toBe(true);
+    expect(screen.queryByLabelText('Note') === null).toBe(true);
+    await userEvent.click(await screen.findByTestId('lead-card-YOD-1'));
+    await userEvent.keyboard('s');
+    expect(screen.queryByPlaceholderText('Move to stage') === null).toBe(true);
+    expect(sent.filter((request) => request.method !== 'GET')).toHaveLength(0);
   });
 
   test('editing the name updates at once and saves', async () => {

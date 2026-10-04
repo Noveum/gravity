@@ -11,3 +11,5 @@ test-results
 playwright-report
 .DS_Store
 next-env.d.ts
+
+apps/web/e2e/.fixture.json

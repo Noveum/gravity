@@ -27,6 +27,7 @@
     "test": "bun test scripts && bun run --filter '*' test",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "test:e2e": "bun run --filter '@gravity/web' test:e2e",
     "check-comments": "bun scripts/strip-comments.ts --check",
     "check-bytes": "bun scripts/check-source-bytes.ts",
     "check-bun-imports": "bun scripts/check-bun-imports.ts",

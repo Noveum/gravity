@@ -1,12 +1,15 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Request, test } from '@playwright/test';
 import { BASE } from './base-url.ts';
 import { readFixture } from './fixture.ts';
 import { signIn } from './sign-in.ts';
 
 const KEYSTROKE_BUDGET_MS = 16;
+const KEYSTROKE_P90_MS = 64;
 const ROUTE_BUDGET_MS = 100;
+const ROUTE_P90_MS = 300;
 const KEYSTROKE_SAMPLES = 21;
-const ROUTE_SAMPLES = 5;
+const ROUTE_SAMPLES = 11;
+const PROBE_POLL_MS = [5, 10, 20];
 const SEEDED_LEADS = 40;
 const HELD_PEOPLE_RESPONSE_MS = 1_500;
 const PEOPLE_LIST_URL = /\/api\/people(\?|$)/;
@@ -16,8 +19,13 @@ function median(values: readonly number[]): number {
   return sorted[Math.floor(sorted.length / 2)] ?? Number.POSITIVE_INFINITY;
 }
 
-function report(name: string, samples: readonly number[], budgetMs: number): void {
-  const summary = `${name} median ${median(samples).toFixed(1)}ms of ${samples.length} (budget ${budgetMs}ms): ${samples.map((sample) => sample.toFixed(1)).join(' ')}`;
+function percentile90(values: readonly number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.ceil(sorted.length * 0.9) - 1] ?? Number.POSITIVE_INFINITY;
+}
+
+function report(name: string, samples: readonly number[], budgetMs: number, p90Ms: number): void {
+  const summary = `${name} median ${median(samples).toFixed(1)}ms, p90 ${percentile90(samples).toFixed(1)}ms of ${samples.length} (budgets ${budgetMs}ms and ${p90Ms}ms): ${samples.map((sample) => sample.toFixed(1)).join(' ')}`;
   test.info().annotations.push({ type: `${name}-ms`, description: summary });
   console.log(summary);
 }
@@ -27,8 +35,8 @@ function installKeystrokeProbe(): void {
   Object.assign(window, { gravityKeystrokeProbe: probe });
   window.addEventListener(
     'keydown',
-    () => {
-      probe.started = performance.now();
+    (event) => {
+      probe.started = event.timeStamp;
     },
     { capture: true },
   );
@@ -53,7 +61,7 @@ function installRouteProbe(): void {
   const probe: { started: number; elapsed: number | null } = { started: 0, elapsed: null };
   Object.assign(window, { gravityRouteProbe: probe });
   const onKey = (event: KeyboardEvent) => {
-    if (event.key === 'p') probe.started = performance.now();
+    if (event.key === 'p') probe.started = event.timeStamp;
   };
   window.addEventListener('keydown', onKey, { capture: true });
   const observer = new MutationObserver(() => {
@@ -69,6 +77,10 @@ function installRouteProbe(): void {
 function routeElapsed(): number | null {
   const holder = window as unknown as { gravityRouteProbe?: { elapsed: number | null } };
   return holder.gravityRouteProbe?.elapsed ?? null;
+}
+
+function isServerComponentRequest(request: Request): boolean {
+  return request.headers()['rsc'] === '1' || request.url().includes('_rsc=');
 }
 
 test('keystrokes and cached route changes stay inside the UI spec budgets', async ({ browser }) => {
@@ -100,34 +112,54 @@ test('keystrokes and cached route changes stay inside the UI spec budgets', asyn
     await page.evaluate(installKeystrokeProbe);
     for (let index = 0; index < KEYSTROKE_SAMPLES; index += 1) {
       await page.keyboard.press(index % 2 === 0 ? 'j' : 'k');
-      await page.waitForTimeout(40);
+      await expect
+        .poll(async () => (await page.evaluate(keystrokeSamples)).length, {
+          intervals: PROBE_POLL_MS,
+        })
+        .toBe(index + 1);
     }
     const keystrokes = await page.evaluate(keystrokeSamples);
     expect(keystrokes).toHaveLength(KEYSTROKE_SAMPLES);
-    report('keystroke', keystrokes, KEYSTROKE_BUDGET_MS);
+    report('keystroke', keystrokes, KEYSTROKE_BUDGET_MS, KEYSTROKE_P90_MS);
     expect(median(keystrokes)).toBeLessThan(KEYSTROKE_BUDGET_MS);
+    expect(percentile90(keystrokes)).toBeLessThan(KEYSTROKE_P90_MS);
 
     await page.keyboard.press('g');
     await page.keyboard.press('p');
     await expect(page.locator('[data-testid^="record-row-"]').first()).toBeVisible();
-    await page.route(PEOPLE_LIST_URL, async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, HELD_PEOPLE_RESPONSE_MS));
-      await route.continue();
+    const serverRequests: string[] = [];
+    let sampling = false;
+    page.on('request', (request) => {
+      if (sampling && isServerComponentRequest(request)) serverRequests.push(request.url());
     });
     const routes: number[] = [];
-    for (let index = 0; index < ROUTE_SAMPLES; index += 1) {
-      await page.keyboard.press('g');
-      await page.keyboard.press('l');
-      await expect(page.locator('[data-testid^="lead-row-"]').first()).toBeVisible();
-      await page.evaluate(installRouteProbe);
-      await page.keyboard.press('g');
-      await page.keyboard.press('p');
-      await expect.poll(() => page.evaluate(routeElapsed)).not.toBeNull();
-      routes.push((await page.evaluate(routeElapsed)) ?? Number.POSITIVE_INFINITY);
+    try {
+      await page.route(PEOPLE_LIST_URL, async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, HELD_PEOPLE_RESPONSE_MS));
+        await route.continue();
+      });
+      for (let index = 0; index < ROUTE_SAMPLES; index += 1) {
+        await page.keyboard.press('g');
+        await page.keyboard.press('l');
+        await expect(page.locator('[data-testid^="lead-row-"]').first()).toBeVisible();
+        await page.evaluate(installRouteProbe);
+        sampling = true;
+        await page.keyboard.press('g');
+        await page.keyboard.press('p');
+        await expect
+          .poll(() => page.evaluate(routeElapsed), { intervals: PROBE_POLL_MS })
+          .not.toBeNull();
+        sampling = false;
+        routes.push((await page.evaluate(routeElapsed)) ?? Number.POSITIVE_INFINITY);
+      }
+    } finally {
+      sampling = false;
+      await page.unrouteAll({ behavior: 'wait' });
     }
-    await page.unrouteAll({ behavior: 'wait' });
-    report('route', routes, ROUTE_BUDGET_MS);
+    report('route', routes, ROUTE_BUDGET_MS, ROUTE_P90_MS);
+    expect(serverRequests).toEqual([]);
     expect(median(routes)).toBeLessThan(ROUTE_BUDGET_MS);
+    expect(percentile90(routes)).toBeLessThan(ROUTE_P90_MS);
   } finally {
     await context.close();
   }

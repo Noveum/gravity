@@ -28,12 +28,18 @@ pipeline to start empty. It checks that a teammate's open list receives the rows
 within a 10 second poll without reading `/api/leads`, and that a second run of the
 same file adds nothing.
 
-The performance test enforces the UI spec budgets: a keystroke to the visible change under
-16ms and a route change from the cache under 100ms, each checked against the median of its
-samples. Both are timed inside the page, from a capture-phase `keydown` to the
-`MutationObserver` callback that sees the result, so Playwright's own round trips do not
-count. The route sample holds the People list response for 1.5 seconds, so a row that shows
-inside the budget can only have come from the cache. It seeds 40 leads per run into a third
-brand and pipeline that global setup creates for it, and prints the medians and every
-sample. The budgets hold against `next dev` with React strict mode on, which is the slower
-case, so no check is limited to a production build.
+The performance test enforces the UI spec budgets: a keystroke to the DOM change under 16ms
+and a route change from the cache under 100ms, each gated on the median of its samples (21
+keystrokes, 11 route changes), with a p90 bound of 64ms for keystrokes and 300ms for route
+changes so a recurring stall cannot hide behind the median. Both are timed inside the page,
+from the `keydown` event's own `timeStamp` to the `MutationObserver` callback that sees the
+result, so Playwright's own round trips do not count, and each keystroke waits for its sample
+to land before the next key. The route sample holds the People list response for 1.5 seconds,
+so a row that shows inside the budget can only have come from the cache, and it fails if any
+server component request (an `RSC: 1` header or an `_rsc=` query) leaves the page while a
+route sample runs. Revisits are served from the client router cache because `next.config.ts`
+sets `experimental.staleTimes.dynamic` to 30 seconds; without it every revisit waits on the
+server for the page segment, which a local server hides and a production round trip does not.
+It seeds 40 leads per run into a third brand and pipeline that global setup creates for it,
+and prints the medians, the p90s and every sample. The budgets hold against `next dev` with
+React strict mode on, which is the slower case, so no check is limited to a production build.

@@ -26,3 +26,12 @@ describe('next.config headers', () => {
     expect(sent.get('x-frame-options')).toBe('DENY');
   });
 });
+
+describe('next.config router cache', () => {
+  test.each([PHASE_PRODUCTION_BUILD, PHASE_DEVELOPMENT_SERVER])(
+    '%s serves revisits of dynamic pages from the client router cache for 30 seconds',
+    (phase) => {
+      expect(config(phase).experimental?.staleTimes).toEqual({ dynamic: 30 });
+    },
+  );
+});

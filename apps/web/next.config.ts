@@ -18,6 +18,8 @@ const workspacePackages = [
 
 const devServerOnlyBundledPackages = ['@react-email/render', '@react-email/components', 'prettier'];
 
+const ROUTER_CACHE_SECONDS = 30;
+
 const FRAMING_FORBIDDEN = [
   { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
   { key: 'X-Frame-Options', value: 'DENY' },
@@ -47,6 +49,7 @@ export default function config(phase: string): NextConfig {
       ...(process.env['GRAVITY_PREVIEW_BUILD'] === '1' ? { cpus: 1 } : {}),
       turbopackFileSystemCacheForDev: process.env['GRAVITY_TURBOPACK_DISK_CACHE'] !== 'false',
       optimizePackageImports: ['lucide-react'],
+      staleTimes: { dynamic: ROUTER_CACHE_SECONDS },
     },
   };
 }

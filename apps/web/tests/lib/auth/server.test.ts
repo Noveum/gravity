@@ -3,7 +3,6 @@ import { resetDatabase } from '@gravity/core/test-support';
 import { db, eq, schema } from '@gravity/db';
 import { auth } from '@/lib/auth/server.ts';
 
-const EMAIL_OTP = { method: 'email-otp' };
 const NOT_ALLOWED = { body: { code: 'EMAIL_DOMAIN_NOT_ALLOWED' } };
 
 const savedDomains = process.env['ALLOWED_EMAIL_DOMAINS'];
@@ -22,20 +21,17 @@ describe('auth user creation', () => {
   test('refuses a user outside the allowed domains', async () => {
     const context = await auth.$context;
     await expect(
-      context.internalAdapter.createUser(
-        { email: 'mallory@evil.test', name: 'Mallory' },
-        EMAIL_OTP,
-      ),
+      context.internalAdapter.createUser({ email: 'mallory@evil.test', name: 'Mallory' }),
     ).rejects.toMatchObject(NOT_ALLOWED);
     expect(await db.select().from(schema.user)).toHaveLength(0);
   });
 
   test('creates a user inside the allowed domains with a handle', async () => {
     const context = await auth.$context;
-    const user = await context.internalAdapter.createUser(
-      { email: 'ada@acme.com', name: 'Ada' },
-      EMAIL_OTP,
-    );
+    const user = await context.internalAdapter.createUser({
+      email: 'ada@acme.com',
+      name: 'Ada',
+    });
     const [row] = await db.select().from(schema.user);
     expect(row?.id).toBe(user.id);
     expect(row?.handle.length).toBeGreaterThan(0);
@@ -45,10 +41,10 @@ describe('auth user creation', () => {
 describe('auth session creation', () => {
   test('refuses a session for a user whose domain is no longer allowed', async () => {
     const context = await auth.$context;
-    const user = await context.internalAdapter.createUser(
-      { email: 'ada@acme.com', name: 'Ada' },
-      EMAIL_OTP,
-    );
+    const user = await context.internalAdapter.createUser({
+      email: 'ada@acme.com',
+      name: 'Ada',
+    });
     process.env['ALLOWED_EMAIL_DOMAINS'] = 'other.com';
     await expect(context.internalAdapter.createSession(user.id)).rejects.toMatchObject(NOT_ALLOWED);
     expect(await db.select().from(schema.session)).toHaveLength(0);
@@ -56,10 +52,10 @@ describe('auth session creation', () => {
 
   test('creates a session for an allowed user', async () => {
     const context = await auth.$context;
-    const user = await context.internalAdapter.createUser(
-      { email: 'ada@acme.com', name: 'Ada' },
-      EMAIL_OTP,
-    );
+    const user = await context.internalAdapter.createUser({
+      email: 'ada@acme.com',
+      name: 'Ada',
+    });
     await context.internalAdapter.createSession(user.id);
     expect(await db.select().from(schema.session)).toHaveLength(1);
   });
@@ -121,5 +117,13 @@ describe('auth sign in code delivery', () => {
       auth.api.sendVerificationOTP({ body: { email: 'ada@acme.com', type: 'sign-in' } }),
     ).rejects.toMatchObject({ body: { code: 'EMAIL_UNAVAILABLE' } });
     expect(await db.select().from(schema.verification)).toHaveLength(0);
+  });
+});
+
+describe('the installed better-auth', () => {
+  test('ships the MCP OAuth plugin and the protected resource metadata helper', async () => {
+    const plugins = await import('better-auth/plugins');
+    expect(typeof plugins.mcp).toBe('function');
+    expect(typeof plugins.oAuthProtectedResourceMetadata).toBe('function');
   });
 });

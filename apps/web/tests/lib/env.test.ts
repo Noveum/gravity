@@ -31,3 +31,19 @@ describe('parseServerEnv', () => {
     expect(env.oidc?.label).toBe('Orbit');
   });
 });
+
+describe('public URLs', () => {
+  test('derive the MCP resource from the public app URL', async () => {
+    const { absoluteUrl, mcpServerUrl, publicAppUrl } = await import('@/lib/env.ts');
+    const previous = process.env['NEXT_PUBLIC_APP_URL'];
+    process.env['NEXT_PUBLIC_APP_URL'] = 'https://crm.example.com/';
+    try {
+      expect(publicAppUrl()).toBe('https://crm.example.com');
+      expect(absoluteUrl('/api/oauth/start')).toBe('https://crm.example.com/api/oauth/start');
+      expect(mcpServerUrl()).toBe('https://crm.example.com/mcp');
+    } finally {
+      if (previous === undefined) delete process.env['NEXT_PUBLIC_APP_URL'];
+      else process.env['NEXT_PUBLIC_APP_URL'] = previous;
+    }
+  });
+});

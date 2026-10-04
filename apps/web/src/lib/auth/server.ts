@@ -12,21 +12,42 @@ import {
   sendEmail,
   signInCodeEmail,
 } from '@gravity/services/email';
+import { MCP_OAUTH_SCOPES } from '@gravity/shared/constants';
 import { DomainError } from '@gravity/shared/errors';
 import { signInCodeRequestSchema } from '@gravity/shared/validators';
-import { betterAuth } from 'better-auth';
+import { type BetterAuthPlugin, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { nextCookies } from 'better-auth/next-js';
-import { emailOTP } from 'better-auth/plugins';
+import { emailOTP, mcp } from 'better-auth/plugins';
 import { z } from 'zod';
 import { isDevLoginRequest } from '@/lib/api/dev-login.ts';
 import { deploymentAuthOptions } from '@/lib/auth/deployment.ts';
 import { OIDC_PROVIDER_ID, oidcPlugins } from '@/lib/auth/oidc.ts';
 import { organizationSessionPlugin } from '@/lib/auth/organization.ts';
-import { serverEnv } from '@/lib/env.ts';
+import { mcpServerUrl, serverEnv } from '@/lib/env.ts';
 import { uniqueHandleFor } from './handle.ts';
 import { hashPassword, verifyPassword } from './password.ts';
+
+export const MCP_CONSENT_PATH = '/oauth/authorize';
+export const MCP_LOGIN_PATH = '/login';
+export const MCP_AUTHORIZE_START_PATH = '/api/oauth/start';
+export const MCP_TOKEN_RATE_LIMIT_PROBE_HEADER = 'x-gravity-mcp-token-rate-limit-probe';
+
+function mcpTokenRateLimitProbe() {
+  return {
+    id: 'gravity-mcp-token-rate-limit-probe' as const,
+    onRequest(request: Request) {
+      if (new URL(request.url).pathname !== '/api/auth/mcp/token') {
+        return Promise.resolve(undefined);
+      }
+      if (request.headers.get(MCP_TOKEN_RATE_LIMIT_PROBE_HEADER) !== '1') {
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve({ response: new Response(null, { status: 204 }) });
+    },
+  } satisfies BetterAuthPlugin;
+}
 
 const passkeyAssertionSchema = z.object({ response: z.object({ id: z.string().min(1) }) });
 
@@ -90,10 +111,12 @@ function authRateLimit() {
   };
 }
 
-const AUTH_RATE_LIMIT_RULES = {
+export const AUTH_RATE_LIMIT_RULES = {
   '/sign-in/email': { window: 60, max: SIGN_IN_ATTEMPTS_PER_MINUTE },
   '/sign-up/email': { window: 3600, max: SIGN_UP_ATTEMPTS_PER_HOUR },
   [SIGN_IN_CODE_PATH]: { window: 600, max: SIGN_IN_CODES_PER_TEN_MINUTES },
+  '/mcp/token': { window: 60, max: 30 },
+  '/mcp/register': { window: 3600, max: 10 },
 };
 
 async function takenHandles(candidates: readonly string[]): Promise<Set<string>> {
@@ -242,6 +265,7 @@ export const auth = betterAuth({
   plugins: [
     ...deployment.plugins,
     ...oidcPlugins(serverEnv().oidc),
+    mcpTokenRateLimitProbe(),
     passkey({ rpName: 'Gravity' }),
     emailOTP({
       expiresIn: SIGN_IN_CODE_EXPIRES_IN_SECONDS,
@@ -263,6 +287,17 @@ export const auth = betterAuth({
       },
     }),
     organizationSessionPlugin(),
+    mcp({
+      loginPage: MCP_LOGIN_PATH,
+      resource: mcpServerUrl(),
+      oidcConfig: {
+        loginPage: MCP_LOGIN_PATH,
+        consentPage: MCP_CONSENT_PATH,
+        allowDynamicClientRegistration: true,
+        requirePKCE: true,
+        scopes: [...MCP_OAUTH_SCOPES],
+      },
+    }),
     nextCookies(),
   ],
 });

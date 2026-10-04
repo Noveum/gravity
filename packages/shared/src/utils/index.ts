@@ -6,6 +6,7 @@ export * from './error-fields.ts';
 export * from './identity.ts';
 export * from './initials.ts';
 export * from './pipeline-key.ts';
+export * from './redirect-uri.ts';
 export * from './relative-time.ts';
 export * from './slug.ts';
 

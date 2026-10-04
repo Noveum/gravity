@@ -78,3 +78,17 @@ export function signUpIsOpen(): boolean {
     parseDomainList(process.env['ALLOWED_EMAIL_DOMAINS'], 'ALLOWED_EMAIL_DOMAINS').length === 0
   );
 }
+
+const publicAppUrlSchema = z.preprocess(blankToUndefined, z.url().default('http://localhost:3300'));
+
+export function publicAppUrl(): string {
+  return publicAppUrlSchema.parse(process.env['NEXT_PUBLIC_APP_URL']).replace(/\/+$/, '');
+}
+
+export function absoluteUrl(path: string): string {
+  return new URL(path, `${publicAppUrl()}/`).toString();
+}
+
+export function mcpServerUrl(): string {
+  return absoluteUrl('/mcp');
+}

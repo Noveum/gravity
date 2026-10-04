@@ -77,8 +77,16 @@ export async function verifyMcpAccessToken(
   const binding = unbindMcpCredential(token, process.env['BETTER_AUTH_SECRET'] ?? '');
   if (binding === null) throw rejection;
   const [record] = await db
-    .select({ token: schema.oauthAccessToken, grant: schema.mcpGrant })
+    .select({
+      token: schema.oauthAccessToken,
+      grant: schema.mcpGrant,
+      clientDisabled: schema.oauthApplication.disabled,
+    })
     .from(schema.oauthAccessToken)
+    .innerJoin(
+      schema.oauthApplication,
+      eq(schema.oauthApplication.clientId, schema.oauthAccessToken.clientId),
+    )
     .leftJoin(
       schema.mcpGrant,
       and(
@@ -95,6 +103,7 @@ export async function verifyMcpAccessToken(
   }
   const userId = record.token.userId;
   if (userId === null) throw rejection;
+  if (record.clientDisabled) throw unauthorized(`This client has been disabled. ${RECONNECT}`);
   const grant = record.grant;
   if (grant === null || grant.revokedAt !== null) {
     throw unauthorized(`This connection has been revoked. ${RECONNECT}`);

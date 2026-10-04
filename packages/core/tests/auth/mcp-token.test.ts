@@ -167,6 +167,17 @@ describe('verifyMcpAccessToken', () => {
     });
   });
 
+  test('refuses a token whose client was disabled', async () => {
+    const minted = await mintMcpToken(workspace.organizationId, workspace.adminUser.id);
+    await db
+      .update(schema.oauthApplication)
+      .set({ disabled: true })
+      .where(eq(schema.oauthApplication.clientId, minted.clientId));
+    await expect(verifyMcpAccessToken(minted.token)).rejects.toThrow(
+      'This client has been disabled. Reconnect Gravity to continue.',
+    );
+  });
+
   test('refuses a member who has left the workspace', async () => {
     const guest = await addMember(workspace, 'Gus Guest', 'guest');
     const minted = await mintMcpToken(workspace.organizationId, guest.userId);

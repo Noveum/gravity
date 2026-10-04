@@ -10,7 +10,7 @@ import { authErrorCode } from '@/lib/auth/oauth-error.ts';
 import { enabledSocialProviders, oidcProvider, passwordAuthEnabled } from '@/lib/auth/server.ts';
 import { getSession } from '@/lib/auth/session.ts';
 import { signUpIsOpen } from '@/lib/env.ts';
-import { safeCallback } from './continue-url.ts';
+import { mcpContinueUrl, safeCallback } from './continue-url.ts';
 
 export const metadata: Metadata = { title: 'Sign in' };
 
@@ -20,7 +20,7 @@ export default async function LoginPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const callbackUrl = safeCallback(params['next']);
+  const callbackUrl = mcpContinueUrl(params) ?? safeCallback(params['next']);
   const errorCode = authErrorCode(params['error']);
   const session = await getSession();
   if (session !== null && params['reauth'] !== '1') redirect(callbackUrl);

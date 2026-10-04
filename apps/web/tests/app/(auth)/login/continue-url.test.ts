@@ -37,3 +37,20 @@ describe('safeCallback', () => {
     expect(safeCallback(value)).toBe('/today');
   });
 });
+
+describe('mcpContinueUrl', () => {
+  test('resumes an MCP authorization through the consent-forcing start endpoint', async () => {
+    const { mcpContinueUrl } = await import('@/app/(auth)/login/continue-url.ts');
+    const next = mcpContinueUrl({
+      response_type: 'code',
+      client_id: 'abc',
+      redirect_uri: 'http://127.0.0.1:9/cb',
+      prompt: 'none',
+      unknown: 'dropped',
+    });
+    expect(next).toBe(
+      '/api/oauth/start?response_type=code&client_id=abc&redirect_uri=http%3A%2F%2F127.0.0.1%3A9%2Fcb',
+    );
+    expect(mcpContinueUrl({ next: '/leads' })).toBeUndefined();
+  });
+});

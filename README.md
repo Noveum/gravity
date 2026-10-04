@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="public/brand/gravity-wordmark-dark.svg">
+  <img src="public/brand/gravity-wordmark.svg" alt="Gravity · CRM by Noveum" width="300">
+</picture>
+
 # Gravity · CRM by Noveum
 
 An open-source CRM foundation for teams managing relationships and outreach across several products and organizations. **Gravity by Noveum** is the selected product name. The local checkout remains `noveum-crm`.

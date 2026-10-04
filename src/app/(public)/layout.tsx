@@ -1,7 +1,7 @@
 import t from "@crm/i18n/translations/en.json";
 import { siteCopy as copy } from "@crm/public-site/content";
-import { Sparkles } from "lucide-react";
 import Link from "next/link";
+import { GravityMark } from "@/components/gravity-logo";
 import { Preferences } from "@/components/preferences";
 import "./public.css";
 export default function PublicLayout({
@@ -16,9 +16,7 @@ export default function PublicLayout({
       </a>
       <header className="site-header">
         <Link href="/welcome" className="site-brand">
-          <span className="brand-icon">
-            <Sparkles size={18} />
-          </span>
+          <GravityMark size={32} />
           {t.brand}
         </Link>
         <nav aria-label={copy.navLabel}>

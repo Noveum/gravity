@@ -6,11 +6,11 @@ import {
   Command,
   GitBranch,
   MessageSquare,
-  Orbit,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
+import { GravityMark } from "@/components/gravity-logo";
 export const metadata = publicMetadata(
   t.metaTitle,
   t.metaDescription,
@@ -44,14 +44,14 @@ export default function Page() {
           <p className="site-note">{t.heroNote}</p>
         </div>
         <div className="site-orbit-art" aria-hidden="true">
-          <Orbit size={130} />
+          <GravityMark size={130} />
           <span />
           <span />
         </div>
       </section>
       <section className="site-preview" aria-label={t.previewLabel}>
         <div className="site-preview-bar">
-          <Sparkles size={16} />
+          <GravityMark size={20} />
           <strong>{t.previewOrg}</strong>
           <span>{t.previewProduct}</span>
           <span className="site-preview-key">

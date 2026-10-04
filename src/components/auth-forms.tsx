@@ -1,30 +1,73 @@
 "use client";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { errorText, type Organization, requestJson } from "./client-api";
+import { GravityMark } from "./gravity-logo";
+import { Preferences } from "./preferences";
 import { signInDestination } from "./sign-in-destination";
 
 function Card({
   title,
   description,
   children,
+  isSignIn = false,
 }: {
   title: string;
   description: string;
   children: React.ReactNode;
+  isSignIn?: boolean;
 }) {
   return (
-    <main className="auth-page">
-      <div className="auth-card">
-        <span className="brand-icon">
-          <Sparkles size={16} />
-        </span>
-        <h1>{title}</h1>
-        <p>{description}</p>
-        {children}
+    <main className={`auth-page ${isSignIn ? "auth-sign-in" : ""}`}>
+      <header className="auth-header">
+        <a href="/welcome" className="auth-wordmark">
+          <GravityMark size={34} />
+          <span>{t.brand}</span>
+        </a>
+        <div className="auth-header-actions">
+          <a href="/docs">{t.authHelp}</a>
+          <Preferences showDensity={false} />
+        </div>
+      </header>
+      <div className="auth-layout">
+        {isSignIn && (
+          <aside className="auth-story">
+            <p className="auth-eyebrow">{t.brandSub}</p>
+            <h2>{t.authStoryTitle}</h2>
+            <p className="auth-story-description">{t.authStoryDescription}</p>
+            <div className="auth-orbit" aria-hidden="true">
+              <div className="auth-orbit-ring auth-orbit-outer" />
+              <div className="auth-orbit-ring auth-orbit-middle" />
+              <div className="auth-orbit-ring auth-orbit-inner" />
+              <div className="auth-orbit-core">
+                <GravityMark size={68} />
+              </div>
+              <span className="auth-orbit-label auth-orbit-people">
+                {t.people}
+              </span>
+              <span className="auth-orbit-label auth-orbit-context">
+                {t.authContext}
+              </span>
+              <span className="auth-orbit-label auth-orbit-actions">
+                {t.actions}
+              </span>
+            </div>
+            <div className="auth-story-footer">
+              <span>{t.authOpenSource}</span>
+              <span>{t.authLicense}</span>
+            </div>
+          </aside>
+        )}
+        <section className="auth-form-region" aria-label={title}>
+          <div className="auth-card">
+            <h1>{title}</h1>
+            <p className="auth-description">{description}</p>
+            {children}
+          </div>
+        </section>
       </div>
     </main>
   );
@@ -120,12 +163,13 @@ export function SignIn({
     }
   }
   return (
-    <Card title={t.signIn} description={t.signInSubtitle}>
+    <Card title={t.signIn} description={t.signInSubtitle} isSignIn>
       {providers.length ? (
         providers.map((provider) => (
           <button
             type="button"
             key={provider}
+            className="auth-provider"
             disabled={busy}
             onClick={async () => {
               if (submitting.current) return;
@@ -153,6 +197,7 @@ export function SignIn({
               }
             }}
           >
+            {provider === "google" ? <GoogleMark /> : <GithubMark />}
             {provider === "google" ? t.googleSignIn : t.githubSignIn}
           </button>
         ))
@@ -187,11 +232,17 @@ export function SignIn({
                     inputMode="numeric"
                     autoComplete="one-time-code"
                     aria-describedby="otp-instructions"
+                    className="auth-code-input"
                     disabled={busy}
                   />
                 </label>
-                <button type="submit" disabled={busy}>
+                <button
+                  type="submit"
+                  className="primary auth-submit"
+                  disabled={busy}
+                >
                   {busy ? t.signingIn : t.verifySignInCode}
+                  <ArrowRight size={16} aria-hidden="true" />
                 </button>
                 <div className="auth-code-actions">
                   <button
@@ -223,6 +274,7 @@ export function SignIn({
                   <input
                     type="email"
                     autoComplete="email"
+                    placeholder={t.authEmailPlaceholder}
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     required
@@ -230,8 +282,13 @@ export function SignIn({
                     disabled={busy}
                   />
                 </label>
-                <button type="submit" disabled={busy}>
+                <button
+                  type="submit"
+                  className="primary auth-submit"
+                  disabled={busy}
+                >
                   {busy ? t.sendingSignInCode : t.sendSignInCode}
+                  <ArrowRight size={16} aria-hidden="true" />
                 </button>
               </>
             )}
@@ -244,8 +301,54 @@ export function SignIn({
           {t.openDemo}
         </a>
       )}
-      <p role={error ? "alert" : "status"}>{error}</p>
+      <p className="auth-feedback" role={error ? "alert" : "status"}>
+        {error}
+      </p>
     </Card>
+  );
+}
+function GithubMark() {
+  return (
+    <svg
+      width="19"
+      height="19"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        fill="currentColor"
+        d="M12 .75a11.25 11.25 0 0 0-3.56 21.92c.56.1.77-.24.77-.54v-2.1c-3.14.68-3.8-1.33-3.8-1.33-.51-1.3-1.25-1.65-1.25-1.65-1.03-.7.08-.69.08-.69 1.14.08 1.74 1.17 1.74 1.17 1.01 1.73 2.65 1.23 3.3.94.1-.73.4-1.23.72-1.51-2.5-.29-5.13-1.25-5.13-5.56 0-1.23.44-2.23 1.16-3.02-.12-.29-.5-1.43.11-2.98 0 0 .95-.3 3.1 1.15a10.78 10.78 0 0 1 5.65 0c2.15-1.45 3.1-1.15 3.1-1.15.61 1.55.23 2.69.11 2.98.72.79 1.16 1.79 1.16 3.02 0 4.32-2.63 5.27-5.14 5.55.4.35.76 1.04.76 2.1v3.13c0 .3.2.65.78.54A11.25 11.25 0 0 0 12 .75Z"
+      />
+    </svg>
+  );
+}
+function GoogleMark() {
+  return (
+    <svg
+      width="19"
+      height="19"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        fill="#4285F4"
+        d="M21.6 12.23c0-.71-.06-1.39-.18-2.04H12v3.86h5.38a4.6 4.6 0 0 1-1.99 3.02v2.5h3.23c1.89-1.74 2.98-4.3 2.98-7.34Z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 22c2.7 0 4.96-.9 6.62-2.43l-3.23-2.5c-.9.6-2.05.97-3.39.97-2.6 0-4.81-1.76-5.6-4.12H3.07v2.59A10 10 0 0 0 12 22Z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M6.4 13.92a6 6 0 0 1 0-3.84V7.49H3.07a10 10 0 0 0 0 9.02l3.33-2.59Z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.96c1.47 0 2.79.5 3.82 1.5l2.87-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.93 5.49l3.33 2.59A5.99 5.99 0 0 1 12 5.96Z"
+      />
+    </svg>
   );
 }
 export function Authorization() {

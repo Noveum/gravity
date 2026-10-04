@@ -1,7 +1,9 @@
 import text from "@crm/i18n/translations/en.json";
+import { publicOrigin } from "@crm/public-site/metadata";
 import type { Metadata } from "next";
 import "./globals.css";
 export const metadata: Metadata = {
+  metadataBase: new URL(publicOrigin() ?? "http://localhost:3014"),
   title: `${text.brand} · ${text.brandSub}`,
   description: text.actionsSubtitle,
   robots: { index: false, follow: false },

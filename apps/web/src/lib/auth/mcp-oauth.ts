@@ -3,6 +3,7 @@ import { and, db, eq, isNull, schema } from '@gravity/db';
 import { MCP_OAUTH_SCOPES } from '@gravity/shared/constants';
 import { isAllowedLogoUri, isAllowedRedirectUri } from '@gravity/shared/utils';
 import { z } from 'zod';
+import { readCappedBytes } from '@/lib/api/capped-body.ts';
 import {
   auth,
   MCP_AUTHORIZE_START_PATH,
@@ -51,23 +52,8 @@ function bodyTooLarge(): Response {
 }
 
 async function cappedBody(request: Request): Promise<string | null> {
-  const declared = Number(request.headers.get('content-length') ?? '0');
-  if (declared > UNAUTHENTICATED_BODY_LIMIT_BYTES) return null;
-  const reader = request.body?.getReader();
-  if (reader === undefined) return '';
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > UNAUTHENTICATED_BODY_LIMIT_BYTES) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString('utf8');
+  const bytes = await readCappedBytes(request, UNAUTHENTICATED_BODY_LIMIT_BYTES);
+  return bytes === null ? null : Buffer.from(bytes).toString('utf8');
 }
 
 export function mcpAuthorizationServerMetadata() {

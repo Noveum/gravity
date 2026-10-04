@@ -11,7 +11,7 @@ import type {
 import type { QueryClient } from '@tanstack/react-query';
 import { act, renderHook, screen, waitFor } from '@testing-library/react';
 import { queryKeys } from '@/lib/query/keys.ts';
-import type { Bootstrap } from '@/lib/query/schemas.ts';
+import type { Bootstrap, PersonRecord } from '@/lib/query/schemas.ts';
 import {
   useArchiveBrand,
   useArchiveField,
@@ -29,10 +29,13 @@ import {
   useUpdatePipeline,
   useUpdateStage,
 } from '@/lib/query/use-config-mutations.ts';
-import { isSuperseded } from '@/lib/realtime/delta-bridge.tsx';
+import { registerCrmDeltaHandlers } from '@/lib/realtime/crm-deltas.tsx';
+import { applyDelta, isSuperseded } from '@/lib/realtime/delta-bridge.tsx';
 import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
 import { installDeferredFetch } from '../../support/deferred-fetch.ts';
+import { leadFixture } from '../../support/lead-fixture.ts';
 import { mutationClient, wrapperFor } from '../../support/query-wrapper.tsx';
+import { personFixture } from '../../support/record-fixtures.ts';
 
 const server = installDeferredFetch();
 const AT = '2026-10-03T10:00:00.000Z';
@@ -240,6 +243,29 @@ describe('configuration mutations', () => {
     server.answer(200, { pipeline: { ...pipeline, archivedAt: AT, syncId: 10 } });
     await waitFor(() => expect(isSuperseded(echoOf('pipeline', 'p1', 10), client)).toBe(true));
     expectServed(client, 'pipeline', 'p1', 10);
+  });
+
+  test('the tab that archived a pipeline drops its closed leads from records, though its echo is skipped', async () => {
+    const unregister = registerCrmDeltaHandlers();
+    try {
+      const { client } = setup();
+      const won = leadFixture({ id: 'lw', key: 'YOD-7', stageId: 'won', stageCategory: 'won' });
+      const elsewhere = leadFixture({ id: 'lx', key: 'PRT-1', pipelineId: 'p2' });
+      client.setQueryData<PersonRecord>(queryKeys.person('per1'), {
+        person: personFixture(),
+        employments: [],
+        leads: [won, elsewhere],
+      });
+      await send(client, useArchivePipeline, pipeline);
+      const archived = { ...pipeline, archivedAt: AT, syncId: 10 };
+      server.answer(200, { pipeline: archived });
+      await waitFor(() => expect(isSuperseded(echoOf('pipeline', 'p1', 10), client)).toBe(true));
+      applyDelta({ ...echoOf('pipeline', 'p1', 10), action: 'archive', data: archived }, client);
+      const record = client.getQueryData<PersonRecord>(queryKeys.person('per1'));
+      expect(record?.leads.map((lead) => lead.id)).toEqual(['lx']);
+    } finally {
+      unregister();
+    }
   });
 
   test('a workspace wide field outlives an archived pipeline', async () => {

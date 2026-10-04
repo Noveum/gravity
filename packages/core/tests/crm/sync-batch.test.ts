@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { db, eq, schema, sql } from '@gravity/db';
+import { DomainError } from '@gravity/shared/errors';
 import { retryOnUniqueViolation, type SyncBatch, withBatch } from '../../src/crm/sync-batch.ts';
 import { newId } from '../../src/internal.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
@@ -117,6 +118,44 @@ describe('the write transaction', () => {
     }));
     expect(inside.settings).toEqual({ statement: '30s', idle: '30s', lifetime: '30s' });
     expect(await settingsOf(db)).toEqual({ statement: '0', idle: '0', lifetime: '0' });
+  });
+
+  test('a batch past its deadline is refused before its outbox rows and rolls back', async () => {
+    let clock = 1_000;
+    const failure = await withBatch(
+      { principal: workspace.admin },
+      async (batch) => {
+        const brand = await insertBrand(batch, 'Late');
+        batch.emit({
+          syncId: brand.syncId,
+          action: 'insert',
+          model: 'brand',
+          modelId: brand.id,
+          data: { id: brand.id },
+          scopes: [`workspace:${batch.organizationId}`],
+        });
+        clock += 30_001;
+        return { brand };
+      },
+      { now: () => clock },
+    ).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(DomainError);
+    expect(failure).toMatchObject({ code: 'internal' });
+    expect(await brandCount()).toBe(0);
+    expect(await db.select().from(schema.outbox)).toHaveLength(0);
+  });
+
+  test('a batch within its deadline commits', async () => {
+    let clock = 1_000;
+    await withBatch(
+      { principal: workspace.admin },
+      async (batch) => {
+        clock += 29_999;
+        return { brand: await insertBrand(batch, 'On time') };
+      },
+      { now: () => clock },
+    );
+    expect(await brandCount()).toBe(1);
   });
 
   test('a throw after a real write leaves neither the row nor an outbox row', async () => {

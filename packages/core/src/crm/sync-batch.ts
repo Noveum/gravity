@@ -94,16 +94,28 @@ function pauseBeforeRetry(attempt: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, delay));
 }
 
+export const WRITE_DEADLINE_MS = 30_000;
+
+export interface BatchOptions {
+  readonly now?: () => number;
+}
+
 export async function withBatch<T extends object>(
   context: WriteContext,
   run: (batch: SyncBatch) => Promise<T>,
+  options: BatchOptions = {},
 ): Promise<WithActions<T>> {
+  const now = options.now ?? Date.now;
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await db.transaction(async (tx) => {
+        const startedAt = now();
         await capTransactionLifetime(tx);
         const batch = createSyncBatch(tx, context);
         const result = await run(batch);
+        if (now() - startedAt > WRITE_DEADLINE_MS) {
+          throw internal('The write took longer than 30 seconds and was rolled back. Try again.');
+        }
         const actions = batch.actions().map(validAction);
         await recordSync(tx, actions);
         return { ...result, actions };

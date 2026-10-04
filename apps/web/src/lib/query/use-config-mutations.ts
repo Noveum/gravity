@@ -8,9 +8,11 @@ import type {
   StageCategory,
 } from '@gravity/shared/constants';
 import type { BrandRow, FieldDefinitionRow, PipelineRow, StageRow } from '@gravity/shared/records';
+import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/toast.tsx';
 import { upsertById, withoutId, withoutPipelines } from './bootstrap-cache.ts';
 import { apiFetch } from './fetcher.ts';
+import { dropRecordLeadsOfPipelines } from './lead-cache.ts';
 import {
   type Bootstrap,
   brandCreatedSchema,
@@ -174,9 +176,13 @@ export interface ArchivePipelineOptions extends Refusable<PipelineRow> {
 }
 
 export function useArchivePipeline(options: ArchivePipelineOptions = {}) {
+  const client = useQueryClient();
   return useBootstrapMutation({
     ...(options.onRefused === undefined ? {} : { onRefused: options.onRefused }),
-    ...(options.afterSuccess === undefined ? {} : { afterSuccess: options.afterSuccess }),
+    afterSuccess: (pipeline: PipelineRow) => {
+      dropRecordLeadsOfPipelines(client, [pipeline.id]);
+      options.afterSuccess?.(pipeline);
+    },
     mutationFn: async (pipeline: PipelineRow) =>
       (
         await apiFetch(`/api/pipelines/${pipeline.id}`, pipelineEnvelopeSchema, {

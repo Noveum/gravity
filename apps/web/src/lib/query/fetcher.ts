@@ -37,7 +37,8 @@ export function isRefusal(error: unknown): error is ApiError {
 
 export function isRetryable(error: unknown): boolean {
   if (!(error instanceof ApiError)) return true;
-  return error.status >= 500 || error.code === 'internal';
+  if (error.status >= 500) return true;
+  return error.status < 400 && error.code === 'internal';
 }
 
 export interface RequestOptions {

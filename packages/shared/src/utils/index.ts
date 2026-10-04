@@ -1,5 +1,6 @@
 import { v7 as uuidv7 } from 'uuid';
 
+export * from './capped-body.ts';
 export * from './email-configuration.ts';
 export * from './email-domain.ts';
 export * from './error-fields.ts';

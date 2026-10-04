@@ -311,6 +311,57 @@ describe('consent', () => {
     expect(await db.select().from(schema.mcpGrant)).toHaveLength(0);
   });
 
+  test('a guest is granted read without write, and a write-only request is refused', async () => {
+    const clientId = await registeredClient();
+    const guest = await addMember(workspace, 'Gus Guest', 'guest');
+    const both = await consentRequest(
+      clientId,
+      ['openid', 'gravity.read', 'gravity.write'],
+      guest.userId,
+    );
+    const approved = await finalizeMcpConsent({
+      userId: guest.userId,
+      consentCode: both,
+      accept: true,
+      organizationId: workspace.organizationId,
+      allowApproval: false,
+    });
+    expect(approved.scope).toBe('openid gravity.read');
+    const [grant] = await db.select().from(schema.mcpGrant);
+    expect(grant?.scopes).toBe('openid gravity.read');
+    const writeOnly = await consentRequest(clientId, ['openid', 'gravity.write'], guest.userId);
+    await expect(
+      finalizeMcpConsent({
+        userId: guest.userId,
+        consentCode: writeOnly,
+        accept: true,
+        organizationId: workspace.organizationId,
+        allowApproval: false,
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation_failed',
+      message:
+        'Your role in this workspace can only read, and this client asked only to write. Ask an admin for a role that can edit records, or choose another workspace.',
+    });
+    const contributor = await addMember(workspace, 'Cleo Contributor', 'contributor');
+    const writer = await consentRequest(
+      clientId,
+      ['openid', 'gravity.read', 'gravity.write'],
+      contributor.userId,
+    );
+    expect(
+      (
+        await finalizeMcpConsent({
+          userId: contributor.userId,
+          consentCode: writer,
+          accept: true,
+          organizationId: workspace.organizationId,
+          allowApproval: false,
+        })
+      ).scope,
+    ).toBe('openid gravity.read gravity.write');
+  });
+
   test('a workspace the user does not belong to cannot be chosen', async () => {
     const clientId = await registeredClient();
     const other = await createWorkspace('Other');

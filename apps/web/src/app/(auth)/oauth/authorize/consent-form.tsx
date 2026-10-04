@@ -1,6 +1,12 @@
 'use client';
 
-import { GRAVITY_APPROVE_SCOPE, MCP_SCOPE_LABELS } from '@gravity/shared/constants';
+import {
+  GRAVITY_APPROVE_SCOPE,
+  GRAVITY_WRITE_SCOPE,
+  MCP_SCOPE_LABELS,
+  type OrgRole,
+} from '@gravity/shared/constants';
+import { usableMcpScopes } from '@gravity/shared/policy';
 import { isAllowedRedirectUri } from '@gravity/shared/utils';
 import { Check, TriangleAlert } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -16,6 +22,7 @@ import { useHotkey } from '@/lib/keyboard/index.ts';
 export interface ConsentOrganization {
   readonly id: string;
   readonly name: string;
+  readonly role: OrgRole;
 }
 
 export interface ConsentFormProps {
@@ -152,9 +159,13 @@ export function ConsentForm({
   const [organizationId, setOrganizationId] = useState(organizations[0]?.id ?? '');
   const [allowApproval, setAllowApproval] = useState(false);
   const { pending, failure, setFailure, run } = useDecisionRun();
-  const permissions = scopes.filter(
+  const chosen = organizations.find((organization) => organization.id === organizationId);
+  const usable = chosen === undefined ? scopes : usableMcpScopes(chosen.role, scopes);
+  const permissions = usable.filter(
     (scope) => scope !== GRAVITY_APPROVE_SCOPE && MCP_SCOPE_LABELS[scope] !== undefined,
   );
+  const writeWithheld =
+    scopes.includes(GRAVITY_WRITE_SCOPE) && !usable.includes(GRAVITY_WRITE_SCOPE);
   const asksApproval = scopes.includes(GRAVITY_APPROVE_SCOPE);
   const ids = { workspace: useId(), approval: useId(), warning: useId() };
   const workspacePicker = useRef<HTMLSelectElement>(null);
@@ -241,6 +252,11 @@ export function ConsentForm({
             ))}
           </ul>
         </div>
+      ) : null}
+      {writeWithheld && chosen !== undefined ? (
+        <p className="text-2xs text-muted">
+          {`Your role can only read in ${chosen.name}, so this client will not be able to create or update records there.`}
+        </p>
       ) : null}
       {asksApproval ? (
         <div className="flex flex-col gap-1.5 rounded-md border border-border bg-surface-2 p-3">

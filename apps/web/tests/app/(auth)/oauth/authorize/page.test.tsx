@@ -91,12 +91,30 @@ describe('/oauth/authorize', () => {
     expect(screen.getByLabelText('Workspace')).toBeInTheDocument();
   });
 
+  test('a guest is offered read only, with the reason', async () => {
+    const guest = await addMember(workspace, 'Gus Guest', 'guest');
+    await signedInAs(guest.userId, workspace.organizationId);
+    const code = await insertMcpConsentRequest({
+      clientId,
+      userId: guest.userId,
+      scope: ['openid', 'gravity.read', 'gravity.write'],
+      redirectUri: CALLBACK,
+    });
+    renderWithClient(await open({ consent_code: code }), { bootstrap: null });
+    expect(screen.getByText(/Read people, companies, leads/)).toBeInTheDocument();
+    expect(screen.queryByText(/Create and update records/)).toBeNull();
+    expect(screen.getByText(/Your role can only read in Consent/)).toBeInTheDocument();
+  });
+
   test('a user with no workspace is told so and may still deny', async () => {
     const loner = await createUser('Lone Ranger');
     await signedInAs(loner.id);
     const code = await consentCodeFor(loner.id);
     renderWithClient(await open({ consent_code: code }), { bootstrap: null });
     expect(screen.getByRole('alert')).toHaveTextContent('You are not a member of any workspace');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'so Desk agent stops waiting. That name is provided by the app and not verified by Gravity.',
+    );
     expect(screen.getByRole('button', { name: /Deny/ })).toBeInTheDocument();
     expect(screen.queryByLabelText('Workspace')).toBeNull();
   });

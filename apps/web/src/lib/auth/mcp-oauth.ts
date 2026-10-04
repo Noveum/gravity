@@ -1,9 +1,8 @@
 import { bindMcpCredential, cappedTransaction, unbindMcpCredential } from '@gravity/core';
 import { and, db, eq, isNull, schema } from '@gravity/db';
 import { grantsReads, grantsWrites, MCP_OAUTH_SCOPES } from '@gravity/shared/constants';
-import { isAllowedLogoUri, isAllowedRedirectUri } from '@gravity/shared/utils';
+import { isAllowedLogoUri, isAllowedRedirectUri, readCappedBytes } from '@gravity/shared/utils';
 import { z } from 'zod';
-import { readCappedBytes } from '@/lib/api/capped-body.ts';
 import {
   auth,
   MCP_AUTHORIZE_START_PATH,
@@ -30,6 +29,7 @@ const UNSERVED_AUTH_PREFIX = '/api/auth/.well-known';
 type AuthHandler = (request: Request) => Promise<Response>;
 
 type OAuthErrorCode =
+  | 'invalid_client'
   | 'invalid_client_metadata'
   | 'invalid_grant'
   | 'invalid_redirect_uri'
@@ -372,11 +372,18 @@ async function exchangeRefreshToken(request: Request, body: TokenRequest): Promi
     return oauthError('invalid_grant', RECONNECT);
   }
   const [source] = await db
-    .select({ id: schema.oauthAccessToken.id })
+    .select({ id: schema.oauthAccessToken.id, disabled: schema.oauthApplication.disabled })
     .from(schema.oauthAccessToken)
+    .innerJoin(
+      schema.oauthApplication,
+      eq(schema.oauthApplication.clientId, schema.oauthAccessToken.clientId),
+    )
     .where(eq(schema.oauthAccessToken.refreshToken, binding.credential))
     .limit(1);
   if (source === undefined) return oauthError('invalid_grant', RECONNECT);
+  if (source.disabled) {
+    return oauthError('invalid_client', `This client has been disabled. ${RECONNECT}`, 401);
+  }
   return securedTokenResponse(
     await issueToken(request, { ...body, refresh_token: binding.credential }),
     binding.grantId,

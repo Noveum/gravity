@@ -49,8 +49,8 @@ function renderForm(
       redirectHost="127.0.0.1:9000"
       scopes={scopes}
       organizations={[
-        { id: 'o1', name: 'Acme' },
-        { id: 'o2', name: 'Bravo' },
+        { id: 'o1', name: 'Acme', role: 'admin' },
+        { id: 'o2', name: 'Bravo', role: 'guest' },
       ]}
       requirePasskey={false}
       userEmail="ada@acme.test"
@@ -58,6 +58,22 @@ function renderForm(
     { bootstrap: null },
   );
 }
+
+describe('ConsentForm scopes by role', () => {
+  test('a workspace where the role can only read never offers write, and says why', () => {
+    renderForm(['openid', 'gravity.read', 'gravity.write']);
+    expect(screen.getByText(/Create and update records/)).toBeInTheDocument();
+    expect(screen.queryByText(/can only read in Acme/)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Workspace'), { target: { value: 'o2' } });
+    expect(screen.queryByText(/Create and update records/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Read people, companies, leads/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Your role can only read in Bravo, so this client will not be able to create or update records there.',
+      ),
+    ).toBeInTheDocument();
+  });
+});
 
 describe('ConsentForm', () => {
   test('focuses the workspace picker and lists what the client may do', () => {

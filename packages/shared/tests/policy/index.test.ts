@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { DomainError } from '../../src/errors/index.ts';
-import { assertCan, can, canAssignRole, type Principal } from '../../src/policy/index.ts';
+import {
+  assertCan,
+  can,
+  canAssignRole,
+  type Principal,
+  usableMcpScopes,
+} from '../../src/policy/index.ts';
 
 const as = (role: Principal['role']): Principal => ({ userId: 'u', organizationId: 'o', role });
 
@@ -32,5 +38,24 @@ describe('policy', () => {
   test('nobody assigns a role above their own', () => {
     expect(canAssignRole(as('member'), 'admin')).toBe(false);
     expect(canAssignRole(as('admin'), 'admin')).toBe(true);
+  });
+});
+
+describe('usableMcpScopes', () => {
+  const asked = ['openid', 'offline_access', 'gravity.read', 'gravity.write', 'gravity.approve'];
+
+  test('a guest keeps read and drops write', () => {
+    expect(usableMcpScopes('guest', asked)).toEqual([
+      'openid',
+      'offline_access',
+      'gravity.read',
+      'gravity.approve',
+    ]);
+  });
+
+  test('a role that can write records keeps write', () => {
+    for (const role of ['contributor', 'member', 'admin'] as const) {
+      expect(usableMcpScopes(role, asked)).toEqual(asked);
+    }
   });
 });

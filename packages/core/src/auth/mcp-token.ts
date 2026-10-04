@@ -2,7 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, db, desc, eq, inArray, isNull, lt, or, schema } from '@gravity/db';
 import { consentedScopes, grantsReads, grantsWrites, scopeList } from '@gravity/shared/constants';
 import { forbidden, notFound, unauthorized, validationFailed } from '@gravity/shared/errors';
-import type { Principal } from '@gravity/shared/policy';
+import { type Principal, usableMcpScopes } from '@gravity/shared/policy';
 import { isAllowedLogoUri, isAllowedRedirectUri } from '@gravity/shared/utils';
 import { z } from 'zod';
 import { cappedTransaction } from '../crm/sync-batch.ts';
@@ -67,6 +67,7 @@ export function unbindMcpCredential(
 
 export interface McpAccessContext {
   readonly principal: Principal;
+  readonly grantId: string;
   readonly userId: string;
   readonly clientId: string;
   readonly organizationId: string;
@@ -149,6 +150,7 @@ export async function verifyMcpAccessToken(
   }
   return {
     principal,
+    grantId: grant.id,
     userId,
     clientId: record.token.clientId,
     organizationId: grant.organizationId,
@@ -371,11 +373,15 @@ export async function finalizeMcpConsent(
       scope: value.scope.join(' '),
     };
   }
-  const granted = consentedScopes(value.scope, input.allowApproval);
+  const consented = consentedScopes(value.scope, input.allowApproval);
+  const principal = await resolvePrincipal(input.userId, input.organizationId);
+  const granted = usableMcpScopes(principal.role, consented);
   const scope = granted.join(' ');
   if (!(grantsReads(scope) || grantsWrites(scope))) {
     throw validationFailed(
-      'This client asked for no Gravity access, so there is nothing to approve. Start the connection again from your client.',
+      grantsWrites(consented.join(' '))
+        ? 'Your role in this workspace can only read, and this client asked only to write. Ask an admin for a role that can edit records, or choose another workspace.'
+        : 'This client asked for no Gravity access, so there is nothing to approve. Start the connection again from your client.',
     );
   }
   const code = randomBytes(24).toString('base64url');

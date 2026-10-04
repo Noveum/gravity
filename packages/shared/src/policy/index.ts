@@ -1,4 +1,4 @@
-import { ORG_ROLE_RANK, ORG_ROLES, type OrgRole } from '../constants/index.ts';
+import { GRAVITY_WRITE_SCOPE, ORG_ROLE_RANK, ORG_ROLES, type OrgRole } from '../constants/index.ts';
 import { forbidden } from '../errors/index.ts';
 
 export const PERMISSIONS = [
@@ -70,6 +70,11 @@ export function assertCan(principal: Principal, permission: Permission): void {
       details: { permission, role: principal.role },
     });
   }
+}
+
+export function usableMcpScopes(role: OrgRole, scopes: readonly string[]): string[] {
+  const writes = permissionsFor(role).includes('record:write');
+  return scopes.filter((scope) => scope !== GRAVITY_WRITE_SCOPE || writes);
 }
 
 export function canAssignRole(principal: Principal, role: OrgRole): boolean {

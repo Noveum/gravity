@@ -771,6 +771,39 @@ describe('token', () => {
     });
   });
 
+  test('a refresh for a disabled client is refused before better-auth issues anything', async () => {
+    await withNativeFetch(async () => {
+      const issued = (await (await authPost(exchange(await authorizationCode()))).json()) as Record<
+        string,
+        unknown
+      >;
+      await db
+        .update(schema.oauthApplication)
+        .set({ disabled: true })
+        .where(eq(schema.oauthApplication.clientId, CLIENT_ID));
+      const before = await db.select().from(schema.oauthAccessToken);
+      const issue = spyOn(auth.api, 'mcpOAuthToken');
+      try {
+        const refreshed = await authPost(
+          tokenRequest({
+            grant_type: 'refresh_token',
+            refresh_token: String(issued['refresh_token']),
+            client_id: CLIENT_ID,
+          }),
+        );
+        expect(refreshed.status).toBe(401);
+        expect(await refreshed.json()).toMatchObject({
+          error: 'invalid_client',
+          error_description: 'This client has been disabled. Reconnect Gravity to continue.',
+        });
+        expect(issue).not.toHaveBeenCalled();
+        expect(await db.select().from(schema.oauthAccessToken)).toEqual(before);
+      } finally {
+        issue.mockRestore();
+      }
+    });
+  });
+
   test('a client disabled after consent gets no token', async () => {
     await withNativeFetch(async () => {
       const code = await authorizationCode();

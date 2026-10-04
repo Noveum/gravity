@@ -1,4 +1,7 @@
-export async function readCappedBytes(request: Request, limit: number): Promise<Uint8Array | null> {
+export async function readCappedBytes(
+  request: Request,
+  limit: number,
+): Promise<Uint8Array<ArrayBuffer> | null> {
   const declared = Number(request.headers.get('content-length') ?? '0');
   if (declared > limit) return null;
   const reader = request.body?.getReader();
@@ -15,5 +18,11 @@ export async function readCappedBytes(request: Request, limit: number): Promise<
     }
     chunks.push(value);
   }
-  return Buffer.concat(chunks);
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }

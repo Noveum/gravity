@@ -1,5 +1,6 @@
 import { listOrganizationsForUser, pendingMcpConsent, userHasPasskey } from '@gravity/core';
 import { isDomainError } from '@gravity/shared/errors';
+import { policyRole } from '@gravity/shared/policy';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -84,7 +85,8 @@ export default async function AuthorizePage({
     return (
       <Notice action={<DenyConnection consentCode={consentCode} />}>
         You are not a member of any workspace yet, so there is nothing to connect. Create or join a
-        workspace first, or deny this request so {pending.clientName} stops waiting.
+        workspace first, or deny this request so {pending.clientName} stops waiting. That name is
+        provided by the app and not verified by Gravity.
       </Notice>
     );
   }
@@ -99,6 +101,7 @@ export default async function AuthorizePage({
         organizations={organizations.map((entry) => ({
           id: entry.organization.id,
           name: entry.organization.name,
+          role: policyRole(entry.role),
         }))}
         requirePasskey={requirePasskey}
         userEmail={session.user.email}

@@ -1,4 +1,4 @@
-import { verifyMcpAccessToken } from '@gravity/core';
+import { consumeRequestRateLimit, verifyMcpAccessToken } from '@gravity/core';
 import {
   GRAVITY_READ_SCOPE,
   GRAVITY_WRITE_SCOPE,
@@ -7,7 +7,7 @@ import {
 } from '@gravity/shared/constants';
 import { forbidden, toDomainError, unauthorized } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
-import { recordLinks } from '@gravity/shared/utils';
+import { readCappedBytes, recordLinks } from '@gravity/shared/utils';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -16,6 +16,8 @@ import { registerTools } from './tools/index.ts';
 import { allowTools, answerWithoutTools } from './tools/support.ts';
 
 export const MCP_PATH = '/mcp';
+export const MCP_BODY_LIMIT_BYTES = 1_000_000;
+export const MCP_GRANT_RATE = { window: 60, max: 300 } as const;
 
 const SERVER_VERSION = '0.0.0';
 const JSONRPC_SERVER_ERROR = -32000;
@@ -25,6 +27,8 @@ const NO_SCOPE_MESSAGE =
 const INVALID_TOKEN_REASON = 'invalid_token';
 const NO_TOKEN_MESSAGE = 'Connect this client to Gravity to use its tools.';
 const BEARER_PREFIX = 'bearer ';
+const BODY_TOO_LARGE_MESSAGE = 'The request body is larger than 1 MB.';
+const RATE_LIMITED_MESSAGE = 'This connection has sent too many requests. Try again in a minute.';
 const CHALLENGE_SCOPES = `${GRAVITY_READ_SCOPE} ${GRAVITY_WRITE_SCOPE}`;
 
 const INSTRUCTIONS = [
@@ -46,6 +50,7 @@ export function wwwAuthenticate(
 
 export interface McpServerOptions {
   readonly publicUrl: string;
+  readonly grantRate?: { readonly window: number; readonly max: number };
 }
 
 export function createGravityMcpServer(
@@ -90,14 +95,25 @@ async function dispatch(
   if (!(grantsReads(identity.scopes) || grantsWrites(identity.scopes))) {
     throw forbidden(NO_SCOPE_MESSAGE, { details: { reason: INSUFFICIENT_SCOPE_REASON } });
   }
+  const body = await readCappedBytes(request, MCP_BODY_LIMIT_BYTES);
+  if (body === null) return rpcError(413, BODY_TOO_LARGE_MESSAGE);
+  const rate = options.grantRate ?? MCP_GRANT_RATE;
+  const decision = await consumeRequestRateLimit(`mcp:${identity.grantId}`, rate);
+  if (!decision.allowed) {
+    return rpcError(429, RATE_LIMITED_MESSAGE, {
+      'Retry-After': String(decision.retryAfter ?? rate.window),
+    });
+  }
   const server = createGravityMcpServer(identity.principal, identity.scopes, {
-    ...options,
+    publicUrl: options.publicUrl,
     workspaceSlug: identity.organizationSlug,
   });
   const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
   await server.connect(transport as unknown as Transport);
   try {
-    const response = await transport.handleRequest(request);
+    const response = await transport.handleRequest(
+      new Request(request.url, { method: request.method, headers: request.headers, body }),
+    );
     logger.info('mcp request', {
       userId: identity.userId,
       organizationId: identity.organizationId,

@@ -1,6 +1,6 @@
 import { payloadTooLarge, validationFailed } from '@gravity/shared/errors';
 import { decodeImportBytes, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS } from '@gravity/shared/import';
-import { readCappedBytes } from './capped-body.ts';
+import { readCappedBytes } from '@gravity/shared/utils';
 
 export const MAX_IMPORT_REQUEST_BYTES = MAX_IMPORT_BYTES * 2 + 100_000;
 export const IMPORT_PREVIEW_BUDGET_MS = 50_000;

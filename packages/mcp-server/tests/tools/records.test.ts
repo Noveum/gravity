@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
+  archiveFieldDefinition,
   closeRealtime,
   createBrand,
+  createFieldDefinition,
   createLead,
   createOrganization,
   createSavedView,
@@ -15,6 +17,7 @@ import {
   resetDatabase,
   type TestWorkspace,
 } from '@gravity/core/test-support';
+import { db, eq, schema } from '@gravity/db';
 import { CONTEXT_TOKENS } from '@gravity/shared/constants';
 import { connect, type TestClient } from '../../src/test-helpers.ts';
 
@@ -22,16 +25,160 @@ let workspace: TestWorkspace;
 let client: TestClient;
 let otherWorkspaceId = '';
 let otherPersonId = '';
+let otherLeadId = '';
+let otherPipelineId = '';
+let otherViewId = '';
 let readyId = '';
+let quillReadyId = '';
 let personId = '';
+let mainLeadId = '';
+let mainPipelineId = '';
+let mainViewId = '';
 let privateViewId = '';
 let teammateViewId = '';
+
+const CROWD_SIZE = 21;
 
 const READY_FILTER = () => ({
   kind: 'group',
   combinator: 'and',
   children: [{ kind: 'condition', property: 'stage', operator: 'in', values: [readyId] }],
 });
+
+function stageCondition(stageId: string) {
+  return {
+    kind: 'condition' as const,
+    property: 'stage',
+    operator: 'in' as const,
+    values: [stageId],
+  };
+}
+
+function emptyGroup() {
+  return { kind: 'group' as const, combinator: 'and' as const, children: [] };
+}
+
+async function seedQuill(context: { principal: TestWorkspace['admin'] }, harborId: string) {
+  const quill = await createBrand(context, { name: 'Quill', pipelineKey: 'QUI' });
+  quillReadyId = quill.stages.find((stage) => stage.name === 'Ready')?.id ?? '';
+  await createFieldDefinition(context, {
+    object: 'lead',
+    pipelineId: harborId,
+    key: 'region',
+    label: 'Region',
+    type: 'text',
+  });
+  const tier = await createFieldDefinition(context, {
+    object: 'lead',
+    key: 'tier',
+    label: 'Tier',
+    type: 'text',
+  });
+  const nia = await upsertPerson(context, { name: 'Nia\nNorth', emails: ['nia@quill.example'] });
+  const otto = await upsertPerson(context, { name: 'Otto Oak', emails: ['otto@quill.example'] });
+  await createLead(context, {
+    personId: nia.person.id,
+    pipelineId: quill.pipeline.id,
+    stageId: quillReadyId,
+    nextAction: 'Call\nthen\temail',
+  });
+  await createLead(context, { personId: otto.person.id, pipelineId: quill.pipeline.id });
+  const everywhere = await createSavedView(context, {
+    object: 'lead',
+    pipelineId: null,
+    name: 'Everywhere',
+    visibility: 'workspace',
+  });
+  await db
+    .update(schema.savedView)
+    .set({
+      filter: {
+        kind: 'group',
+        combinator: 'and',
+        children: [
+          {
+            kind: 'condition',
+            property: 'fields.region',
+            operator: 'contains',
+            value: 'north',
+            negate: false,
+          },
+        ],
+      },
+    })
+    .where(eq(schema.savedView.id, everywhere.view.id));
+  await createSavedView(context, {
+    object: 'lead',
+    pipelineId: quill.pipeline.id,
+    name: 'Gold ready',
+    visibility: 'workspace',
+    filter: {
+      kind: 'group',
+      combinator: 'and',
+      children: [
+        stageCondition(quillReadyId),
+        { kind: 'condition', property: 'fields.tier', operator: 'contains', value: 'gold' },
+      ],
+    },
+  });
+  await archiveFieldDefinition(context, tier.field.id);
+  await createSavedView(context, {
+    object: 'lead',
+    pipelineId: quill.pipeline.id,
+    name: 'Thirty',
+    visibility: 'workspace',
+    filter: {
+      kind: 'group',
+      combinator: 'and',
+      children: Array.from({ length: 30 }, () => stageCondition(quillReadyId)),
+    },
+  });
+}
+
+async function seedCrowd(context: { principal: TestWorkspace['admin'] }, pipelineId: string) {
+  for (let index = 1; index <= CROWD_SIZE; index += 1) {
+    const label = String(index).padStart(2, '0');
+    const member = await upsertPerson(context, {
+      name: `Crowd Person ${label}`,
+      emails: [`person${label}@crowd.example`],
+      phones: [`+1 555 01${label}`],
+      company: { domain: 'crowd.example', name: 'Crowd Co' },
+    });
+    await createLead(context, { personId: member.person.id, pipelineId });
+  }
+}
+
+async function seedElsewhere(): Promise<void> {
+  const other = await createOrganization(workspace.adminUser.id, {
+    name: 'Elsewhere',
+    slug: 'elsewhere-mcp',
+  });
+  otherWorkspaceId = other.organization.id;
+  const elsewhere = { principal: await resolvePrincipal(workspace.adminUser.id, otherWorkspaceId) };
+  const brand = await createBrand(elsewhere, { name: 'Other', pipelineKey: 'LUM' });
+  otherPipelineId = brand.pipeline.id;
+  const bea = await upsertPerson(elsewhere, {
+    name: 'Bea Byron',
+    emails: ['bea@byron.example'],
+    company: { domain: 'byron.example', name: 'Byron Works' },
+  });
+  otherPersonId = bea.person.id;
+  otherLeadId = (
+    await createLead(elsewhere, { personId: otherPersonId, pipelineId: brand.pipeline.id })
+  ).lead.id;
+  for (const name of ['Cy Cole', 'Dee Dunn']) {
+    const person = await upsertPerson(elsewhere, { name });
+    await createLead(elsewhere, { personId: person.person.id, pipelineId: brand.pipeline.id });
+  }
+  otherViewId = (
+    await createSavedView(elsewhere, {
+      object: 'lead',
+      pipelineId: brand.pipeline.id,
+      name: 'Elsewhere view',
+      visibility: 'workspace',
+    })
+  ).view.id;
+}
 
 function keysOf(data: Record<string, unknown>): string[] {
   return (data['leads'] as { key: string }[]).map((lead) => lead.key);
@@ -53,19 +200,22 @@ beforeAll(async () => {
     name: 'Grace Hopper',
     emails: ['grace@quarry.example'],
   });
-  await createLead(context, { personId, pipelineId: brand.pipeline.id });
+  mainPipelineId = brand.pipeline.id;
+  mainLeadId = (await createLead(context, { personId, pipelineId: brand.pipeline.id })).lead.id;
   await createLead(context, {
     personId: grace.person.id,
     pipelineId: brand.pipeline.id,
     stageId: readyId,
   });
-  await createSavedView(context, {
-    object: 'lead',
-    pipelineId: brand.pipeline.id,
-    name: 'Ready ones',
-    visibility: 'workspace',
-    filter: READY_FILTER(),
-  });
+  mainViewId = (
+    await createSavedView(context, {
+      object: 'lead',
+      pipelineId: brand.pipeline.id,
+      name: 'Ready ones',
+      visibility: 'workspace',
+      filter: READY_FILTER(),
+    })
+  ).view.id;
   privateViewId = (
     await createSavedView(context, {
       object: 'lead',
@@ -95,19 +245,9 @@ beforeAll(async () => {
     name: 'Harbor view',
     visibility: 'workspace',
   });
-  const other = await createOrganization(workspace.adminUser.id, {
-    name: 'Elsewhere',
-    slug: 'elsewhere-mcp',
-  });
-  otherWorkspaceId = other.organization.id;
-  const elsewhere = await resolvePrincipal(workspace.adminUser.id, otherWorkspaceId);
-  await createBrand({ principal: elsewhere }, { name: 'Other', pipelineKey: 'OTH' });
-  otherPersonId = (
-    await upsertPerson(
-      { principal: elsewhere },
-      { name: 'Bea Byron', emails: ['bea@other.example'], company: { domain: 'other.example' } },
-    )
-  ).person.id;
+  await seedQuill(context, harbor.pipeline.id);
+  await seedCrowd(context, harbor.pipeline.id);
+  await seedElsewhere();
   client = await connect(
     (await mintMcpToken(workspace.organizationId, workspace.adminUser.id)).token,
   );
@@ -198,6 +338,22 @@ describe('get_context', () => {
     expect(JSON.stringify(schema?.properties?.['max_tokens'])).toContain('8000');
   });
 
+  test('structured content is bounded like the text and leaves out colleagues contact details', async () => {
+    const { text, data } = await client.result('get_context', { ref: 'crowd.example' });
+    expect(text).toContain('Company: Crowd Co');
+    const people = data['people'] as Record<string, unknown>[];
+    expect(people).toHaveLength(20);
+    expect(data['peopleTotal']).toBe(CROWD_SIZE);
+    expect(Object.keys(people[0] ?? {}).sort()).toEqual(['id', 'name', 'title', 'url']);
+    expect(JSON.stringify(data)).not.toContain('@crowd.example');
+    expect(JSON.stringify(data)).not.toContain('+1 555');
+    expect(data['leads'] as unknown[]).toHaveLength(20);
+    expect(data['leadsTotal']).toBe(CROWD_SIZE);
+    const person = await client.result('get_context', { ref: 'ada@vela.example' });
+    expect(person.data['leadsTotal']).toBe(1);
+    expect(person.data['peopleTotal']).toBe(0);
+  });
+
   test('a LinkedIn company URL is not read as the domain linkedin.com', async () => {
     const refused = await client.failure('get_context', {
       ref: 'https://www.linkedin.com/company/vela-robotics',
@@ -270,6 +426,55 @@ describe('list_leads', () => {
     });
   });
 
+  test('a saved view is pruned exactly as the web app prunes it', async () => {
+    const everywhere = await client.result('list_leads', { pipeline: 'QUI', view: 'Everywhere' });
+    expect(keysOf(everywhere.data)).toEqual(['QUI-2', 'QUI-1']);
+    const removedField = await client.result('list_leads', { pipeline: 'QUI', view: 'Gold ready' });
+    expect(keysOf(removedField.data)).toEqual(['QUI-1']);
+    const strict = await client.failure('list_leads', {
+      pipeline: 'QUI',
+      filter: {
+        kind: 'group',
+        combinator: 'and',
+        children: [
+          { kind: 'condition', property: 'fields.tier', operator: 'contains', value: 'x' },
+        ],
+      },
+    });
+    expect(strict.code).toBe('validation_failed');
+    expect(strict.message).toContain('There is no lead filter called fields.tier.');
+  });
+
+  test('a view and a filter nest instead of merging when one group would hold too many', async () => {
+    const listed = await client.result('list_leads', {
+      pipeline: 'QUI',
+      view: 'Thirty',
+      filter: {
+        kind: 'group',
+        combinator: 'and',
+        children: [
+          ...Array.from({ length: 15 }, () => stageCondition(quillReadyId)),
+          ...Array.from({ length: 10 }, emptyGroup),
+        ],
+      },
+    });
+    expect(keysOf(listed.data)).toEqual(['QUI-1']);
+  });
+
+  test('list and search lines collapse line breaks and control characters', async () => {
+    const listed = await client.result('list_leads', { pipeline: 'QUI' });
+    const lines = listed.text.split('\n');
+    expect(lines).toHaveLength(3);
+    expect(lines.find((line) => line.startsWith('- QUI-1'))).toContain(
+      'Nia North · Ready · Ada Admin · No priority · next: Call then email',
+    );
+    const found = await client.result('search', { query: 'Nia' });
+    expect(found.text.split('\n')).toContain(
+      `- Nia North <nia@quill.example> ${String((found.data['people'] as { url: string }[])[0]?.url)}`,
+    );
+    expect(found.text.split('\n').some((line) => /\p{Cc}/u.test(line))).toBe(false);
+  });
+
   test('names the valid properties and pipelines when the request is wrong', async () => {
     const property = await client.failure('list_leads', {
       pipeline: 'LUM',
@@ -285,7 +490,7 @@ describe('list_leads', () => {
     const pipeline = await client.failure('list_leads', { pipeline: 'NOPE' });
     expect(pipeline).toEqual({
       code: 'not_found',
-      message: 'There is no pipeline NOPE. Pipelines: HAR, LUM.',
+      message: 'There is no pipeline NOPE. Pipelines: HAR, LUM, QUI.',
     });
   });
 
@@ -314,25 +519,55 @@ describe('list_leads', () => {
 });
 
 describe('workspace boundary', () => {
-  test('every tool stays inside the grant workspace, even for a user who belongs to both', async () => {
-    expect((await client.result('search', { query: 'Byron' })).data['people']).toEqual([]);
-    expect((await client.failure('get_context', { ref: 'bea@other.example' })).code).toBe(
+  test('from the first workspace, nothing of the second is reachable, even with the same keys', async () => {
+    const own = await client.result('get_context', { ref: 'LUM-1' });
+    expect(own.data['subject']).toMatchObject({ type: 'lead', id: mainLeadId });
+    expect(own.text).toContain('Ada Lovelace');
+    expect(own.text).not.toContain('Bea Byron');
+    for (const ref of ['LUM-3', otherLeadId, otherPersonId, 'bea@byron.example', 'byron.example']) {
+      expect((await client.failure('get_context', { ref })).code).toBe('not_found');
+    }
+    expect((await client.failure('list_leads', { pipeline: otherPipelineId })).code).toBe(
       'not_found',
     );
-    expect((await client.failure('get_context', { ref: 'other.example' })).code).toBe('not_found');
-    expect((await client.failure('get_context', { ref: otherPersonId })).code).toBe('not_found');
-    expect((await client.failure('get_context', { ref: 'OTH-1' })).code).toBe('not_found');
-    expect((await client.failure('list_leads', { pipeline: 'OTH' })).code).toBe('not_found');
+    expect((await client.failure('list_leads', { pipeline: 'LUM', view: otherViewId })).code).toBe(
+      'not_found',
+    );
+    for (const query of ['Byron', 'LUM-3']) {
+      const { data } = await client.result('search', { query });
+      expect([data['people'], data['companies'], data['leads']]).toEqual([[], [], []]);
+    }
+  });
+
+  test('from the second workspace, nothing of the first is reachable, even with the same keys', async () => {
     const elsewhere = await connect(
       (await mintMcpToken(otherWorkspaceId, workspace.adminUser.id)).token,
     );
     try {
-      expect((await elsewhere.result('search', { query: 'Byron' })).data['people']).toEqual([
-        expect.objectContaining({ name: 'Bea Byron' }),
+      const theirs = await elsewhere.result('get_context', { ref: 'LUM-1' });
+      expect(theirs.data['subject']).toMatchObject({ type: 'lead', id: otherLeadId });
+      expect(theirs.text).toContain('Bea Byron');
+      expect(keysOf((await elsewhere.result('list_leads', { pipeline: 'LUM' })).data)).toEqual([
+        'LUM-3',
+        'LUM-2',
+        'LUM-1',
       ]);
-      expect((await elsewhere.result('search', { query: 'Ada' })).data['people']).toEqual([]);
-      expect((await elsewhere.failure('list_leads', { pipeline: 'LUM' })).code).toBe('not_found');
-      expect((await elsewhere.failure('get_context', { ref: personId })).code).toBe('not_found');
+      const byron = await elsewhere.result('search', { query: 'Byron' });
+      expect(byron.data['people']).toEqual([expect.objectContaining({ name: 'Bea Byron' })]);
+      expect(byron.data['companies']).toEqual([expect.objectContaining({ name: 'Byron Works' })]);
+      for (const ref of [mainLeadId, personId, 'ada@vela.example', 'vela.example']) {
+        expect((await elsewhere.failure('get_context', { ref })).code).toBe('not_found');
+      }
+      expect((await elsewhere.failure('list_leads', { pipeline: mainPipelineId })).code).toBe(
+        'not_found',
+      );
+      expect(
+        (await elsewhere.failure('list_leads', { pipeline: 'LUM', view: mainViewId })).code,
+      ).toBe('not_found');
+      for (const query of ['Lovelace', 'Vela']) {
+        const { data } = await elsewhere.result('search', { query });
+        expect([data['people'], data['companies'], data['leads']]).toEqual([[], [], []]);
+      }
     } finally {
       await elsewhere.close();
     }

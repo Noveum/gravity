@@ -2,13 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import {
   emptyFilterGroup,
   encodeFilter,
-  type FilterGroup,
   inCondition,
   leadFilterRegistry,
   replaceCondition,
 } from '@gravity/shared/filters';
 import type { SavedViewRow } from '@gravity/shared/records';
-import { leadViewsFor, resolveListQuery, safeFilter } from '@/features/filters/list-query.ts';
+import { leadViewsFor, resolveListQuery } from '@/features/filters/list-query.ts';
 
 const registry = leadFilterRegistry();
 const ready = replaceCondition(emptyFilterGroup(), inCondition('stage', ['ready']));
@@ -40,28 +39,6 @@ describe('list query', () => {
     const search = new URLSearchParams({ view: 'v1', filter: encodeFilter(owner) }).toString();
     expect(resolveListQuery(search, views, registry).filter).toEqual(owner);
     expect(resolveListQuery('view=missing', views, registry).filter).toEqual(emptyFilterGroup());
-  });
-
-  test('a filter is pruned to what the registry and the schema accept', () => {
-    const broken: FilterGroup = {
-      kind: 'group',
-      combinator: 'or',
-      children: [
-        inCondition('stage', []),
-        inCondition('nonsense', ['x']),
-        {
-          kind: 'group',
-          combinator: 'and',
-          children: [inCondition('stage', []), inCondition('owner', ['me'])],
-        },
-      ],
-    };
-    expect(safeFilter(broken, registry)).toEqual({
-      kind: 'group',
-      combinator: 'or',
-      children: [{ kind: 'group', combinator: 'and', children: [inCondition('owner', ['me'])] }],
-    });
-    expect(safeFilter(ready, registry)).toEqual(ready);
   });
 
   test('lead views are those of this pipeline or of every pipeline', () => {

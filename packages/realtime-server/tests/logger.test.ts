@@ -1,15 +1,14 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
-import { logger, QUIET_LOGS_ENV } from '../src/logger.ts';
+import { consoleLogSink, type LogSink, logger, setLogSink } from '../src/logger.ts';
 
-const quiet = process.env[QUIET_LOGS_ENV];
+let restore: LogSink | null = null;
 
 afterEach(() => {
-  if (quiet === undefined) delete process.env[QUIET_LOGS_ENV];
-  else process.env[QUIET_LOGS_ENV] = quiet;
+  if (restore !== null) setLogSink(restore);
+  restore = null;
 });
 
-test('the tests preload keeps the logger quiet', () => {
-  expect(process.env[QUIET_LOGS_ENV]).toBe('true');
+test('the tests preload installs a silent sink, so nothing reaches the console', () => {
   const info = spyOn(console, 'info').mockImplementation(() => undefined);
   const error = spyOn(console, 'error').mockImplementation(() => undefined);
   try {
@@ -23,20 +22,29 @@ test('the tests preload keeps the logger quiet', () => {
   }
 });
 
-test('without the quiet switch every level is written as one JSON line', () => {
-  delete process.env[QUIET_LOGS_ENV];
+test('a sink receives every level as one JSON line', () => {
+  const lines: { level: string; line: string }[] = [];
+  restore = setLogSink((level, line) => lines.push({ level, line }));
+  logger.warn('seen', { tool: 'search' });
+  logger.error('broken');
+  expect(lines.map((entry) => entry.level)).toEqual(['warn', 'error']);
+  expect(JSON.parse(lines[0]?.line ?? '{}')).toMatchObject({
+    level: 'warn',
+    message: 'seen',
+    service: 'realtime',
+    tool: 'search',
+  });
+});
+
+test('the console sink writes errors to stderr and the rest to stdout', () => {
   const info = spyOn(console, 'info').mockImplementation(() => undefined);
   const error = spyOn(console, 'error').mockImplementation(() => undefined);
   try {
-    logger.warn('seen', { tool: 'search' });
-    logger.error('broken');
-    expect(JSON.parse(String(info.mock.calls[0]?.[0]))).toMatchObject({
-      level: 'warn',
-      message: 'seen',
-      service: 'realtime',
-      tool: 'search',
-    });
-    expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({ level: 'error' });
+    restore = setLogSink(consoleLogSink);
+    logger.info('out');
+    logger.error('err');
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledTimes(1);
   } finally {
     info.mockRestore();
     error.mockRestore();

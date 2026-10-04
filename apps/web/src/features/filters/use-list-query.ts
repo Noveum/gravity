@@ -6,11 +6,12 @@ import {
   type FilterRegistry,
   isEmptyFilter,
   type ListQuery,
+  safeFilter,
 } from '@gravity/shared/filters';
 import type { SavedViewRow } from '@gravity/shared/records';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { cappedSearch, resolveListQuery, safeFilter } from './list-query.ts';
+import { cappedSearch, resolveListQuery } from './list-query.ts';
 
 export interface ListQueryState {
   readonly query: ListQuery;

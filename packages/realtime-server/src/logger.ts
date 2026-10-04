@@ -2,24 +2,37 @@ import { safeErrorFields } from '@gravity/shared/utils';
 
 type LogFields = Record<string, unknown>;
 
-type LogLevel = 'info' | 'warn' | 'error';
+export type LogLevel = 'info' | 'warn' | 'error';
 
-export const QUIET_LOGS_ENV = 'GRAVITY_QUIET_LOGS';
+export type LogSink = (level: LogLevel, line: string) => void;
 
-function write(level: LogLevel, message: string, fields: LogFields | undefined): void {
-  if (process.env[QUIET_LOGS_ENV] === 'true') return;
-  const line = JSON.stringify({
-    level,
-    message,
-    at: new Date().toISOString(),
-    service: 'realtime',
-    ...fields,
-  });
+export const consoleLogSink: LogSink = (level, line) => {
   if (level === 'error') {
     console.error(line);
     return;
   }
   console.info(line);
+};
+
+let sink: LogSink = consoleLogSink;
+
+export function setLogSink(next: LogSink): LogSink {
+  const previous = sink;
+  sink = next;
+  return previous;
+}
+
+function write(level: LogLevel, message: string, fields: LogFields | undefined): void {
+  sink(
+    level,
+    JSON.stringify({
+      level,
+      message,
+      at: new Date().toISOString(),
+      service: 'realtime',
+      ...fields,
+    }),
+  );
 }
 
 export const logger = {

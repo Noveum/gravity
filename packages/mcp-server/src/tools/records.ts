@@ -6,6 +6,7 @@ import {
   listPipelines,
   listSavedViews,
   listStages,
+  oneLine,
   type RecordContext,
   type ResolvedRecordRef,
   renderRecordContext,
@@ -21,9 +22,12 @@ import {
 } from '@gravity/shared/errors';
 import {
   type FilterGroup,
+  type FilterRegistry,
   filterGroupQuerySchema,
   isEmptyFilter,
   leadFilterRegistry,
+  MAX_FILTER_CONDITIONS,
+  safeFilter,
 } from '@gravity/shared/filters';
 import type { Principal } from '@gravity/shared/policy';
 import type {
@@ -42,6 +46,7 @@ import { defineTool } from './support.ts';
 const LIST_LIMIT = 50;
 const LIST_LIMIT_MAX = 100;
 const TIMELINE_IN_DATA = 20;
+const CONTEXT_LIST_LIMIT = 20;
 const UNKNOWN_STAGE = 'Unknown stage';
 
 interface LeadNames {
@@ -64,12 +69,11 @@ async function leadNamesFor(principal: Principal): Promise<LeadNames> {
   };
 }
 
-function leadView(lead: LeadRow, names: LeadNames, links: RecordLinks) {
+function leadSummary(lead: LeadRow, names: LeadNames, links: RecordLinks) {
   return {
     key: lead.key,
     url: links.lead(lead.key),
     person: lead.personName,
-    email: lead.personEmail,
     company: lead.companyName,
     stage: names.stages[lead.stageId] ?? UNKNOWN_STAGE,
     stageId: lead.stageId,
@@ -84,10 +88,14 @@ function leadView(lead: LeadRow, names: LeadNames, links: RecordLinks) {
   };
 }
 
+function leadView(lead: LeadRow, names: LeadNames, links: RecordLinks) {
+  return { ...leadSummary(lead, names, links), email: lead.personEmail };
+}
+
 type LeadView = ReturnType<typeof leadView>;
 
 function leadLine(view: LeadView): string {
-  return [
+  const line = [
     `- ${view.key} ${view.person}${view.company === null ? '' : ` (${view.company})`}`,
     view.stage,
     view.owner ?? 'no owner',
@@ -95,6 +103,7 @@ function leadLine(view: LeadView): string {
     ...(view.nextAction === null ? [] : [`next: ${view.nextAction}`]),
     view.url,
   ].join(' · ');
+  return oneLine(line);
 }
 
 function personHit(person: PersonRow, links: RecordLinks) {
@@ -152,7 +161,9 @@ function searchText(
       (lead) =>
         `- ${lead.key} ${lead.person}${suffix(lead.company, (company) => ` (${company})`)} [${lead.stageCategory}] ${lead.url}`,
     ),
-  ].join('\n');
+  ]
+    .map(oneLine)
+    .join('\n');
 }
 
 function subjectUrl(subject: ResolvedRecordRef, bundle: RecordContext, links: RecordLinks): string {
@@ -160,6 +171,31 @@ function subjectUrl(subject: ResolvedRecordRef, bundle: RecordContext, links: Re
   if (subject.type === 'company') return links.company(subject.id);
   const focus = bundle.leads.find((lead) => lead.id === subject.id);
   return focus === undefined ? links.app : links.lead(focus.key);
+}
+
+function colleague(entry: RecordContext['people'][number], links: RecordLinks) {
+  return {
+    id: entry.person.id,
+    name: entry.person.name,
+    title: entry.employment.title,
+    url: links.person(entry.person.id),
+  };
+}
+
+function contextData(subject: ResolvedRecordRef, bundle: RecordContext, links: RecordLinks) {
+  return {
+    subject: { ...subject, url: subjectUrl(subject, bundle, links) },
+    person: bundle.person,
+    company: bundle.company,
+    employments: bundle.employments,
+    people: bundle.people.slice(0, CONTEXT_LIST_LIMIT).map((entry) => colleague(entry, links)),
+    peopleTotal: bundle.people.length,
+    leads: bundle.leads
+      .slice(0, CONTEXT_LIST_LIMIT)
+      .map((lead) => leadSummary(lead, bundle.names, links)),
+    leadsTotal: bundle.leads.length,
+    timeline: bundle.timeline.slice(0, TIMELINE_IN_DATA),
+  };
 }
 
 function pipelineOf(pipelines: readonly PipelineRow[], ref: string): PipelineRow {
@@ -214,19 +250,15 @@ function combinedFilter(view: FilterGroup | undefined, raw: FilterGroup | undefi
   const [first, second] = parts;
   if (first === undefined) return { kind: 'group', combinator: 'and', children: [] };
   if (second === undefined) return first;
-  if (first.combinator === 'and' && second.combinator === 'and') {
+  const merged = first.children.length + second.children.length;
+  if (
+    first.combinator === 'and' &&
+    second.combinator === 'and' &&
+    merged <= MAX_FILTER_CONDITIONS
+  ) {
     return { kind: 'group', combinator: 'and', children: [...first.children, ...second.children] };
   }
   return { kind: 'group', combinator: 'and', children: [first, second] };
-}
-
-async function filterProperties(principal: Principal, pipelineId: string): Promise<string[]> {
-  const fields = await listFieldDefinitions(principal);
-  const leadFields = fields.filter(
-    (field) =>
-      field.object === 'lead' && (field.pipelineId === null || field.pipelineId === pipelineId),
-  );
-  return leadFilterRegistry(leadFields, pipelineId).properties.map((property) => property.key);
 }
 
 function isFilterIssue(error: unknown): error is DomainError {
@@ -248,12 +280,17 @@ function filterArgument(raw: Record<string, unknown> | undefined): FilterGroup |
   return raw === undefined ? undefined : filterArgumentSchema.parse({ filter: raw }).filter;
 }
 
-async function leadPage(principal: Principal, pipeline: PipelineRow, request: LeadPageRequest) {
+async function leadPage<T>(
+  principal: Principal,
+  pipeline: PipelineRow,
+  registry: FilterRegistry<T>,
+  request: LeadPageRequest,
+) {
   try {
     return await listLeads(principal, { pipelineId: pipeline.id, ...request });
   } catch (error: unknown) {
     if (!isFilterIssue(error)) throw error;
-    const properties = await filterProperties(principal, pipeline.id);
+    const properties = registry.properties.map((property) => property.key);
     throw validationFailed(`${error.message} Filter properties: ${properties.join(', ')}.`, {
       ...(error.details === undefined ? {} : { details: error.details }),
     });
@@ -340,15 +377,7 @@ function registerGetContext(server: McpServer, { principal, links }: ToolContext
       const bundle = await getRecordContext(principal, subject);
       return {
         text: renderRecordContext(bundle, { maxTokens: args.max_tokens, links }),
-        data: {
-          subject: { ...subject, url: subjectUrl(subject, bundle, links) },
-          person: bundle.person,
-          company: bundle.company,
-          employments: bundle.employments,
-          people: bundle.people.map((entry) => ({ ...entry, url: links.person(entry.person.id) })),
-          leads: bundle.leads.map((lead) => leadView(lead, bundle.names, links)),
-          timeline: bundle.timeline.slice(0, TIMELINE_IN_DATA),
-        },
+        data: contextData(subject, bundle, links),
       };
     },
   );
@@ -393,16 +422,19 @@ function registerListLeads(server: McpServer, { principal, links }: ToolContext)
       },
     },
     async (args) => {
-      const [pipelines, views, names] = await Promise.all([
+      const [pipelines, views, names, fields] = await Promise.all([
         listPipelines(principal),
         listSavedViews(principal),
         leadNamesFor(principal),
+        listFieldDefinitions(principal),
       ]);
       const pipeline = pipelineOf(pipelines, args.pipeline);
+      const registry = leadFilterRegistry(fields, pipeline.id);
       const view =
         args.view === undefined ? null : savedLeadView(views, args.view, pipeline, pipelines);
-      const page = await leadPage(principal, pipeline, {
-        filter: combinedFilter(view?.filter, filterArgument(args.filter)),
+      const viewFilter = view === null ? undefined : safeFilter(view.filter, registry);
+      const page = await leadPage(principal, pipeline, registry, {
+        filter: combinedFilter(viewFilter, filterArgument(args.filter)),
         q: args.query ?? '',
         ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
         limit: args.limit ?? LIST_LIMIT,

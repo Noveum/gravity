@@ -109,7 +109,7 @@ export async function getRecordContext(
 const SEPARATORS_AND_CONTROLS = /[\p{Cc}\s]+/gu;
 const PLAIN_KEY = /^[A-Za-z0-9_.-]+$/;
 
-function oneLine(text: string): string {
+export function oneLine(text: string): string {
   return text.replace(SEPARATORS_AND_CONTROLS, ' ').trim();
 }
 

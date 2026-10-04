@@ -91,7 +91,7 @@ describe('describe_workspace', () => {
     expect(pipeline?.url).toBe('http://localhost:3300/leads/LUM');
     expect(pipeline?.stages).toHaveLength(13);
     expect(pipeline?.fields.map((field) => field.key)).toEqual(['deal_size']);
-    expect(brands[0]?.playbook).toEqual({ version: 1, body: '' });
+    expect(brands[0]?.playbook).toEqual({ version: 1, body: '', truncated: false });
     expect((data['fields'] as { person: { key: string; options: string[] }[] }).person).toEqual([
       expect.objectContaining({ key: 'seniority', options: ['junior', 'senior'] }),
     ]);
@@ -132,6 +132,7 @@ describe('describe_workspace', () => {
     expect((data['brands'] as BrandView[])[0]?.playbook).toEqual({
       version: 2,
       body: 'Lead with the audit.\nNever pitch on the first touch.',
+      truncated: false,
     });
   });
 
@@ -139,9 +140,18 @@ describe('describe_workspace', () => {
     const body = 'Audit first. '.repeat(20_000);
     await publishPlaybook(body);
     const { text, data } = await client.result('describe_workspace');
-    expect(text.length).toBeLessThan(CONTEXT_TOKENS.max * 4 + 8_000);
+    expect(text.length).toBeLessThanOrEqual(CONTEXT_TOKENS.default * 4);
     expect(text).toContain('Audit first.');
     expect(text).toContain('playbook cut to fit');
-    expect((data['brands'] as BrandView[])[0]?.playbook).toEqual({ version: 2, body });
+    const playbook = (data['brands'] as BrandView[])[0]?.playbook as {
+      version: number;
+      body: string;
+      truncated: boolean;
+    };
+    expect(playbook.truncated).toBe(true);
+    expect(playbook.body.length).toBeGreaterThan(0);
+    expect(playbook.body.length).toBeLessThan(CONTEXT_TOKENS.default * 4);
+    expect(body.startsWith(playbook.body)).toBe(true);
+    expect(text).toContain(playbook.body.split('\n').at(-1) ?? '');
   });
 });

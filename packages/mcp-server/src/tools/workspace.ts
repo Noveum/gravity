@@ -19,26 +19,52 @@ const FILTER_EXAMPLE =
   '{"kind":"group","combinator":"and","children":[{"kind":"condition","property":"stage","operator":"in","values":["<stage id>"]}]}';
 
 const CHARS_PER_TOKEN = 4;
-const PLAYBOOK_TEXT_CHARS = CONTEXT_TOKENS.max * CHARS_PER_TOKEN;
+const TEXT_BUDGET = CONTEXT_TOKENS.default * CHARS_PER_TOKEN;
 const PLAYBOOK_INDENT = '    ';
+const PLAYBOOK_CUT = `${PLAYBOOK_INDENT}(playbook cut to fit ${CONTEXT_TOKENS.default} tokens; read the rest in the app)`;
+
+interface FittedPlaybook {
+  readonly body: string;
+  readonly truncated: boolean;
+  readonly lines: readonly string[];
+}
 
 function cutAt(text: string, limit: number): string {
   if (text.length <= limit) return text;
   const code = text.charCodeAt(limit - 1);
   const end = code >= 0xd800 && code <= 0xdbff ? limit - 1 : limit;
-  return text.slice(0, end);
+  return text.slice(0, Math.max(0, end));
 }
 
-function playbookLines(body: string, limit: number): string[] {
-  const trimmed = body.trim();
-  if (trimmed.length === 0) return [];
-  const shown = cutAt(trimmed, limit);
-  const lines = shown.split(/\r?\n/).map((line) => `${PLAYBOOK_INDENT}${line}`);
-  if (shown.length === trimmed.length) return lines;
-  return [
-    ...lines,
-    `${PLAYBOOK_INDENT}(playbook cut to fit ${limit} characters; the full text is in brands[].playbook.body)`,
-  ];
+function indented(body: string): string[] {
+  return body.length === 0 ? [] : body.split(/\r?\n/).map((line) => `${PLAYBOOK_INDENT}${line}`);
+}
+
+function textCost(lines: readonly string[]): number {
+  return lines.reduce((total, line) => total + line.length + 1, 0);
+}
+
+function fitPlaybook(raw: string, share: number): FittedPlaybook {
+  const body = raw.trim();
+  const whole = indented(body);
+  if (textCost(whole) <= share) return { body, truncated: false, lines: whole };
+  const room = share - textCost([PLAYBOOK_CUT]);
+  let limit = room;
+  let shown = cutAt(body, limit);
+  while (limit > 0 && textCost(indented(shown)) > room) {
+    limit -= textCost(indented(shown)) - room;
+    shown = cutAt(body, limit);
+  }
+  if (limit <= 0) return { body: '', truncated: true, lines: room < 0 ? [] : [PLAYBOOK_CUT] };
+  return { body: shown, truncated: true, lines: [...indented(shown), PLAYBOOK_CUT] };
+}
+
+function fitPlaybooks(
+  bodies: ReadonlyMap<string, string>,
+  available: number,
+): Map<string, FittedPlaybook> {
+  const share = Math.floor(available / Math.max(1, bodies.size));
+  return new Map([...bodies].map(([brandId, body]) => [brandId, fitPlaybook(body, share)]));
 }
 
 function fieldView(field: FieldDefinitionRow) {
@@ -97,8 +123,7 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
           name: brand.name,
           domain: brand.domain,
           color: brand.color,
-          playbook:
-            playbook === undefined ? null : { version: playbook.version, body: playbook.body },
+          playbook: playbook === undefined ? null : { version: playbook.version },
           pipelines: pipelines
             .filter((pipeline) => pipeline.brandId === brand.id)
             .map((pipeline) => ({
@@ -115,8 +140,6 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
             })),
         };
       });
-      const withBodies = playbooks.filter((playbook) => playbook.body.trim().length > 0).length;
-      const playbookShare = Math.floor(PLAYBOOK_TEXT_CHARS / Math.max(1, withBodies));
       const memberViews = members.map(memberRowOf).map((member) => ({
         userId: member.userId,
         name: member.name,
@@ -134,12 +157,12 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
       }));
       const personFields = fields.filter((field) => field.object === 'person');
       const companyFields = fields.filter((field) => field.object === 'company');
-      const lines = [
+      const render = (playbookLinesOf: (brandId: string) => readonly string[]) => [
         `Workspace ${organization.name} (${organization.slug}) ${links.app}`,
         `You are ${principal.role}.`,
         ...brandViews.flatMap((brand) => [
           `Brand ${brand.name}${brand.playbook === null ? '' : `, playbook v${brand.playbook.version}`}`,
-          ...playbookLines(brand.playbook?.body ?? '', playbookShare),
+          ...playbookLinesOf(brand.id),
           ...brand.pipelines.flatMap((pipeline) => [
             `  Pipeline ${pipeline.key} ${pipeline.name} (${pipeline.kind}) ${pipeline.url}`,
             `    Stages: ${pipeline.stages.map((stage) => `${stage.name} [${stage.category}] ${stage.id}`).join('; ')}`,
@@ -155,8 +178,28 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
         ),
         `Filters use this shape: ${FILTER_EXAMPLE}`,
       ];
+      const bodies = new Map(
+        playbooks
+          .filter((playbook) => playbook.body.trim().length > 0)
+          .map((playbook) => [playbook.brandId, playbook.body]),
+      );
+      const fitted = fitPlaybooks(bodies, TEXT_BUDGET - render(() => []).join('\n').length);
+      const text = render((brandId) => fitted.get(brandId)?.lines ?? []).join('\n');
+      const brandsWithPlaybooks = brandViews.map((brand) => {
+        const fit = fitted.get(brand.id);
+        return brand.playbook === null
+          ? brand
+          : {
+              ...brand,
+              playbook: {
+                version: brand.playbook.version,
+                body: fit?.body ?? '',
+                truncated: fit?.truncated ?? false,
+              },
+            };
+      });
       return {
-        text: lines.join('\n'),
+        text,
         data: {
           workspace: {
             id: organization.id,
@@ -165,7 +208,7 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
             url: links.app,
           },
           me: { userId: principal.userId, role: principal.role },
-          brands: brandViews,
+          brands: brandsWithPlaybooks,
           fields: { person: personFields.map(fieldView), company: companyFields.map(fieldView) },
           members: memberViews,
           savedViews: viewViews,

@@ -4,6 +4,7 @@ import {
   type FilterGroup,
   type FilterNode,
   type FilterOperator,
+  filterGroupSchema,
   ME_FILTER_VALUE,
   NAMED_DATE_VALUES,
   UNSET_FILTER_VALUE,
@@ -145,4 +146,29 @@ function pruneNode<T>(node: FilterNode, registry: FilterRegistry<T>): FilterNode
 export function pruneFilter<T>(group: FilterGroup, registry: FilterRegistry<T>): FilterGroup {
   const pruned = pruneNode(group, registry);
   return pruned === null || pruned.kind === 'condition' ? { ...group, children: [] } : pruned;
+}
+
+function parsesAlone(node: FilterNode): boolean {
+  return filterGroupSchema.safeParse({ kind: 'group', combinator: 'and', children: [node] })
+    .success;
+}
+
+function validNode(node: FilterNode): FilterNode | null {
+  if (node.kind === 'condition') return parsesAlone(node) ? node : null;
+  const children = node.children.flatMap((child) => {
+    const kept = validNode(child);
+    return kept === null ? [] : [kept];
+  });
+  return children.length === 0 ? null : { ...node, children };
+}
+
+export function safeFilter<T>(group: FilterGroup, registry: FilterRegistry<T>): FilterGroup {
+  const pruned = pruneFilter(group, registry);
+  if (filterGroupSchema.safeParse(pruned).success) return pruned;
+  const children = pruned.children.flatMap((child) => {
+    const kept = validNode(child);
+    return kept === null ? [] : [kept];
+  });
+  const repaired = { ...pruned, children };
+  return filterGroupSchema.safeParse(repaired).success ? repaired : { ...pruned, children: [] };
 }

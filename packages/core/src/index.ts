@@ -31,6 +31,8 @@ export * from './crm/sync-batch.ts';
 export * from './crm/view-preference-service.ts';
 export * from './crm/view-service.ts';
 export * from './crm/write-context.ts';
+export * from './import/import-service.ts';
+export * from './import/import-source.ts';
 export * from './internal.ts';
 export * from './org/active-organization.ts';
 export * from './org/invite-service.ts';

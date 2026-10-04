@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { readFile } from 'node:fs/promises';
 import { fieldKeySchema, fieldOptionSchema } from '@gravity/shared/validators';
-import { fieldKeyFromLabel, movedIds, optionsFromLines } from '@/features/settings/field-key.ts';
+import {
+  fieldKeyFromLabel,
+  fieldKeyProblem,
+  movedIds,
+  optionsFromLines,
+} from '@/features/settings/field-key.ts';
 
 describe('field keys', () => {
   test('turn labels into keys the server accepts', () => {
@@ -43,5 +49,50 @@ describe('field keys', () => {
     expect(movedIds(['a', 'b', 'c'], 0, -1)).toEqual(['a', 'b', 'c']);
     expect(movedIds(['a', 'b', 'c'], 1, 1)).toEqual(['a', 'c', 'b']);
     expect(movedIds(['a', 'b', 'c'], 2, 1)).toEqual(['a', 'b', 'c']);
+  });
+
+  test('a decomposed accent is stripped', () => {
+    const acute = String.fromCharCode(0x301);
+    expect(fieldKeyFromLabel(`Cafe${acute} owner`)).toBe('cafe_owner');
+  });
+
+  test('the source carries only ASCII, so no literal combining marks', async () => {
+    const source = await readFile(
+      new URL('../../../src/features/settings/field-key.ts', import.meta.url),
+      'utf8',
+    );
+    expect(Array.from(source).every((character) => character.charCodeAt(0) < 128)).toBe(true);
+  });
+});
+
+describe('fieldKeyProblem', () => {
+  const existing = [
+    { object: 'lead', pipelineId: null, key: 'seats' },
+    { object: 'lead', pipelineId: 'p1', key: 'industry' },
+    { object: 'person', pipelineId: null, key: 'tier' },
+  ] as const;
+
+  test('accepts a fresh key', () => {
+    expect(fieldKeyProblem('region', existing, 'lead', null)).toBeNull();
+    expect(fieldKeyProblem('seats', existing, 'company', null)).toBeNull();
+    expect(fieldKeyProblem('industry', existing, 'lead', 'p2')).toBeNull();
+  });
+
+  test('names the same problems the server does', () => {
+    expect(fieldKeyProblem('Seats', existing, 'lead', null)).toBe(
+      'Use lowercase letters, digits and underscores.',
+    );
+    expect(fieldKeyProblem('seats', existing, 'lead', null)).toBe(
+      'A custom field with that key already exists here.',
+    );
+    expect(fieldKeyProblem('industry', existing, 'lead', 'p1')).toBe(
+      'A custom field with that key already exists here.',
+    );
+    expect(fieldKeyProblem('industry', existing, 'lead', null)).toBe(
+      'A pipeline already has a custom field with that key. Use another key.',
+    );
+    expect(fieldKeyProblem('seats', existing, 'lead', 'p1')).toBe(
+      'A workspace-wide custom field already uses that key. Use another key.',
+    );
   });
 });

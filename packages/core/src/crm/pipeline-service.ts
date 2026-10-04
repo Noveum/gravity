@@ -1,6 +1,6 @@
 import { and, asc, count, db, eq, isNull, schema } from '@gravity/db';
 import { defaultStagesFor, type PipelineKind } from '@gravity/shared/constants';
-import { conflict } from '@gravity/shared/errors';
+import { conflict, validationFailed } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
 import { assertCan } from '@gravity/shared/policy';
 import type { PipelineRow, StageRow } from '@gravity/shared/records';
@@ -106,34 +106,32 @@ export async function updatePipeline(
 ): Promise<WithActions<{ pipeline: PipelineRow }>> {
   assertCan(context.principal, 'pipeline:manage');
   const parsed = pipelineUpdateSchema.parse(input);
-  try {
-    return await withBatch(context, async (batch) => {
-      await livePipeline(batch.tx, batch.organizationId, pipelineId, true);
-      const syncId = await batch.nextSyncId();
-      const [updated] = await batch.tx
-        .update(schema.pipeline)
-        .set({
-          ...(parsed.name === undefined ? {} : { name: parsed.name }),
-          ...(parsed.key === undefined ? {} : { key: parsed.key }),
-          syncId,
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.pipeline.id, pipelineId))
-        .returning();
-      const pipeline = pipelineRowOf(requireRow(updated, 'That pipeline does not exist.'));
-      batch.emit({
+  return await withBatch(context, async (batch) => {
+    const current = await livePipeline(batch.tx, batch.organizationId, pipelineId, true);
+    if (parsed.key !== undefined && parsed.key !== current.key) {
+      throw validationFailed('Pipeline keys are fixed after creation: lead links use them.');
+    }
+    const syncId = await batch.nextSyncId();
+    const [updated] = await batch.tx
+      .update(schema.pipeline)
+      .set({
+        ...(parsed.name === undefined ? {} : { name: parsed.name }),
         syncId,
-        action: 'update',
-        model: 'pipeline',
-        modelId: pipeline.id,
-        data: pipeline,
-        scopes: pipelineScopes(batch.organizationId, pipeline.brandId, pipeline.id),
-      });
-      return { pipeline };
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.pipeline.id, pipelineId))
+      .returning();
+    const pipeline = pipelineRowOf(requireRow(updated, 'That pipeline does not exist.'));
+    batch.emit({
+      syncId,
+      action: 'update',
+      model: 'pipeline',
+      modelId: pipeline.id,
+      data: pipeline,
+      scopes: pipelineScopes(batch.organizationId, pipeline.brandId, pipeline.id),
     });
-  } catch (error: unknown) {
-    throw asConflict(error);
-  }
+    return { pipeline };
+  });
 }
 
 export function openLeadsPhrase(total: number): string {

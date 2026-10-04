@@ -92,22 +92,39 @@ describe('createPipeline', () => {
 });
 
 describe('updatePipeline', () => {
-  test('renames and rekeys, emitting one update', async () => {
+  test('renames, emitting one update, and leaves the key alone', async () => {
     const updated = await updatePipeline({ principal: workspace.admin }, firstPipelineId, {
       name: 'Outbound',
-      key: 'OUT',
     });
-    expect(updated.pipeline).toMatchObject({ name: 'Outbound', key: 'OUT' });
+    expect(updated.pipeline).toMatchObject({ name: 'Outbound', key: 'YOD' });
     expect(updated.actions.map((action) => [action.model, action.action])).toEqual([
       ['pipeline', 'update'],
     ]);
   });
 
-  test('a key another pipeline holds is a 409', async () => {
-    await createPipeline({ principal: workspace.admin }, { brandId, name: 'Deals', key: 'DLS' });
-    await expect(
-      updatePipeline({ principal: workspace.admin }, firstPipelineId, { key: 'DLS' }),
-    ).rejects.toThrow('Another pipeline already uses that key.');
+  test('sending the key it already has is accepted', async () => {
+    const updated = await updatePipeline({ principal: workspace.admin }, firstPipelineId, {
+      name: 'Outbound',
+      key: 'yod',
+    });
+    expect(updated.pipeline).toMatchObject({ name: 'Outbound', key: 'YOD' });
+  });
+
+  test('a different key is a 422 and writes nothing, because lead links use it', async () => {
+    const before = await configurationFootprint();
+    const refused = await refusal(
+      updatePipeline({ principal: workspace.admin }, firstPipelineId, {
+        name: 'Outbound',
+        key: 'OUT',
+      }),
+    );
+    expect(refused).toMatchObject({
+      status: 422,
+      message: 'Pipeline keys are fixed after creation: lead links use them.',
+    });
+    expect(await configurationFootprint()).toEqual(before);
+    const [row] = await listPipelines(workspace.admin);
+    expect(row).toMatchObject({ name: 'Prospecting', key: 'YOD' });
   });
 
   test('a foreign pipeline is a 404 and a guest is refused', async () => {

@@ -8,6 +8,7 @@ import type {
   StageCategory,
 } from '@gravity/shared/constants';
 import type { BrandRow, FieldDefinitionRow, PipelineRow, StageRow } from '@gravity/shared/records';
+import { useToast } from '@/components/ui/toast.tsx';
 import { upsertById, withoutId, withoutPipelines } from './bootstrap-cache.ts';
 import { apiFetch } from './fetcher.ts';
 import {
@@ -21,6 +22,10 @@ import {
   stagesEnvelopeSchema,
 } from './schemas.ts';
 import { type ServedRow, useBootstrapMutation } from './use-bootstrap-mutation.ts';
+
+export interface Refusable<TInput> {
+  readonly onRefused?: (input: TInput, message: string) => boolean;
+}
 
 function upsertAll<T extends { readonly id: string }>(list: readonly T[], rows: readonly T[]): T[] {
   const ids = new Set(rows.map((row) => row.id));
@@ -60,8 +65,9 @@ export interface BrandDraft {
   readonly pipelineKey: string;
 }
 
-export function useCreateBrand() {
+export function useCreateBrand(refusable: Refusable<BrandDraft> = {}) {
   return useBootstrapMutation({
+    ...refusable,
     mutationFn: (input: BrandDraft) =>
       apiFetch('/api/brands', brandCreatedSchema, { method: 'POST', body: input }),
     settle: (bootstrap, result) => ({
@@ -121,8 +127,9 @@ export interface PipelineDraft {
   readonly kind: PipelineKind;
 }
 
-export function useCreatePipeline() {
+export function useCreatePipeline(refusable: Refusable<PipelineDraft> = {}) {
   return useBootstrapMutation({
+    ...refusable,
     mutationFn: (input: PipelineDraft) =>
       apiFetch('/api/pipelines', pipelineCreatedSchema, { method: 'POST', body: input }),
     settle: (bootstrap, result) => ({
@@ -137,7 +144,7 @@ export function useCreatePipeline() {
 
 export interface PipelineEdit {
   readonly pipeline: PipelineRow;
-  readonly patch: Partial<Pick<PipelineRow, 'name' | 'key'>>;
+  readonly patch: Partial<Pick<PipelineRow, 'name'>>;
 }
 
 export function useUpdatePipeline() {
@@ -183,8 +190,9 @@ export interface StageDraft {
   readonly category: StageCategory;
 }
 
-export function useCreateStage() {
+export function useCreateStage(refusable: Refusable<StageDraft> = {}) {
   return useBootstrapMutation({
+    ...refusable,
     mutationFn: async (input: StageDraft) =>
       (await apiFetch('/api/stages', stageEnvelopeSchema, { method: 'POST', body: input })).stage,
     settle: (bootstrap, stage) => ({ ...bootstrap, stages: upsertById(bootstrap.stages, stage) }),
@@ -222,8 +230,9 @@ export interface StageOrder {
   readonly stageIds: readonly string[];
 }
 
-export function useReorderStages() {
+export function useReorderStages(pipelineId: string) {
   return useBootstrapMutation({
+    scope: { id: `reorder-${pipelineId}` },
     mutationFn: async (input: StageOrder) =>
       (await apiFetch('/api/stages/reorder', stagesEnvelopeSchema, { method: 'POST', body: input }))
         .stages,
@@ -240,7 +249,24 @@ export function useReorderStages() {
   });
 }
 
+export function useUnarchiveStage() {
+  return useBootstrapMutation({
+    mutationFn: async (stage: StageRow) =>
+      (await apiFetch(`/api/stages/${stage.id}/unarchive`, stageEnvelopeSchema, { method: 'POST' }))
+        .stage,
+    optimistic: (bootstrap, stage) => ({
+      ...bootstrap,
+      stages: upsertById(bootstrap.stages, { ...stage, archivedAt: null }),
+    }),
+    settle: (bootstrap, stage) => ({ ...bootstrap, stages: upsertById(bootstrap.stages, stage) }),
+    served: (stage) => [servedStage(stage)],
+    failure: (stage) => `Could not restore ${stage.name}`,
+  });
+}
+
 export function useArchiveStage() {
+  const { toast } = useToast();
+  const restore = useUnarchiveStage();
   return useBootstrapMutation({
     mutationFn: async (stage: StageRow) =>
       (await apiFetch(`/api/stages/${stage.id}`, stageEnvelopeSchema, { method: 'DELETE' })).stage,
@@ -250,6 +276,11 @@ export function useArchiveStage() {
     }),
     settle: (bootstrap, stage) => ({ ...bootstrap, stages: withoutId(bootstrap.stages, stage.id) }),
     served: (stage) => [servedStage(stage)],
+    afterSuccess: (stage) =>
+      toast({
+        title: `Archived ${stage.name}`,
+        action: { label: 'Undo', onSelect: () => restore.mutate(stage) },
+      }),
     failure: (stage) => `Could not archive ${stage.name}`,
   });
 }
@@ -263,8 +294,9 @@ export interface FieldDraft {
   readonly options: readonly { readonly value: string; readonly label: string }[];
 }
 
-export function useCreateField() {
+export function useCreateField(refusable: Refusable<FieldDraft> = {}) {
   return useBootstrapMutation({
+    ...refusable,
     mutationFn: async (input: FieldDraft) =>
       (await apiFetch('/api/fields', fieldEnvelopeSchema, { method: 'POST', body: input })).field,
     settle: (bootstrap, field) => ({ ...bootstrap, fields: upsertById(bootstrap.fields, field) }),
@@ -299,7 +331,24 @@ export function useUpdateField() {
   });
 }
 
+export function useUnarchiveField() {
+  return useBootstrapMutation({
+    mutationFn: async (field: FieldDefinitionRow) =>
+      (await apiFetch(`/api/fields/${field.id}/unarchive`, fieldEnvelopeSchema, { method: 'POST' }))
+        .field,
+    optimistic: (bootstrap, field) => ({
+      ...bootstrap,
+      fields: upsertById(bootstrap.fields, { ...field, archivedAt: null }),
+    }),
+    settle: (bootstrap, field) => ({ ...bootstrap, fields: upsertById(bootstrap.fields, field) }),
+    served: (field) => [servedField(field)],
+    failure: (field) => `Could not restore ${field.label}`,
+  });
+}
+
 export function useArchiveField() {
+  const { toast } = useToast();
+  const restore = useUnarchiveField();
   return useBootstrapMutation({
     mutationFn: async (field: FieldDefinitionRow) =>
       (await apiFetch(`/api/fields/${field.id}`, fieldEnvelopeSchema, { method: 'DELETE' })).field,
@@ -309,6 +358,11 @@ export function useArchiveField() {
     }),
     settle: (bootstrap, field) => ({ ...bootstrap, fields: withoutId(bootstrap.fields, field.id) }),
     served: (field) => [servedField(field)],
+    afterSuccess: (field) =>
+      toast({
+        title: `Archived ${field.label}`,
+        action: { label: 'Undo', onSelect: () => restore.mutate(field) },
+      }),
     failure: (field) => `Could not archive ${field.label}`,
   });
 }

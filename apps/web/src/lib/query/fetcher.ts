@@ -29,6 +29,12 @@ export class ApiError extends Error {
   }
 }
 
+const REFUSAL_STATUSES: readonly number[] = [409, 422];
+
+export function isRefusal(error: unknown): error is ApiError {
+  return error instanceof ApiError && REFUSAL_STATUSES.includes(error.status);
+}
+
 export interface RequestOptions {
   readonly method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   readonly body?: unknown;

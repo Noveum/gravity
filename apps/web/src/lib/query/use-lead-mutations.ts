@@ -5,7 +5,7 @@ import type { LeadChange, quickCreateSchema } from '@gravity/shared/validators';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
 import { noteServerRow } from '@/lib/realtime/delta-bridge.tsx';
-import { ApiError, apiFetch } from './fetcher.ts';
+import { apiFetch, isRefusal } from './fetcher.ts';
 import {
   COMPANIES_ROOT,
   COMPANY_ROOT,
@@ -115,8 +115,6 @@ const QUICK_CREATE_ROOTS = [
   COMPANY_ROOT,
 ] as const;
 
-const REFUSAL_STATUSES: readonly number[] = [409, 422];
-
 export interface QuickCreateOptions {
   readonly onRefused?: (input: QuickCreateInput, message: string) => boolean;
 }
@@ -133,8 +131,7 @@ export function useQuickCreateLead(options: QuickCreateOptions = {}) {
     },
     onError: (error, input) => {
       removeLead(client, input.preview.id);
-      const refused = error instanceof ApiError && REFUSAL_STATUSES.includes(error.status);
-      if (refused && options.onRefused?.(input, error.message) === true) return;
+      if (isRefusal(error) && options.onRefused?.(input, error.message) === true) return;
       failed(`Could not add ${input.preview.personName}`, error, () => mutation.mutate(input));
     },
     onSuccess: async (result) => {

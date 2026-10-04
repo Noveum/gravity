@@ -201,4 +201,147 @@ describe('FieldsPanel', () => {
       screen.getByText('Changing fields needs the member role. Ask an admin.'),
     ).toBeInTheDocument();
   });
+
+  test('archiving a field raises an Undo toast that brings it back', async () => {
+    const sent = serveJson((url, method) => {
+      if (url.pathname.endsWith('/unarchive'))
+        return { body: { field: { ...industry, syncId: 8 } } };
+      if (method === 'DELETE')
+        return {
+          body: { field: { ...industry, archivedAt: '2026-10-03T10:00:00.000Z', syncId: 7 } },
+        };
+      return { body: bootstrapFixture() };
+    });
+    renderWithClient(<FieldsPanel />, { bootstrap: withFields });
+    await userEvent.click(screen.getByRole('button', { name: 'Archive Industry' }));
+    expect(screen.queryByText('Industry')).not.toBeInTheDocument();
+    expect(await screen.findByText('Archived Industry')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(screen.getByText('Industry')).toBeInTheDocument());
+    expect(sent.find((request) => request.url.endsWith('/unarchive'))).toMatchObject({
+      url: '/api/fields/f9/unarchive',
+      method: 'POST',
+    });
+  });
+
+  test('an Undo refused because the key was reused shows the server message', async () => {
+    serveJson((url, method) => {
+      if (url.pathname.endsWith('/unarchive')) {
+        return {
+          status: 409,
+          body: {
+            error: {
+              code: 'conflict',
+              message: 'A custom field with that key already exists here.',
+            },
+          },
+        };
+      }
+      if (method === 'DELETE')
+        return {
+          body: { field: { ...industry, archivedAt: '2026-10-03T10:00:00.000Z', syncId: 7 } },
+        };
+      return { body: bootstrapFixture() };
+    });
+    renderWithClient(<FieldsPanel />, { bootstrap: withFields });
+    await userEvent.click(screen.getByRole('button', { name: 'Archive Industry' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+    expect(await screen.findByText('Could not restore Industry')).toBeInTheDocument();
+    expect(
+      screen.getByText('A custom field with that key already exists here.'),
+    ).toBeInTheDocument();
+  });
+
+  test('archiving the only field focuses the heading, otherwise a neighbouring row', async () => {
+    const second: FieldDefinitionRow = { ...industry, id: 'f11', key: 'region', label: 'Region' };
+    serveJson((_url, method) =>
+      method === 'DELETE'
+        ? { body: { field: { ...industry, archivedAt: '2026-10-03T10:00:00.000Z', syncId: 7 } } }
+        : { body: bootstrapFixture() },
+    );
+    const view = renderWithClient(<FieldsPanel />, {
+      bootstrap: bootstrapFixture({ fields: [industry, second] }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Archive Industry' }));
+    expect(screen.getByRole('button', { name: 'Edit field Region' })).toHaveFocus();
+    view.unmount();
+    serveJson((_url, method) =>
+      method === 'DELETE'
+        ? { body: { field: { ...industry, archivedAt: '2026-10-03T10:00:00.000Z', syncId: 7 } } }
+        : { body: bootstrapFixture() },
+    );
+    renderWithClient(<FieldsPanel />, { bootstrap: bootstrapFixture({ fields: [industry] }) });
+    await userEvent.click(screen.getByRole('button', { name: 'Archive Industry' }));
+    expect(screen.getByRole('heading', { name: 'Custom fields' })).toHaveFocus();
+  });
+
+  test('a key a live field already has is refused before sending, here and workspace wide', async () => {
+    const sent = serveJson(() => ({ body: {} }));
+    renderWithClient(<FieldsPanel />, { bootstrap: withFields });
+    await userEvent.type(screen.getByLabelText('Field name'), 'Industry');
+    await userEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'A custom field with that key already exists here.',
+    );
+    await userEvent.selectOptions(screen.getByLabelText('Pipeline'), 'p1');
+    await userEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'A workspace-wide custom field already uses that key. Use another key.',
+    );
+    expect(sent).toHaveLength(0);
+  });
+
+  test('a key that is not lowercase letters, digits and underscores is refused before sending', async () => {
+    const sent = serveJson(() => ({ body: {} }));
+    renderWithClient(<FieldsPanel />);
+    await userEvent.type(screen.getByLabelText('Field name'), 'Budget');
+    await userEvent.type(screen.getByLabelText('Key'), 'Big Budget', {
+      initialSelectionStart: 0,
+      initialSelectionEnd: 6,
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Use lowercase letters, digits and underscores.',
+    );
+    expect(sent).toHaveLength(0);
+  });
+
+  test('clearing the key brings the derived one back', async () => {
+    renderWithClient(<FieldsPanel />);
+    await userEvent.type(screen.getByLabelText('Field name'), 'Deal size');
+    const key = screen.getByLabelText('Key');
+    await userEvent.type(key, 'x', { initialSelectionStart: 0, initialSelectionEnd: 9 });
+    expect(key).toHaveValue('x');
+    await userEvent.clear(key);
+    expect(key).toHaveValue('deal_size');
+  });
+
+  test('a refused field keeps everything typed and shows the server message, with no toast', async () => {
+    serveJson((_url, method) =>
+      method === 'GET'
+        ? { body: bootstrapFixture() }
+        : {
+            status: 409,
+            body: {
+              error: {
+                code: 'conflict',
+                message: 'A pipeline already has a custom field with that key. Use another key.',
+              },
+            },
+          },
+    );
+    renderWithClient(<FieldsPanel />);
+    await userEvent.type(screen.getByLabelText('Field name'), 'Deal size');
+    await userEvent.selectOptions(screen.getByLabelText('Type'), 'select');
+    await userEvent.type(screen.getByLabelText('Options, one per line'), 'Small{Enter}Large');
+    await userEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A pipeline already has a custom field',
+    );
+    expect(screen.getByLabelText('Field name')).toHaveValue('Deal size');
+    expect(screen.getByLabelText('Key')).toHaveValue('deal_size');
+    expect(screen.getByLabelText('Type')).toHaveValue('select');
+    expect(screen.getByLabelText('Options, one per line')).toHaveValue('Small\nLarge');
+    expect(screen.queryByText('Could not create Deal size')).not.toBeInTheDocument();
+  });
 });

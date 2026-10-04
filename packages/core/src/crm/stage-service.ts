@@ -73,7 +73,7 @@ function leadCount(total: number): string {
 function emitStage(
   batch: SyncBatch,
   syncId: number,
-  action: 'insert' | 'update' | 'archive',
+  action: 'insert' | 'update' | 'archive' | 'unarchive',
   stage: StageRow,
   brandId: string,
 ): void {
@@ -230,6 +230,48 @@ export async function archiveStage(
       .returning();
     const stage = stageRowOf(requireRow(row, 'That stage does not exist.'));
     emitStage(batch, syncId, 'archive', stage, current.brandId);
+    return { stage };
+  });
+}
+
+export async function unarchiveStage(
+  context: WriteContext,
+  stageId: string,
+): Promise<WithActions<{ stage: StageRow }>> {
+  assertCan(context.principal, 'pipeline:manage');
+  return await withBatch(context, async (batch) => {
+    const owned = and(
+      eq(schema.stage.id, stageId),
+      eq(schema.stage.organizationId, batch.organizationId),
+    );
+    const [located] = await batch.tx
+      .select({ pipelineId: schema.stage.pipelineId })
+      .from(schema.stage)
+      .where(owned)
+      .limit(1);
+    if (located === undefined) throw notFound('That stage does not exist.');
+    const pipeline = await livePipeline(batch.tx, batch.organizationId, located.pipelineId, true);
+    const [current] = await batch.tx
+      .select()
+      .from(schema.stage)
+      .where(owned)
+      .limit(1)
+      .for('update');
+    if (current === undefined) throw notFound('That stage does not exist.');
+    if (current.archivedAt === null) throw conflict('That stage is not archived.');
+    const live = await liveStagesOf(batch.tx, batch.organizationId, [pipeline.id]);
+    const slotTaken = live.some((stage) => stage.sortOrder === current.sortOrder);
+    const sortOrder = slotTaken
+      ? live.reduce((max, stage) => Math.max(max, stage.sortOrder + 1), 0)
+      : current.sortOrder;
+    const syncId = await batch.nextSyncId();
+    const [row] = await batch.tx
+      .update(schema.stage)
+      .set({ archivedAt: null, sortOrder, syncId, updatedAt: new Date() })
+      .where(eq(schema.stage.id, stageId))
+      .returning();
+    const stage = stageRowOf(requireRow(row, 'That stage does not exist.'));
+    emitStage(batch, syncId, 'unarchive', stage, pipeline.brandId);
     return { stage };
   });
 }

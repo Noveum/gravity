@@ -1,10 +1,14 @@
+import type { FieldObject } from '@gravity/shared/constants';
+import type { FieldDefinitionRow } from '@gravity/shared/records';
+
 const MAX_KEY = 40;
+const FIELD_KEY = /^[a-z][a-z0-9_]{0,39}$/;
 const MAX_OPTION_VALUE = 64;
 
 function slug(label: string, separator: '_' | '-'): string {
   return label
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
@@ -40,4 +44,24 @@ export function movedIds(ids: readonly string[], index: number, direction: -1 | 
   next[index] = there;
   next[target] = here;
   return next;
+}
+
+export function fieldKeyProblem(
+  key: string,
+  fields: readonly Pick<FieldDefinitionRow, 'object' | 'pipelineId' | 'key'>[],
+  object: FieldObject,
+  pipelineId: string | null,
+): string | null {
+  if (!FIELD_KEY.test(key)) return 'Use lowercase letters, digits and underscores.';
+  const sameKey = fields.filter((field) => field.object === object && field.key === key);
+  if (sameKey.some((field) => field.pipelineId === pipelineId)) {
+    return 'A custom field with that key already exists here.';
+  }
+  if (pipelineId === null && sameKey.length > 0) {
+    return 'A pipeline already has a custom field with that key. Use another key.';
+  }
+  if (pipelineId !== null && sameKey.some((field) => field.pipelineId === null)) {
+    return 'A workspace-wide custom field already uses that key. Use another key.';
+  }
+  return null;
 }

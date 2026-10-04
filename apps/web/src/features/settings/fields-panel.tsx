@@ -7,7 +7,7 @@ import {
   SELECT_FIELD_TYPES,
 } from '@gravity/shared/constants';
 import { Archive } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
@@ -18,12 +18,16 @@ import { useWorkspace } from '@/features/workspace/use-workspace.ts';
 import { cn } from '@/lib/cn.ts';
 import { listRowHover, revealOnHover } from '@/lib/interaction.ts';
 import {
+  type FieldDraft,
   useArchiveField,
   useCreateField,
   useUpdateField,
 } from '@/lib/query/use-config-mutations.ts';
-import { fieldKeyFromLabel, optionsFromLines } from './field-key.ts';
+import { fieldKeyFromLabel, fieldKeyProblem, optionsFromLines } from './field-key.ts';
+import { focusNeighbourOf } from './focus.ts';
 import { RoleNotice } from './role-notice.tsx';
+import { SettingsGate } from './settings-gate.tsx';
+import { useRefusedDraft } from './use-refused-draft.ts';
 
 const OBJECTS = [
   { value: 'lead', label: 'Leads' },
@@ -39,31 +43,43 @@ function asFieldType(value: string): FieldType {
 
 function NewFieldForm({ object }: { readonly object: EditableObject }) {
   const workspace = useWorkspace();
-  const create = useCreateField();
   const [label, setLabel] = useState('');
   const [key, setKey] = useState<string | null>(null);
   const [type, setType] = useState<FieldType>('text');
   const [optionsText, setOptionsText] = useState('');
   const [pipelineId, setPipelineId] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const refused = useRefusedDraft<FieldDraft>((draft) => {
+    setLabel(draft.label);
+    setKey(draft.key);
+    setType(draft.type);
+    setOptionsText(draft.options.map((option) => option.label).join('\n'));
+    setPipelineId(draft.pipelineId ?? '');
+  });
+  const create = useCreateField({ onRefused: refused.onRefused });
   const derivedKey = key ?? (label.trim() === '' ? '' : fieldKeyFromLabel(label));
   const choice = SELECT_FIELD_TYPES.includes(type);
+  const scope = object === 'lead' && pipelineId !== '' ? pipelineId : null;
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const options = choice ? optionsFromLines(optionsText) : [];
     if (label.trim().length === 0) {
-      setError('Name the field.');
+      refused.setError('Name the field.');
       return;
     }
     if (choice && options.length === 0) {
-      setError('Add at least one option.');
+      refused.setError('Add at least one option.');
       return;
     }
-    setError(null);
+    const keyProblem = fieldKeyProblem(derivedKey, workspace.allFields, object, scope);
+    if (keyProblem !== null) {
+      refused.setError(keyProblem);
+      return;
+    }
+    refused.setError(null);
     create.mutate({
       object,
-      pipelineId: object === 'lead' && pipelineId !== '' ? pipelineId : null,
+      pipelineId: scope,
       key: derivedKey,
       label: label.trim(),
       type,
@@ -92,7 +108,7 @@ function NewFieldForm({ object }: { readonly object: EditableObject }) {
           aria-label="Key"
           value={derivedKey}
           maxLength={40}
-          onChange={(event) => setKey(event.target.value)}
+          onChange={(event) => setKey(event.target.value === '' ? null : event.target.value)}
           className="font-mono"
         />
         <NativeSelect
@@ -130,9 +146,9 @@ function NewFieldForm({ object }: { readonly object: EditableObject }) {
           onChange={(event) => setOptionsText(event.target.value)}
         />
       ) : null}
-      {error === null ? null : (
+      {refused.error === null ? null : (
         <p role="alert" className="text-danger text-xs">
-          {error}
+          {refused.error}
         </p>
       )}
       <Button type="submit" variant="primary" className="self-start">
@@ -142,18 +158,20 @@ function NewFieldForm({ object }: { readonly object: EditableObject }) {
   );
 }
 
-export function FieldsPanel() {
+function FieldsBody() {
   const workspace = useWorkspace();
   const allowed = useCan('field:manage');
   const update = useUpdateField();
   const archive = useArchiveField();
   const [object, setObject] = useState<EditableObject>('lead');
-  if (!workspace.ready) return null;
+  const heading = useRef<HTMLHeadingElement | null>(null);
   const fields = workspace.allFields.filter((field) => field.object === object);
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-6">
       <header className="flex flex-col gap-1">
-        <h1 className="font-medium text-lg text-text">Custom fields</h1>
+        <h1 ref={heading} tabIndex={-1} className="font-medium text-lg text-text outline-none">
+          Custom fields
+        </h1>
         <p className="text-muted text-dense">
           Fields are validated on every write, by people and by agents.
         </p>
@@ -212,7 +230,10 @@ export function FieldsPanel() {
                 variant="ghost"
                 className={cn('size-6 px-0', revealOnHover)}
                 aria-label={`Archive ${field.label}`}
-                onClick={() => archive.mutate(field)}
+                onClick={(event) => {
+                  focusNeighbourOf(event.currentTarget.closest('li'), heading.current);
+                  archive.mutate(field);
+                }}
               >
                 <Archive className="size-3.5" />
               </Button>
@@ -223,5 +244,13 @@ export function FieldsPanel() {
         ))}
       </ul>
     </div>
+  );
+}
+
+export function FieldsPanel() {
+  return (
+    <SettingsGate title="Could not load custom fields">
+      <FieldsBody />
+    </SettingsGate>
   );
 }

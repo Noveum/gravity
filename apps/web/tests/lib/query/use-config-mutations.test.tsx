@@ -22,6 +22,8 @@ import {
   useCreatePipeline,
   useCreateStage,
   useReorderStages,
+  useUnarchiveField,
+  useUnarchiveStage,
   useUpdateBrand,
   useUpdateField,
   useUpdatePipeline,
@@ -280,7 +282,7 @@ describe('configuration mutations', () => {
     const { client, bootstrap } = setup();
     const ids = base.stages.map((stage) => stage.id);
     const reversed = [...ids].reverse();
-    await send(client, useReorderStages, { pipelineId: 'p1', stageIds: reversed });
+    await send(client, () => useReorderStages('p1'), { pipelineId: 'p1', stageIds: reversed });
     const orderOf = (id: string) => bootstrap().stages.find((entry) => entry.id === id)?.sortOrder;
     expect(orderOf(must(reversed[0], 'first id'))).toBe(0);
     expect(orderOf(must(ids[0], 'last id'))).toBe(ids.length - 1);
@@ -354,5 +356,73 @@ describe('configuration mutations', () => {
       expect(isSuperseded(echoOf('field_definition', 'f1', 23), client)).toBe(true),
     );
     expectServed(client, 'field_definition', 'f1', 23);
+  });
+
+  test('a second reorder of the same pipeline waits for the first, and other pipelines do not', async () => {
+    const { client, bootstrap } = setup();
+    const ids = base.stages.map((stage) => stage.id);
+    const first = [...ids].reverse();
+    const second = [...ids].sort();
+    await send(client, () => useReorderStages('p1'), { pipelineId: 'p1', stageIds: first });
+    const again = renderHook(() => useReorderStages('p1'), { wrapper: wrapperFor(client) });
+    act(() => {
+      again.result.current.mutate({ pipelineId: 'p1', stageIds: second });
+    });
+    await waitFor(() =>
+      expect(bootstrap().stages.find((entry) => entry.id === second[0])?.sortOrder).toBe(0),
+    );
+    expect(server.waiting()).toBe(1);
+    expect(server.sent).toHaveLength(1);
+    server.answer(200, { stages: [] });
+    await waitFor(() => expect(server.sent).toHaveLength(2));
+    expect(server.sent[1]).toMatchObject({ body: { pipelineId: 'p1', stageIds: second } });
+    server.answer(200, { stages: [] });
+
+    const other = renderHook(() => useReorderStages('p2'), { wrapper: wrapperFor(client) });
+    act(() => {
+      other.result.current.mutate({ pipelineId: 'p2', stageIds: ['x'] });
+    });
+    await waitFor(() => expect(server.sent).toHaveLength(3));
+    server.answer(200, { stages: [] });
+  });
+
+  test('unarchiving a stage shows it at once, keeps the server row, and a refusal takes it away again', async () => {
+    const archived: StageRow = { ...stageReady, archivedAt: AT, syncId: 30 };
+    const { client, bootstrap } = setup({
+      stages: base.stages.filter((entry) => entry.id !== stageReady.id),
+    });
+    await send(client, useUnarchiveStage, archived);
+    expect(bootstrap().stages.map((entry) => entry.id)).toContain(stageReady.id);
+    expect(bootstrap().stages.find((entry) => entry.id === stageReady.id)?.archivedAt).toBeNull();
+    expect(server.sent[0]).toMatchObject({
+      path: `/api/stages/${stageReady.id}/unarchive`,
+      method: 'POST',
+    });
+    server.answer(200, { stage: { ...stageReady, syncId: 31 } });
+    await waitFor(() =>
+      expect(isSuperseded(echoOf('stage', stageReady.id, 31), client)).toBe(true),
+    );
+    expectServed(client, 'stage', stageReady.id, 31);
+
+    const second = setup({ stages: base.stages.filter((entry) => entry.id !== stageReady.id) });
+    await send(second.client, useUnarchiveStage, archived);
+    server.answer(404, { error: { code: 'not_found', message: 'That pipeline does not exist.' } });
+    await waitFor(() =>
+      expect(second.bootstrap().stages.map((entry) => entry.id)).not.toContain(stageReady.id),
+    );
+    expect(await screen.findByText('Could not restore Ready')).toBeInTheDocument();
+  });
+
+  test('unarchiving a field shows it at once and records the server row', async () => {
+    const archived: FieldDefinitionRow = { ...field, archivedAt: AT, syncId: 40 };
+    const { client, bootstrap } = setup({ fields: [] });
+    await send(client, useUnarchiveField, archived);
+    expect(bootstrap().fields.map((entry) => entry.id)).toEqual(['f1']);
+    expect(server.sent[0]).toMatchObject({ path: '/api/fields/f1/unarchive', method: 'POST' });
+    server.answer(200, { field: { ...field, syncId: 41 } });
+    await waitFor(() =>
+      expect(isSuperseded(echoOf('field_definition', 'f1', 41), client)).toBe(true),
+    );
+    expectServed(client, 'field_definition', 'f1', 41);
   });
 });

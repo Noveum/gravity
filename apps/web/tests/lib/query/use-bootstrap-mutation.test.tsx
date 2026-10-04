@@ -41,6 +41,37 @@ function useRenameBrand() {
   });
 }
 
+function useRenameWith(onRefused?: (input: RenameBrand, message: string) => boolean) {
+  return useBootstrapMutation<RenameBrand, BrandRow>({
+    mutationFn: async (input) =>
+      (
+        await apiFetch(`/api/brands/${input.id}`, brandEnvelopeSchema, {
+          method: 'PATCH',
+          body: { name: input.name },
+        })
+      ).brand,
+    optimistic: (bootstrap, input) => ({
+      ...bootstrap,
+      brands: bootstrap.brands.map((brand) =>
+        brand.id === input.id ? { ...brand, name: input.name } : brand,
+      ),
+    }),
+    settle: (bootstrap, brand) => ({ ...bootstrap, brands: upsertById(bootstrap.brands, brand) }),
+    failure: (input) => `Could not rename the brand to ${input.name}`,
+    ...(onRefused === undefined ? {} : { onRefused }),
+  });
+}
+
+function setupRefusable(onRefused: (input: RenameBrand, message: string) => boolean) {
+  const client = mutationClient();
+  client.setQueryData(queryKeys.bootstrap, bootstrapFixture());
+  const brandName = () => client.getQueryData<Bootstrap>(queryKeys.bootstrap)?.brands[0]?.name;
+  return {
+    brandName,
+    ...renderHook(() => useRenameWith(onRefused), { wrapper: wrapperFor(client) }),
+  };
+}
+
 function setup() {
   const client = mutationClient();
   client.setQueryData(queryKeys.bootstrap, bootstrapFixture());
@@ -115,5 +146,39 @@ describe('useBootstrapMutation', () => {
     applyDelta({ ...echo, syncId: 10 }, client);
     expect(seen).toHaveBeenCalledTimes(1);
     unregister();
+  });
+
+  test('a refusal the caller takes over rolls back without a toast', async () => {
+    const taken = mock<(input: RenameBrand, message: string) => boolean>(() => true);
+    const { brandName, result } = setupRefusable(taken);
+    act(() => {
+      result.current.mutate({ id: 'b1', name: 'Yodu Labs' });
+    });
+    await waitFor(() => expect(server.waiting()).toBe(1));
+    server.answer(409, { error: { code: 'conflict', message: 'That name is taken.' } });
+    await waitFor(() => expect(brandName()).toBe('Yodu'));
+    expect(taken).toHaveBeenCalledWith({ id: 'b1', name: 'Yodu Labs' }, 'That name is taken.');
+    expect(screen.queryByText('Could not rename the brand to Yodu Labs')).not.toBeInTheDocument();
+  });
+
+  test('a refusal the caller declines still toasts, and other failures never reach the caller', async () => {
+    const declined = mock<(input: RenameBrand, message: string) => boolean>(() => false);
+    const { brandName, result } = setupRefusable(declined);
+    act(() => {
+      result.current.mutate({ id: 'b1', name: 'Yodu Labs' });
+    });
+    await waitFor(() => expect(server.waiting()).toBe(1));
+    server.answer(422, { error: { code: 'invalid', message: 'Use a shorter name.' } });
+    expect(await screen.findByText('Could not rename the brand to Yodu Labs')).toBeInTheDocument();
+    await waitFor(() => expect(brandName()).toBe('Yodu'));
+    expect(declined).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.mutate({ id: 'b1', name: 'Yodu Co' });
+    });
+    await waitFor(() => expect(server.waiting()).toBe(1));
+    server.answer(500, { error: { code: 'internal', message: 'Down.' } });
+    expect(await screen.findByText('Could not rename the brand to Yodu Co')).toBeInTheDocument();
+    expect(declined).toHaveBeenCalledTimes(1);
   });
 });

@@ -80,17 +80,15 @@ describe('BrandsPanel', () => {
     expect(within(form).getByLabelText('Brand name')).toHaveValue('');
   });
 
-  test('a typed pipeline key is kept and sent as typed in capitals', async () => {
-    const sent = serveJson((_url, method) =>
-      method === 'GET'
-        ? { body: bootstrapFixture() }
-        : { status: 422, body: { error: { code: 'invalid', message: 'No.' } } },
-    );
+  test('a typed pipeline key is sent in capitals', async () => {
+    const sent = serveJson(() => ({ body: {} }));
     renderWithClient(<BrandsPanel />);
     const form = screen.getByRole('form', { name: 'New brand' });
     await userEvent.type(within(form).getByLabelText('Brand name'), 'Nimbus');
-    await userEvent.clear(within(form).getByLabelText('Pipeline key'));
-    await userEvent.type(within(form).getByLabelText('Pipeline key'), 'nbs');
+    const key = within(form).getByLabelText('Pipeline key');
+    await userEvent.type(key, 'x', { initialSelectionStart: 0, initialSelectionEnd: 3 });
+    await userEvent.type(key, 'bs');
+    expect(key).toHaveValue('XBS');
     await userEvent.type(within(form).getByLabelText('Domain'), 'nimbus.dev');
     await userEvent.click(within(form).getByRole('button', { name: 'Create brand' }));
     await waitFor(() =>
@@ -100,9 +98,97 @@ describe('BrandsPanel', () => {
       name: 'Nimbus',
       domain: 'nimbus.dev',
       color: 'blue',
-      pipelineKey: 'NBS',
+      pipelineKey: 'XBS',
     });
+  });
+
+  test('clearing the key brings the suggestion back', async () => {
+    renderWithClient(<BrandsPanel />);
+    const form = screen.getByRole('form', { name: 'New brand' });
+    await userEvent.type(within(form).getByLabelText('Brand name'), 'Nimbus');
+    const key = within(form).getByLabelText('Pipeline key');
+    await userEvent.type(key, 'q', { initialSelectionStart: 0, initialSelectionEnd: 3 });
+    expect(key).toHaveValue('Q');
+    await userEvent.clear(key);
+    expect(key).toHaveValue('NIM');
+  });
+
+  test('a refused brand keeps everything typed and shows the server message, with no toast', async () => {
+    const sent = serveJson((_url, method) =>
+      method === 'GET'
+        ? { body: bootstrapFixture() }
+        : {
+            status: 422,
+            body: { error: { code: 'invalid', message: 'Use a domain like acme.com.' } },
+          },
+    );
+    renderWithClient(<BrandsPanel />);
+    const form = screen.getByRole('form', { name: 'New brand' });
+    await userEvent.type(within(form).getByLabelText('Brand name'), 'Nimbus');
+    await userEvent.type(within(form).getByLabelText('Domain'), 'not a domain');
+    await userEvent.click(within(form).getByRole('button', { name: 'violet' }));
+    await userEvent.click(within(form).getByRole('button', { name: 'Create brand' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('Use a domain like acme.com.');
+    expect(within(form).getByLabelText('Brand name')).toHaveValue('Nimbus');
+    expect(within(form).getByLabelText('Domain')).toHaveValue('not a domain');
+    expect(within(form).getByLabelText('Pipeline key')).toHaveValue('NIM');
+    expect(within(form).getByRole('button', { name: 'violet' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.queryByText('Could not create Nimbus')).not.toBeInTheDocument();
+    expect(sent.filter((request) => request.method === 'POST')).toHaveLength(1);
+  });
+
+  test('a server failure that is not a refusal offers Retry as before', async () => {
+    serveJson((_url, method) =>
+      method === 'GET'
+        ? { body: bootstrapFixture() }
+        : { status: 500, body: { error: { code: 'internal', message: 'Down.' } } },
+    );
+    renderWithClient(<BrandsPanel />);
+    const form = screen.getByRole('form', { name: 'New brand' });
+    await userEvent.type(within(form).getByLabelText('Brand name'), 'Nimbus');
+    await userEvent.click(within(form).getByRole('button', { name: 'Create brand' }));
     expect(await screen.findByText('Could not create Nimbus')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  test('a pipeline key another pipeline holds is refused before sending', async () => {
+    const sent = serveJson(() => ({ body: {} }));
+    renderWithClient(<BrandsPanel />);
+    const form = screen.getByRole('form', { name: 'New brand' });
+    await userEvent.type(within(form).getByLabelText('Brand name'), 'Nimbus');
+    await userEvent.type(within(form).getByLabelText('Pipeline key'), 'yod', {
+      initialSelectionStart: 0,
+      initialSelectionEnd: 3,
+    });
+    await userEvent.click(within(form).getByRole('button', { name: 'Create brand' }));
+    expect(within(form).getByRole('alert')).toHaveTextContent(
+      'Another pipeline already uses that key.',
+    );
+    expect(sent).toHaveLength(0);
+  });
+
+  test('a refused pipeline keeps its draft and the message', async () => {
+    serveJson((_url, method) =>
+      method === 'GET'
+        ? { body: bootstrapFixture() }
+        : {
+            status: 409,
+            body: {
+              error: { code: 'conflict', message: 'Another pipeline already uses that key.' },
+            },
+          },
+    );
+    const { container } = renderWithClient(<BrandsPanel />);
+    const item = brandItem(container, 'Yodu');
+    await userEvent.type(within(item).getByLabelText('New pipeline for Yodu'), 'Renewals');
+    await userEvent.click(within(item).getByRole('button', { name: /^Add pipeline / }));
+    expect(await within(item).findByRole('alert')).toHaveTextContent(
+      'Another pipeline already uses that key.',
+    );
+    expect(within(item).getByLabelText('New pipeline for Yodu')).toHaveValue('Renewals');
   });
 
   test('a brand with no name or a key that is not 2 to 5 letters is refused before sending', async () => {
@@ -112,8 +198,10 @@ describe('BrandsPanel', () => {
     await userEvent.click(within(form).getByRole('button', { name: 'Create brand' }));
     expect(within(form).getByRole('alert')).toHaveTextContent('Name the brand.');
     await userEvent.type(within(form).getByLabelText('Brand name'), 'Nimbus');
-    await userEvent.clear(within(form).getByLabelText('Pipeline key'));
-    await userEvent.type(within(form).getByLabelText('Pipeline key'), 'n');
+    await userEvent.type(within(form).getByLabelText('Pipeline key'), 'n', {
+      initialSelectionStart: 0,
+      initialSelectionEnd: 3,
+    });
     await userEvent.click(within(form).getByRole('button', { name: 'Create brand' }));
     expect(within(form).getByRole('alert')).toHaveTextContent('Use 2 to 5 letters');
     expect(sent).toHaveLength(0);
@@ -156,7 +244,9 @@ describe('BrandsPanel', () => {
     await userEvent.click(within(item).getByRole('button', { name: 'Archive' }));
     expect(sent).toHaveLength(0);
     const confirm = within(item).getByRole('alertdialog', { name: 'Archive Yodu' });
-    expect(confirm).toHaveTextContent('Its pipelines and stages leave every list.');
+    expect(confirm).toHaveTextContent(
+      'Its pipelines, stages, pipeline fields and saved views leave every list, and this cannot be undone here.',
+    );
     await userEvent.click(within(confirm).getByRole('button', { name: 'Keep' }));
     expect(within(item).queryByRole('alertdialog')).not.toBeInTheDocument();
     await userEvent.click(within(item).getByRole('button', { name: 'Archive' }));
@@ -222,5 +312,44 @@ describe('BrandsPanel', () => {
     expect(
       screen.getByText('Changing brands needs the member role. Ask an admin.'),
     ).toBeInTheDocument();
+  });
+
+  test('archiving a brand moves focus to the next brand, else the previous, else the heading', async () => {
+    const base = bootstrapFixture();
+    const second = { ...yodu, id: 'b2', name: 'Nimbus', syncId: 2 };
+    const [pipeline] = base.pipelines;
+    if (pipeline === undefined) throw new Error('The fixture has a pipeline.');
+    const secondPipeline = { ...pipeline, id: 'p2', brandId: 'b2', key: 'NIM', syncId: 2 };
+    serveJson(() => ({ body: { brand: { ...yodu, archivedAt: AT, syncId: 9 } } }));
+    const { container } = renderWithClient(<BrandsPanel />, {
+      bootstrap: bootstrapFixture({
+        brands: [yodu, second],
+        pipelines: [pipeline, secondPipeline],
+      }),
+    });
+    const archive = async (name: string) => {
+      const item = brandItem(container, name);
+      await userEvent.click(within(item).getByRole('button', { name: 'Archive' }));
+      await userEvent.click(
+        within(within(item).getByRole('alertdialog')).getByRole('button', { name: 'Archive' }),
+      );
+    };
+    await archive('Yodu');
+    await waitFor(() => expect(container.querySelector('[data-brand="Yodu"]')).toBeNull());
+    expect(
+      within(brandItem(container, 'Nimbus')).getByRole('button', { name: 'Archive' }),
+    ).toHaveFocus();
+  });
+
+  test('archiving the only brand moves focus to the page heading', async () => {
+    serveJson(() => ({ body: { brand: { ...yodu, archivedAt: AT, syncId: 9 } } }));
+    const { container } = renderWithClient(<BrandsPanel />);
+    const item = brandItem(container, 'Yodu');
+    await userEvent.click(within(item).getByRole('button', { name: 'Archive' }));
+    await userEvent.click(
+      within(within(item).getByRole('alertdialog')).getByRole('button', { name: 'Archive' }),
+    );
+    await waitFor(() => expect(container.querySelector('[data-brand="Yodu"]')).toBeNull());
+    expect(screen.getByRole('heading', { name: 'Brands' })).toHaveFocus();
   });
 });

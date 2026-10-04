@@ -1,11 +1,13 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { db, eq, schema } from '@gravity/db';
 import { createBrand } from '../../src/crm/brand-service.ts';
+import { archivePipeline } from '../../src/crm/pipeline-service.ts';
 import {
   archiveStage,
   createStage,
   listStages,
   reorderStages,
+  unarchiveStage,
   updateStage,
 } from '../../src/crm/stage-service.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
@@ -149,6 +151,88 @@ describe('stages', () => {
     const stages = await listStages(workspace.admin);
     expect(stages.map((stage) => stage.id)).toEqual(stageIds);
     expect(stages[0]?.name).toBe('New');
+  });
+});
+
+describe('unarchiveStage', () => {
+  test('restores an archived stage to its place and emits one unarchive action', async () => {
+    const target = stageIds[4] ?? '';
+    await archiveStage({ principal: workspace.admin }, target);
+    expect((await listStages(workspace.admin)).map((stage) => stage.id)).not.toContain(target);
+    const restored = await unarchiveStage({ principal: workspace.admin }, target);
+    expect(restored.stage).toMatchObject({
+      id: target,
+      name: 'Follow-up',
+      sortOrder: 4,
+      archivedAt: null,
+    });
+    expect(restored.actions.map((action) => [action.model, action.action, action.modelId])).toEqual(
+      [['stage', 'unarchive', target]],
+    );
+    expect((await listStages(workspace.admin)).map((stage) => stage.id)).toEqual(stageIds);
+    const [row] = await db.select().from(schema.stage).where(eq(schema.stage.id, target));
+    expect(row?.archivedAt).toBeNull();
+    expect(row?.syncId).toBe(restored.stage.syncId);
+  });
+
+  test('a restored stage gets a newer sync id than the archive', async () => {
+    const target = stageIds[2] ?? '';
+    const archived = await archiveStage({ principal: workspace.admin }, target);
+    const restored = await unarchiveStage({ principal: workspace.admin }, target);
+    expect(restored.stage.syncId).toBeGreaterThan(archived.stage.syncId);
+  });
+
+  test('a stage whose slot was taken meanwhile goes to the end', async () => {
+    const target = stageIds[4] ?? '';
+    await archiveStage({ principal: workspace.admin }, target);
+    const live = stageIds.filter((id) => id !== target);
+    await reorderStages(
+      { principal: workspace.admin },
+      { pipelineId, stageIds: [...live].reverse() },
+    );
+    const restored = await unarchiveStage({ principal: workspace.admin }, target);
+    expect(restored.stage.sortOrder).toBe(12);
+    const order = (await listStages(workspace.admin)).map((stage) => stage.id);
+    expect(order.at(-1)).toBe(target);
+  });
+
+  test('a stage that is not archived is a 409 and writes nothing', async () => {
+    const before = await configurationFootprint();
+    const refused = await refusal(
+      unarchiveStage({ principal: workspace.admin }, stageIds[0] ?? ''),
+    );
+    expect(refused).toMatchObject({ status: 409, message: 'That stage is not archived.' });
+    expect(await configurationFootprint()).toEqual(before);
+  });
+
+  test('a stage of an archived pipeline is a 404', async () => {
+    const target = stageIds[4] ?? '';
+    await archiveStage({ principal: workspace.admin }, target);
+    await archivePipeline({ principal: workspace.admin }, pipelineId);
+    const before = await configurationFootprint();
+    const refused = await refusal(unarchiveStage({ principal: workspace.admin }, target));
+    expect(refused).toMatchObject({ status: 404, message: 'That pipeline does not exist.' });
+    expect(await configurationFootprint()).toEqual(before);
+  });
+
+  test('a contributor or guest is refused and a foreign stage is a 404', async () => {
+    const target = stageIds[4] ?? '';
+    await archiveStage({ principal: workspace.admin }, target);
+    const guest = await createMemberPrincipal(workspace, 'guest');
+    const contributor = await createMemberPrincipal(workspace, 'contributor');
+    const foreign = await createWorkspace('Other');
+    const before = await configurationFootprint();
+    for (const principal of [guest, contributor]) {
+      expect(await refusal(unarchiveStage({ principal }, target))).toMatchObject({
+        status: 403,
+        message: 'Your role cannot pipeline manage.',
+      });
+    }
+    expect(await refusal(unarchiveStage({ principal: foreign.admin }, target))).toMatchObject({
+      status: 404,
+      message: 'That stage does not exist.',
+    });
+    expect(await configurationFootprint()).toEqual(before);
   });
 });
 

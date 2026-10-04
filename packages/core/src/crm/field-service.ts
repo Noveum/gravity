@@ -21,7 +21,7 @@ import type { WriteContext } from './write-context.ts';
 function emitField(
   batch: SyncBatch,
   syncId: number,
-  action: 'insert' | 'update' | 'archive',
+  action: 'insert' | 'update' | 'archive' | 'unarchive',
   field: FieldDefinitionRow,
 ): void {
   batch.emit({
@@ -178,6 +178,58 @@ export async function archiveFieldDefinition(
     emitField(batch, syncId, 'archive', field);
     return { field };
   });
+}
+
+export async function unarchiveFieldDefinition(
+  context: WriteContext,
+  fieldId: string,
+): Promise<WithActions<{ field: FieldDefinitionRow }>> {
+  assertCan(context.principal, 'field:manage');
+  try {
+    return await withBatch(context, async (batch) => {
+      const owned = and(
+        eq(schema.fieldDefinition.id, fieldId),
+        eq(schema.fieldDefinition.organizationId, batch.organizationId),
+      );
+      const [located] = await batch.tx
+        .select({
+          object: schema.fieldDefinition.object,
+          key: schema.fieldDefinition.key,
+          pipelineId: schema.fieldDefinition.pipelineId,
+        })
+        .from(schema.fieldDefinition)
+        .where(owned)
+        .limit(1);
+      if (located === undefined) throw notFound('That custom field does not exist.');
+      await batch.tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`${batch.organizationId}:${located.object}:${located.key}`}, 0))`,
+      );
+      if (located.pipelineId !== null) {
+        await livePipeline(batch.tx, batch.organizationId, located.pipelineId, true);
+      }
+      const [current] = await batch.tx
+        .select()
+        .from(schema.fieldDefinition)
+        .where(owned)
+        .limit(1)
+        .for('update');
+      if (current === undefined) throw notFound('That custom field does not exist.');
+      if (current.archivedAt === null) throw conflict('That custom field is not archived.');
+      const restoring = fieldDefinitionRowOf(current);
+      await assertKeyIsFree(batch, restoring.object, restoring.pipelineId, restoring.key);
+      const syncId = await batch.nextSyncId();
+      const [row] = await batch.tx
+        .update(schema.fieldDefinition)
+        .set({ archivedAt: null, syncId, updatedAt: new Date() })
+        .where(eq(schema.fieldDefinition.id, fieldId))
+        .returning();
+      const field = fieldDefinitionRowOf(requireRow(row, 'That custom field does not exist.'));
+      emitField(batch, syncId, 'unarchive', field);
+      return { field };
+    });
+  } catch (error: unknown) {
+    throw asConflict(error);
+  }
 }
 
 export async function archiveFieldsOfPipelineIn(

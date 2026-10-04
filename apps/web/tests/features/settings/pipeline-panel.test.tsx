@@ -9,7 +9,7 @@ import { mockNavigation } from '../../support/navigation.ts';
 import { renderWithClient } from '../../support/render.tsx';
 
 await restoreModulesAfterThisFile(['next/navigation']);
-mockNavigation('/settings/pipelines/p1');
+const navigation = mockNavigation('/settings/pipelines/p1');
 const { PipelinePanel } = await import('@/features/settings/pipeline-panel.tsx');
 
 const realFetch = globalThis.fetch;
@@ -153,7 +153,8 @@ describe('PipelinePanel', () => {
     expect(screen.getByLabelText('New stage')).toHaveValue('');
   });
 
-  test('archiving the pipeline asks first, then removes it', async () => {
+  test('archiving the pipeline asks first, then goes back to the brands without a dead page', async () => {
+    navigation.push.mockClear();
     const sent = serveJson(() => ({
       body: { pipeline: { ...pipeline, archivedAt: AT, syncId: 9 } },
     }));
@@ -161,28 +162,162 @@ describe('PipelinePanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Archive pipeline' }));
     expect(sent).toHaveLength(0);
     const confirm = screen.getByRole('alertdialog', { name: 'Archive Prospecting' });
+    expect(confirm).toHaveTextContent(
+      'Its stages, pipeline fields and saved views leave every list, and this cannot be undone here.',
+    );
     await userEvent.click(within(confirm).getByRole('button', { name: 'Keep' }));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Archive pipeline' })).toHaveFocus();
     await userEvent.click(screen.getByRole('button', { name: 'Archive pipeline' }));
     await userEvent.click(
       within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive' }),
     );
-    expect(await screen.findByText('This pipeline does not exist')).toBeInTheDocument();
+    expect(screen.queryByText('This pipeline does not exist')).not.toBeInTheDocument();
+    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/settings/brands'));
+    expect(screen.queryByText('This pipeline does not exist')).not.toBeInTheDocument();
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ url: '/api/pipelines/p1', method: 'DELETE' });
   });
 
-  test('renaming the pipeline key sends it in capitals', async () => {
-    const sent = serveJson((_url, _method, body) => ({
-      body: { pipeline: { ...pipeline, ...(body as object), syncId: 9 } },
-    }));
+  test('a refused pipeline archive stays on the page, restores it and says why', async () => {
+    navigation.push.mockClear();
+    serveJson((_url, method) =>
+      method === 'GET'
+        ? { body: bootstrapFixture() }
+        : {
+            status: 409,
+            body: {
+              error: {
+                code: 'conflict',
+                message: 'Close the 2 open or held leads in Prospecting before archiving it.',
+              },
+            },
+          },
+    );
     renderWithClient(<PipelinePanel pipelineId="p1" />);
-    await userEvent.click(screen.getByRole('button', { name: 'Edit Key' }));
-    const input = screen.getByRole('textbox', { name: 'Key' });
-    await userEvent.clear(input);
-    await userEvent.type(input, 'yd{Enter}');
-    await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toMatchObject({ url: '/api/pipelines/p1', body: { key: 'YD' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Archive pipeline' }));
+    await userEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive' }),
+    );
+    expect(
+      await screen.findByText('Close the 2 open or held leads in Prospecting before archiving it.'),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Prospecting/ })).toBeInTheDocument();
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
+
+  test('the key is shown read-only with the reason and cannot be edited', () => {
+    renderWithClient(<PipelinePanel pipelineId="p1" />);
+    expect(screen.queryByRole('button', { name: 'Edit Key' })).not.toBeInTheDocument();
+    expect(screen.getByText('YOD')).toBeInTheDocument();
+    expect(screen.getByText('Keys are fixed: lead links use them.')).toBeInTheDocument();
+  });
+
+  test('a contributor sees the key too', () => {
+    renderWithClient(<PipelinePanel pipelineId="p1" />, {
+      bootstrap: bootstrapFixture({ me: { userId: 'u3', role: 'contributor' } }),
+    });
+    expect(screen.getByText('Keys are fixed: lead links use them.')).toBeInTheDocument();
+  });
+
+  test('archiving a stage raises an Undo toast that brings it back', async () => {
+    const stage = stageOf('Follow-up');
+    const sent = serveJson((url, method) => {
+      if (url.pathname.endsWith('/unarchive')) return { body: { stage: { ...stage, syncId: 8 } } };
+      if (method === 'DELETE') return { body: { stage: { ...stage, archivedAt: AT, syncId: 7 } } };
+      return { body: bootstrapFixture() };
+    });
+    renderWithClient(<PipelinePanel pipelineId="p1" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Archive Follow-up' }));
+    expect(stageNames()).not.toContain('Follow-up');
+    expect(await screen.findByText('Archived Follow-up')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(stageNames()).toContain('Follow-up'));
+    const restore = sent.find((request) => request.url.endsWith('/unarchive'));
+    expect(restore).toMatchObject({ url: `/api/stages/${stage.id}/unarchive`, method: 'POST' });
+    expect(stageNames().indexOf('Follow-up')).toBe(4);
+  });
+
+  test('an Undo the server refuses takes the stage away again and shows the message', async () => {
+    const stage = stageOf('Follow-up');
+    serveJson((url, method) => {
+      if (url.pathname.endsWith('/unarchive')) {
+        return {
+          status: 404,
+          body: { error: { code: 'not_found', message: 'That pipeline does not exist.' } },
+        };
+      }
+      if (method === 'DELETE') return { body: { stage: { ...stage, archivedAt: AT, syncId: 7 } } };
+      return {
+        body: bootstrapFixture({
+          stages: fixture.stages.filter((entry) => entry.id !== stage.id),
+        }),
+      };
+    });
+    renderWithClient(<PipelinePanel pipelineId="p1" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Archive Follow-up' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+    expect(await screen.findByText('Could not restore Follow-up')).toBeInTheDocument();
+    expect(screen.getByText('That pipeline does not exist.')).toBeInTheDocument();
+    expect(stageNames()).not.toContain('Follow-up');
+  });
+
+  test('archiving a stage moves focus to the next row, else the previous, else the heading', async () => {
+    serveJson((_url, method) =>
+      method === 'DELETE'
+        ? { body: { stage: { ...stageOf('Follow-up'), archivedAt: AT, syncId: 7 } } }
+        : { body: bootstrapFixture() },
+    );
+    renderWithClient(<PipelinePanel pipelineId="p1" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Archive Follow-up' }));
+    expect(
+      within(stageItem('Replied')).getByRole('button', { name: 'Edit stage Replied' }),
+    ).toHaveFocus();
+  });
+
+  test('archiving the last row focuses the previous one', async () => {
+    serveJson((_url, method) =>
+      method === 'DELETE'
+        ? { body: { stage: { ...stageOf('Do not contact'), archivedAt: AT, syncId: 7 } } }
+        : { body: bootstrapFixture() },
+    );
+    renderWithClient(<PipelinePanel pipelineId="p1" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Archive Do not contact' }));
+    expect(
+      within(stageItem('Closed: not a fit')).getByRole('button', {
+        name: 'Edit stage Closed: not a fit',
+      }),
+    ).toHaveFocus();
+  });
+
+  test('archiving the only stage focuses the heading', async () => {
+    const only = stageOf('New');
+    serveJson((_url, method) =>
+      method === 'DELETE'
+        ? { body: { stage: { ...only, archivedAt: AT, syncId: 7 } } }
+        : { body: bootstrapFixture() },
+    );
+    renderWithClient(<PipelinePanel pipelineId="p1" />, {
+      bootstrap: bootstrapFixture({ stages: [only] }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Archive New' }));
+    expect(screen.getByRole('heading', { level: 1 })).toHaveFocus();
+  });
+
+  test('a refused new stage keeps its draft and shows the message with no toast', async () => {
+    serveJson((_url, method) =>
+      method === 'GET'
+        ? { body: bootstrapFixture() }
+        : { status: 422, body: { error: { code: 'invalid', message: 'Give it a name.' } } },
+    );
+    renderWithClient(<PipelinePanel pipelineId="p1" />);
+    await userEvent.type(screen.getByLabelText('New stage'), 'Nurture');
+    await userEvent.selectOptions(screen.getByLabelText('New stage type'), 'hold');
+    await userEvent.click(screen.getByRole('button', { name: 'Add stage' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Give it a name.');
+    expect(screen.getByLabelText('New stage')).toHaveValue('Nurture');
+    expect(screen.getByLabelText('New stage type')).toHaveValue('hold');
+    expect(screen.queryByText('Could not add Nurture')).not.toBeInTheDocument();
   });
 
   test('a pipeline that is not there says so and links back to the brands', () => {

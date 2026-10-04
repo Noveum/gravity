@@ -7,6 +7,7 @@ import { assertCan } from '@gravity/shared/policy';
 import { emailDomain, normalizeDomains, parseDomainList } from '@gravity/shared/utils';
 import { organizationCreateSchema, organizationUpdateSchema } from '@gravity/shared/validators';
 import { principalActor } from '../actor.ts';
+import { cappedTransaction } from '../crm/sync-batch.ts';
 import { newId, requireRow } from '../internal.ts';
 import { recordSync } from '../realtime/outbox.ts';
 import { buildSyncAction } from '../realtime/publisher.ts';
@@ -41,7 +42,7 @@ export async function createOrganization(
 ): Promise<OrganizationBootstrap> {
   const parsed = organizationCreateSchema.parse(input);
 
-  return await db.transaction(async (tx) => {
+  return await cappedTransaction(async (tx) => {
     const [taken] = await tx
       .select({ id: schema.organization.id })
       .from(schema.organization)
@@ -110,7 +111,7 @@ export async function updateOrganization(
   assertCan(principal, 'workspace:manage');
   const parsed = organizationUpdateSchema.parse(input);
 
-  return await db.transaction(async (tx) => {
+  return await cappedTransaction(async (tx) => {
     const syncId = await nextSyncId(tx);
     const [updated] = await tx
       .update(schema.organization)

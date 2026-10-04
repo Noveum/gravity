@@ -1,7 +1,14 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { readdir, readFile } from 'node:fs/promises';
 import { db, eq, schema, sql } from '@gravity/db';
 import { DomainError } from '@gravity/shared/errors';
-import { retryOnUniqueViolation, type SyncBatch, withBatch } from '../../src/crm/sync-batch.ts';
+import {
+  cappedTransaction,
+  retryOnUniqueViolation,
+  type SyncBatch,
+  WRITE_DEADLINE_MS,
+  withBatch,
+} from '../../src/crm/sync-batch.ts';
 import { newId } from '../../src/internal.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
@@ -414,5 +421,68 @@ describe('retryOnUniqueViolation', () => {
       retryable,
     );
     expect([value, others]).toEqual(['ok', 2]);
+  });
+});
+
+describe('cappedTransaction', () => {
+  test('caps the statement timeout of the transaction it runs', async () => {
+    const setting = await cappedTransaction(async (tx) => {
+      const [row] = await tx.execute<{ value: string }>(
+        sql`select current_setting('statement_timeout') as value`,
+      );
+      return String(row?.['value'] ?? '');
+    });
+    expect(setting).toBe('30s');
+  });
+
+  test('rolls back a transaction that outlives the write deadline', async () => {
+    let clock = 0;
+    const attempt = cappedTransaction(
+      async (tx) => {
+        await tx.insert(schema.outbox).values({
+          syncId: 990_001,
+          organizationId: workspace.organizationId,
+          payload: {},
+        });
+        clock = WRITE_DEADLINE_MS + 1;
+      },
+      { now: () => clock },
+    );
+    await expect(attempt).rejects.toThrow('The write took longer than 30 seconds');
+    expect(
+      await db.select().from(schema.outbox).where(eq(schema.outbox.syncId, 990_001)),
+    ).toHaveLength(0);
+  });
+
+  test('a read only transaction refuses writes', async () => {
+    const attempt = cappedTransaction(
+      (tx) =>
+        tx.insert(schema.outbox).values({
+          syncId: 990_002,
+          organizationId: workspace.organizationId,
+          payload: {},
+        }),
+      { accessMode: 'read only' },
+    );
+    await expect(attempt).rejects.toThrow();
+    expect(
+      await db.select().from(schema.outbox).where(eq(schema.outbox.syncId, 990_002)),
+    ).toHaveLength(0);
+  });
+});
+
+describe('transaction ownership', () => {
+  const OWNS_ITS_TRANSACTION = new Set(['crm/sync-batch.ts', 'realtime/outbox.ts']);
+
+  test('no core module opens an uncapped transaction', async () => {
+    const root = new URL('../../src/', import.meta.url);
+    const files = await readdir(root, { recursive: true });
+    const offenders: string[] = [];
+    for (const file of files) {
+      if (!file.endsWith('.ts') || OWNS_ITS_TRANSACTION.has(file)) continue;
+      const text = await readFile(new URL(file, root), 'utf8');
+      if (text.includes('db.transaction(')) offenders.push(file);
+    }
+    expect(offenders).toEqual([]);
   });
 });

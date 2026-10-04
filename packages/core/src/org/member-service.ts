@@ -6,6 +6,7 @@ import type { Principal } from '@gravity/shared/policy';
 import { assertCan, canAssignRole, policyRole } from '@gravity/shared/policy';
 import { memberUpdateSchema } from '@gravity/shared/validators';
 import { principalActor } from '../actor.ts';
+import { cappedTransaction } from '../crm/sync-batch.ts';
 import { type Executor, requireRow } from '../internal.ts';
 import { recordSync } from '../realtime/outbox.ts';
 import { buildSyncAction } from '../realtime/publisher.ts';
@@ -113,7 +114,7 @@ export async function updateMemberRole(
     throw forbidden('Only admins can change roles.');
   }
 
-  return await db.transaction(async (tx) => {
+  return await cappedTransaction(async (tx) => {
     const [existing] = await tx
       .select()
       .from(schema.member)
@@ -164,7 +165,7 @@ export async function removeMember(
 ): Promise<{ actions: SyncAction[] }> {
   assertCan(principal, 'member:manage');
 
-  return await db.transaction(async (tx) => {
+  return await cappedTransaction(async (tx) => {
     const [existing] = await tx
       .select()
       .from(schema.member)

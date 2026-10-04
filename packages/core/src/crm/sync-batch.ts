@@ -96,6 +96,34 @@ function pauseBeforeRetry(attempt: number): Promise<void> {
 
 export const WRITE_DEADLINE_MS = 30_000;
 
+export function assertWithinWriteDeadline(startedAt: number, now: () => number): void {
+  if (now() - startedAt > WRITE_DEADLINE_MS) {
+    throw internal('The write took longer than 30 seconds and was rolled back. Try again.');
+  }
+}
+
+export interface CappedTransactionOptions {
+  readonly now?: () => number;
+  readonly accessMode?: 'read only' | 'read write';
+}
+
+export async function cappedTransaction<T>(
+  run: (tx: Transaction) => Promise<T>,
+  options: CappedTransactionOptions = {},
+): Promise<T> {
+  const now = options.now ?? Date.now;
+  return await db.transaction(
+    async (tx) => {
+      const startedAt = now();
+      await capTransactionLifetime(tx);
+      const result = await run(tx);
+      assertWithinWriteDeadline(startedAt, now);
+      return result;
+    },
+    { accessMode: options.accessMode ?? 'read write' },
+  );
+}
+
 export interface BatchOptions {
   readonly now?: () => number;
 }
@@ -113,9 +141,7 @@ export async function withBatch<T extends object>(
         await capTransactionLifetime(tx);
         const batch = createSyncBatch(tx, context);
         const result = await run(batch);
-        if (now() - startedAt > WRITE_DEADLINE_MS) {
-          throw internal('The write took longer than 30 seconds and was rolled back. Try again.');
-        }
+        assertWithinWriteDeadline(startedAt, now);
         const actions = batch.actions().map(validAction);
         await recordSync(tx, actions);
         return { ...result, actions };

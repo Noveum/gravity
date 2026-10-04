@@ -11,6 +11,7 @@ import {
 } from '@gravity/shared/policy';
 import { inviteBulkSchema, inviteCreateSchema } from '@gravity/shared/validators';
 import { principalActor } from '../actor.ts';
+import { cappedTransaction } from '../crm/sync-batch.ts';
 import { addUtcDays, type Executor, hashToken, newId, newToken, requireRow } from '../internal.ts';
 import { recordSync } from '../realtime/outbox.ts';
 import { buildSyncAction } from '../realtime/publisher.ts';
@@ -149,7 +150,7 @@ export async function createInvite(
   assertCan(principal, 'member:invite');
   const parsed = inviteCreateSchema.parse(input);
 
-  return await db.transaction(async (tx) => {
+  return await cappedTransaction(async (tx) => {
     await assertEmailIsFree(tx, principal.organizationId, parsed.email);
     const { invitation, token, actions } = await insertInvite(
       tx,
@@ -175,7 +176,7 @@ export async function createInvites(
   assertCan(principal, 'member:invite');
   const parsed = inviteBulkSchema.parse(input);
 
-  return await db.transaction(async (tx) => {
+  return await cappedTransaction(async (tx) => {
     const actor = principalActor(principal);
     const now = new Date();
     const invites: CreatedInvite[] = [];
@@ -254,7 +255,7 @@ export async function revokeInvite(
 ): Promise<{ invitation: InvitationRow; actions: SyncAction[] }> {
   assertCan(principal, 'member:invite');
 
-  return await db.transaction(async (tx) => {
+  return await cappedTransaction(async (tx) => {
     const syncId = await nextSyncId(tx);
     const actor = principalActor(principal);
     const [updated] = await tx
@@ -281,7 +282,7 @@ export async function resendInvite(
 ): Promise<{ invitation: InvitationRow; token: string; actions: SyncAction[] }> {
   assertCan(principal, 'member:invite');
 
-  return await db.transaction(async (tx) => {
+  return await cappedTransaction(async (tx) => {
     const syncId = await nextSyncId(tx);
     const actor = principalActor(principal);
     const token = newToken();
@@ -315,7 +316,7 @@ export interface AcceptedInvite {
 }
 
 export async function acceptInvite(token: string, userId: string): Promise<AcceptedInvite> {
-  return await db.transaction(async (tx) => {
+  return await cappedTransaction(async (tx) => {
     const tokenHash = hashToken(token);
     const [target] = await tx
       .select({ organizationId: schema.invitation.organizationId })

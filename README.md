@@ -44,6 +44,11 @@ Stop the dev server before running `bun run db:migrate` against local PGlite. It
 
 Open `/welcome` for the landing page, `/docs` for setup/assistant/deployment guides and `/blog` for two original design articles. These pages work without auth or a database and reuse Orbit's light/dark palette. The CRM remains at `/`. Marketing distinguishes working foundations from planned integrations and has no invented customer claims. [Positioning research](docs/positioning-2026-10-04.md) records the competitor review. Set `PUBLIC_SITE_URL` and opt into `PUBLIC_SITE_INDEXING` only for a reviewed production launch; preview and development hosts remain non-indexable.
 
+After deploying, run `bun run test:deployment https://your-gravity-domain.example`
+to check the actual uploaded public routes, authentication page, readiness,
+branding assets and OAuth MCP challenge. Deployment exclusions for root docs
+are anchored so they do not remove the application's `/docs` routes.
+
 ## Try the app
 
 Open `/onboarding` to create a fictional workspace with its first product. The new queue offers contact creation and connection setup guidance. Users signing in without an organization are directed there automatically. Connections shows the canonical MCP URL and explains which integrations still need implementation/configuration.

@@ -5,7 +5,7 @@ import {
   inCondition,
   replaceCondition,
 } from '@gravity/shared/filters';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, waitForElementToBeRemoved, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { restoreModulesAfterThisFile } from '../../../tests-support.ts';
 import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
@@ -203,7 +203,7 @@ describe('LeadsView live updates', () => {
     expect(screen.getByTestId('lead-row-YOD-2')).toHaveAttribute('data-active', 'true');
     await screen.findByRole('complementary', { name: 'Lead YOD-2' });
     act(() => removeLead(client, 'l2'));
-    await waitFor(() => expect(screen.queryByTestId('lead-row-YOD-2')).not.toBeInTheDocument());
+    await waitForElementToBeRemoved(() => screen.queryByTestId('lead-row-YOD-2'));
     expect(screen.getByTestId('lead-row-YOD-1')).toHaveAttribute('data-active', 'true');
     expect(screen.getByRole('status')).toHaveTextContent('YOD-1, Person 1');
     expect(await screen.findByRole('complementary', { name: 'Lead YOD-1' })).toBeInTheDocument();
@@ -225,7 +225,7 @@ describe('LeadsView live updates', () => {
     await userEvent.keyboard('x');
     expect(screen.getByTestId('lead-row-YOD-2')).toHaveAttribute('data-selected', 'true');
     act(() => removeLead(client, 'l2'));
-    await waitFor(() => expect(screen.queryByTestId('lead-row-YOD-2')).not.toBeInTheDocument());
+    await waitForElementToBeRemoved(() => screen.queryByTestId('lead-row-YOD-2'));
     const [, second] = rows;
     if (second === undefined) throw new Error('fixture lead');
     act(() => placeLead(client, { ...second, syncId: 40 }));
@@ -358,11 +358,9 @@ describe('LeadsView board', () => {
     const card = await screen.findByTestId('board-card-YOD-1');
     expect(screen.getByTestId('board-column-New')).toContainElement(card);
     act(() => placeLead(client, leadFixture({ stageId: 'stage-contacted', syncId: 50 })));
-    await waitFor(() =>
-      expect(screen.getByTestId('board-column-Contacted')).toContainElement(
-        screen.getByTestId('board-card-YOD-1'),
-      ),
-    );
+    expect(
+      await within(screen.getByTestId('board-column-Contacted')).findByTestId('board-card-YOD-1'),
+    ).toBeInTheDocument();
     expect(screen.getByTestId('board-card-YOD-1')).toHaveAttribute('data-active', 'true');
   });
 

@@ -333,11 +333,9 @@ describe('LeadBoard over the live list cache', () => {
     const card = await screen.findByTestId('board-card-YOD-1');
     act(() => card.focus());
     await userEvent.keyboard('{Shift>}{ArrowRight}{/Shift}');
-    await waitFor(() =>
-      expect(screen.getByTestId('board-column-Researching')).toContainElement(
-        screen.getByTestId('board-card-YOD-1'),
-      ),
-    );
+    expect(
+      await within(screen.getByTestId('board-column-Researching')).findByTestId('board-card-YOD-1'),
+    ).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('board-card-YOD-1')).toHaveFocus());
   });
 
@@ -346,11 +344,9 @@ describe('LeadBoard over the live list cache', () => {
     const card = await screen.findByTestId('board-card-YOD-1');
     act(() => card.focus());
     act(() => placeLead(client, { ...ada, stageId: 'stage-contacted', syncId: 70 }));
-    await waitFor(() =>
-      expect(screen.getByTestId('board-column-Contacted')).toContainElement(
-        screen.getByTestId('board-card-YOD-1'),
-      ),
-    );
+    expect(
+      await within(screen.getByTestId('board-column-Contacted')).findByTestId('board-card-YOD-1'),
+    ).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('board-card-YOD-1')).toHaveFocus());
   });
 
@@ -363,11 +359,9 @@ describe('LeadBoard over the live list cache', () => {
       await Promise.resolve();
     });
     act(() => placeLead(client, { ...ada, stageId: 'stage-contacted', syncId: 71 }));
-    await waitFor(() =>
-      expect(screen.getByTestId('board-column-Contacted')).toContainElement(
-        screen.getByTestId('board-card-YOD-1'),
-      ),
-    );
+    expect(
+      await within(screen.getByTestId('board-column-Contacted')).findByTestId('board-card-YOD-1'),
+    ).toBeInTheDocument();
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
@@ -447,11 +441,11 @@ describe('LeadBoard over the live list cache', () => {
         body: { type: 'update', patch: { stageId: 'stage-researching' } },
       });
       expect(navigation.push).not.toHaveBeenCalled();
-      await waitFor(() =>
-        expect(screen.getByTestId('board-column-Researching')).toContainElement(
-          screen.getByTestId('board-card-YOD-1'),
+      expect(
+        await within(screen.getByTestId('board-column-Researching')).findByTestId(
+          'board-card-YOD-1',
         ),
-      );
+      ).toBeInTheDocument();
       await waitFor(() => expect(screen.getByTestId('board-card-YOD-1')).toHaveFocus());
       await userEvent.keyboard('{Meta>}z{/Meta}');
       await waitFor(() => expect(sent).toHaveLength(2));

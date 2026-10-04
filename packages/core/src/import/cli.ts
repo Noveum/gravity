@@ -1,9 +1,11 @@
 import { db, eq, schema } from '@gravity/db';
 import {
+  assertImportFileSize,
   CLI_IMPORT_LIMITS,
   decodeImportBytes,
   IMPORT_FORMATS,
   IMPORT_TARGETS,
+  type ImportLimits,
   type ImportMapping,
   type ImportReport,
   importMappingSchema,
@@ -21,6 +23,7 @@ import { flushOutbox } from '../realtime/outbox.ts';
 import { commitImport, previewImport } from './import-service.ts';
 
 export interface CliIo {
+  readonly sizeOf: (path: string) => Promise<number>;
   readonly readBytes: (path: string) => Promise<Uint8Array>;
   readonly print: (line: string) => void;
 }
@@ -101,13 +104,17 @@ async function pipelineIdOf(principal: Principal, args: CliArgs): Promise<string
   return pipeline.id;
 }
 
-function mappingOf(bytes: Uint8Array): ImportMapping {
+async function textOf(io: CliIo, path: string, limits: ImportLimits): Promise<string> {
+  assertImportFileSize(await io.sizeOf(path), limits);
+  return decodeImportBytes(await io.readBytes(path), limits);
+}
+
+function mappingOf(text: string): ImportMapping {
   let raw: unknown;
   try {
-    raw = JSON.parse(decodeImportBytes(bytes, MAPPING_FILE_LIMITS)) as unknown;
-  } catch (error: unknown) {
-    if (error instanceof SyntaxError) throw new Error('The mapping file is not valid JSON.');
-    throw error;
+    raw = JSON.parse(text) as unknown;
+  } catch {
+    throw new Error('The mapping file is not valid JSON.');
   }
   const parsed = mappingFileSchema.safeParse(raw);
   if (!parsed.success) {
@@ -159,7 +166,7 @@ export async function runImportCli(argv: readonly string[], io: CliIo): Promise<
       .limit(1);
     if (user === undefined) throw new Error(`No user has the email ${args.as}.`);
     const principal = await resolvePrincipal(user.id, organization.id);
-    const content = decodeImportBytes(await io.readBytes(args.path), CLI_IMPORT_LIMITS);
+    const content = await textOf(io, args.path, CLI_IMPORT_LIMITS);
     const pipelineId = await pipelineIdOf(principal, args);
     const mapping =
       args.mapping === undefined
@@ -168,7 +175,7 @@ export async function runImportCli(argv: readonly string[], io: CliIo): Promise<
             args.target,
             await listFieldDefinitions(principal),
           )
-        : mappingOf(await io.readBytes(args.mapping));
+        : mappingOf(await textOf(io, args.mapping, MAPPING_FILE_LIMITS));
     const request = {
       format: args.adapter,
       content,

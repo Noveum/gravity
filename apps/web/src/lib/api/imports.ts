@@ -3,6 +3,8 @@ import { decodeImportBytes, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS } from '@gravity/s
 import { readCappedBytes } from './capped-body.ts';
 
 export const MAX_IMPORT_REQUEST_BYTES = MAX_IMPORT_BYTES * 2 + 100_000;
+export const IMPORT_PREVIEW_BUDGET_MS = 50_000;
+export const IMPORT_COMMIT_BUDGET_MS = 240_000;
 export const IMPORT_PREVIEW_RATE = { window: 3600, max: 120 } as const;
 export const IMPORT_COMMIT_RATE = { window: 3600, max: 20 } as const;
 

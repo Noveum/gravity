@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import * as core from '@gravity/core';
 import { consumeRequestRateLimit, createBrand } from '@gravity/core';
 import {
   createMemberPrincipal,
@@ -8,8 +9,13 @@ import {
 } from '@gravity/core/test-support';
 import { db, schema } from '@gravity/db';
 import { POST } from '@/app/api/imports/route.ts';
-import { IMPORT_COMMIT_RATE, importRateKey, MAX_IMPORT_REQUEST_BYTES } from '@/lib/api/imports.ts';
-import { signedInAs } from '../../../../tests-support.ts';
+import {
+  IMPORT_COMMIT_BUDGET_MS,
+  IMPORT_COMMIT_RATE,
+  importRateKey,
+  MAX_IMPORT_REQUEST_BYTES,
+} from '@/lib/api/imports.ts';
+import { signedInAs, signedOut } from '../../../../tests-support.ts';
 
 let workspace: TestWorkspace;
 let pipelineId = '';
@@ -87,5 +93,54 @@ describe('/api/imports', () => {
     await signedInAs(contributor.userId, workspace.organizationId);
     expect((await commit({ ...BODY, pipelineId })).status).toBe(403);
     expect(await db.select().from(schema.person)).toHaveLength(0);
+  });
+
+  test('checks the role before the body and before the budget', async () => {
+    const contributor = await createMemberPrincipal(workspace, 'contributor');
+    await signedInAs(contributor.userId, workspace.organizationId);
+    expect((await commit('x'.repeat(MAX_IMPORT_REQUEST_BYTES + 1))).status).toBe(403);
+    for (let index = 0; index < IMPORT_COMMIT_RATE.max; index += 1) {
+      await consumeRequestRateLimit(importRateKey('commit', contributor), IMPORT_COMMIT_RATE);
+    }
+    expect((await commit({ ...BODY, pipelineId })).status).toBe(403);
+  });
+
+  test('requests that cannot be read do not spend the budget', async () => {
+    await commit('x'.repeat(MAX_IMPORT_REQUEST_BYTES + 1));
+    await commit('{"format":');
+    for (let index = 0; index < IMPORT_COMMIT_RATE.max; index += 1) {
+      const decision = await consumeRequestRateLimit(
+        importRateKey('commit', workspace.admin),
+        IMPORT_COMMIT_RATE,
+      );
+      expect(decision.allowed).toBe(true);
+    }
+  });
+
+  test('refuses a signed out caller and writes nothing', async () => {
+    signedOut();
+    expect((await commit({ ...BODY, pipelineId })).status).toBe(401);
+    expect(await db.select().from(schema.person)).toHaveLength(0);
+  });
+
+  test('lets the service refuse content between the file cap and the request envelope', async () => {
+    const content = `Name,Email\n${'a'.repeat(2_100_000)}`;
+    const response = await commit({ ...BODY, content, pipelineId });
+    expect(response.status).toBe(413);
+    expect(await db.select().from(schema.person)).toHaveLength(0);
+  });
+
+  test('passes a deadline that falls inside the function time limit', async () => {
+    const commitSpy = spyOn(core, 'commitImport');
+    try {
+      const before = Date.now();
+      expect((await commit({ ...BODY, pipelineId })).status).toBe(200);
+      const deadline = commitSpy.mock.calls[0]?.[2].deadline ?? 0;
+      expect(deadline).toBeGreaterThanOrEqual(before + IMPORT_COMMIT_BUDGET_MS);
+      expect(deadline).toBeLessThanOrEqual(Date.now() + IMPORT_COMMIT_BUDGET_MS);
+      expect(IMPORT_COMMIT_BUDGET_MS).toBeLessThan(300_000);
+    } finally {
+      commitSpy.mockRestore();
+    }
   });
 });

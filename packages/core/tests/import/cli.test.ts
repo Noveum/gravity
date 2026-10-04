@@ -1,9 +1,15 @@
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { db, eq, schema } from '@gravity/db';
+import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { db, eq, schema, sql } from '@gravity/db';
+import { CLI_IMPORT_LIMITS } from '@gravity/shared/import';
 import { createBrand } from '../../src/crm/brand-service.ts';
 import { parseCliArgs, runImportCli } from '../../src/import/cli.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
-import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
+import {
+  createMemberPrincipal,
+  createWorkspace,
+  resetDatabase,
+  type TestWorkspace,
+} from '../../src/test-support.ts';
 
 const CSV = 'Full Name,Work Email,Stage\nAda Lovelace,ada@vela.example,Ready\n';
 
@@ -25,21 +31,60 @@ afterAll(async () => {
   await closeRealtime();
 });
 
-function harness(files: Record<string, string | Uint8Array>) {
+function harness(files: Record<string, string | Uint8Array>, sizes: Record<string, number> = {}) {
   const lines: string[] = [];
+  const reads: string[] = [];
+  const bytesOf = (file: string | Uint8Array): Uint8Array =>
+    typeof file === 'string' ? new TextEncoder().encode(file) : file;
   return {
     lines,
+    reads,
     io: {
-      readBytes: (path: string) => {
+      sizeOf: (path: string) => {
         const file = files[path];
         if (file === undefined) return Promise.reject(new Error(`No file ${path}`));
-        return Promise.resolve(typeof file === 'string' ? new TextEncoder().encode(file) : file);
+        return Promise.resolve(sizes[path] ?? bytesOf(file).byteLength);
+      },
+      readBytes: (path: string) => {
+        reads.push(path);
+        const file = files[path];
+        if (file === undefined) return Promise.reject(new Error(`No file ${path}`));
+        return Promise.resolve(bytesOf(file));
       },
       print: (line: string) => {
         lines.push(line);
       },
     },
   };
+}
+
+async function withFailingTrigger<T>(
+  table: string,
+  condition: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  await db.execute(
+    sql.raw(`
+      create or replace function cli_test_refuse() returns trigger as $$
+      begin
+        if ${condition} then raise exception 'refused by test trigger'; end if;
+        return new;
+      end;
+      $$ language plpgsql;
+      create trigger cli_test_refuse before insert on ${table}
+        for each row execute function cli_test_refuse();
+    `),
+  );
+  try {
+    return await run();
+  } finally {
+    await db.execute(
+      sql.raw(`
+        drop trigger if exists cli_test_refuse on ${table};
+        drop function if exists cli_test_refuse();
+      `),
+    );
+  }
 }
 
 function argv(...extra: string[]): string[] {
@@ -162,6 +207,88 @@ describe('runImportCli', () => {
       ),
     ).toBe(1);
     expect(stranger.lines).toEqual(['No user has the email nobody@vela.example.']);
+  });
+
+  test('stats the data file and refuses an oversized one without reading it', async () => {
+    const run = harness({ 'people.csv': CSV }, { 'people.csv': CLI_IMPORT_LIMITS.maxBytes + 1 });
+    expect(await runImportCli(argv('--commit'), run.io)).toBe(1);
+    expect(run.reads).toEqual([]);
+    expect(run.lines).toEqual(['This file is 50.0 MB. Import files up to 50.0 MB, or split it.']);
+    expect(await db.select().from(schema.person)).toHaveLength(0);
+  });
+
+  test('stats the mapping file and refuses an oversized one without reading it', async () => {
+    const run = harness(
+      { 'people.csv': CSV, 'map.json': JSON.stringify({ columns: {} }) },
+      { 'map.json': 5_000_000 },
+    );
+    expect(await runImportCli(argv('--mapping', 'map.json'), run.io)).toBe(1);
+    expect(run.reads).toEqual(['people.csv']);
+    expect(run.lines).toEqual(['This file is 5.0 MB. Import files up to 1.0 MB, or split it.']);
+  });
+
+  test('refuses a user outside the workspace', async () => {
+    const outsider = await createWorkspace('Other');
+    const run = harness({ 'people.csv': CSV });
+    const words = argv('--commit').map((word) =>
+      word === workspace.adminUser.email ? outsider.adminUser.email : word,
+    );
+    expect(await runImportCli(words, run.io)).toBe(1);
+    expect(run.lines).toEqual(['You are not a member of this workspace.']);
+    expect(await db.select().from(schema.person)).toHaveLength(0);
+  });
+
+  test('refuses a contributor, on a dry run and on --commit', async () => {
+    const contributor = await createMemberPrincipal(workspace, 'contributor');
+    const [user] = await db
+      .select()
+      .from(schema.user)
+      .where(eq(schema.user.id, contributor.userId));
+    const email = user?.email ?? '';
+    for (const flags of [[], ['--commit']]) {
+      const run = harness({ 'people.csv': CSV });
+      const words = argv(...flags).map((word) =>
+        word === workspace.adminUser.email ? email : word,
+      );
+      expect(await runImportCli(words, run.io)).toBe(1);
+      expect(run.lines).toHaveLength(1);
+      expect(run.lines[0]).toBe('Your role cannot import run.');
+    }
+    expect(await db.select().from(schema.person)).toHaveLength(0);
+  });
+
+  test('a failing row is named and the exit code is 1', async () => {
+    const quiet = spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const run = harness({
+        'people.csv':
+          'Full Name,Work Email\nAda Lovelace,ada@vela.example\nGrace Hopper,grace@vela.example\n',
+      });
+      const code = await withFailingTrigger('person', `new.name = 'Grace Hopper'`, () =>
+        runImportCli(argv('--commit'), run.io),
+      );
+      expect(code).toBe(1);
+      expect(run.lines.at(-1)).toStartWith('Stopped at row 2: ');
+      expect(run.lines.at(-1)).toContain('Fix row 2 and run the same file again to continue.');
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
+  test('a failure that blames no row prints its message alone and exits 1', async () => {
+    const quiet = spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const run = harness({ 'people.csv': CSV });
+      const code = await withFailingTrigger('outbox', 'true', () =>
+        runImportCli(argv('--commit'), run.io),
+      );
+      expect(code).toBe(1);
+      expect(run.lines.at(-1)).toStartWith('Something went wrong on our side.');
+      expect(run.lines.at(-1)).toEndWith('Run the same file again to continue.');
+      expect(run.lines.some((line) => line.startsWith('Stopped at row'))).toBe(false);
+    } finally {
+      quiet.mockRestore();
+    }
   });
 
   test('parseCliArgs refuses a flag without a value', () => {

@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import * as core from '@gravity/core';
 import { consumeRequestRateLimit, createBrand } from '@gravity/core';
 import {
   createMemberPrincipal,
@@ -8,7 +9,12 @@ import {
 } from '@gravity/core/test-support';
 import { db, schema } from '@gravity/db';
 import { POST } from '@/app/api/imports/preview/route.ts';
-import { IMPORT_PREVIEW_RATE, importRateKey, MAX_IMPORT_REQUEST_BYTES } from '@/lib/api/imports.ts';
+import {
+  IMPORT_PREVIEW_BUDGET_MS,
+  IMPORT_PREVIEW_RATE,
+  importRateKey,
+  MAX_IMPORT_REQUEST_BYTES,
+} from '@/lib/api/imports.ts';
 import { signedInAs, signedOut } from '../../../../../tests-support.ts';
 import { withNativeFetch } from '../../../../support/native-fetch.ts';
 
@@ -150,6 +156,16 @@ describe('/api/imports/preview', () => {
     expect((await preview({ ...BODY, pipelineId })).status).toBe(403);
   });
 
+  test('checks the role before the body and before the budget', async () => {
+    const contributor = await createMemberPrincipal(workspace, 'contributor');
+    await signedInAs(contributor.userId, workspace.organizationId);
+    expect((await preview('x'.repeat(MAX_IMPORT_REQUEST_BYTES + 1))).status).toBe(403);
+    for (let index = 0; index < IMPORT_PREVIEW_RATE.max; index += 1) {
+      await consumeRequestRateLimit(importRateKey('preview', contributor), IMPORT_PREVIEW_RATE);
+    }
+    expect((await preview({ ...BODY, pipelineId })).status).toBe(403);
+  });
+
   test('refuses a signed out caller', async () => {
     signedOut();
     expect((await preview({ ...BODY, pipelineId })).status).toBe(401);
@@ -162,5 +178,46 @@ describe('/api/imports/preview', () => {
     const response = await preview({ ...BODY, pipelineId });
     expect(response.status).toBe(429);
     expect(await errorCode(response)).toBe('rate_limited');
+  });
+
+  test('requests that cannot be read do not spend the budget', async () => {
+    await preview('x'.repeat(MAX_IMPORT_REQUEST_BYTES + 1));
+    await preview('{"format":');
+    await withNativeFetch(async () => {
+      await POST(
+        new Request('http://localhost:3300/api/imports/preview', {
+          method: 'POST',
+          body: new Uint8Array([0x7b, 0xc3, 0x28, 0x7d]),
+        }),
+      );
+    });
+    for (let index = 0; index < IMPORT_PREVIEW_RATE.max; index += 1) {
+      const decision = await consumeRequestRateLimit(
+        importRateKey('preview', workspace.admin),
+        IMPORT_PREVIEW_RATE,
+      );
+      expect(decision.allowed).toBe(true);
+    }
+  });
+
+  test('accepts content between the file cap and the request envelope and lets the service refuse it', async () => {
+    const content = `Name,Email\n${'a'.repeat(2_100_000)}`;
+    const response = await preview({ ...BODY, content, pipelineId });
+    expect(response.status).toBe(413);
+    expect(await errorCode(response)).toBe('payload_too_large');
+  });
+
+  test('passes a deadline that falls inside the function time limit', async () => {
+    const previewSpy = spyOn(core, 'previewImport');
+    try {
+      const before = Date.now();
+      expect((await preview({ ...BODY, pipelineId })).status).toBe(200);
+      const deadline = previewSpy.mock.calls[0]?.[2]?.deadline ?? 0;
+      expect(deadline).toBeGreaterThanOrEqual(before + IMPORT_PREVIEW_BUDGET_MS);
+      expect(deadline).toBeLessThanOrEqual(Date.now() + IMPORT_PREVIEW_BUDGET_MS);
+      expect(IMPORT_PREVIEW_BUDGET_MS).toBeLessThan(60_000);
+    } finally {
+      previewSpy.mockRestore();
+    }
   });
 });

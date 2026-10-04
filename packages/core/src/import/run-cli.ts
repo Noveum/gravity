@@ -1,8 +1,9 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { closeRealtime } from '../realtime/publisher.ts';
 import { runImportCli } from './cli.ts';
 
 const code = await runImportCli(process.argv.slice(2), {
+  sizeOf: async (path) => (await stat(path)).size,
   readBytes: async (path) => new Uint8Array(await readFile(path)),
   print: (line) => console.info(line),
 });

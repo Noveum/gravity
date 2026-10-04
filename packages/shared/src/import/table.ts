@@ -56,6 +56,10 @@ function tooLarge(bytes: number, limits: ImportLimits) {
   );
 }
 
+export function assertImportFileSize(bytes: number, limits: ImportLimits): void {
+  if (bytes > limits.maxBytes) throw tooLarge(bytes, limits);
+}
+
 function assertCleanText(text: string): void {
   if (text.includes(NUL)) {
     throw unsupportedMediaType(
@@ -76,7 +80,7 @@ function assertImportSize(content: string, limits: ImportLimits): void {
 }
 
 export function decodeImportBytes(bytes: Uint8Array, limits: ImportLimits): string {
-  if (bytes.byteLength > limits.maxBytes) throw tooLarge(bytes.byteLength, limits);
+  assertImportFileSize(bytes.byteLength, limits);
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   } catch {

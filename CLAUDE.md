@@ -52,21 +52,24 @@ Bun does not load a parent directory `.env`, so a script running with its cwd in
 ## Layout
 
 ```
-apps/web                  Next.js app: UI, REST route handlers, auth, cron, and the
-                          realtime socket at /api/ws
+apps/web                  Next.js app: UI, REST route handlers, auth (including the MCP
+                          OAuth server), cron, the realtime socket at /api/ws and the
+                          MCP endpoint at /mcp
 apps/realtime             Bun.serve WebSocket host, local development only, never deployed
+packages/mcp-server       MCP read tools and the request handler behind /mcp
 packages/realtime-server  Connection hub: tickets, scopes, presence, Redis fan-out
 packages/realtime-client  Browser socket client and React bindings
 packages/services         Email layout, templates, and transports
-packages/core             Domain services: organizations, members, invites, sync ids, outbox
+packages/core             Domain services: organizations, members, invites, CRM records,
+                          import, MCP grants and tokens, sync ids, outbox, the demo seed
 packages/db               Drizzle schema, migrations, client
 packages/shared           Zod validators, domain types, event contracts, policy, pure utils
 scripts/                  repo tooling, written in TypeScript and run with bun
 docs/                     specs, plans, provenance
 ```
 
-Everything ships as one Next.js app. The realtime hub lives in a package so the app
-stays thin and it keeps its own test suite. `apps/realtime` exists only so local
+Everything ships as one Next.js app. The realtime hub and the MCP tools live in packages
+so the app stays thin and each keeps its own test suite. `apps/realtime` exists only so local
 development has a socket server, because a node function cannot upgrade a connection
 under `next dev`.
 
@@ -80,6 +83,10 @@ bun run infra:up         start postgres, redis, minio
 bun run db:push          apply schema to the dev database
 bun run db:test-setup    create the per package test databases and push the schema
 bun run dev              run web and realtime together
+bun run import           import a CSV or JSON file from the command line: dry run unless
+                         --commit, --from-row continues a stopped import
+bun run db:seed          create the demo workspace in a local database; it refuses a remote
+                         host or production unless --allow-remote
 bun run verify           lint + comment policy + source bytes + Bun imports + dependency dedupe + typecheck + tests
 bun test                 run one package's tests from inside that package
 ```

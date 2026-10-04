@@ -1,0 +1,11 @@
+.env
+.env.*
+.data
+.git
+.next
+coverage
+tests
+docs
+drizzle
+scripts
+*.tsbuildinfo

@@ -4,7 +4,7 @@ An open-source CRM foundation for teams managing relationships and outreach acro
 
 The daily action queue is the center of the app. A person can have separate buyer or partner relationships for different products, with separate owners, context, outreach, and opportunities. Conversation history and evidence explain the next step.
 
-**Status: working local foundation, not a production sales system.** Changes persist in a real local PostgreSQL engine. Live Gmail/LinkedIn/Calendar connection, sending, invitations, imports, execution workers, and deployment remain unfinished. No live mail or private outreach data is included.
+**Status: working foundation with managed PostgreSQL deployment support; live integrations remain unfinished.** The local demo persists in a real local PostgreSQL engine. Supabase deployment uses restricted runtime credentials, verified TLS and server-only table policies. Live Gmail/LinkedIn/Calendar connection, sending, invitations, imports and execution workers remain unfinished. No live mail or private outreach data is included.
 
 ## Run locally
 
@@ -86,4 +86,4 @@ Start from `.env.example`; use a secret manager for real credentials. [Setup and
 
 Target deployment: Vercel with managed PostgreSQL and private object storage, without Kubernetes. Do not deploy this foundation for real sales work before the production gates are complete. In particular, the local 10 MB upload route must be replaced with authenticated direct-to-storage uploads to accommodate Vercel request limits.
 
-Source repository: [Noveum/gravity](https://github.com/Noveum/gravity). Licensed under Apache-2.0. This is a deployable application source package, not an npm SDK; `private: true` prevents accidental registry publication. [Contributing](CONTRIBUTING.md), [security reporting](SECURITY.md), [release review](docs/release-review.md), [dependency inventory](docs/dependency-licenses.json) and [CI/preview deployment](docs/ci-and-deployment.md) describe the release process. No production deployment is active.
+Source repository: [Noveum/gravity](https://github.com/Noveum/gravity). Licensed under Apache-2.0. This is a deployable application source package, not an npm SDK; `private: true` prevents accidental registry publication. [Contributing](CONTRIBUTING.md), [security reporting](SECURITY.md), [release review](docs/release-review.md), [dependency inventory](docs/dependency-licenses.json) and [CI/deployment](docs/ci-and-deployment.md) describe the release process. [Supabase setup](docs/supabase.md) covers migrations, runtime permissions, recovery and the deployed health check. A running deployment does not qualify unfinished provider flows for real sales work.

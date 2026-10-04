@@ -82,13 +82,18 @@ afterAll(async () => {
 describe('describe_workspace', () => {
   test('describes brands, pipelines with stages and fields, members and visible views', async () => {
     const { text, data } = await client.result('describe_workspace');
-    expect(data['workspace']).toMatchObject({ name: 'Nimbus', url: 'http://localhost:3300/leads' });
+    const slug = (data['workspace'] as { slug: string }).slug;
+    expect(slug).toStartWith('nimbus-');
+    expect(data['workspace']).toMatchObject({
+      name: 'Nimbus',
+      url: `http://localhost:3300/leads?w=${slug}`,
+    });
     expect(data['me']).toEqual({ userId: workspace.adminUser.id, role: 'admin' });
     const brands = data['brands'] as BrandView[];
     expect(brands.map((brand) => brand.name)).toEqual(['Lumen']);
     const pipeline = brands[0]?.pipelines[0];
     expect(pipeline?.key).toBe('LUM');
-    expect(pipeline?.url).toBe('http://localhost:3300/leads/LUM');
+    expect(pipeline?.url).toBe(`http://localhost:3300/leads/LUM?w=${slug}`);
     expect(pipeline?.stages).toHaveLength(13);
     expect(pipeline?.fields.map((field) => field.key)).toEqual(['deal_size']);
     expect(brands[0]?.playbook).toEqual({ version: 1, body: '', truncated: false });

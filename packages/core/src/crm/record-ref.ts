@@ -2,9 +2,11 @@ import { and, asc, db, eq, isNull, type SQL, schema } from '@gravity/db';
 import { notFound, validationFailed } from '@gravity/shared/errors';
 import { assertCan, type Principal } from '@gravity/shared/policy';
 import {
+  linkedWorkspace,
   normalizeDomain,
   parseIdentityInput,
   parseLeadKey,
+  RECORD_LINK_PATHS,
   type RecordLinks,
 } from '@gravity/shared/utils';
 import { arrayOverlaps } from 'drizzle-orm';
@@ -102,19 +104,21 @@ export interface ResolveRecordRefOptions {
 
 const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
 
-function appLinkTarget(
-  ref: string,
-  links: RecordLinks,
-): { type: RecordRefType; rest: string } | null {
+type AppLinkTarget = { type: RecordRefType; rest: string } | 'elsewhere';
+
+function appLinkTarget(ref: string, links: RecordLinks): AppLinkTarget | null {
   const bare = (value: string) => value.replace(SCHEME, '').toLowerCase();
+  const base = bare(links.base);
   const candidates: [RecordRefType, string][] = [
-    ['person', bare(links.person(''))],
-    ['company', bare(links.company(''))],
-    ['lead', bare(links.lead(''))],
+    ['person', `${base}${RECORD_LINK_PATHS.person}`],
+    ['company', `${base}${RECORD_LINK_PATHS.company}`],
+    ['lead', `${base}${RECORD_LINK_PATHS.lead}`],
   ];
   const lowered = bare(ref);
   for (const [type, prefix] of candidates) {
     if (!lowered.startsWith(prefix)) continue;
+    const named = linkedWorkspace(ref);
+    if (named !== null && named !== links.workspace.toLowerCase()) return 'elsewhere';
     const tail = ref.replace(SCHEME, '').slice(prefix.length);
     const rest = (tail.split(/[/?#]/)[0] ?? '').trim();
     if (rest.length === 0) return null;
@@ -149,6 +153,7 @@ export async function resolveRecordRef(
   const organizationId = principal.organizationId;
   if (parseLeadKey(ref) !== null) return await resolveLeadKey(principal, ref, ref);
   const app = options.links === undefined ? null : appLinkTarget(ref, options.links);
+  if (app === 'elsewhere') throw nothingMatches(ref);
   if (app !== null) {
     if (app.type === 'lead') return await resolveLeadKey(principal, app.rest, ref);
     return found(

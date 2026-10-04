@@ -12,7 +12,7 @@ import { updatePerson, upsertPerson } from '../../src/crm/person-service.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
 
-const links = recordLinks('https://crm.example.com');
+const links = recordLinks('https://crm.example.com', 'acme');
 
 let workspace: TestWorkspace;
 let personId = '';
@@ -110,7 +110,7 @@ describe('renderRecordContext', () => {
     expect(text).toContain(
       '- LUM-1 (in focus) · Prospecting · stage Contacted (open) · owner Ada Admin · priority High',
     );
-    expect(text).toContain('https://crm.example.com/l/LUM-1');
+    expect(text).toContain('https://crm.example.com/l/LUM-1?w=acme');
     expect(text).toContain('Ada Admin: person.updated');
   });
 
@@ -194,7 +194,7 @@ describe('renderRecordContext', () => {
     const entries = text.split('\n').filter((line) => line.startsWith('- LUM-'));
     expect(entries.length).toBeGreaterThan(0);
     for (const entry of entries) {
-      expect(entry).toMatch(/ · https:\/\/crm\.example\.com\/l\/LUM-\d+$/);
+      expect(entry).toMatch(/ · https:\/\/crm\.example\.com\/l\/LUM-\d+\?w=acme$/);
     }
     expect(text).toMatch(/\n\(\d+ more lines omitted to fit 200 tokens\)$/);
   });

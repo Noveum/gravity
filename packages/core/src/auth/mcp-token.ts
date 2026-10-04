@@ -70,6 +70,7 @@ export interface McpAccessContext {
   readonly userId: string;
   readonly clientId: string;
   readonly organizationId: string;
+  readonly organizationSlug: string;
   readonly scopes: string;
 }
 
@@ -105,6 +106,7 @@ export async function verifyMcpAccessToken(
     .select({
       token: schema.oauthAccessToken,
       grant: schema.mcpGrant,
+      organizationSlug: schema.organization.slug,
       clientDisabled: schema.oauthApplication.disabled,
     })
     .from(schema.oauthAccessToken)
@@ -120,6 +122,7 @@ export async function verifyMcpAccessToken(
         eq(schema.mcpGrant.userId, schema.oauthAccessToken.userId),
       ),
     )
+    .leftJoin(schema.organization, eq(schema.organization.id, schema.mcpGrant.organizationId))
     .where(eq(schema.oauthAccessToken.accessToken, binding.credential))
     .limit(1);
   if (record === undefined) throw rejection;
@@ -130,7 +133,7 @@ export async function verifyMcpAccessToken(
   if (userId === null) throw rejection;
   if (record.clientDisabled) throw unauthorized(`This client has been disabled. ${RECONNECT}`);
   const grant = record.grant;
-  if (grant === null || grant.revokedAt !== null) {
+  if (grant === null || grant.revokedAt !== null || record.organizationSlug === null) {
     throw unauthorized(`This connection has been revoked. ${RECONNECT}`);
   }
   const granted = new Set(scopeList(grant.scopes));
@@ -149,6 +152,7 @@ export async function verifyMcpAccessToken(
     userId,
     clientId: record.token.clientId,
     organizationId: grant.organizationId,
+    organizationSlug: record.organizationSlug,
     scopes: record.token.scopes,
   };
 }

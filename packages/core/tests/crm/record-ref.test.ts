@@ -13,6 +13,7 @@ let workspace: TestWorkspace;
 let personId = '';
 let companyId = '';
 let leadId = '';
+let slug = '';
 
 beforeEach(async () => {
   await resetDatabase();
@@ -28,6 +29,11 @@ beforeEach(async () => {
   personId = person.person.id;
   companyId = person.company?.id ?? '';
   leadId = (await createLead(context, { personId, pipelineId: brand.pipeline.id })).lead.id;
+  const [organization] = await db
+    .select({ slug: schema.organization.slug })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, workspace.organizationId));
+  slug = organization?.slug ?? '';
 });
 
 afterAll(async () => {
@@ -223,11 +229,20 @@ describe('resolveRecordRef with two matches', () => {
 });
 
 describe('resolveRecordRef of the app own links', () => {
-  const links = recordLinks('https://crm.example.com');
+  const linksOf = () => recordLinks('https://crm.example.com', slug);
 
   test('a person, company or lead link on the canonical origin resolves to that record', async () => {
     const principal = workspace.admin;
+    const links = linksOf();
     const options = { links };
+    expect(await resolveRecordRef(principal, links.person(personId), options)).toEqual({
+      type: 'person',
+      id: personId,
+    });
+    expect(await resolveRecordRef(principal, links.lead('LUM-1'), options)).toEqual({
+      type: 'lead',
+      id: leadId,
+    });
     expect(
       await resolveRecordRef(principal, `https://crm.example.com/people/${personId}`, options),
     ).toEqual({ type: 'person', id: personId });
@@ -247,7 +262,7 @@ describe('resolveRecordRef of the app own links', () => {
   });
 
   test('a link of another origin or another workspace is not followed', async () => {
-    const options = { links };
+    const options = { links: linksOf() };
     await expect(
       resolveRecordRef(workspace.admin, `https://evil.example/people/${personId}`, options),
     ).rejects.toMatchObject({ code: 'not_found' });
@@ -258,6 +273,45 @@ describe('resolveRecordRef of the app own links', () => {
     await expect(
       resolveRecordRef(other.admin, 'https://crm.example.com/l/LUM-1', options),
     ).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  test('a link naming another workspace is refused even when the same key exists here', async () => {
+    const other = await createWorkspace('Other');
+    const otherBrand = await createBrand(
+      { principal: other.admin },
+      { name: 'Lumen elsewhere', pipelineKey: 'LUM' },
+    );
+    const otherPerson = await upsertPerson(
+      { principal: other.admin },
+      { name: 'Olga Other', emails: ['olga@other.example'] },
+    );
+    await createLead(
+      { principal: other.admin },
+      { personId: otherPerson.person.id, pipelineId: otherBrand.pipeline.id },
+    );
+    const [otherOrganization] = await db
+      .select({ slug: schema.organization.slug })
+      .from(schema.organization)
+      .where(eq(schema.organization.id, other.organizationId));
+    const fromOther = recordLinks('https://crm.example.com', otherOrganization?.slug ?? '');
+    const options = { links: linksOf() };
+    for (const pasted of [
+      fromOther.lead('LUM-1'),
+      fromOther.person(personId),
+      fromOther.company(companyId),
+      `https://crm.example.com/l/LUM-1?w=${otherOrganization?.slug ?? ''}`,
+    ]) {
+      await expect(resolveRecordRef(workspace.admin, pasted, options)).rejects.toMatchObject({
+        code: 'not_found',
+      });
+    }
+    expect(
+      await resolveRecordRef(
+        workspace.admin,
+        `https://crm.example.com/l/LUM-1?w=${slug.toUpperCase()}`,
+        options,
+      ),
+    ).toEqual({ type: 'lead', id: leadId });
   });
 
   test('without the app links such a URL is read as a domain', async () => {

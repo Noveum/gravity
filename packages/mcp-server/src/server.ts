@@ -51,14 +51,17 @@ export interface McpServerOptions {
 export function createGravityMcpServer(
   principal: Principal,
   scopes: string,
-  options: McpServerOptions,
+  options: McpServerOptions & { readonly workspaceSlug: string },
 ): McpServer {
   const server = new McpServer(
     { name: 'gravity', version: SERVER_VERSION },
     { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
   );
   allowTools(server, { reads: grantsReads(scopes), writes: grantsWrites(scopes) });
-  registerTools(server, { principal, links: recordLinks(options.publicUrl) });
+  registerTools(server, {
+    principal,
+    links: recordLinks(options.publicUrl, options.workspaceSlug),
+  });
   answerWithoutTools(server);
   return server;
 }
@@ -87,7 +90,10 @@ async function dispatch(
   if (!(grantsReads(identity.scopes) || grantsWrites(identity.scopes))) {
     throw forbidden(NO_SCOPE_MESSAGE, { details: { reason: INSUFFICIENT_SCOPE_REASON } });
   }
-  const server = createGravityMcpServer(identity.principal, identity.scopes, options);
+  const server = createGravityMcpServer(identity.principal, identity.scopes, {
+    ...options,
+    workspaceSlug: identity.organizationSlug,
+  });
   const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
   await server.connect(transport as unknown as Transport);
   try {

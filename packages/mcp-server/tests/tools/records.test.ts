@@ -36,6 +36,7 @@ let mainPipelineId = '';
 let mainViewId = '';
 let privateViewId = '';
 let teammateViewId = '';
+let slug = '';
 
 const CROWD_SIZE = 21;
 
@@ -187,6 +188,11 @@ function keysOf(data: Record<string, unknown>): string[] {
 beforeAll(async () => {
   await resetDatabase();
   workspace = await createWorkspace('Nimbus');
+  const [organization] = await db
+    .select({ slug: schema.organization.slug })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, workspace.organizationId));
+  slug = organization?.slug ?? '';
   const context = { principal: workspace.admin };
   const brand = await createBrand(context, { name: 'Lumen', pipelineKey: 'LUM' });
   readyId = brand.stages.find((stage) => stage.name === 'Ready')?.id ?? '';
@@ -277,11 +283,11 @@ describe('search', () => {
     expect(data['people']).toEqual([
       expect.objectContaining({
         name: 'Ada Lovelace',
-        url: `http://localhost:3300/people/${personId}`,
+        url: `http://localhost:3300/people/${personId}?w=${slug}`,
       }),
     ]);
     expect(data['leads']).toEqual([
-      expect.objectContaining({ key: 'LUM-1', url: 'http://localhost:3300/l/LUM-1' }),
+      expect.objectContaining({ key: 'LUM-1', url: `http://localhost:3300/l/LUM-1?w=${slug}` }),
     ]);
     expect(text).toContain('Ada Lovelace');
     const companies = await client.result('search', { query: 'Vela' });
@@ -309,12 +315,12 @@ describe('get_context', () => {
     expect(byEmail.data['subject']).toEqual({
       type: 'person',
       id: personId,
-      url: `http://localhost:3300/people/${personId}`,
+      url: `http://localhost:3300/people/${personId}?w=${slug}`,
     });
     const byKey = await client.result('get_context', { ref: 'LUM-1' });
     expect(byKey.data['subject']).toMatchObject({
       type: 'lead',
-      url: 'http://localhost:3300/l/LUM-1',
+      url: `http://localhost:3300/l/LUM-1?w=${slug}`,
     });
     expect(byKey.text).toContain('LUM-1 (in focus)');
     expect(byKey.data['leads']).toEqual([
@@ -368,14 +374,14 @@ describe('list_leads', () => {
     expect(keysOf(all.data)).toEqual(['LUM-2', 'LUM-1']);
     expect(all.data['pipeline']).toMatchObject({
       key: 'LUM',
-      url: 'http://localhost:3300/leads/LUM',
+      url: `http://localhost:3300/leads/LUM?w=${slug}`,
     });
     const filtered = await client.result('list_leads', { pipeline: 'LUM', filter: READY_FILTER() });
     expect(filtered.data['leads']).toEqual([
       expect.objectContaining({
         person: 'Grace Hopper',
         stage: 'Ready',
-        url: 'http://localhost:3300/l/LUM-2',
+        url: `http://localhost:3300/l/LUM-2?w=${slug}`,
       }),
     ]);
     const viewed = await client.result('list_leads', { pipeline: 'LUM', view: 'ready ones' });
@@ -537,6 +543,22 @@ describe('workspace boundary', () => {
       const { data } = await client.result('search', { query });
       expect([data['people'], data['companies'], data['leads']]).toEqual([[], [], []]);
     }
+  });
+
+  test('a pasted link from another workspace with the same pipeline key is refused', async () => {
+    const theirs = 'http://localhost:3300/l/LUM-1?w=elsewhere-mcp';
+    expect((await client.failure('get_context', { ref: theirs })).code).toBe('not_found');
+    for (const ref of [
+      `http://localhost:3300/people/${personId}?w=elsewhere-mcp`,
+      `http://localhost:3300/people/${otherPersonId}?w=elsewhere-mcp`,
+    ]) {
+      expect((await client.failure('get_context', { ref })).code).toBe('not_found');
+    }
+    const ours = await client.result('get_context', {
+      ref: `http://localhost:3300/l/LUM-1?w=${slug}`,
+    });
+    expect(ours.data['subject']).toMatchObject({ type: 'lead', id: mainLeadId });
+    expect(ours.text).toContain(`http://localhost:3300/l/LUM-1?w=${slug}`);
   });
 
   test('from the second workspace, nothing of the first is reachable, even with the same keys', async () => {

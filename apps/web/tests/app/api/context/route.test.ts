@@ -13,6 +13,7 @@ import {
   resetDatabase,
   type TestWorkspace,
 } from '@gravity/core/test-support';
+import { db, eq, schema } from '@gravity/db';
 import { CONTEXT_TOKENS } from '@gravity/shared/constants';
 import { recordLinks } from '@gravity/shared/utils';
 import { GET } from '@/app/api/context/route.ts';
@@ -24,6 +25,7 @@ let workspace: TestWorkspace;
 let personId = '';
 let leadId = '';
 let leadKey = '';
+let slug = '';
 
 beforeEach(async () => {
   await resetDatabase();
@@ -42,6 +44,11 @@ beforeEach(async () => {
   leadId = created.lead.id;
   leadKey = created.lead.key;
   await signedInAs(workspace.adminUser.id, workspace.organizationId);
+  const [organization] = await db
+    .select({ slug: schema.organization.slug })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, workspace.organizationId));
+  slug = organization?.slug ?? '';
 });
 
 function ask(query: string): Promise<Response> {
@@ -59,7 +66,7 @@ describe('/api/context', () => {
     const body = (await response.json()) as { subject: unknown; text: string };
     expect(body.subject).toEqual({ type: 'person', id: personId });
     expect(body.text).toContain('Person: Ada Lovelace <ada@vela.example>');
-    expect(body.text).toContain(`${ORIGIN}/people/${personId}`);
+    expect(body.text).toContain(`${ORIGIN}/people/${personId}?w=${slug}`);
   });
 
   test('names what was copied and is never cached', async () => {
@@ -85,7 +92,7 @@ describe('/api/context', () => {
     const subject = { type: 'person', id: personId } as const;
     const expected = renderRecordContext(await getRecordContext(workspace.admin, subject), {
       maxTokens: 700,
-      links: recordLinks(ORIGIN),
+      links: recordLinks(ORIGIN, slug),
     });
     expect(await textOf(await ask(`ref=${personId}&maxTokens=700`))).toBe(expected);
   });
@@ -108,7 +115,7 @@ describe('/api/context', () => {
     const subject = { type: 'person', id: personId } as const;
     const expected = renderRecordContext(await getRecordContext(workspace.admin, subject), {
       maxTokens: CONTEXT_TOKENS.min,
-      links: recordLinks(ORIGIN),
+      links: recordLinks(ORIGIN, slug),
     });
     expect(await textOf(low)).toBe(expected);
     expect((await ask(`ref=${personId}&maxTokens=999999`)).status).toBe(200);

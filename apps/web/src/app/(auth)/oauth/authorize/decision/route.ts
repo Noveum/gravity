@@ -1,15 +1,10 @@
-import {
-  finalizeMcpConsent,
-  listOrganizationsForUser,
-  passkeyVerifiedWithin,
-  userHasPasskey,
-} from '@gravity/core';
+import { finalizeMcpConsent, listOrganizationsForUser, userHasPasskey } from '@gravity/core';
 import { toDomainError } from '@gravity/shared/errors';
 import { z } from 'zod';
 import { readJson } from '@/lib/api/handler.ts';
 import { getSession } from '@/lib/auth/session.ts';
 import { publicAppUrl } from '@/lib/env.ts';
-import { FRESH_SESSION_WINDOW_MS, PASSKEY_STEP_UP_WINDOW_MS, signedInWithin } from '../step-up.ts';
+import { FRESH_SESSION_WINDOW_MS, signedInWithin } from '../step-up.ts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,7 +12,7 @@ export const dynamic = 'force-dynamic';
 const decisionSchema = z.object({
   decision: z.enum(['allow', 'deny']),
   consentCode: z.string().min(1).max(200),
-  organizationId: z.string().min(1).max(64),
+  organizationId: z.string().min(1).max(64).optional(),
   allowApproval: z.boolean().default(false),
 });
 
@@ -25,13 +20,15 @@ const RESTART = 'Start the connection again from your AI client.';
 
 async function needsPasskeyStepUp(userId: string, sessionCreatedAt: Date): Promise<boolean> {
   if (signedInWithin(sessionCreatedAt, FRESH_SESSION_WINDOW_MS)) return false;
-  if (!(await userHasPasskey(userId))) return false;
-  return !(await passkeyVerifiedWithin(userId, PASSKEY_STEP_UP_WINDOW_MS));
+  return await userHasPasskey(userId);
 }
 
-export async function POST(request: Request): Promise<Response> {
-  const origin = request.headers.get('origin');
-  if (origin !== null && origin !== publicAppUrl()) {
+function mediaTypeOf(request: Request): string {
+  return (request.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+}
+
+function refusedTransport(request: Request): Response | null {
+  if (request.headers.get('origin') !== publicAppUrl()) {
     return Response.json(
       {
         error: 'invalid_origin',
@@ -40,6 +37,18 @@ export async function POST(request: Request): Promise<Response> {
       { status: 403 },
     );
   }
+  if (mediaTypeOf(request) !== 'application/json') {
+    return Response.json(
+      { error: 'unsupported_media_type', message: `The decision must be sent as JSON. ${RESTART}` },
+      { status: 415 },
+    );
+  }
+  return null;
+}
+
+export async function POST(request: Request): Promise<Response> {
+  const refused = refusedTransport(request);
+  if (refused !== null) return refused;
   const session = await getSession();
   if (session === null) {
     return Response.json(
@@ -69,7 +78,8 @@ export async function POST(request: Request): Promise<Response> {
       return Response.json({ status: 'passkey_required' });
     }
     const organizations = await listOrganizationsForUser(userId);
-    if (!organizations.some((entry) => entry.organization.id === organizationId)) {
+    const chosen = organizations.find((entry) => entry.organization.id === organizationId);
+    if (chosen === undefined) {
       return Response.json(
         { error: 'invalid_workspace', message: 'Choose a workspace you belong to.' },
         { status: 400 },
@@ -79,7 +89,7 @@ export async function POST(request: Request): Promise<Response> {
       userId,
       consentCode,
       accept: true,
-      organizationId,
+      organizationId: chosen.organization.id,
       allowApproval,
     });
     return Response.json({ redirectUri: approved.redirectUri });

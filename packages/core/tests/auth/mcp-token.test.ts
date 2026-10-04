@@ -7,7 +7,6 @@ import {
   bindMcpCredential,
   finalizeMcpConsent,
   listMcpGrants,
-  passkeyVerifiedWithin,
   pendingMcpConsent,
   recordMcpGrant,
   revokeMcpGrant,
@@ -205,8 +204,30 @@ describe('consent', () => {
       clientId,
       clientName: 'Desk agent',
       clientLogo: null,
+      redirectHost: '127.0.0.1:9000',
       scopes: ['openid', 'gravity.read'],
     });
+  });
+
+  test('names where the client will be sent back, which the client cannot disguise', async () => {
+    const clientId = await registeredClient();
+    const hostOf = async (redirectUri: string) => {
+      const code = await insertMcpConsentRequest({
+        clientId,
+        userId: workspace.adminUser.id,
+        scope: ['openid', 'gravity.read'],
+        redirectUri,
+      });
+      return (await pendingMcpConsent(workspace.adminUser.id, code)).redirectHost;
+    };
+    expect(await hostOf('https://agent.example.com:8443/oauth/callback')).toBe(
+      'agent.example.com:8443',
+    );
+    expect(await hostOf('https://agent.example.com/cb')).toBe('agent.example.com');
+    expect(await hostOf('cursor://anysphere.cursor-retrieval/oauth/callback')).toBe(
+      'cursor://anysphere.cursor-retrieval',
+    );
+    expect(await hostOf('com.example.agent:/oauth')).toBe('com.example.agent:');
   });
 
   test('shows a stored https logo and drops any other', async () => {
@@ -433,21 +454,17 @@ describe('consent', () => {
 });
 
 describe('passkeys', () => {
-  test('report whether the user has one and when it was last used', async () => {
+  test('report whether the user has one', async () => {
     const userId = workspace.adminUser.id;
     expect(await userHasPasskey(userId)).toBe(false);
-    const now = new Date();
     await db.insert(schema.passkey).values({
       id: newId(),
       publicKey: 'public-key',
       userId,
       credentialID: 'credential-1',
       deviceType: 'singleDevice',
-      lastUsedAt: new Date(now.getTime() - 120_000),
     });
     expect(await userHasPasskey(userId)).toBe(true);
-    expect(await passkeyVerifiedWithin(userId, 300_000, now)).toBe(true);
-    expect(await passkeyVerifiedWithin(userId, 60_000, now)).toBe(false);
   });
 });
 

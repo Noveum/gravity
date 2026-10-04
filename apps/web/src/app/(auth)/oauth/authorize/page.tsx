@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { GravityMark } from '@/components/brand/gravity-mark.tsx';
 import { getSession } from '@/lib/auth/session.ts';
-import { ConsentForm } from './consent-form.tsx';
+import { ConsentForm, DenyConnection } from './consent-form.tsx';
 
 export const metadata: Metadata = { title: 'Connect to Gravity' };
 export const dynamic = 'force-dynamic';
@@ -29,12 +29,21 @@ function ConsentShell({ children }: { readonly children: ReactNode }) {
   );
 }
 
-function Notice({ children }: { readonly children: ReactNode }) {
+function Notice({
+  children,
+  action,
+}: {
+  readonly children: ReactNode;
+  readonly action?: ReactNode;
+}) {
   return (
     <ConsentShell>
-      <p role="alert" className="text-center text-muted text-sm">
-        {children}
-      </p>
+      <div className="flex flex-col gap-5">
+        <p role="alert" className="text-center text-muted text-sm">
+          {children}
+        </p>
+        {action}
+      </div>
     </ConsentShell>
   );
 }
@@ -73,9 +82,9 @@ export default async function AuthorizePage({
   ]);
   if (organizations.length === 0) {
     return (
-      <Notice>
+      <Notice action={<DenyConnection consentCode={consentCode} />}>
         You are not a member of any workspace yet, so there is nothing to connect. Create or join a
-        workspace first.
+        workspace first, or deny this request so {pending.clientName} stops waiting.
       </Notice>
     );
   }
@@ -85,6 +94,7 @@ export default async function AuthorizePage({
         consentCode={consentCode}
         clientName={pending.clientName}
         clientLogo={pending.clientLogo}
+        redirectHost={pending.redirectHost}
         scopes={pending.scopes}
         organizations={organizations.map((entry) => ({
           id: entry.organization.id,

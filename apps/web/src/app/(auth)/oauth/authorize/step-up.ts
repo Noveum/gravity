@@ -1,4 +1,3 @@
-export const PASSKEY_STEP_UP_WINDOW_MS = 120_000;
 export const FRESH_SESSION_WINDOW_MS = 300_000;
 
 export function signedInWithin(

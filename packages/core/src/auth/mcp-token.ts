@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, db, desc, eq, gt, inArray, isNull, lt, or, schema } from '@gravity/db';
+import { and, db, desc, eq, inArray, isNull, lt, or, schema } from '@gravity/db';
 import { consentedScopes, grantsReads, grantsWrites, scopeList } from '@gravity/shared/constants';
 import { forbidden, notFound, unauthorized, validationFailed } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
@@ -181,24 +181,6 @@ export async function userHasPasskey(userId: string): Promise<boolean> {
   return row !== undefined;
 }
 
-export async function passkeyVerifiedWithin(
-  userId: string,
-  windowMs: number,
-  now: Date = new Date(),
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: schema.passkey.id })
-    .from(schema.passkey)
-    .where(
-      and(
-        eq(schema.passkey.userId, userId),
-        gt(schema.passkey.lastUsedAt, new Date(now.getTime() - windowMs)),
-      ),
-    )
-    .limit(1);
-  return row !== undefined;
-}
-
 export interface RecordMcpGrantInput {
   readonly clientId: string;
   readonly userId: string;
@@ -327,7 +309,14 @@ export interface PendingMcpConsent {
   readonly clientId: string;
   readonly clientName: string;
   readonly clientLogo: string | null;
+  readonly redirectHost: string;
   readonly scopes: string[];
+}
+
+function redirectHostOf(redirectUri: string): string {
+  const url = new URL(redirectUri.trim());
+  if (url.protocol === 'https:' || url.protocol === 'http:') return url.host;
+  return url.host === '' ? url.protocol : `${url.protocol}//${url.host}`;
 }
 
 export async function pendingMcpConsent(
@@ -340,6 +329,7 @@ export async function pendingMcpConsent(
     clientId: value.clientId,
     clientName: client.name,
     clientLogo: client.icon !== null && isAllowedLogoUri(client.icon) ? client.icon : null,
+    redirectHost: redirectHostOf(value.redirectURI),
     scopes: value.scope,
   };
 }

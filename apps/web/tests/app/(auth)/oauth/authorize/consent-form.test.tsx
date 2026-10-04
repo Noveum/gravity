@@ -9,13 +9,18 @@ interface PasskeyResult {
   readonly error: { readonly message?: string } | null;
 }
 
-const passkey = mock((): Promise<PasskeyResult> => Promise.resolve({ data: {}, error: null }));
+const passkey = mock(
+  (): Promise<PasskeyResult> =>
+    Promise.resolve({ data: { user: { email: 'Ada@acme.test' } }, error: null }),
+);
 const realClient = await import('@/lib/auth/client.ts');
 mock.module('@/lib/auth/client.ts', () => ({
   ...realClient,
   authClient: { signIn: { passkey } },
 }));
-const { ConsentForm } = await import('@/app/(auth)/oauth/authorize/consent-form.tsx');
+const { ConsentForm, DenyConnection } = await import(
+  '@/app/(auth)/oauth/authorize/consent-form.tsx'
+);
 
 const assign = mock();
 
@@ -41,6 +46,7 @@ function renderForm(
       consentCode="code-1"
       clientName="Desk agent"
       clientLogo={clientLogo}
+      redirectHost="127.0.0.1:9000"
       scopes={scopes}
       organizations={[
         { id: 'o1', name: 'Acme' },
@@ -150,5 +156,68 @@ describe('ConsentForm', () => {
     fireEvent.error(logo);
     expect(screen.queryByTestId('client-logo')).toBeNull();
     expect(screen.getByText('D')).toBeInTheDocument();
+  });
+
+  test('names where the client sends you back and that its name and logo are unverified', () => {
+    renderForm();
+    expect(screen.getByText('127.0.0.1:9000')).toBeInTheDocument();
+    expect(screen.getByText(/Gravity will send you back to/)).toBeInTheDocument();
+    expect(screen.getByText(/provided by the app and not verified by Gravity/)).toBeInTheDocument();
+  });
+
+  test('a passkey of another account stops the approval without retrying', async () => {
+    passkey.mockImplementationOnce(() =>
+      Promise.resolve({ data: { user: { email: 'bob@acme.test' } }, error: null }),
+    );
+    const sent = serveJson(() => ({ body: { status: 'passkey_required' } }));
+    renderForm(['openid', 'gravity.read']);
+    await userEvent.click(screen.getByRole('button', { name: /Approve/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That passkey belongs to another account. Sign in as ada@acme.test to continue.',
+    );
+    expect(sent).toHaveLength(1);
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  test('Deny reports that it is busy while the denial is in flight', async () => {
+    let answer = (_response: Response): void => undefined;
+    globalThis.fetch = mock(
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    ) as unknown as typeof fetch;
+    renderForm();
+    const deny = screen.getByRole('button', { name: 'Deny' });
+    expect(deny).toHaveAttribute('aria-busy', 'false');
+    await userEvent.click(deny);
+    expect(deny).toHaveAttribute('aria-busy', 'true');
+    expect(deny).not.toBeDisabled();
+    answer(Response.json({ redirectUri: 'http://127.0.0.1:9000/cb?error=access_denied' }));
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith('http://127.0.0.1:9000/cb?error=access_denied'),
+    );
+  });
+});
+
+describe('DenyConnection', () => {
+  test('sends a denial without a workspace and returns to the client', async () => {
+    const sent = serveJson(() => ({
+      body: { redirectUri: 'http://127.0.0.1:9000/cb?error=access_denied' },
+    }));
+    renderWithClient(<DenyConnection consentCode="code-1" />, { bootstrap: null });
+    await userEvent.click(screen.getByRole('button', { name: /Deny/ }));
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith('http://127.0.0.1:9000/cb?error=access_denied'),
+    );
+    expect(sent[0]?.body).toEqual({ decision: 'deny', consentCode: 'code-1' });
+  });
+
+  test('never follows an unsafe redirect', async () => {
+    serveJson(() => ({ body: { redirectUri: 'javascript:alert(1)' } }));
+    renderWithClient(<DenyConnection consentCode="code-1" />, { bootstrap: null });
+    await userEvent.click(screen.getByRole('button', { name: /Deny/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/unsafe address/);
+    expect(assign).not.toHaveBeenCalled();
   });
 });

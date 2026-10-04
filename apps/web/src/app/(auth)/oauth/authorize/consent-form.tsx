@@ -21,6 +21,7 @@ export interface ConsentFormProps {
   readonly consentCode: string;
   readonly clientName: string;
   readonly clientLogo?: string | null;
+  readonly redirectHost: string;
   readonly scopes: readonly string[];
   readonly organizations: readonly ConsentOrganization[];
   readonly requirePasskey: boolean;
@@ -33,13 +34,108 @@ const decisionResponseSchema = z.object({
   message: z.string().optional(),
 });
 
+const passkeySignInSchema = z.object({ user: z.object({ email: z.string() }) });
+
 type DecisionResponse = z.infer<typeof decisionResponseSchema>;
 type Decision = 'allow' | 'deny';
+
+interface DecisionRequest {
+  readonly decision: Decision;
+  readonly consentCode: string;
+  readonly organizationId?: string;
+  readonly allowApproval?: boolean;
+}
 
 const RESTART = 'Start the connection again from your AI client.';
 
 function messageOf(error: unknown): string {
   return error instanceof Error && error.message.length > 0 ? error.message : RESTART;
+}
+
+async function postDecision(request: DecisionRequest): Promise<DecisionResponse> {
+  const response = await fetch('/oauth/authorize/decision', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  const parsed = decisionResponseSchema.safeParse(await response.json().catch(() => ({})));
+  const data = parsed.success ? parsed.data : {};
+  if (response.ok) return data;
+  throw new Error(data.message ?? `Gravity could not complete the connection. ${RESTART}`);
+}
+
+function returnToClient(data: DecisionResponse): void {
+  if (data.redirectUri === undefined) {
+    throw new Error(data.message ?? `Gravity could not complete the connection. ${RESTART}`);
+  }
+  if (!isAllowedRedirectUri(data.redirectUri)) {
+    throw new Error(
+      `The client sent back an unsafe address, so Gravity did not open it. ${RESTART}`,
+    );
+  }
+  window.location.assign(data.redirectUri);
+}
+
+async function verifyWithPasskey(userEmail: string): Promise<void> {
+  const result = await authClient.signIn.passkey();
+  if (result?.error) {
+    throw new Error(result.error.message ?? 'Passkey verification failed. Try again.');
+  }
+  const signedIn = passkeySignInSchema.safeParse(result?.data);
+  if (signedIn.success && signedIn.data.user.email.toLowerCase() !== userEmail.toLowerCase()) {
+    throw new Error(
+      `That passkey belongs to another account. Sign in as ${userEmail} to continue.`,
+    );
+  }
+}
+
+function useDecisionRun() {
+  const [pending, setPending] = useState<Decision | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  function run(decision: Decision, work: () => Promise<void>): void {
+    if (pending !== null) return;
+    setPending(decision);
+    setFailure(null);
+    work().catch((error: unknown) => {
+      setPending(null);
+      setFailure(messageOf(error));
+    });
+  }
+  return { pending, failure, setFailure, run };
+}
+
+function FailureNotice({ message }: { readonly message: string | null }) {
+  if (message === null) return null;
+  return (
+    <p
+      role="alert"
+      className="rounded-md border border-border bg-surface-2 p-3 text-2xs text-danger"
+    >
+      {message}
+    </p>
+  );
+}
+
+export function DenyConnection({ consentCode }: { readonly consentCode: string }) {
+  const { pending, failure, run } = useDecisionRun();
+  return (
+    <div className="flex flex-col gap-3">
+      <Button
+        type="button"
+        variant="secondary"
+        block
+        aria-busy={pending === 'deny'}
+        onClick={() =>
+          run('deny', async () =>
+            returnToClient(await postDecision({ decision: 'deny', consentCode })),
+          )
+        }
+      >
+        Deny and return to the client
+      </Button>
+      <FailureNotice message={failure} />
+    </div>
+  );
 }
 
 function ClientLogo({ name, src }: { readonly name: string; readonly src: string | null }) {
@@ -74,6 +170,7 @@ export function ConsentForm({
   consentCode,
   clientName,
   clientLogo = null,
+  redirectHost,
   scopes,
   organizations,
   requirePasskey,
@@ -81,8 +178,7 @@ export function ConsentForm({
 }: ConsentFormProps) {
   const [organizationId, setOrganizationId] = useState(organizations[0]?.id ?? '');
   const [allowApproval, setAllowApproval] = useState(false);
-  const [pending, setPending] = useState<Decision | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
+  const { pending, failure, setFailure, run } = useDecisionRun();
   const permissions = scopes.filter(
     (scope) => scope !== GRAVITY_APPROVE_SCOPE && MCP_SCOPE_LABELS[scope] !== undefined,
   );
@@ -94,55 +190,35 @@ export function ConsentForm({
     workspacePicker.current?.focus();
   }, []);
 
-  async function post(decision: Decision): Promise<DecisionResponse> {
-    const response = await fetch('/oauth/authorize/decision', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ decision, consentCode, organizationId, allowApproval }),
+  async function approve(verified: boolean): Promise<void> {
+    const data = await postDecision({
+      decision: 'allow',
+      consentCode,
+      organizationId,
+      allowApproval,
     });
-    const parsed = decisionResponseSchema.safeParse(await response.json().catch(() => ({})));
-    const data = parsed.success ? parsed.data : {};
-    if (response.ok) return data;
-    throw new Error(data.message ?? `Gravity could not complete the connection. ${RESTART}`);
-  }
-
-  async function decide(decision: Decision, verified: boolean): Promise<void> {
-    const data = await post(decision);
-    if (data.status === 'passkey_required') {
-      if (verified) throw new Error('Passkey verification did not complete. Try again.');
-      const result = await authClient.signIn.passkey();
-      if (result?.error) {
-        throw new Error(result.error.message ?? 'Passkey verification failed. Try again.');
-      }
-      await decide(decision, true);
+    if (data.status !== 'passkey_required') {
+      returnToClient(data);
       return;
     }
-    if (data.redirectUri === undefined) {
-      throw new Error(data.message ?? `Gravity could not complete the connection. ${RESTART}`);
-    }
-    if (!isAllowedRedirectUri(data.redirectUri)) {
-      throw new Error(
-        `The client sent back an unsafe address, so Gravity did not open it. ${RESTART}`,
-      );
-    }
-    window.location.assign(data.redirectUri);
+    if (verified) throw new Error('Passkey verification did not complete. Try again.');
+    await verifyWithPasskey(userEmail);
+    await approve(true);
   }
 
-  function run(decision: Decision): void {
-    if (pending !== null) return;
-    if (decision === 'allow' && organizationId === '') {
+  function allow(): void {
+    if (organizationId === '') {
       setFailure('Choose a workspace first.');
       return;
     }
-    setPending(decision);
-    setFailure(null);
-    decide(decision, false).catch((error: unknown) => {
-      setPending(null);
-      setFailure(messageOf(error));
-    });
+    run('allow', () => approve(false));
   }
 
-  useHotkey('mod+enter', () => run('allow'), {
+  function deny(): void {
+    run('deny', async () => returnToClient(await postDecision({ decision: 'deny', consentCode })));
+  }
+
+  useHotkey('mod+enter', allow, {
     label: 'Approve the connection',
     allowInInput: true,
   });
@@ -155,7 +231,16 @@ export function ConsentForm({
           <span className="font-medium text-text">{clientName}</span> wants to act in Gravity as{' '}
           <span className="font-medium text-text">{userEmail}</span>.
         </p>
+        <p className="text-2xs text-faint">
+          The name and logo are provided by the app and not verified by Gravity.
+        </p>
       </div>
+      <p className="rounded-md border border-border bg-surface-2 px-3 py-2 text-center text-dense text-muted">
+        Gravity will send you back to{' '}
+        <span className="inline-block max-w-full break-all font-medium font-mono text-text">
+          {redirectHost}
+        </span>
+      </p>
       <label htmlFor={ids.workspace} className="flex flex-col gap-1.5 text-2xs text-faint">
         Workspace
         <NativeSelect
@@ -205,7 +290,7 @@ export function ConsentForm({
         </div>
       ) : null}
       <div className="flex gap-2">
-        <Button type="button" variant="ghost" block onClick={() => run('deny')}>
+        <Button type="button" variant="ghost" block aria-busy={pending === 'deny'} onClick={deny}>
           Deny
         </Button>
         <Button
@@ -213,7 +298,7 @@ export function ConsentForm({
           variant="primary"
           block
           aria-busy={pending === 'allow'}
-          onClick={() => run('allow')}
+          onClick={allow}
         >
           Approve
           <Kbd keys={['mod', 'enter']} className="ml-1" aria-hidden="true" />
@@ -224,14 +309,7 @@ export function ConsentForm({
           Approving may ask you to verify with your passkey.
         </p>
       ) : null}
-      {failure === null ? null : (
-        <p
-          role="alert"
-          className="rounded-md border border-border bg-surface-2 p-3 text-2xs text-danger"
-        >
-          {failure}
-        </p>
-      )}
+      <FailureNotice message={failure} />
     </div>
   );
 }

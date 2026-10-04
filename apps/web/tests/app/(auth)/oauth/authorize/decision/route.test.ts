@@ -36,12 +36,23 @@ function consentCode(
   return insertMcpConsentRequest({ clientId, userId, scope, redirectUri: CALLBACK, state: 's1' });
 }
 
-function decide(body: Record<string, unknown>, origin = ORIGIN): Promise<Response> {
+interface Sent {
+  readonly origin?: string | null;
+  readonly contentType?: string | null;
+}
+
+function decide(
+  body: Record<string, unknown>,
+  { origin = ORIGIN, contentType = 'application/json' }: Sent = {},
+): Promise<Response> {
+  const headers = new Headers();
+  if (origin !== null) headers.set('origin', origin);
+  if (contentType !== null) headers.set('content-type', contentType);
   return withNativeFetch(() =>
     POST(
       new Request(`${ORIGIN}/oauth/authorize/decision`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', origin },
+        headers: Object.fromEntries(headers),
         body: JSON.stringify(body),
       }),
     ),
@@ -103,7 +114,7 @@ describe('/oauth/authorize/decision', () => {
 
   test('refuses another origin, no session, a foreign workspace and another user code', async () => {
     const body = await allowBody();
-    expect((await decide(body, 'https://evil.example.com')).status).toBe(403);
+    expect((await decide(body, { origin: 'https://evil.example.com' })).status).toBe(403);
     const elsewhere = await createWorkspace('Elsewhere');
     const foreign = await decide({ ...body, organizationId: elsewhere.organizationId });
     expect(foreign.status).toBe(400);
@@ -120,7 +131,7 @@ describe('/oauth/authorize/decision', () => {
   });
 
   test('refuses a malformed body with a message', async () => {
-    const missing = await decide({ decision: 'allow', consentCode: 'x' });
+    const missing = await decide({ decision: 'allow' });
     expect(missing.status).toBe(400);
     expect(await missing.json()).toMatchObject({ error: 'invalid_request' });
     const unknown = await decide({ ...(await allowBody()), decision: 'maybe' });
@@ -139,17 +150,50 @@ describe('/oauth/authorize/decision', () => {
     expect(await db.select().from(schema.mcpGrant)).toHaveLength(1);
   });
 
-  test('a passkey holder with an old session must verify again, then may approve', async () => {
+  test('a passkey holder with an old session must sign in again, then may approve', async () => {
     await addPasskey();
     await ageSession();
     const body = await allowBody();
     expect(await (await decide(body)).json()).toEqual({ status: 'passkey_required' });
     expect(await db.select().from(schema.mcpGrant)).toHaveLength(0);
+    await signedInAs(workspace.adminUser.id, workspace.organizationId);
+    expect(await (await decide(body)).json()).toHaveProperty('redirectUri');
+  });
+
+  test('a passkey used elsewhere a minute ago does not refresh an old session', async () => {
+    await addPasskey();
+    await ageSession();
     await db
       .update(schema.passkey)
-      .set({ lastUsedAt: new Date() })
+      .set({ lastUsedAt: new Date(Date.now() - 60_000) })
       .where(eq(schema.passkey.userId, workspace.adminUser.id));
-    expect(await (await decide(body)).json()).toHaveProperty('redirectUri');
+    expect(await (await decide(await allowBody())).json()).toEqual({ status: 'passkey_required' });
+    expect(await db.select().from(schema.mcpGrant)).toHaveLength(0);
+  });
+
+  test('refuses a request without an Origin or without a JSON body', async () => {
+    const body = await allowBody();
+    const unsigned = await decide(body, { origin: null });
+    expect(unsigned.status).toBe(403);
+    expect(await unsigned.json()).toMatchObject({ error: 'invalid_origin' });
+    const form = await decide(body, { contentType: 'application/x-www-form-urlencoded' });
+    expect(form.status).toBe(415);
+    expect(await form.json()).toMatchObject({ error: 'unsupported_media_type' });
+    expect((await decide(body, { contentType: null })).status).toBe(415);
+    expect(await db.select().from(schema.mcpGrant)).toHaveLength(0);
+    const charset = await decide(body, { contentType: 'application/json; charset=utf-8' });
+    expect(await charset.json()).toHaveProperty('redirectUri');
+  });
+
+  test('a denial needs no workspace, and an approval does', async () => {
+    const code = await consentCode();
+    const withoutWorkspace = await decide({ decision: 'allow', consentCode: code });
+    expect(withoutWorkspace.status).toBe(400);
+    expect(await withoutWorkspace.json()).toMatchObject({ error: 'invalid_workspace' });
+    const denied = await decide({ decision: 'deny', consentCode: code });
+    expect(denied.status).toBe(200);
+    const { redirectUri } = (await denied.json()) as { redirectUri: string };
+    expect(new URL(redirectUri).searchParams.get('error')).toBe('access_denied');
   });
 
   test('a passkey holder who signed in minutes ago approves without verifying again', async () => {

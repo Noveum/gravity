@@ -17,6 +17,11 @@ const workspacePackages = [
 
 const devServerOnlyBundledPackages = ['@react-email/render', '@react-email/components', 'prettier'];
 
+const FRAMING_FORBIDDEN = [
+  { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+  { key: 'X-Frame-Options', value: 'DENY' },
+];
+
 function standaloneOutputUnlessVercelTracesItItself(): Pick<NextConfig, 'output'> {
   return process.env['VERCEL'] === '1' ? {} : { output: 'standalone' };
 }
@@ -36,6 +41,7 @@ export default function config(phase: string): NextConfig {
       ? [...workspacePackages, ...devServerOnlyBundledPackages]
       : workspacePackages,
     typedRoutes: false,
+    headers: async () => [{ source: '/:path*', headers: FRAMING_FORBIDDEN }],
     experimental: {
       ...(process.env['GRAVITY_PREVIEW_BUILD'] === '1' ? { cpus: 1 } : {}),
       turbopackFileSystemCacheForDev: process.env['GRAVITY_TURBOPACK_DISK_CACHE'] !== 'false',

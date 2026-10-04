@@ -16,6 +16,7 @@ export interface RecordProbe {
   readonly email: string | null;
   readonly linkedinUrl: string | null;
   readonly name: string | null;
+  readonly domain: string | null;
 }
 
 export interface LocalHits {
@@ -49,13 +50,19 @@ export function mergeHits<T extends { readonly id: string }>(
   return [...first, ...second.filter((row) => !seen.has(row.id))].slice(0, limit);
 }
 
+function isPending(lead: LeadRow): boolean {
+  return lead.personId.startsWith(PENDING_PERSON);
+}
+
 function cachedPeople(client: QueryClient): PersonHit[] {
   const byId = new Map<string, PersonHit>();
+  const known = new Set<string>();
   for (const person of allCachedPeople(client)) {
+    known.add(person.id);
     if (person.archivedAt === null) byId.set(person.id, personHitOf(person));
   }
   for (const lead of allCachedLeads(client)) {
-    if (byId.has(lead.personId) || lead.personId.startsWith(PENDING_PERSON)) continue;
+    if (known.has(lead.personId) || byId.has(lead.personId) || isPending(lead)) continue;
     byId.set(lead.personId, {
       id: lead.personId,
       name: lead.personName,
@@ -92,7 +99,12 @@ export function searchCachedRecords(
       )
       .slice(0, limit),
     leads: allCachedLeads(client)
-      .filter((lead) => lead.archivedAt === null && matches([lead.key, lead.personName], tokens))
+      .filter(
+        (lead) =>
+          lead.archivedAt === null &&
+          !isPending(lead) &&
+          matches([lead.key, lead.personName], tokens),
+      )
       .slice(0, limit),
   };
 }
@@ -105,5 +117,12 @@ export function matchCachedPeople(client: QueryClient, probe: RecordProbe): Pers
       (email !== null && person.email?.toLowerCase() === email) ||
       (probe.linkedinUrl !== null && person.linkedinUrl === probe.linkedinUrl) ||
       (name !== null && name.length > 0 && person.name.toLowerCase() === name),
+  );
+}
+
+export function matchCachedCompanies(client: QueryClient, domain: string | null): CompanyRow[] {
+  if (domain === null) return [];
+  return allCachedCompanies(client).filter(
+    (company) => company.archivedAt === null && company.domains.includes(domain),
   );
 }

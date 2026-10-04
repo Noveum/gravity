@@ -4,6 +4,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query/keys.ts';
 import {
   EMPTY_HITS,
+  matchCachedCompanies,
   matchCachedPeople,
   mergeHits,
   personHitOf,
@@ -138,7 +139,30 @@ describe('searchCachedRecords', () => {
       pageParams: [null],
     });
     expect(searchCachedRecords(pending, 'pat').people).toEqual([]);
-    expect(searchCachedRecords(pending, 'pat').leads).toHaveLength(1);
+    expect(searchCachedRecords(pending, 'pat').leads).toEqual([]);
+  });
+
+  test('an archived person does not come back through a cached lead row', () => {
+    const client = seeded();
+    client.setQueryData(queryKeys.person('per1'), {
+      person: personFixture({
+        id: 'per1',
+        name: 'Ada Lovelace',
+        archivedAt: '2026-10-02T00:00:00.000Z',
+        syncId: 50,
+      }),
+      employments: [],
+      leads: [],
+    });
+    expect(searchCachedRecords(client, 'ada').people).toEqual([]);
+    expect(
+      matchCachedPeople(client, {
+        email: 'ada@acme.io',
+        linkedinUrl: null,
+        name: null,
+        domain: null,
+      }),
+    ).toEqual([]);
   });
 
   test('caps each group at the limit', () => {
@@ -163,26 +187,67 @@ describe('matchCachedPeople', () => {
   test('matches exactly by email, LinkedIn URL or name', () => {
     const client = seeded();
     expect(
-      matchCachedPeople(client, { email: 'ADA@acme.io', linkedinUrl: null, name: null }).map(
-        (person) => person.id,
-      ),
+      matchCachedPeople(client, {
+        email: 'ADA@acme.io',
+        linkedinUrl: null,
+        name: null,
+        domain: null,
+      }).map((person) => person.id),
     ).toEqual(['per1']);
     expect(
       matchCachedPeople(client, {
         email: null,
         linkedinUrl: 'https://www.linkedin.com/in/ada',
         name: null,
+        domain: null,
       }),
     ).toHaveLength(1);
     expect(
-      matchCachedPeople(client, { email: null, linkedinUrl: null, name: 'grace hopper' }).map(
-        (person) => person.id,
-      ),
+      matchCachedPeople(client, {
+        email: null,
+        linkedinUrl: null,
+        name: 'grace hopper',
+        domain: null,
+      }).map((person) => person.id),
     ).toEqual(['per2']);
   });
 
   test('an empty probe matches nobody', () => {
-    expect(matchCachedPeople(seeded(), { email: null, linkedinUrl: null, name: ' ' })).toEqual([]);
+    expect(
+      matchCachedPeople(seeded(), { email: null, linkedinUrl: null, name: ' ', domain: null }),
+    ).toEqual([]);
+  });
+});
+
+describe('matchCachedCompanies', () => {
+  test('matches a cached company by any of its domains and ignores archived ones', () => {
+    const client = new QueryClient();
+    client.setQueryData(queryKeys.companies(listQuery), {
+      pages: [
+        {
+          companies: [
+            companyFixture({
+              id: 'c1',
+              name: 'Acme',
+              domains: ['acme.io', 'acme.com'],
+              primaryDomain: 'acme.io',
+            }),
+            companyFixture({
+              id: 'c2',
+              name: 'Old',
+              domains: ['acme.com'],
+              primaryDomain: 'acme.com',
+              archivedAt: '2026-10-02T00:00:00.000Z',
+            }),
+          ],
+          nextCursor: null,
+        },
+      ],
+      pageParams: [null],
+    });
+    expect(matchCachedCompanies(client, 'acme.com').map((company) => company.id)).toEqual(['c1']);
+    expect(matchCachedCompanies(client, 'other.io')).toEqual([]);
+    expect(matchCachedCompanies(client, null)).toEqual([]);
   });
 });
 

@@ -119,4 +119,10 @@ describe('buildQuickCreate', () => {
       buildQuickCreate({ ...blank, identity: 'Ada Lovelace' }, { ...context, stages: closedOnly }),
     ).toEqual({ error: 'This pipeline has no open stage. Add one in Settings.' });
   });
+
+  test('refuses a body the schema rejects with its first issue and builds no preview', () => {
+    const built = buildQuickCreate({ ...blank, identity: 'N'.repeat(400) }, context);
+    expect('error' in built).toBe(true);
+    if ('error' in built) expect(built.error.length).toBeGreaterThan(0);
+  });
 });

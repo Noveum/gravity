@@ -19,6 +19,7 @@ import { useTheme } from 'next-themes';
 import { useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 import { Kbd } from '@/components/ui/kbd.tsx';
+import { MAX_LIST_SEARCH_LENGTH } from '@/features/filters/list-query.ts';
 import { personHref } from '@/features/leads/lead-groups.ts';
 import { COPY_LINK_BINDING } from '@/lib/copy-link.tsx';
 import { formatBinding, useHotkey } from '@/lib/keyboard/index.ts';
@@ -206,6 +207,7 @@ export function CommandPalette({
               value={term}
               onValueChange={setTerm}
               placeholder="Type a command or search"
+              maxLength={MAX_LIST_SEARCH_LENGTH}
               className="h-11 w-full bg-transparent text-base text-text outline-none placeholder:text-faint"
             />
           </div>

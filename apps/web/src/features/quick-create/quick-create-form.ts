@@ -1,6 +1,6 @@
 import type { LeadRow, PipelineRow, StageRow } from '@gravity/shared/records';
 import { type IdentityInput, normalizeDomain, parseIdentityInput } from '@gravity/shared/utils';
-import type { CompanyRef } from '@gravity/shared/validators';
+import { type CompanyRef, quickCreateSchema } from '@gravity/shared/validators';
 import type { QuickCreateBody } from '@/lib/query/use-lead-mutations.ts';
 
 export interface QuickCreateDraft {
@@ -75,13 +75,18 @@ export function buildQuickCreate(
   const email = identity.kind === 'email' ? identity.email : null;
   const linkedinUrl = identity.kind === 'linkedin' ? identity.linkedinUrl : null;
   const at = context.now.toISOString();
+  const body: QuickCreateBody = {
+    leadId: context.leadId,
+    pipelineId: draft.pipelineId,
+    ownerId: draft.ownerId,
+    person: { name, emails: email === null ? [] : [email], linkedinUrl, company },
+  };
+  const checked = quickCreateSchema.safeParse(body);
+  if (!checked.success) {
+    return { error: checked.error.issues[0]?.message ?? MISSING_IDENTITY };
+  }
   return {
-    body: {
-      leadId: context.leadId,
-      pipelineId: draft.pipelineId,
-      ownerId: draft.ownerId,
-      person: { name, emails: email === null ? [] : [email], linkedinUrl, company },
-    },
+    body,
     preview: {
       id: context.leadId,
       organizationId: context.organizationId,

@@ -1,14 +1,17 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, db, desc, eq, gt, isNull, schema } from '@gravity/db';
-import { consentedScopes, grantsReads, grantsWrites } from '@gravity/shared/constants';
+import { and, db, desc, eq, gt, inArray, isNull, lt, or, schema } from '@gravity/db';
+import { consentedScopes, grantsReads, grantsWrites, scopeList } from '@gravity/shared/constants';
 import { forbidden, notFound, unauthorized, validationFailed } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
+import { isAllowedRedirectUri } from '@gravity/shared/utils';
 import { z } from 'zod';
 import { cappedTransaction } from '../crm/sync-batch.ts';
 import { type Executor, newId } from '../internal.ts';
 import { resolvePrincipal } from '../org/member-service.ts';
 
 const MCP_CREDENTIAL_PREFIX = 'gravity-mcp-v1';
+const MCP_BINDING_KEY_LABEL = 'gravity.mcp-binding';
+const LAST_USED_RESOLUTION_MS = 60_000;
 const BASE64URL_SEGMENT = /^[A-Za-z0-9_-]+$/;
 const MAX_BOUND_CREDENTIAL_LENGTH = 4096;
 const CONSENT_CODE_TTL_MS = 600_000;
@@ -29,10 +32,14 @@ export interface McpCredentialBinding {
   readonly grantId: string;
 }
 
+function bindingSignature(payload: string, secret: string): string {
+  const bindingKey = createHmac('sha256', secret).update(MCP_BINDING_KEY_LABEL).digest();
+  return createHmac('sha256', new Uint8Array(bindingKey)).update(payload).digest('base64url');
+}
+
 export function bindMcpCredential(credential: string, grantId: string, secret: string): string {
   const payload = `${MCP_CREDENTIAL_PREFIX}.${encodedSegment(grantId)}.${encodedSegment(credential)}`;
-  const signature = createHmac('sha256', secret).update(payload).digest('base64url');
-  return `${payload}.${signature}`;
+  return `${payload}.${bindingSignature(payload, secret)}`;
 }
 
 export function unbindMcpCredential(
@@ -43,9 +50,7 @@ export function unbindMcpCredential(
   const [prefix, grant, token, signature, ...rest] = credential.split('.');
   if (prefix !== MCP_CREDENTIAL_PREFIX || rest.length > 0) return null;
   if (grant === undefined || token === undefined || signature === undefined) return null;
-  const expected = createHmac('sha256', secret)
-    .update(`${MCP_CREDENTIAL_PREFIX}.${grant}.${token}`)
-    .digest('base64url');
+  const expected = bindingSignature(`${MCP_CREDENTIAL_PREFIX}.${grant}.${token}`, secret);
   const provided = Buffer.from(signature, 'utf8');
   const wanted = Buffer.from(expected, 'utf8');
   if (
@@ -66,6 +71,26 @@ export interface McpAccessContext {
   readonly clientId: string;
   readonly organizationId: string;
   readonly scopes: string;
+}
+
+async function stampLastUsed(grantId: string, now: Date): Promise<void> {
+  const unlockedStaleGrant = db
+    .select({ id: schema.mcpGrant.id })
+    .from(schema.mcpGrant)
+    .where(
+      and(
+        eq(schema.mcpGrant.id, grantId),
+        or(
+          isNull(schema.mcpGrant.lastUsedAt),
+          lt(schema.mcpGrant.lastUsedAt, new Date(now.getTime() - LAST_USED_RESOLUTION_MS)),
+        ),
+      ),
+    )
+    .for('update', { skipLocked: true });
+  await db
+    .update(schema.mcpGrant)
+    .set({ lastUsedAt: now })
+    .where(inArray(schema.mcpGrant.id, unlockedStaleGrant));
 }
 
 export async function verifyMcpAccessToken(
@@ -108,12 +133,17 @@ export async function verifyMcpAccessToken(
   if (grant === null || grant.revokedAt !== null) {
     throw unauthorized(`This connection has been revoked. ${RECONNECT}`);
   }
-  const granted = new Set(grant.scopes.split(/\s+/).filter(Boolean));
-  if (record.token.scopes.split(/\s+/).some((scope) => scope.length > 0 && !granted.has(scope))) {
+  const granted = new Set(scopeList(grant.scopes));
+  if (scopeList(record.token.scopes).some((scope) => !granted.has(scope))) {
     throw unauthorized(`This connection's permissions have changed. ${RECONNECT}`);
   }
   const principal = await resolvePrincipal(userId, grant.organizationId);
-  await db.update(schema.mcpGrant).set({ lastUsedAt: now }).where(eq(schema.mcpGrant.id, grant.id));
+  if (
+    grant.lastUsedAt === null ||
+    now.getTime() - grant.lastUsedAt.getTime() >= LAST_USED_RESOLUTION_MS
+  ) {
+    await stampLastUsed(grant.id, now);
+  }
   return {
     principal,
     userId,
@@ -184,6 +214,13 @@ async function writeMcpGrant(
   await resolvePrincipal(input.userId, input.organizationId, executor);
   const grantId = newId();
   await executor
+    .select({ id: schema.mcpGrant.id })
+    .from(schema.mcpGrant)
+    .where(
+      and(eq(schema.mcpGrant.clientId, input.clientId), eq(schema.mcpGrant.userId, input.userId)),
+    )
+    .for('update');
+  await executor
     .delete(schema.oauthAccessToken)
     .where(
       and(
@@ -228,7 +265,7 @@ export async function recordMcpGrant(
 
 const consentValueSchema = z.looseObject({
   clientId: z.string().min(1),
-  redirectURI: z.string().refine((value) => URL.canParse(value)),
+  redirectURI: z.string().refine(isAllowedRedirectUri),
   scope: z.array(z.string()),
   userId: z.string().min(1),
   requireConsent: z.boolean().optional(),
@@ -308,9 +345,13 @@ export async function finalizeMcpConsent(
   const { value } = await consentRequestOf(input.userId, input.consentCode, now);
   const redirect = new URL(value.redirectURI);
   if (!input.accept) {
-    await db
-      .delete(schema.verification)
-      .where(eq(schema.verification.identifier, input.consentCode));
+    await cappedTransaction(async (tx) => {
+      const [consumed] = await tx
+        .delete(schema.verification)
+        .where(eq(schema.verification.identifier, input.consentCode))
+        .returning({ id: schema.verification.id });
+      if (consumed === undefined) throw invalidRequest();
+    });
     redirect.searchParams.set('error', 'access_denied');
     redirect.searchParams.set('error_description', 'User denied access');
     if (value.state != null) redirect.searchParams.set('state', value.state);

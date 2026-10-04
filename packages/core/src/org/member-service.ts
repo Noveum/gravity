@@ -1,4 +1,4 @@
-import { and, asc, count, db, eq, isNull, ne, schema } from '@gravity/db';
+import { and, asc, count, db, eq, inArray, isNull, ne, schema } from '@gravity/db';
 import { conflict, forbidden } from '@gravity/shared/errors';
 import type { SyncAction } from '@gravity/shared/events';
 import { scopes } from '@gravity/shared/events';
@@ -159,6 +159,34 @@ export async function updateMemberRole(
   });
 }
 
+async function revokeMcpGrantsOfMember(
+  executor: Executor,
+  userId: string,
+  organizationId: string,
+): Promise<void> {
+  const revoked = await executor
+    .update(schema.mcpGrant)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(schema.mcpGrant.userId, userId),
+        eq(schema.mcpGrant.organizationId, organizationId),
+        isNull(schema.mcpGrant.revokedAt),
+      ),
+    )
+    .returning({ clientId: schema.mcpGrant.clientId });
+  if (revoked.length === 0) return;
+  await executor.delete(schema.oauthAccessToken).where(
+    and(
+      eq(schema.oauthAccessToken.userId, userId),
+      inArray(
+        schema.oauthAccessToken.clientId,
+        revoked.map((grant) => grant.clientId),
+      ),
+    ),
+  );
+}
+
 export async function removeMember(
   principal: Principal,
   memberId: string,
@@ -187,6 +215,7 @@ export async function removeMember(
     const syncId = await nextSyncId(tx);
     await tx.delete(schema.member).where(eq(schema.member.id, memberId));
     await tx.delete(schema.session).where(eq(schema.session.userId, current.userId));
+    await revokeMcpGrantsOfMember(tx, current.userId, principal.organizationId);
 
     const actions = [
       buildSyncAction({

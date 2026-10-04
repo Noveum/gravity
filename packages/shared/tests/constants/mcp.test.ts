@@ -35,6 +35,12 @@ describe('gravity scopes', () => {
     expect(consentedScopes(requested, true)).toEqual(requested);
   });
 
+  test('consent keeps only the scopes the OAuth server offers', () => {
+    const requested = ['openid', 'gravity.read', 'gravity.admin', 'gravity.read,gravity.approve'];
+    expect(consentedScopes(requested, false)).toEqual(['openid', 'gravity.read']);
+    expect(consentedScopes(requested, true)).toEqual(['openid', 'gravity.read']);
+  });
+
   test('allowing approval never adds a scope the client did not ask for', () => {
     expect(consentedScopes(['openid', 'gravity.read', 'gravity.read'], true)).toEqual([
       'openid',

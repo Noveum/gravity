@@ -1,5 +1,8 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { createHmac } from 'node:crypto';
 import { and, db, eq, schema } from '@gravity/db';
+import { grantsApproval } from '@gravity/shared/constants';
+import postgres from 'postgres';
 import {
   bindMcpCredential,
   finalizeMcpConsent,
@@ -24,6 +27,7 @@ import {
   resetDatabase,
   type TestWorkspace,
 } from '../../src/test-support.ts';
+import { racingRival } from '../crm/rival-connection.ts';
 
 const CALLBACK = 'http://127.0.0.1:9000/callback';
 
@@ -459,5 +463,218 @@ describe('grants', () => {
     });
     expect(await listMcpGrants(workspace.adminUser.id)).toHaveLength(1);
     expect((await verifyMcpAccessToken(minted.token)).userId).toBe(workspace.adminUser.id);
+  });
+});
+
+function approve(consentCode: string, allowApproval = false) {
+  return finalizeMcpConsent({
+    userId: workspace.adminUser.id,
+    consentCode,
+    accept: true,
+    organizationId: workspace.organizationId,
+    allowApproval,
+  });
+}
+
+function deny(consentCode: string) {
+  return finalizeMcpConsent({ userId: workspace.adminUser.id, consentCode, accept: false });
+}
+
+describe('consent redirects', () => {
+  test('a stored script or data redirect is refused on approve and on deny', async () => {
+    const clientId = await registeredClient();
+    for (const redirectUri of ['javascript:alert(1)', 'data:text/html,<script>alert(1)</script>']) {
+      const request = {
+        clientId,
+        userId: workspace.adminUser.id,
+        scope: ['openid', 'gravity.read'],
+      };
+      const approving = await insertMcpConsentRequest({ ...request, redirectUri });
+      await expect(approve(approving)).rejects.toMatchObject({ code: 'unauthorized' });
+      const denying = await insertMcpConsentRequest({ ...request, redirectUri });
+      await expect(deny(denying)).rejects.toMatchObject({ code: 'unauthorized' });
+      await expect(pendingMcpConsent(workspace.adminUser.id, denying)).rejects.toMatchObject({
+        code: 'unauthorized',
+      });
+    }
+    expect(await db.select().from(schema.mcpGrant)).toHaveLength(0);
+    expect(await db.select().from(schema.verification)).toHaveLength(4);
+  });
+
+  test('an https client redirect is honoured', async () => {
+    const clientId = await registeredClient();
+    const code = await insertMcpConsentRequest({
+      clientId,
+      userId: workspace.adminUser.id,
+      scope: ['openid', 'gravity.read'],
+      redirectUri: 'https://agent.example/callback',
+    });
+    const approved = await approve(code);
+    expect(new URL(approved.redirectUri).origin).toBe('https://agent.example');
+  });
+});
+
+describe('consent scopes', () => {
+  test('unknown and comma joined scopes never reach the grant', async () => {
+    const clientId = await registeredClient();
+    const code = await consentRequest(clientId, [
+      'openid',
+      'gravity.read',
+      'gravity.admin',
+      'gravity.read,gravity.approve',
+    ]);
+    const approved = await approve(code);
+    expect(approved.scope).toBe('openid gravity.read');
+    const [grant] = await db.select().from(schema.mcpGrant);
+    expect(grant?.scopes).toBe('openid gravity.read');
+    expect(grantsApproval(grant?.scopes ?? '')).toBe(false);
+  });
+
+  test('verify compares token and grant scopes with the shared parser', async () => {
+    const minted = await mintMcpToken(
+      workspace.organizationId,
+      workspace.adminUser.id,
+      'openid gravity.read',
+    );
+    await db
+      .update(schema.oauthAccessToken)
+      .set({ scopes: 'openid,gravity.read' })
+      .where(eq(schema.oauthAccessToken.accessToken, minted.rawAccessToken));
+    expect((await verifyMcpAccessToken(minted.token)).userId).toBe(workspace.adminUser.id);
+    await db
+      .update(schema.oauthAccessToken)
+      .set({ scopes: 'openid gravity.read,gravity.approve' })
+      .where(eq(schema.oauthAccessToken.accessToken, minted.rawAccessToken));
+    await expect(verifyMcpAccessToken(minted.token)).rejects.toMatchObject({
+      code: 'unauthorized',
+    });
+  });
+});
+
+describe('binding key', () => {
+  test('a credential signed with the raw auth secret is refused', () => {
+    const secret = 'secret-0123456789';
+    const payload = `gravity-mcp-v1.${Buffer.from('grant-1').toString('base64url')}.${Buffer.from('at_raw').toString('base64url')}`;
+    const signature = createHmac('sha256', secret).update(payload).digest('base64url');
+    expect(unbindMcpCredential(`${payload}.${signature}`, secret)).toBeNull();
+    expect(bindMcpCredential('at_raw', 'grant-1', secret)).not.toBe(`${payload}.${signature}`);
+  });
+});
+
+describe('last used stamp', () => {
+  async function lastUsedOf(grantId: string): Promise<Date | null> {
+    const [grant] = await db.select().from(schema.mcpGrant).where(eq(schema.mcpGrant.id, grantId));
+    return grant?.lastUsedAt ?? null;
+  }
+
+  test('is written at most once a minute per grant', async () => {
+    const minted = await mintMcpToken(workspace.organizationId, workspace.adminUser.id);
+    const first = new Date(Date.now() + 1_000);
+    await verifyMcpAccessToken(minted.token, first);
+    expect(await lastUsedOf(minted.grantId)).toEqual(first);
+    await verifyMcpAccessToken(minted.token, new Date(first.getTime() + 30_000));
+    expect(await lastUsedOf(minted.grantId)).toEqual(first);
+    const later = new Date(first.getTime() + 61_000);
+    await verifyMcpAccessToken(minted.token, later);
+    expect(await lastUsedOf(minted.grantId)).toEqual(later);
+  });
+
+  test('is skipped rather than waited for while another transaction holds the grant', async () => {
+    const minted = await mintMcpToken(workspace.organizationId, workspace.adminUser.id);
+    const rival = postgres(String(process.env['DATABASE_URL']), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    let release = (): void => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked = (): void => undefined;
+    const holding = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const holder = rival.begin(async (tx) => {
+      await tx`select id from mcp_grant where id = ${minted.grantId} for update`;
+      locked();
+      await released;
+    });
+    try {
+      await holding;
+      const outcome = await Promise.race([
+        verifyMcpAccessToken(minted.token).then((identity) => identity.userId),
+        new Promise<string>((resolve) => setTimeout(() => resolve('waited'), 2_000)),
+      ]);
+      expect(outcome).toBe(workspace.adminUser.id);
+    } finally {
+      release();
+      await holder;
+      await rival.end();
+    }
+    expect(await lastUsedOf(minted.grantId)).toBeNull();
+  });
+});
+
+describe('races', () => {
+  test('a re-consent waits on the grant before its tokens, so a racing revoke cannot deadlock', async () => {
+    const minted = await mintMcpToken(workspace.organizationId, workspace.adminUser.id);
+    const regranted = await racingRival(
+      (tx) => tx`select id from mcp_grant where id = ${minted.grantId} for update`,
+      () =>
+        recordMcpGrant({
+          clientId: minted.clientId,
+          userId: workspace.adminUser.id,
+          organizationId: workspace.organizationId,
+          scopes: 'openid gravity.read',
+        }),
+      (tx) =>
+        tx`delete from oauth_access_token where client_id = ${minted.clientId} and user_id = ${workspace.adminUser.id}`,
+    );
+    expect(regranted).not.toBe(minted.grantId);
+  });
+
+  test('a concurrent second approval leaves exactly one issued code', async () => {
+    const clientId = await registeredClient();
+    const code = await consentRequest(clientId, ['openid', 'gravity.read']);
+    await expect(
+      racingRival(
+        (tx) => tx`select id from verification where identifier = ${code} for update`,
+        () => approve(code),
+        (tx) => tx`update verification set identifier = 'rival-code' where identifier = ${code}`,
+      ),
+    ).rejects.toMatchObject({ code: 'unauthorized' });
+    const codes = await db.select().from(schema.verification);
+    expect(codes.map((row) => row.identifier)).toEqual(['rival-code']);
+    expect(await db.select().from(schema.mcpGrant)).toHaveLength(0);
+  });
+
+  test('an approval and a denial of one request cannot both succeed', async () => {
+    const clientId = await registeredClient();
+    const code = await consentRequest(clientId, ['openid', 'gravity.read']);
+    const outcomes = await Promise.allSettled([approve(code), deny(code)]);
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+  });
+});
+
+describe('deleted owners', () => {
+  test('a token stops when its user, client or workspace is deleted', async () => {
+    const byUser = await mintMcpToken(workspace.organizationId, workspace.adminUser.id);
+    const guest = await addMember(workspace, 'Gus Guest', 'guest');
+    const byClient = await mintMcpToken(workspace.organizationId, guest.userId);
+    await db
+      .delete(schema.oauthApplication)
+      .where(eq(schema.oauthApplication.clientId, byClient.clientId));
+    await expect(verifyMcpAccessToken(byClient.token)).rejects.toMatchObject({
+      code: 'unauthorized',
+    });
+    const other = await createWorkspace('Other');
+    const byWorkspace = await mintMcpToken(other.organizationId, other.adminUser.id);
+    await db.delete(schema.organization).where(eq(schema.organization.id, other.organizationId));
+    await expect(verifyMcpAccessToken(byWorkspace.token)).rejects.toMatchObject({
+      code: 'unauthorized',
+    });
+    await db.delete(schema.user).where(eq(schema.user.id, workspace.adminUser.id));
+    await expect(verifyMcpAccessToken(byUser.token)).rejects.toMatchObject({
+      code: 'unauthorized',
+    });
   });
 });

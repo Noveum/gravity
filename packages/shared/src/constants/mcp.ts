@@ -40,8 +40,10 @@ export function grantsApproval(raw: string): boolean {
   return scopeList(raw).includes(GRAVITY_APPROVE_SCOPE);
 }
 
+const OFFERED_SCOPES: ReadonlySet<string> = new Set(MCP_OAUTH_SCOPES);
+
 export function consentedScopes(requested: readonly string[], allowApproval: boolean): string[] {
   return [...new Set(requested)].filter(
-    (scope) => scope !== GRAVITY_APPROVE_SCOPE || allowApproval,
+    (scope) => OFFERED_SCOPES.has(scope) && (scope !== GRAVITY_APPROVE_SCOPE || allowApproval),
   );
 }

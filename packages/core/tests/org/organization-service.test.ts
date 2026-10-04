@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { db, eq, schema } from '@gravity/db';
 import { DomainError } from '@gravity/shared/errors';
+import { verifyMcpAccessToken } from '../../src/auth/mcp-token.ts';
 import { acceptInvite, createInvite } from '../../src/org/invite-service.ts';
 import {
   listMembers,
@@ -14,7 +15,12 @@ import {
   updateOrganization,
 } from '../../src/org/organization-service.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
-import { createUser, createWorkspace, resetDatabase } from '../../src/test-support.ts';
+import {
+  createUser,
+  createWorkspace,
+  mintMcpToken,
+  resetDatabase,
+} from '../../src/test-support.ts';
 
 beforeEach(async () => {
   await resetDatabase();
@@ -116,6 +122,28 @@ describe('members', () => {
     await expect(resolvePrincipal(joiner.id, workspace.organizationId)).rejects.toThrow(
       DomainError,
     );
+  });
+
+  test('removing a member revokes their MCP connections to that workspace, even after a re-invite', async () => {
+    const workspace = await createWorkspace();
+    const elsewhere = await createWorkspace('Elsewhere');
+    const joiner = await createUser('Mo');
+    const invite = await createInvite(workspace.admin, { email: joiner.email, role: 'member' });
+    const accepted = await acceptInvite(invite.token, joiner.id);
+    const outside = await createInvite(elsewhere.admin, { email: joiner.email, role: 'member' });
+    await acceptInvite(outside.token, joiner.id);
+    const here = await mintMcpToken(workspace.organizationId, joiner.id);
+    const there = await mintMcpToken(elsewhere.organizationId, joiner.id);
+    await removeMember(workspace.admin, accepted.member.id);
+    const again = await createInvite(workspace.admin, { email: joiner.email, role: 'member' });
+    await acceptInvite(again.token, joiner.id);
+    await expect(verifyMcpAccessToken(here.token)).rejects.toMatchObject({ code: 'unauthorized' });
+    const tokens = await db
+      .select()
+      .from(schema.oauthAccessToken)
+      .where(eq(schema.oauthAccessToken.clientId, here.clientId));
+    expect(tokens).toHaveLength(0);
+    expect((await verifyMcpAccessToken(there.token)).organizationId).toBe(elsewhere.organizationId);
   });
 });
 

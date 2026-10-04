@@ -407,6 +407,62 @@ describe('PersonRecord', () => {
     expect(navigation.push).not.toHaveBeenCalled();
   });
 
+  test('Cmd+Shift+A asks for the context of the lead actually in focus', async () => {
+    const writeText = mock((_text: string) => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const sent = serveJson((url) => {
+      if (url.pathname === '/api/context') {
+        return { body: { subject: { type: 'lead', id: 'l2' }, text: 'Lead YOD-2' } };
+      }
+      if (url.pathname === '/api/people/per1') return { body: record };
+      return { body: { activities: [], nextCursor: null } };
+    });
+    renderRecord('l2');
+    expect(await screen.findByTestId('lead-card-YOD-2')).toHaveAttribute('aria-current', 'true');
+    await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Lead YOD-2'));
+    expect(sent.find((entry) => entry.url.startsWith('/api/context'))?.url).toBe(
+      '/api/context?ref=l2',
+    );
+  });
+
+  test('Cmd+Shift+A falls back to the person when the lead from the link is gone', async () => {
+    const writeText = mock((_text: string) => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const sent = serveJson((url) => {
+      if (url.pathname === '/api/context') {
+        return { body: { subject: { type: 'person', id: 'per1' }, text: 'Person Ada' } };
+      }
+      if (url.pathname === '/api/people/per1') return { body: { ...record, leads: [] } };
+      return { body: { activities: [], nextCursor: null } };
+    });
+    renderRecord('gone');
+    await screen.findByRole('heading', { name: 'Ada Lovelace' });
+    await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Person Ada'));
+    expect(sent.find((entry) => entry.url.startsWith('/api/context'))?.url).toBe(
+      '/api/context?ref=per1',
+    );
+  });
+
+  test('Cmd+Shift+A still works from the read-only note composer', async () => {
+    const writeText = mock((_text: string) => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    serveJson((url) => {
+      if (url.pathname === '/api/context') {
+        return { body: { subject: { type: 'lead', id: 'l1' }, text: 'Lead YOD-1' } };
+      }
+      if (url.pathname === '/api/people/per1') return { body: record };
+      return { body: { activities: [], nextCursor: null } };
+    });
+    renderRecord();
+    await screen.findByRole('heading', { name: 'Ada Lovelace' });
+    await userEvent.keyboard('n');
+    expect(document.activeElement).toBe(screen.getByLabelText('Note'));
+    await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Lead YOD-1'));
+  });
+
   test('a person that cannot be loaded says so', async () => {
     serveJson(() => ({
       status: 404,

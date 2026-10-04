@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { restoreModulesAfterThisFile } from '../../../tests-support.ts';
@@ -70,6 +70,25 @@ describe('CompanyRecord', () => {
           entry.url.startsWith('/api/timeline?subjectType=company&subjectId=c1'),
         ),
       ).toBe(true),
+    );
+  });
+
+  test('Cmd+Shift+A copies the company, not the lead in focus', async () => {
+    const writeText = mock((_text: string) => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const sent = serveJson((url) => {
+      if (url.pathname === '/api/context') {
+        return { body: { subject: { type: 'company', id: 'c1' }, text: 'Company: Acme' } };
+      }
+      if (url.pathname === '/api/companies/c1') return { body: record };
+      return { body: { activities: [], nextCursor: null } };
+    });
+    renderWithClient(<CompanyRecord companyId="c1" />);
+    expect(await screen.findByTestId('lead-card-YOD-1')).toHaveAttribute('aria-current', 'true');
+    await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Company: Acme'));
+    expect(sent.find((entry) => entry.url.startsWith('/api/context'))?.url).toBe(
+      '/api/context?ref=c1',
     );
   });
 

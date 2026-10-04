@@ -15,6 +15,7 @@ import { useCopyLinkTarget } from '@/lib/copy-link.tsx';
 import { useDelayedFlag } from '@/lib/use-delayed-flag.ts';
 import { watchWindowRefocus } from '@/lib/window-refocus.ts';
 import { LeadCard } from './lead-card.tsx';
+import { useCopyForAgent } from './use-copy-for-agent.ts';
 
 export const RECORD_VERBS: readonly VerbMode[] = ['stage', 'owner', 'priority', 'hold', 'close'];
 
@@ -73,6 +74,7 @@ export function RecordLayout({
   const { selection, requestVerb } = useRecordSelection(focused);
   const heading = useRef<HTMLHeadingElement | null>(null);
   useCopyLinkTarget(linkFor(focused?.id ?? null));
+  useCopyForAgent(subjectType === 'person' && focused !== undefined ? focused.id : recordId);
   useEffect(() => watchWindowRefocus(), []);
   const returnFocus = () => {
     const card = focused === undefined ? null : document.getElementById(`lead-card-${focused.id}`);

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   ACTIVITY_ENTITY_TYPES,
+  CONTEXT_TOKENS,
   LEAD_PAGE_SIZE,
   RECORD_PAGE_SIZE,
   SEARCH_RESULT_LIMIT,
@@ -51,3 +52,14 @@ export const timelineQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export type TimelineQuery = z.infer<typeof timelineQuerySchema>;
+
+export const contextQuerySchema = z.object({
+  ref: z.string().trim().min(1).max(500),
+  maxTokens: z.coerce
+    .number()
+    .int()
+    .min(CONTEXT_TOKENS.min)
+    .max(CONTEXT_TOKENS.max)
+    .default(CONTEXT_TOKENS.default),
+});
+export type ContextQuery = z.infer<typeof contextQuerySchema>;

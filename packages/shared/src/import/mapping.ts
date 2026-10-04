@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { type ImportTarget, MAX_IMPORT_COLUMNS } from './constants.ts';
+import { fieldKeySchema } from '../validators/configuration.ts';
+import { type ImportTarget, MAX_IMPORT_COLUMNS, MAX_IMPORT_HEADER_LENGTH } from './constants.ts';
 
 export const IMPORT_STANDARD_COLUMNS = [
   'ignore',
@@ -33,7 +34,7 @@ export type ImportFieldObject = (typeof IMPORT_FIELD_OBJECTS)[number];
 export type ImportCustomColumn = `${ImportFieldObject}.field.${string}`;
 export type ImportColumn = ImportStandardColumn | ImportCustomColumn;
 
-const CUSTOM_COLUMN = /^(person|company|lead)\.field\.([a-z][a-z0-9_]{0,39})$/;
+const CUSTOM_COLUMN = /^(person|company|lead)\.field\.([\s\S]*)$/;
 
 const STANDARD_LABELS: Readonly<Record<ImportStandardColumn, string>> = {
   ignore: 'Skip',
@@ -74,7 +75,8 @@ export function customFieldOf(column: string): { object: ImportFieldObject; key:
   const object = match?.[1];
   const key = match?.[2];
   if (object === undefined || key === undefined || !isFieldObject(object)) return null;
-  return { object, key };
+  const parsed = fieldKeySchema.safeParse(key);
+  return parsed.success && parsed.data === key ? { object, key } : null;
 }
 
 function isStandardColumn(value: string): value is ImportStandardColumn {
@@ -103,7 +105,7 @@ export const importColumnSchema = z
 export type ImportMapping = Record<string, ImportColumn>;
 
 export const importMappingSchema = z
-  .record(z.string().min(1).max(200), importColumnSchema)
+  .record(z.string().min(1).max(MAX_IMPORT_HEADER_LENGTH), importColumnSchema)
   .refine(
     (mapping) => Object.keys(mapping).length <= MAX_IMPORT_COLUMNS,
     `Map at most ${MAX_IMPORT_COLUMNS} columns.`,
@@ -212,6 +214,7 @@ export function suggestMapping(
       if (!isFieldObject(definition.object)) continue;
       const candidate = customColumn(definition.object, definition.key);
       if (
+        customFieldOf(candidate) !== null &&
         columnAllowed(target, candidate) &&
         !taken.has(candidate) &&
         (normalizedHeader(definition.key) === normalized ||

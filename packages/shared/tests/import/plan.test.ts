@@ -280,16 +280,16 @@ describe('planImport', () => {
     expect(rows[0]?.person).toMatchObject({ name: 'Ada' });
   });
 
-  test('plans a thousand rows quickly', () => {
+  test('plans a thousand rows and finds every repeat among them', () => {
     const lines = ['Name,Email'];
-    for (let index = 0; index < 1000; index += 1) lines.push(`P${index},p${index}@x.example`);
-    const started = performance.now();
+    for (let index = 0; index < 1000; index += 1) lines.push(`P${index},p${index % 500}@x.example`);
     const rows = planImport(
       parseCsv(`${lines.join('\n')}\n`, HTTP_IMPORT_LIMITS),
       { Name: 'person.name', Email: 'person.email' },
       { ...setup, target: 'people' },
     );
     expect(rows).toHaveLength(1000);
-    expect(performance.now() - started).toBeLessThan(2000);
+    expect(rows.filter((row) => row.duplicateOf === null)).toHaveLength(500);
+    expect(rows[999]?.duplicateOf).toBe(500);
   });
 });

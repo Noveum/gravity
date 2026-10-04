@@ -135,6 +135,31 @@ describe('mappingIssues', () => {
   });
 });
 
+describe('header and field key limits', () => {
+  test('a suggestion for a 500 character header passes the mapping schema', () => {
+    const header = 'h'.repeat(500);
+    const suggested = suggestMapping([header, 'Name'], 'people', definitions);
+    expect(importMappingSchema.safeParse(suggested).success).toBe(true);
+    expect(importMappingSchema.safeParse({ [`${header}x`]: 'ignore' }).success).toBe(false);
+  });
+
+  test('a custom column needs a key the field key schema accepts', () => {
+    for (const key of ['Bad', 'has space', '1st', 'k'.repeat(41), '', ' padded ']) {
+      expect(customFieldOf(`person.field.${key}`)).toBeNull();
+      expect(isImportColumn(`person.field.${key}`)).toBe(false);
+    }
+    expect(customFieldOf(`lead.field.${'k'.repeat(40)}`)).toEqual({
+      object: 'lead',
+      key: 'k'.repeat(40),
+    });
+  });
+
+  test('a field definition with an unusable key is never suggested', () => {
+    const odd = [{ object: 'person', key: 'Bad Key', label: 'Seniority' }];
+    expect(suggestMapping(['Seniority'], 'people', odd)).toEqual({ Seniority: 'ignore' });
+  });
+});
+
 describe('custom columns', () => {
   test('round trip through customColumn and customFieldOf', () => {
     const column = customColumn('company', 'tier');

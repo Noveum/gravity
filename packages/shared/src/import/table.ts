@@ -4,6 +4,7 @@ import {
   type ImportLimits,
   MAX_IMPORT_CELL_LENGTH,
   MAX_IMPORT_COLUMNS,
+  MAX_IMPORT_HEADER_LENGTH,
 } from './constants.ts';
 
 export interface ImportTable {
@@ -14,6 +15,7 @@ export interface ImportTable {
 const DELIMITERS = [',', ';', '\t'] as const;
 const BYTE_ORDER_MARK = '\u{FEFF}';
 const NUL = '\u0000';
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 const ONE_BYTE_LIMIT = 0x80;
 const TWO_BYTE_LIMIT = 0x800;
 const HIGH_SURROGATES = [0xd800, 0xdbff] as const;
@@ -54,14 +56,23 @@ function tooLarge(bytes: number, limits: ImportLimits) {
   );
 }
 
-function assertImportSize(content: string, limits: ImportLimits): void {
-  const bytes = utf8Length(content);
-  if (bytes > limits.maxBytes) throw tooLarge(bytes, limits);
-  if (content.includes(NUL)) {
+function assertCleanText(text: string): void {
+  if (text.includes(NUL)) {
     throw unsupportedMediaType(
       'This does not look like a text file. Export it as CSV or JSON and try again.',
     );
   }
+  if (LONE_SURROGATE.test(text)) {
+    throw unsupportedMediaType(
+      'This file holds a character that is not valid text. Export it as UTF-8 CSV or JSON and try again.',
+    );
+  }
+}
+
+function assertImportSize(content: string, limits: ImportLimits): void {
+  const bytes = utf8Length(content);
+  if (bytes > limits.maxBytes) throw tooLarge(bytes, limits);
+  assertCleanText(content);
 }
 
 export function decodeImportBytes(bytes: Uint8Array, limits: ImportLimits): string {
@@ -79,22 +90,46 @@ function withoutMark(content: string): string {
   return content.startsWith(BYTE_ORDER_MARK) ? content.slice(1) : content;
 }
 
-function detectDelimiter(text: string): string {
-  const counts = new Map<string, number>(DELIMITERS.map((delimiter) => [delimiter, 0]));
-  let quoted = false;
-  for (const char of text) {
-    if (char === '"') {
-      quoted = !quoted;
-    } else if (!quoted) {
-      if (char === '\n' || char === '\r') break;
-      const count = counts.get(char);
-      if (count !== undefined) counts.set(char, count + 1);
+function afterQuotedValue(text: string, from: number): number {
+  let index = from;
+  while (index < text.length) {
+    if (text[index] === '"') {
+      if (text[index + 1] !== '"') return index;
+      index += 1;
+    }
+    index += 1;
+  }
+  return index;
+}
+
+function isDelimiter(char: string): boolean {
+  return DELIMITERS.some((delimiter) => delimiter === char);
+}
+
+function delimiterCount(text: string, delimiter: string): number {
+  let count = 0;
+  let leading = true;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index] ?? '';
+    if (char === '"' && leading) {
+      index = afterQuotedValue(text, index + 1);
+    } else if (char === '\n' || char === '\r') {
+      break;
+    } else if (isDelimiter(char)) {
+      if (char === delimiter) count += 1;
+      leading = true;
+    } else if (char !== ' ' && char !== '\t') {
+      leading = false;
     }
   }
+  return count;
+}
+
+function detectDelimiter(text: string): string {
   let best = ',';
   let bestCount = 0;
   for (const delimiter of DELIMITERS) {
-    const count = counts.get(delimiter) ?? 0;
+    const count = delimiterCount(text, delimiter);
     if (count > bestCount) {
       best = delimiter;
       bestCount = count;
@@ -112,7 +147,8 @@ function uniqueHeaders(raw: readonly string[]): string[] {
     let count = 1;
     while (used.has(candidate)) {
       count += 1;
-      candidate = `${base} (${count})`;
+      const suffix = ` (${count})`;
+      candidate = `${base.slice(0, MAX_IMPORT_HEADER_LENGTH - suffix.length)}${suffix}`;
     }
     used.add(candidate);
     return candidate;
@@ -129,8 +165,8 @@ function tooManyRows(count: number, limits: ImportLimits) {
   );
 }
 
-function tooLong(where: string) {
-  return validationFailed(`${where} is longer than ${MAX_IMPORT_CELL_LENGTH} characters.`);
+function tooLong(where: string, limit: number) {
+  return validationFailed(`${where} is longer than ${limit} characters.`);
 }
 
 interface Scanned {
@@ -146,6 +182,7 @@ class CsvScanner {
   private record: string[] = [];
   private width = 0;
   private blank = true;
+  private filled = 0;
   private cell = '';
   private leading = true;
   private quoted = false;
@@ -213,7 +250,8 @@ class CsvScanner {
   private append(char: string): void {
     if (this.leading && char !== ' ' && char !== '\t') this.leading = false;
     this.cell += char;
-    if (this.cell.length > MAX_IMPORT_CELL_LENGTH) throw tooLong(this.position());
+    const limit = this.headers === null ? MAX_IMPORT_HEADER_LENGTH : MAX_IMPORT_CELL_LENGTH;
+    if (this.cell.length > limit) throw tooLong(this.position(), limit);
   }
 
   private position(): string {
@@ -224,8 +262,11 @@ class CsvScanner {
 
   private finishCell(): void {
     const value = this.cell.trim();
-    if (value.length > 0) this.blank = false;
     this.width += 1;
+    if (value.length > 0) {
+      this.blank = false;
+      this.filled = this.width;
+    }
     if (this.record.length <= MAX_IMPORT_COLUMNS) this.record.push(value);
     this.cell = '';
     this.leading = true;
@@ -233,11 +274,12 @@ class CsvScanner {
 
   private finishRecord(): void {
     this.finishCell();
-    const cells = this.record;
-    const cellCount = this.width;
+    const cellCount = this.filled;
+    const cells = this.record.slice(0, cellCount);
     const skipped = this.blank;
     this.record = [];
     this.width = 0;
+    this.filled = 0;
     this.blank = true;
     if (skipped) return;
     if (cellCount > MAX_IMPORT_COLUMNS) throw this.tooWide(cellCount);
@@ -264,24 +306,42 @@ export function parseCsv(content: string, limits: ImportLimits): ImportTable {
   return new CsvScanner(detectDelimiter(text), limits).scan(text);
 }
 
+function listText(value: readonly unknown[], row: number, key: string): string {
+  if (!value.every((item) => typeof item === 'string' || typeof item === 'number')) {
+    throw validationFailed(
+      `Row ${row}, key ${key} holds a list with values other than text or numbers. Use a list of text or numbers.`,
+    );
+  }
+  return value.map((item) => numberText(item, row, key)).join('; ');
+}
+
+function numberText(value: unknown, row: number, key: string): string {
+  if (typeof value === 'number' && Number.isInteger(value) && !Number.isSafeInteger(value)) {
+    throw validationFailed(
+      `Row ${row}, key ${key} holds a number too large to read exactly. Put it in quotes so it stays text.`,
+    );
+  }
+  return String(value);
+}
+
 function cellOf(value: unknown, row: number, key: string): string {
   if (value === undefined || value === null) return '';
   let text: string;
   if (typeof value === 'string') {
     text = value;
   } else if (typeof value === 'number' || typeof value === 'boolean') {
-    text = String(value);
-  } else if (
-    Array.isArray(value) &&
-    value.every((item) => typeof item === 'string' || typeof item === 'number')
-  ) {
-    text = value.map(String).join('; ');
+    text = numberText(value, row, key);
+  } else if (Array.isArray(value)) {
+    text = listText(value, row, key);
   } else {
     throw validationFailed(
       `Row ${row}, key ${key} holds a nested value. Flatten it to text, a number, true or false, or a list of text.`,
     );
   }
-  if (text.length > MAX_IMPORT_CELL_LENGTH) throw tooLong(`Row ${row}, column ${key}`);
+  assertCleanText(text);
+  if (text.length > MAX_IMPORT_CELL_LENGTH) {
+    throw tooLong(`Row ${row}, column ${key}`, MAX_IMPORT_CELL_LENGTH);
+  }
   return text.trim();
 }
 
@@ -313,6 +373,12 @@ export function parseJsonRecords(content: string, limits: ImportLimits): ImportT
     if (!isRecord(entry)) throw validationFailed(`Row ${index + 1} is not an object.`);
     for (const key of Object.keys(entry)) {
       if (seen.has(key)) continue;
+      assertCleanText(key);
+      if (key.length > MAX_IMPORT_HEADER_LENGTH) {
+        throw validationFailed(
+          `Column ${keys.length + 1} of the keys is longer than ${MAX_IMPORT_HEADER_LENGTH} characters. It starts with "${key.slice(0, 40)}".`,
+        );
+      }
       seen.add(key);
       keys.push(key);
       if (keys.length > MAX_IMPORT_COLUMNS) {

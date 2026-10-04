@@ -18,6 +18,7 @@ export const MAX_IMPORT_ROWS = 2_000;
 export const MAX_CLI_IMPORT_ROWS = 50_000;
 export const MAX_IMPORT_COLUMNS = 100;
 export const MAX_IMPORT_CELL_LENGTH = 5_000;
+export const MAX_IMPORT_HEADER_LENGTH = 500;
 export const IMPORT_CHUNK_ROWS = 100;
 export const IMPORT_PREVIEW_CHUNK_ROWS = 500;
 

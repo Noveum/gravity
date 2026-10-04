@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { DomainError } from '../../src/errors/index.ts';
 import {
   HTTP_IMPORT_LIMITS,
   MAX_IMPORT_CELL_LENGTH,
   MAX_IMPORT_COLUMNS,
+  MAX_IMPORT_HEADER_LENGTH,
 } from '../../src/import/constants.ts';
 import {
   decodeImportBytes,
@@ -122,8 +124,8 @@ describe('parseCsv', () => {
     expect(() => parseCsv(content, limits)).toThrow(
       'Row 1, column Name is longer than 5000 characters.',
     );
-    expect(() => parseCsv(`${'x'.repeat(MAX_IMPORT_CELL_LENGTH + 1)}\n1\n`, limits)).toThrow(
-      'Column 1 of the header is longer than 5000 characters.',
+    expect(() => parseCsv(`${'x'.repeat(MAX_IMPORT_HEADER_LENGTH + 1)}\n1\n`, limits)).toThrow(
+      'Column 1 of the header is longer than 500 characters.',
     );
   });
 
@@ -166,7 +168,9 @@ describe('parseJsonRecords', () => {
     );
     expect(() => parseJsonRecords('[{', limits)).toThrow('This file is not valid JSON.');
     expect(() => parseJsonRecords('[1]', limits)).toThrow('Row 1 is not an object.');
-    expect(() => parseJsonRecords('[{"a":[["x"]]}]', limits)).toThrow('holds a nested value');
+    expect(() => parseJsonRecords('[{"a":[["x"]]}]', limits)).toThrow(
+      'Row 1, key a holds a list with values other than text or numbers.',
+    );
   });
 
   test('refuses an empty array and objects without keys', () => {
@@ -213,6 +217,137 @@ describe('parseJsonRecords', () => {
   test('parseImportTable picks the parser by format', () => {
     expect(parseImportTable('json', '[{"a":"1"}]', limits).headers).toEqual(['a']);
     expect(parseImportTable('csv', 'a\n1\n', limits).rows).toEqual([['1']]);
+  });
+});
+
+function refusal(run: () => unknown): { code: string; message: string } {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof DomainError) return { code: error.code, message: error.message };
+    throw error;
+  }
+  throw new Error('expected a refusal');
+}
+
+describe('escaped NUL and lone surrogates', () => {
+  test('a JSON value, key or list item with an escaped NUL is refused like a raw NUL', () => {
+    const raw = refusal(() => parseCsv('Name\nA\u0000da\n', limits));
+    for (const content of [
+      '[{"name":"A\\u0000da"}]',
+      '[{"A\\u0000":"x"}]',
+      '[{"tags":["ok","A\\u0000"]}]',
+    ]) {
+      expect(refusal(() => parseJsonRecords(content, limits))).toEqual(raw);
+    }
+  });
+
+  test('a lone surrogate is refused in a JSON value, key and list item, and in raw text', () => {
+    for (const content of [
+      '[{"name":"A\\ud800"}]',
+      '[{"name":"\\udc00B"}]',
+      '[{"\\ud800":"x"}]',
+      '[{"tags":["\\ud83d"]}]',
+    ]) {
+      const refused = refusal(() => parseJsonRecords(content, limits));
+      expect(refused.code).toBe('unsupported_media_type');
+    }
+    expect(refusal(() => parseCsv('Name\nA\ud800b\n', limits)).code).toBe('unsupported_media_type');
+    expect(refusal(() => parseJsonRecords('[{"name":"A\ud800"}]', limits)).code).toBe(
+      'unsupported_media_type',
+    );
+  });
+
+  test('a surrogate pair written as escapes is ordinary text', () => {
+    expect(parseJsonRecords('[{"name":"\\ud83d\\ude00 Ada"}]', limits).rows).toEqual([
+      ['\u{1f600} Ada'],
+    ]);
+    expect(parseCsv('Name\n\u{1f600} Ada\n', limits).rows).toEqual([['\u{1f600} Ada']]);
+  });
+});
+
+describe('header length', () => {
+  test('a 300 character header is accepted by both parsers', () => {
+    const header = 'h'.repeat(300);
+    expect(parseCsv(`${header}\n1\n`, limits).headers).toEqual([header]);
+    expect(parseJsonRecords(JSON.stringify([{ [header]: 1 }]), limits).headers).toEqual([header]);
+  });
+
+  test('an over-long CSV header or JSON key refuses the file and names the column', () => {
+    const header = 'k'.repeat(MAX_IMPORT_HEADER_LENGTH + 1);
+    expect(() => parseCsv(`A,${header}\n1,2\n`, limits)).toThrow(
+      'Column 2 of the header is longer than 500 characters.',
+    );
+    const refused = refusal(() =>
+      parseJsonRecords(JSON.stringify([{ a: 1, [header]: 2 }]), limits),
+    );
+    expect(refused.message).toStartWith('Column 2 of the keys is longer than 500 characters.');
+    expect(refused.message.length).toBeLessThan(200);
+    expect(refused.message).not.toContain(header);
+  });
+
+  test('separating duplicate headers never pushes one past the cap', () => {
+    const header = 'd'.repeat(MAX_IMPORT_HEADER_LENGTH);
+    const table = parseCsv(`${header},${header},${header}\n1,2,3\n`, limits);
+    expect(table.headers.every((name) => name.length <= MAX_IMPORT_HEADER_LENGTH)).toBe(true);
+    expect(new Set(table.headers).size).toBe(3);
+  });
+});
+
+describe('JSON integers', () => {
+  test('refuses a number that cannot be read exactly and asks for a quoted value', () => {
+    for (const id of ['12345678901234567891', '12345678901234567892', '9007199254740993', '1e21']) {
+      const refused = refusal(() => parseJsonRecords(`[{"id":${id}}]`, limits));
+      expect(refused.code).toBe('validation_failed');
+      expect(refused.message).toBe(
+        'Row 1, key id holds a number too large to read exactly. Put it in quotes so it stays text.',
+      );
+    }
+  });
+
+  test('keeps quoted ids, safe integers and decimals', () => {
+    const table = parseJsonRecords(
+      '[{"a":"12345678901234567891","b":9007199254740991,"c":1.5,"d":-3}]',
+      limits,
+    );
+    expect(table.rows).toEqual([['12345678901234567891', '9007199254740991', '1.5', '-3']]);
+  });
+
+  test('a list of booleans or nulls gets an accurate message', () => {
+    for (const list of ['[true]', '[null]', '["a",false]']) {
+      expect(refusal(() => parseJsonRecords(`[{"tags":${list}}]`, limits)).message).toBe(
+        'Row 1, key tags holds a list with values other than text or numbers. Use a list of text or numbers.',
+      );
+    }
+  });
+});
+
+describe('delimiter detection', () => {
+  test('a stray quote inside an unquoted header does not hide the delimiter', () => {
+    const table = parseCsv('Size 6";Name;Email\n6;Ada;ada@vela.example\n', limits);
+    expect(table.headers).toEqual(['Size 6"', 'Name', 'Email']);
+    expect(table.rows).toEqual([['6', 'Ada', 'ada@vela.example']]);
+  });
+
+  test('a quoted header holding the other delimiters does not change the choice', () => {
+    expect(parseCsv('"a;b;c;d",e\n1,2\n', limits).headers).toEqual(['a;b;c;d', 'e']);
+    expect(parseCsv('a,"b;c;d;e",f\n1,2,3\n', limits).headers).toEqual(['a', 'b;c;d;e', 'f']);
+  });
+});
+
+describe('trailing empty cells', () => {
+  test('a two column file with 99 trailing commas is a two column file', () => {
+    const tail = ','.repeat(99);
+    const table = parseCsv(`A,B${tail}\n1,2${tail}\n`, limits);
+    expect(table.headers).toEqual(['A', 'B']);
+    expect(table.rows).toEqual([['1', '2']]);
+  });
+
+  test('empty cells between filled ones still count, and a long run of trailing commas is not a wide row', () => {
+    expect(parseCsv('A,,C\n1,,3,,,\n', limits).rows).toEqual([['1', '', '3']]);
+    const run = ','.repeat(5000);
+    expect(parseCsv(`A\nb${run}\n`, limits).rows).toEqual([['b']]);
+    expect(() => parseCsv(`A\nb${run}x\n`, limits)).toThrow(/Row 1 has 5001 cells/);
   });
 });
 

@@ -345,6 +345,20 @@ describe('text that hides its direction or width', () => {
     expect(text).toContain('Person: Ada <ada@vela.example>');
   });
 
+  test('joiners that emoji and scripts need survive, bidi controls do not', async () => {
+    const context = await getRecordContext(workspace.admin, { type: 'lead', id: leadId });
+    const person = context.person;
+    if (person === null) throw new Error('missing person');
+    const family = '\u{1F469}\u200D\u{1F469}\u200D\u{1F467}';
+    const persian = '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645';
+    const text = renderRecordContext(
+      { ...context, person: { ...person, location: `${family} ${persian}\u202E\u2060` } },
+      { maxTokens: 8000, links },
+    );
+    expect(text).toContain(`Location: ${family} ${persian}`);
+    expect(text).not.toMatch(/[\u200B\u2060\uFEFF\u202A-\u202E\u2066-\u2069]/u);
+  });
+
   test('job titles, company names and activity subject names are quoted inline', async () => {
     const context = await getRecordContext(workspace.admin, { type: 'lead', id: leadId });
     const job = context.employments[0];

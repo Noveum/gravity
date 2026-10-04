@@ -107,7 +107,7 @@ export async function getRecordContext(
 }
 
 const SEPARATORS_AND_CONTROLS = /[\p{Cc}\s]+/gu;
-const FORMAT_CHARACTERS = /\p{Cf}/gu;
+const FORMAT_CHARACTERS = /[\u200B\u2060\uFEFF\u202A-\u202E\u2066-\u2069]/gu;
 const PLAIN_KEY = /^[A-Za-z0-9_.-]+$/;
 
 export function oneLine(text: string): string {

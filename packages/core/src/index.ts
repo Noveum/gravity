@@ -40,5 +40,4 @@ export * from './org/member-service.ts';
 export * from './org/organization-service.ts';
 export * from './realtime/outbox.ts';
 export * from './realtime/publisher.ts';
-export * from './seed/demo-seed.ts';
 export * from './sync/sync-id.ts';

@@ -20,9 +20,16 @@ export interface EditableFieldProps {
 
 const NUMBER_PROBLEM = 'Enter a number.';
 
+const DECIMAL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+
 function problemWith(type: EditableFieldType, next: string): string | null {
   if (type !== 'number' || next === '') return null;
-  return Number.isFinite(Number(next)) ? null : NUMBER_PROBLEM;
+  return DECIMAL.test(next) ? null : NUMBER_PROBLEM;
+}
+
+function unchanged(type: EditableFieldType, next: string, value: string): boolean {
+  if (type !== 'number' || next === '' || value === '') return next === value;
+  return Number(next) === Number(value);
 }
 
 export function AttributeRow({
@@ -122,7 +129,7 @@ function InlineEditor({
     refocus.current = returnFocus;
     setProblem(null);
     setEditing(false);
-    if (save && next !== value && !(required && next.length === 0)) onSave(next);
+    if (save && !unchanged(type, next, value) && !(required && next.length === 0)) onSave(next);
   };
 
   if (!editing) {

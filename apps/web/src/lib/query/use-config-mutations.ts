@@ -169,8 +169,14 @@ export function useUpdatePipeline() {
   });
 }
 
-export function useArchivePipeline() {
+export interface ArchivePipelineOptions extends Refusable<PipelineRow> {
+  readonly afterSuccess?: (pipeline: PipelineRow) => void;
+}
+
+export function useArchivePipeline(options: ArchivePipelineOptions = {}) {
   return useBootstrapMutation({
+    ...(options.onRefused === undefined ? {} : { onRefused: options.onRefused }),
+    ...(options.afterSuccess === undefined ? {} : { afterSuccess: options.afterSuccess }),
     mutationFn: async (pipeline: PipelineRow) =>
       (
         await apiFetch(`/api/pipelines/${pipeline.id}`, pipelineEnvelopeSchema, {

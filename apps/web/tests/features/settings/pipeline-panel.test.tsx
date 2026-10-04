@@ -203,7 +203,32 @@ describe('PipelinePanel', () => {
       await screen.findByText('Close the 2 open or held leads in Prospecting before archiving it.'),
     ).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: /Prospecting/ })).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog') === null).toBe(true);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Close the 2 open or held leads in Prospecting before archiving it.',
+    );
+    expect(screen.queryByRole('button', { name: 'Retry' }) === null).toBe(true);
     expect(navigation.push).not.toHaveBeenCalled();
+  });
+
+  test('a pipeline archive that failed on the server goes back to the brands once Retry works', async () => {
+    navigation.push.mockClear();
+    let attempts = 0;
+    serveJson((_url, method) => {
+      if (method === 'GET') return { body: bootstrapFixture() };
+      attempts += 1;
+      return attempts === 1
+        ? { status: 503, body: { error: { code: 'internal', message: 'Try again shortly.' } } }
+        : { body: { pipeline: { ...pipeline, archivedAt: AT, syncId: 9 } } };
+    });
+    renderWithClient(<PipelinePanel pipelineId="p1" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Archive pipeline' }));
+    await userEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive' }),
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/settings/brands'));
+    expect(attempts).toBe(2);
   });
 
   test('the key is shown read-only with the reason and cannot be edited', () => {

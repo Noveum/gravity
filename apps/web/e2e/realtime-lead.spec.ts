@@ -7,8 +7,18 @@ const POLL_INTERVAL_MS = 25;
 
 async function signIn(context: BrowserContext, email: string): Promise<Page> {
   const response = await context.request.post(`${BASE}/api/dev/sign-in`, { data: { email } });
-  expect(response.ok()).toBe(true);
+  if (!response.ok()) {
+    throw new Error(
+      `Dev sign-in for ${email} failed with ${response.status()}: ${await response.text()}. ` +
+        'Check that the web server on BASE is running in development and that ' +
+        'ALLOWED_EMAIL_DOMAINS in its environment admits this address.',
+    );
+  }
   return await context.newPage();
+}
+
+function isLeadRead(method: string, url: string): boolean {
+  return method === 'GET' && new URL(url).pathname.startsWith('/api/leads');
 }
 
 function leadRow(page: Page, name: string) {
@@ -32,12 +42,19 @@ test('a lead created in one browser appears in another within 500ms', async ({ b
   expect(warmed.ok()).toBe(true);
   await expect(leadRow(teammate, warmUp)).toBeVisible();
 
+  const teammateReads: string[] = [];
+  let measuring = false;
+  teammate.on('request', (request) => {
+    if (measuring && isLeadRead(request.method(), request.url())) teammateReads.push(request.url());
+  });
+
   const name = `Realtime ${Date.now()}`;
   await owner.keyboard.press('c');
   await owner.getByRole('textbox', { name: 'Person', exact: true }).fill(name);
   const answered = owner
     .waitForResponse((response) => response.url().endsWith('/api/leads/quick') && response.ok())
     .then(() => performance.now());
+  measuring = true;
   await owner.keyboard.press('ControlOrMeta+Enter');
   await expect(leadRow(owner, name)).toBeVisible();
   const answeredAt = await answered;
@@ -53,6 +70,8 @@ test('a lead created in one browser appears in another within 500ms', async ({ b
       { timeout: 2 * PROPAGATION_BUDGET_MS, intervals: [POLL_INTERVAL_MS] },
     )
     .toBe(true);
+  measuring = false;
+  expect(teammateReads).toEqual([]);
   const latencyMs = Math.round(seenAt - answeredAt);
   test.info().annotations.push({ type: 'propagation-latency-ms', description: String(latencyMs) });
   console.log(`realtime propagation latency: ${latencyMs}ms`);

@@ -220,9 +220,30 @@ export function keysLabel(leads: readonly LeadRow[]): string {
   return named.length === 0 ? last : `${named.join(', ')} and ${last}`;
 }
 
+const STALE_READS_IN_FLIGHT = 8;
+
+async function inBatches<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      const item = items[index];
+      if (item !== undefined) results[index] = await run(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 async function currentRows(client: QueryClient, rows: readonly LeadRow[]): Promise<LeadRow[]> {
   if (!cacheMayBeStale(client)) return rows.map((lead) => cachedLead(client, lead.id) ?? lead);
-  const fresh = await Promise.all(rows.map((lead) => fetchLead(lead.id)));
+  const fresh = await inBatches(rows, STALE_READS_IN_FLIGHT, (lead) => fetchLead(lead.id));
   for (const lead of fresh) {
     noteServerRow(client, 'lead', lead.id, lead.syncId);
     placeLead(client, lead);

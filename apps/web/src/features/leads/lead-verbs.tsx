@@ -77,6 +77,7 @@ function changingCount(
 }
 
 function confirmNotice(changing: number, total: number, again: string): string {
+  if (changing === 0) return `All ${total} leads already match, so nothing changes.`;
   const summary =
     changing === total
       ? `This changes ${total} leads.`
@@ -137,10 +138,16 @@ export function LeadVerbs({
   const apply = (change: LeadChange, again: string) => {
     if (targets.length === 0 || overLimit) return;
     const key = JSON.stringify(change);
-    if (targets.length > BULK_CONFIRM_THRESHOLD && pending?.key !== key) {
+    if (targets.length > BULK_CONFIRM_THRESHOLD) {
       const changing = changingCount(targets, change, allStages);
-      setPending({ key, notice: confirmNotice(changing, targets.length, again) });
-      return;
+      if (changing === 0 && pending?.key === key) {
+        close();
+        return;
+      }
+      if (changing === 0 || pending?.key !== key) {
+        setPending({ key, notice: confirmNotice(changing, targets.length, again) });
+        return;
+      }
     }
     const before = [...targets];
     const announce = hasSelection || selectionLeft || subject?.announce === true;

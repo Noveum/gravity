@@ -10,6 +10,7 @@ import {
 import type { QueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { BOOTSTRAP_ROOT, queryKeys } from './keys.ts';
+import { dropRecordLeadsOfPipelines } from './lead-cache.ts';
 import type { Bootstrap } from './schemas.ts';
 
 interface Versioned {
@@ -44,6 +45,7 @@ function refetchBootstrap(client: QueryClient): void {
 interface BootstrapPatch {
   readonly client: QueryClient;
   readable: boolean;
+  archivedPipelineIds: readonly string[];
 }
 
 function unreadable(patch: BootstrapPatch, action: SyncAction): void {
@@ -78,7 +80,10 @@ export function withoutPipelines(bootstrap: Bootstrap, pipelineIds: readonly str
 }
 
 function applyPipeline(patch: BootstrapPatch, bootstrap: Bootstrap, action: SyncAction): Bootstrap {
-  if (removes(action)) return withoutPipelines(bootstrap, [action.modelId]);
+  if (removes(action)) {
+    patch.archivedPipelineIds = [action.modelId];
+    return withoutPipelines(bootstrap, [action.modelId]);
+  }
   return {
     ...bootstrap,
     pipelines: applyRow(patch, bootstrap.pipelines, action, pipelineRowSchema),
@@ -91,6 +96,7 @@ function applyBrand(patch: BootstrapPatch, bootstrap: Bootstrap, action: SyncAct
   const pipelineIds = next.pipelines
     .filter((pipeline) => pipeline.brandId === action.modelId)
     .map((pipeline) => pipeline.id);
+  patch.archivedPipelineIds = pipelineIds;
   return withoutPipelines(next, pipelineIds);
 }
 
@@ -148,7 +154,7 @@ function applyMember(patch: BootstrapPatch, bootstrap: Bootstrap, action: SyncAc
 }
 
 export function applyBootstrapDelta(client: QueryClient, action: SyncAction): boolean {
-  const patch: BootstrapPatch = { client, readable: true };
+  const patch: BootstrapPatch = { client, readable: true, archivedPipelineIds: [] };
   patchBootstrap(client, (bootstrap) => {
     switch (action.model) {
       case 'brand':
@@ -184,5 +190,6 @@ export function applyBootstrapDelta(client: QueryClient, action: SyncAction): bo
         return bootstrap;
     }
   });
+  dropRecordLeadsOfPipelines(client, patch.archivedPipelineIds);
   return patch.readable;
 }

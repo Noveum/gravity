@@ -488,6 +488,53 @@ describe('record and configuration deltas', () => {
     expect(after.stages).toEqual([]);
   });
 
+  test('archiving a pipeline or a brand drops its closed leads from cached records', () => {
+    const client = cache({});
+    const won = leadFixture({ id: 'lw', key: 'YOD-7', stageId: 'won', stageCategory: 'won' });
+    const elsewhere = leadFixture({ id: 'lx', key: 'PRT-1', pipelineId: 'p2' });
+    client.setQueryData<PersonRecord>(queryKeys.person('per1'), {
+      person: personFixture(),
+      employments: [],
+      leads: [won, elsewhere],
+    });
+    client.setQueryData<CompanyRecord>(queryKeys.company('c1'), {
+      company: companyFixture(),
+      people: [],
+      leads: [won],
+    });
+    const pipeline = bootstrapOf(client).pipelines[0];
+    if (pipeline === undefined) throw new Error('fixture has a pipeline');
+    applyDelta(
+      action(
+        'pipeline',
+        { ...pipeline, archivedAt: '2026-10-03T10:00:00.000Z', syncId: 97 },
+        { action: 'archive' },
+      ),
+      client,
+    );
+    const person = client.getQueryData<PersonRecord>(queryKeys.person('per1'));
+    expect(person?.leads.map((lead) => lead.id)).toEqual(['lx']);
+    expect(client.getQueryData<CompanyRecord>(queryKeys.company('c1'))?.leads).toEqual([]);
+
+    client.setQueryData<CompanyRecord>(queryKeys.company('c1'), {
+      company: companyFixture(),
+      people: [],
+      leads: [won],
+    });
+    client.setQueryData<Bootstrap>(queryKeys.bootstrap, bootstrapFixture());
+    const brand = bootstrapOf(client).brands[0];
+    if (brand === undefined) throw new Error('fixture has a brand');
+    applyDelta(
+      action(
+        'brand',
+        { ...brand, archivedAt: '2026-10-03T10:00:00.000Z', syncId: 98 },
+        { action: 'archive' },
+      ),
+      client,
+    );
+    expect(client.getQueryData<CompanyRecord>(queryKeys.company('c1'))?.leads).toEqual([]);
+  });
+
   test('a configuration payload it cannot read is logged and refetches the bootstrap', () => {
     const client = cache({});
     applyDelta(action('organization', { id: 'o1', name: 42, syncId: 96 }), client);

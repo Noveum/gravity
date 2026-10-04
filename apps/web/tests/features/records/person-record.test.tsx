@@ -281,8 +281,19 @@ describe('PersonRecord', () => {
     expect(screen.getByText('Enter a number.')).toBeInTheDocument();
     expect(screen.getByLabelText('Seats')).toHaveAttribute('aria-invalid', 'true');
     expect(sent.some((entry) => entry.method === 'PATCH')).toBe(false);
+    for (const entry of ['0x10', '1e3']) {
+      await userEvent.clear(input);
+      await userEvent.type(input, `${entry}{Enter}`);
+      expect(screen.getByText('Enter a number.')).toBeInTheDocument();
+    }
+    expect(sent.some((entry) => entry.method === 'PATCH')).toBe(false);
     await userEvent.keyboard('{Escape}');
     expect(screen.getByRole('button', { name: 'Edit Seats' })).toHaveTextContent('12');
+    await userEvent.click(screen.getByRole('button', { name: 'Edit Seats' }));
+    await userEvent.clear(screen.getByLabelText('Seats'));
+    await userEvent.type(screen.getByLabelText('Seats'), '12.0{Enter}');
+    expect(screen.getByRole('button', { name: 'Edit Seats' })).toHaveTextContent('12');
+    expect(sent.some((entry) => entry.method === 'PATCH')).toBe(false);
   });
 
   test('a window refocus does not move the lead in focus on a deep-linked record', async () => {

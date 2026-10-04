@@ -462,6 +462,48 @@ describe('LeadVerbs', () => {
     expect(sent[0]?.body['leadIds']).toHaveLength(51);
   });
 
+  test('a bulk change where every lead already matches sends nothing', async () => {
+    renderWithVerbs({ rows: manyLeads(51).map((lead) => ({ ...lead, priority: 0 })) });
+    await screen.findByTestId('lead-row-YOD-51');
+    await userEvent.keyboard('{Meta>}a{/Meta}p');
+    await userEvent.type(await screen.findByPlaceholderText('Set priority'), 'no prio{Enter}');
+    expect(
+      await screen.findByText('All 51 leads already match, so nothing changes.'),
+    ).toBeInTheDocument();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(screen.queryByPlaceholderText('Set priority') === null).toBe(true));
+    expect(writes()).toHaveLength(0);
+  });
+
+  test('undo while realtime is not live re-reads at most 8 leads at a time', async () => {
+    const rows = manyLeads(20);
+    const { client } = renderWithVerbs({ rows });
+    markRealtimeLive(client, false);
+    await screen.findByTestId('lead-row-YOD-20');
+    await userEvent.keyboard('{Meta>}a{/Meta}p');
+    await userEvent.type(await screen.findByPlaceholderText('Set priority'), 'high{Enter}');
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    await screen.findByText(/Set priority to High on 20 leads/);
+    holding = true;
+    await userEvent.keyboard('{Meta>}z{/Meta}');
+    await waitFor(() => expect(held).toHaveLength(8));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(held).toHaveLength(8);
+    let reads = 8;
+    while (held.length > 0) {
+      const next = held.splice(0, held.length);
+      await act(async () => {
+        for (const release of next) release();
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      reads = sent.filter((request) => request.method === 'GET').length;
+      expect(held.length).toBeLessThanOrEqual(8);
+    }
+    expect(reads).toBe(20);
+  });
+
   test('more than 500 leads is refused with a clear message', async () => {
     renderWithVerbs({ rows: manyLeads(501) });
     await screen.findByTestId('lead-row-YOD-501');

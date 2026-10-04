@@ -188,10 +188,17 @@ function PipelineBody({ pipelineId }: { readonly pipelineId: string }) {
   const router = useRouter();
   const allowed = useCan('pipeline:manage');
   const updatePipeline = useUpdatePipeline();
-  const archivePipeline = useArchivePipeline();
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const archivePipeline = useArchivePipeline({
+    onRefused: (_pipeline, message) => {
+      setRefusal(message);
+      return true;
+    },
+    afterSuccess: () => router.push('/settings/brands'),
+  });
   const reorder = useReorderStages(pipelineId);
   const [confirming, setConfirming] = useState(false);
-  const [leaving, setLeaving] = useState(false);
+  const leaving = archivePipeline.isPending || archivePipeline.isSuccess;
   const trigger = useRef<HTMLButtonElement | null>(null);
   const heading = useRef<HTMLHeadingElement | null>(null);
   const pipeline = workspace.pipelineById.get(pipelineId);
@@ -212,11 +219,9 @@ function PipelineBody({ pipelineId }: { readonly pipelineId: string }) {
     trigger.current?.focus();
   };
   const archive = () => {
-    setLeaving(true);
-    archivePipeline.mutate(pipeline, {
-      onSuccess: () => router.push('/settings/brands'),
-      onError: () => setLeaving(false),
-    });
+    setConfirming(false);
+    setRefusal(null);
+    archivePipeline.mutate(pipeline);
   };
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-6">
@@ -282,6 +287,11 @@ function PipelineBody({ pipelineId }: { readonly pipelineId: string }) {
               and this cannot be undone here. Archiving is refused while a lead is open or on hold.
             </ArchiveConfirm>
           ) : null}
+          {refusal === null ? null : (
+            <p role="alert" className="text-danger text-xs">
+              {refusal}
+            </p>
+          )}
         </div>
       ) : null}
     </div>

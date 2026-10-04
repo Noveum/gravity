@@ -201,6 +201,20 @@ function writeLead(client: QueryClient, row: LeadRow): void {
   placeInRecordLeads(client, row.id, row);
 }
 
+export function dropRecordLeadsOfPipelines(
+  client: QueryClient,
+  pipelineIds: readonly string[],
+): void {
+  if (pipelineIds.length === 0) return;
+  for (const root of [PERSON_ROOT, COMPANY_ROOT]) {
+    for (const [key, record] of client.getQueriesData<RecordWithLeads>({ queryKey: [root] })) {
+      if (record === undefined) continue;
+      const leads = record.leads.filter((lead) => !pipelineIds.includes(lead.pipelineId));
+      if (leads.length !== record.leads.length) client.setQueryData(key, { ...record, leads });
+    }
+  }
+}
+
 export function removeLead(client: QueryClient, id: string): void {
   removeFromLists(client, LEADS_ROOT, id, readLeads, writeLeads);
   client.removeQueries({ queryKey: [LEAD_ROOT, id], exact: true });

@@ -24,6 +24,9 @@ const BINARY_EXTENSIONS = new Set([
   '.wasm',
 ]);
 
+const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
+const BYTE_ORDER_MARK_BYTES = [0xef, 0xbb, 0xbf] as const;
+
 const TAB = 9;
 const NEWLINE = 10;
 const CARRIAGE_RETURN = 13;
@@ -37,6 +40,10 @@ export function extensionOf(file: string): string {
 
 export function isTextSource(file: string): boolean {
   return !BINARY_EXTENSIONS.has(extensionOf(file));
+}
+
+export function isCodeSource(file: string): boolean {
+  return CODE_EXTENSIONS.has(extensionOf(file));
 }
 
 export interface ControlByte {
@@ -57,6 +64,24 @@ export function controlBytes(data: Uint8Array): ControlByte[] {
     found.push({ offset, line, byte });
   }
   return found;
+}
+
+export function byteOrderMarks(data: Uint8Array): ControlByte[] {
+  const found: ControlByte[] = [];
+  let line = 1;
+  for (const [offset, byte] of data.entries()) {
+    if (byte === NEWLINE) line += 1;
+    if (byte !== BYTE_ORDER_MARK_BYTES[0]) continue;
+    const isMark = BYTE_ORDER_MARK_BYTES.every(
+      (expected, step) => data[offset + step] === expected,
+    );
+    if (isMark) found.push({ offset, line, byte });
+  }
+  return found;
+}
+
+export function describeMark(file: string, entry: ControlByte): string {
+  return `${file}:${entry.line}: literal byte order mark at offset ${entry.offset}, write it as the escape \\u{FEFF}`;
 }
 
 export function describe(file: string, entry: ControlByte): string {
@@ -82,19 +107,24 @@ async function main(): Promise<void> {
   for (const file of files) {
     const data = await readFile(file).catch(() => null);
     if (data === null) continue;
-    for (const entry of controlBytes(new Uint8Array(data))) {
+    const bytes = new Uint8Array(data);
+    for (const entry of controlBytes(bytes)) {
       problems.push(describe(file, entry));
+    }
+    if (!isCodeSource(file)) continue;
+    for (const entry of byteOrderMarks(bytes)) {
+      problems.push(describeMark(file, entry));
     }
   }
 
   if (problems.length > 0) {
     for (const problem of problems) console.log(problem);
     console.log(
-      `\n${problems.length} control byte(s) in tracked source. A stray NUL or control character makes the file binary to grep and to most tooling, and it survives review because the code still compiles.`,
+      `\n${problems.length} problem(s) in tracked source. A stray NUL or control character makes the file binary to grep and to most tooling, and an invisible byte order mark hides in a string or a pattern; both survive review because the code still compiles.`,
     );
     process.exit(1);
   }
-  console.log(`OK: no control bytes in ${files.length} tracked source files.`);
+  console.log(`OK: no control bytes or byte order marks in ${files.length} tracked source files.`);
 }
 
 if (import.meta.main) await main();

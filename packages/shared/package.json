@@ -13,7 +13,8 @@
     "./utils": "./src/utils/index.ts",
     "./constants": "./src/constants/index.ts",
     "./records": "./src/records/index.ts",
-    "./filters": "./src/filters/index.ts"
+    "./filters": "./src/filters/index.ts",
+    "./import": "./src/import/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

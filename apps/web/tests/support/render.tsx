@@ -12,6 +12,7 @@ import { bootstrapFixture } from './bootstrap-fixture.ts';
 export interface RenderOptions {
   readonly bootstrap?: Bootstrap | null;
   readonly client?: QueryClient;
+  readonly copyForAgent?: boolean;
 }
 
 export function renderWithClient(
@@ -34,7 +35,11 @@ export function renderWithClient(
       <TooltipProvider>
         <ToastProvider>
           <HotkeyProvider>
-            <CopyForAgentProvider>{ui}</CopyForAgentProvider>
+            {options.copyForAgent === false ? (
+              ui
+            ) : (
+              <CopyForAgentProvider>{ui}</CopyForAgentProvider>
+            )}
           </HotkeyProvider>
         </ToastProvider>
       </TooltipProvider>

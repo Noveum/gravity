@@ -217,6 +217,31 @@ describe('LeadBoard', () => {
     expect(await screen.findByText('Undid: Moved YOD-1 to Researching')).toBeInTheDocument();
   });
 
+  test('Cmd+Shift+A copies the focused card for an agent', async () => {
+    const writeText = mock((_text: string) => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const requested: string[] = [];
+    globalThis.fetch = mock((input: RequestInfo | URL) => {
+      requested.push(String(input));
+      return Promise.resolve(
+        Response.json({
+          subject: { type: 'lead', id: 'l1' },
+          label: 'YOD-1 · Ada Lovelace',
+          text: 'Lead YOD-1',
+        }),
+      );
+    }) as unknown as typeof fetch;
+    renderBoard([ada, grace]);
+    await screen.findByTestId('board-card-YOD-2');
+    await userEvent.keyboard('j');
+    expect(screen.getByTestId('board-card-YOD-1')).toHaveAttribute('data-active', 'true');
+    await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Lead YOD-1'));
+    expect(requested.filter((path) => path.startsWith('/api/context'))).toEqual([
+      '/api/context?ref=l1',
+    ]);
+  });
+
   test('J and K move within a column, the arrows move across columns', async () => {
     renderBoard([ada, grace, alan]);
     const first = await screen.findByTestId('board-card-YOD-2');

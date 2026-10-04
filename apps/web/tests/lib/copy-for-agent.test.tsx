@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 import {
@@ -191,7 +191,8 @@ describe('copy', () => {
   });
 
   test('a second press while copying does nothing', async () => {
-    stubWriteText(() => Promise.resolve());
+    const written = mock((_text: string) => Promise.resolve());
+    stubWriteText(written);
     let release: (response: Response) => void = () => undefined;
     const fetchMock = mock(
       () =>
@@ -208,7 +209,11 @@ describe('copy', () => {
     expect(await screen.findByText('Copied Ada Lovelace')).toBeInTheDocument();
     await userEvent.keyboard(COPY);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    release(Response.json(reply().body));
+    await act(async () => {
+      release(Response.json(reply().body));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(written).toHaveBeenCalledTimes(2));
   });
 
   test('writes a promised clipboard item before the server answers, for Safari', async () => {

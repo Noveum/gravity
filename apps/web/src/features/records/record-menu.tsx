@@ -8,8 +8,10 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.tsx';
-import { useCopyForAgent } from '@/lib/copy-for-agent.tsx';
+import { Kbd } from '@/components/ui/kbd.tsx';
+import { COPY_FOR_AGENT_BINDING, useCopyForAgent } from '@/lib/copy-for-agent.tsx';
 import { navRowHover } from '@/lib/interaction.ts';
+import { formatBinding } from '@/lib/keyboard/index.ts';
 
 export function RecordMenu({ name }: { readonly name: string }) {
   const copyForAgent = useCopyForAgent();
@@ -24,7 +26,9 @@ export function RecordMenu({ name }: { readonly name: string }) {
       <DropdownMenuContent align="end">
         <DropdownMenuItem onSelect={() => copyForAgent()}>
           Copy for agent
-          <DropdownMenuShortcut>Cmd Shift A</DropdownMenuShortcut>
+          <DropdownMenuShortcut>
+            <Kbd keys={formatBinding(COPY_FOR_AGENT_BINDING)} />
+          </DropdownMenuShortcut>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -74,7 +74,10 @@ async function runPaletteCommand(label: string): Promise<void> {
 type Bootstrap = ReturnType<typeof bootstrapFixture>;
 
 function renderShell(body: ReactNode = <p>Page body</p>, bootstrap?: Bootstrap) {
-  return renderWithClient(shellElement(body), bootstrap === undefined ? {} : { bootstrap });
+  return renderWithClient(shellElement(body), {
+    copyForAgent: false,
+    ...(bootstrap === undefined ? {} : { bootstrap }),
+  });
 }
 
 function sidebarAside(): HTMLElement {
@@ -267,12 +270,25 @@ describe('AppShell', () => {
       <HydrationBoundary state={dehydrate(server)}>
         {shellElement(<p>Page body</p>)}
       </HydrationBoundary>,
-      { bootstrap: null, client: createQueryClient() },
+      { bootstrap: null, client: createQueryClient(), copyForAgent: false },
     );
     const nav = screen.getAllByRole('navigation', { name: 'Workspace' })[0];
     if (nav === undefined) throw new Error('missing workspace navigation');
     expect(within(nav).getByText('Yodu')).toBeInTheDocument();
     expect(requested.filter((path) => path.includes('/api/bootstrap'))).toEqual([]);
+  });
+
+  test('the shell owns the one Cmd+Shift+A binding', () => {
+    const warn = spyOn(console, 'warn');
+    try {
+      renderShell();
+      const duplicates = warn.mock.calls.filter((call) =>
+        String(call[0]).includes('Duplicate hotkey collision: "mod+shift+a"'),
+      );
+      expect(duplicates).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('the palette copies the link to the current view', async () => {

@@ -504,7 +504,7 @@ describe('PersonRecord', () => {
       await screen.findByRole('button', { name: 'More actions for Ada Lovelace' }),
     );
     const item = await screen.findByRole('menuitem', { name: /Copy for agent/ });
-    expect(item).toHaveTextContent('Cmd Shift A');
+    expect(item).toHaveTextContent('Copy for agent⌘⇧A');
     await userEvent.click(item);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('Lead YOD-1'));
     await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');

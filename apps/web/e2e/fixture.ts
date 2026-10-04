@@ -7,9 +7,14 @@ const FIXTURE_PATH = resolve(import.meta.dirname, '.fixture.json');
 export const e2eFixtureSchema = z.object({
   ownerEmail: z.email(),
   teammateEmail: z.email(),
+  workspaceName: z.string().min(1),
   brandName: z.string().min(1),
   pipelineKey: z.string().min(2),
   pipelineId: z.string().min(1),
+  personName: z.string().min(1),
+  importBrandName: z.string().min(1),
+  importPipelineKey: z.string().min(2),
+  importPipelineId: z.string().min(1),
 });
 export type E2EFixture = z.infer<typeof e2eFixtureSchema>;
 

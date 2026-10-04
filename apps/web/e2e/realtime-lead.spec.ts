@@ -1,21 +1,10 @@
-import { type BrowserContext, expect, type Page, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { BASE } from './base-url.ts';
 import { readFixture } from './fixture.ts';
+import { signIn } from './sign-in.ts';
 
 const PROPAGATION_BUDGET_MS = 500;
 const POLL_INTERVAL_MS = 25;
-
-async function signIn(context: BrowserContext, email: string): Promise<Page> {
-  const response = await context.request.post(`${BASE}/api/dev/sign-in`, { data: { email } });
-  if (!response.ok()) {
-    throw new Error(
-      `Dev sign-in for ${email} failed with ${response.status()}: ${await response.text()}. ` +
-        'Check that the web server on BASE is running in development and that ' +
-        'ALLOWED_EMAIL_DOMAINS in its environment admits this address.',
-    );
-  }
-  return await context.newPage();
-}
 
 function isLeadRead(method: string, url: string): boolean {
   return method === 'GET' && new URL(url).pathname.startsWith('/api/leads');

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { PersonRow } from '@gravity/shared/records';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { restoreModulesAfterThisFile } from '../../../tests-support.ts';
 import { serveJson } from '../../support/fetch.ts';
@@ -17,6 +17,7 @@ afterAll(() => setViewport(false));
 
 const { PeopleView } = await import('@/features/people/people-view.tsx');
 const { neighbourOf } = await import('@/lib/record-trail.ts');
+const { PEOPLE_ROOT } = await import('@/lib/query/keys.ts');
 
 function person(id: string, name: string): PersonRow {
   return personFixture({
@@ -56,6 +57,29 @@ describe('PeopleView', () => {
     await userEvent.keyboard('{Enter}');
     await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/people/per2'));
     expect(neighbourOf('/people', 'per2', -1)).toBe('per1');
+  });
+
+  test('when the focused person leaves the list, focus moves to the next one, not the top', async () => {
+    const ada = person('per1', 'Ada Lovelace');
+    const grace = person('per2', 'Grace Hopper');
+    const alan = person('per3', 'Alan Turing');
+    serveJson(() => ({ body: { people: [ada, grace, alan], nextCursor: null } }));
+    const { client } = renderWithClient(<PeopleView />);
+    await screen.findByTestId('record-row-per1');
+    await userEvent.keyboard('j');
+    expect(screen.getByTestId('record-row-per2')).toHaveAttribute('data-active', 'true');
+    const [query] = client.getQueryCache().findAll({ queryKey: [PEOPLE_ROOT] });
+    if (query === undefined) throw new Error('missing people query');
+    act(() => {
+      client.setQueryData(query.queryKey, {
+        pages: [{ people: [ada, alan], nextCursor: null }],
+        pageParams: [null],
+      });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('record-row-per3')).toHaveAttribute('data-active', 'true'),
+    );
+    expect(screen.getByTestId('record-row-per1')).not.toHaveAttribute('data-active');
   });
 
   test('clicking a row remembers the trail too', async () => {

@@ -114,5 +114,8 @@ describe('CompanyRecord', () => {
     renderWithClient(<CompanyRecord companyId="c1" />);
     expect(await screen.findByText('No leads yet. Press C to add one.')).toBeInTheDocument();
     expect(screen.getByText('Nobody works here yet.')).toBeInTheDocument();
+    await userEvent.keyboard('n');
+    await userEvent.keyboard('{Escape}');
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Acme' }));
   });
 });

@@ -1,6 +1,7 @@
 'use client';
 
 import { usePersonRecord } from '@/lib/query/use-records.ts';
+import { useTrailKeys } from '@/lib/record-trail.ts';
 import { PersonAttributes } from './record-attributes.tsx';
 import { RecordFallback, RecordLayout } from './record-layout.tsx';
 
@@ -12,6 +13,7 @@ export function PersonRecord({
   readonly focusLeadId: string | null;
 }) {
   const record = usePersonRecord(personId);
+  useTrailKeys('/people', personId);
   if (record.data === undefined) {
     return (
       <RecordFallback
@@ -30,7 +32,6 @@ export function PersonRecord({
     .join(' at ');
   return (
     <RecordLayout
-      basePath="/people"
       recordId={person.id}
       subjectType="person"
       title={person.name}

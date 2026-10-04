@@ -15,12 +15,13 @@ import { isWindowRefocus } from '@/lib/window-refocus.ts';
 export interface LeadCardProps {
   readonly lead: LeadRow;
   readonly focused: boolean;
-  readonly verbs: readonly VerbMode[];
   readonly onFocus: () => void;
   readonly onVerb: (request: VerbRequest) => void;
 }
 
-export function LeadCard({ lead, focused, verbs, onFocus, onVerb }: LeadCardProps) {
+const KEYLESS_ON_RECORDS: readonly VerbMode[] = ['nextAction'];
+
+export function LeadCard({ lead, focused, onFocus, onVerb }: LeadCardProps) {
   const workspace = useWorkspace();
   const pipeline = workspace.pipelineById.get(lead.pipelineId);
   const brand = workspace.brandById.get(lead.brandId);
@@ -76,7 +77,7 @@ export function LeadCard({ lead, focused, verbs, onFocus, onVerb }: LeadCardProp
         )}
       </button>
       <span className="absolute top-2.5 right-2">
-        <LeadVerbMenu lead={lead} visible={focused} verbs={verbs} onVerb={onVerb} />
+        <LeadVerbMenu lead={lead} visible={focused} unkeyed={KEYLESS_ON_RECORDS} onVerb={onVerb} />
       </span>
     </div>
   );

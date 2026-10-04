@@ -134,6 +134,18 @@ describe('isEditableTarget', () => {
     }
   });
 
+  it('treats read-only and disabled fields as not editable', () => {
+    const readOnly = document.createElement('textarea');
+    readOnly.readOnly = true;
+    const disabledInput = document.createElement('input');
+    disabledInput.disabled = true;
+    const disabledSelect = document.createElement('select');
+    disabledSelect.disabled = true;
+    expect(isEditableTarget(readOnly)).toBe(false);
+    expect(isEditableTarget(disabledInput)).toBe(false);
+    expect(isEditableTarget(disabledSelect)).toBe(false);
+  });
+
   it('detects contenteditable regions', () => {
     const node = document.createElement('div');
     node.setAttribute('contenteditable', 'true');

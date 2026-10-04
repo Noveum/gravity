@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn.ts';
 import { listRowHover } from '@/lib/interaction.ts';
 import type { CompanyRecord as CompanyRecordData } from '@/lib/query/schemas.ts';
 import { useCompanyRecord } from '@/lib/query/use-records.ts';
-import { setRecordTrail } from '@/lib/record-trail.ts';
+import { setRecordTrail, useTrailKeys } from '@/lib/record-trail.ts';
 import { CompanyAttributes } from './record-attributes.tsx';
 import { RecordFallback, RecordLayout, recordHeadingClass } from './record-layout.tsx';
 
@@ -60,6 +60,7 @@ function CompanyPeople({
 
 export function CompanyRecord({ companyId }: { readonly companyId: string }) {
   const record = useCompanyRecord(companyId);
+  useTrailKeys('/companies', companyId);
   if (record.data === undefined) {
     return (
       <RecordFallback
@@ -75,7 +76,6 @@ export function CompanyRecord({ companyId }: { readonly companyId: string }) {
   const { company, people, leads } = record.data;
   return (
     <RecordLayout
-      basePath="/companies"
       recordId={company.id}
       subjectType="company"
       title={company.name}

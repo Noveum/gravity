@@ -16,6 +16,13 @@ export interface EditableFieldProps {
   readonly onSave: (value: string) => void;
 }
 
+const NUMBER_PROBLEM = 'Enter a number.';
+
+function problemWith(type: EditableFieldType, next: string): string | null {
+  if (type !== 'number' || next === '') return null;
+  return Number.isFinite(Number(next)) ? null : NUMBER_PROBLEM;
+}
+
 export function AttributeRow({
   label,
   children,
@@ -42,6 +49,7 @@ export function EditableField({
   const id = useId();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  const [problem, setProblem] = useState<string | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
   const button = useRef<HTMLButtonElement | null>(null);
   const refocus = useRef(false);
@@ -59,11 +67,17 @@ export function EditableField({
 
   const finish = (save: boolean, returnFocus: boolean) => {
     if (!open.current) return;
+    const next = draft.trim();
+    const refused = save ? problemWith(type, next) : null;
+    if (refused !== null) {
+      setProblem(refused);
+      return;
+    }
     open.current = false;
     refocus.current = returnFocus;
+    setProblem(null);
     setEditing(false);
-    const next = draft.trim();
-    if (save && draft !== value && !(required && next.length === 0)) onSave(draft);
+    if (save && next !== value && !(required && next.length === 0)) onSave(next);
   };
 
   if (!editing) {
@@ -92,7 +106,7 @@ export function EditableField({
   return (
     <AttributeRow label={<label htmlFor={id}>{label}</label>}>
       <form
-        className="flex min-w-0 flex-1"
+        className="flex min-w-0 flex-1 flex-col gap-0.5 py-0.5"
         onSubmit={(event) => {
           event.preventDefault();
           finish(true, true);
@@ -101,7 +115,10 @@ export function EditableField({
         <Input
           id={id}
           ref={input}
-          type={type}
+          type={type === 'number' ? 'text' : type}
+          inputMode={type === 'number' ? 'decimal' : undefined}
+          aria-invalid={problem === null ? undefined : true}
+          aria-describedby={problem === null ? undefined : `${id}-problem`}
           value={draft}
           placeholder={placeholder}
           onChange={(event) => setDraft(event.target.value)}
@@ -114,6 +131,11 @@ export function EditableField({
           }}
           className="h-6 px-1"
         />
+        {problem === null ? null : (
+          <p id={`${id}-problem`} className="text-2xs text-danger">
+            {problem}
+          </p>
+        )}
       </form>
     </AttributeRow>
   );

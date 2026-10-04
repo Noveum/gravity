@@ -2,7 +2,7 @@
 
 import type { ActivityEntityType } from '@gravity/shared/constants';
 import type { LeadRow } from '@gravity/shared/records';
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ErrorState } from '@/components/ui/error-state.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
 import type { VerbMode, VerbRequest } from '@/features/leads/lead-verb-menu.tsx';
@@ -11,8 +11,8 @@ import type { LeadListSelection } from '@/features/leads/use-lead-cursor.tsx';
 import { ComposerPlaceholder } from '@/features/timeline/composer-placeholder.tsx';
 import { Timeline } from '@/features/timeline/timeline.tsx';
 import { useCopyLinkTarget } from '@/lib/copy-link.tsx';
-import { type RecordBasePath, useTrailKeys } from '@/lib/record-trail.ts';
 import { useDelayedFlag } from '@/lib/use-delayed-flag.ts';
+import { watchWindowRefocus } from '@/lib/window-refocus.ts';
 import { LeadCard } from './lead-card.tsx';
 
 export const RECORD_VERBS: readonly VerbMode[] = ['stage', 'owner', 'priority', 'hold', 'close'];
@@ -23,7 +23,6 @@ const NO_OP = () => undefined;
 const SKELETON_ATTRIBUTES = ['a', 'b', 'c', 'd', 'e'];
 
 export interface RecordLayoutProps {
-  readonly basePath: RecordBasePath;
   readonly recordId: string;
   readonly subjectType: ActivityEntityType;
   readonly title: string;
@@ -57,7 +56,6 @@ function useRecordSelection(focused: LeadRow | undefined): {
 }
 
 export function RecordLayout({
-  basePath,
   recordId,
   subjectType,
   title,
@@ -71,14 +69,21 @@ export function RecordLayout({
   const [focusedId, setFocusedId] = useState<string | null>(focusLeadId);
   const focused = leads.find((lead) => lead.id === focusedId) ?? leads[0];
   const { selection, requestVerb } = useRecordSelection(focused);
-  useCopyLinkTarget(linkFor(focusedId));
-  useTrailKeys(basePath, recordId);
+  const heading = useRef<HTMLHeadingElement | null>(null);
+  useCopyLinkTarget(linkFor(focused?.id ?? null));
+  useEffect(() => watchWindowRefocus(), []);
+  const returnFocus = () => {
+    const card = focused === undefined ? null : document.getElementById(`lead-card-${focused.id}`);
+    (card ?? heading.current)?.focus();
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto lg:grid lg:grid-cols-[minmax(320px,420px)_minmax(0,1fr)] lg:overflow-hidden">
       <div className="flex flex-col gap-5 border-border p-4 lg:min-h-0 lg:overflow-y-auto lg:border-r">
         <header className="flex flex-col gap-0.5">
-          <h1 className="font-medium text-lg text-text">{title}</h1>
+          <h1 ref={heading} tabIndex={-1} className="font-medium text-lg text-text">
+            {title}
+          </h1>
           {subtitle === null ? null : <p className="text-dense text-muted">{subtitle}</p>}
         </header>
         {attributes}
@@ -93,7 +98,6 @@ export function RecordLayout({
               key={lead.id}
               lead={lead}
               focused={lead.id === focused?.id}
-              verbs={RECORD_VERBS}
               onFocus={() => setFocusedId(lead.id)}
               onVerb={(next) => {
                 setFocusedId(next.lead.id);
@@ -113,7 +117,7 @@ export function RecordLayout({
       </div>
       <div className="flex h-[70vh] min-h-0 shrink-0 flex-col border-border border-t lg:h-auto lg:border-t-0">
         <Timeline subjectType={subjectType} subjectId={recordId} />
-        <ComposerPlaceholder />
+        <ComposerPlaceholder onEscape={returnFocus} />
       </div>
     </div>
   );

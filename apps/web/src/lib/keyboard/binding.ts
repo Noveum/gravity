@@ -110,7 +110,9 @@ export function bufferMatches(
 export function isEditableTarget(target: EventTarget | null): boolean {
   if (target === null || !(target instanceof Element)) return false;
   const tag = target.tagName.toLowerCase();
-  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+    return !(target.hasAttribute('readonly') || target.hasAttribute('disabled'));
+  }
   const editable = target.closest('[contenteditable]')?.getAttribute('contenteditable');
   if (editable !== undefined && editable !== null && editable !== 'false') return true;
   return target.getAttribute('role') === 'textbox';

@@ -39,12 +39,10 @@ export interface LeadVerbMenuProps {
   readonly lead: LeadRow;
   readonly visible: boolean;
   readonly onVerb: (request: VerbRequest) => void;
-  readonly verbs?: readonly VerbMode[];
+  readonly unkeyed?: readonly VerbMode[];
 }
 
-export function LeadVerbMenu({ lead, visible, onVerb, verbs }: LeadVerbMenuProps) {
-  const items =
-    verbs === undefined ? VERB_ITEMS : VERB_ITEMS.filter((item) => verbs.includes(item.verb));
+export function LeadVerbMenu({ lead, visible, onVerb, unkeyed = [] }: LeadVerbMenuProps) {
   const trigger = useRef<HTMLButtonElement | null>(null);
   const chosen = useRef(false);
   return (
@@ -68,7 +66,7 @@ export function LeadVerbMenu({ lead, visible, onVerb, verbs }: LeadVerbMenuProps
           chosen.current = false;
         }}
       >
-        {items.map((item) => (
+        {VERB_ITEMS.map((item) => (
           <DropdownMenuItem
             key={item.verb}
             onSelect={() => {
@@ -77,7 +75,9 @@ export function LeadVerbMenu({ lead, visible, onVerb, verbs }: LeadVerbMenuProps
             }}
           >
             {item.label}
-            <DropdownMenuShortcut>{item.keys}</DropdownMenuShortcut>
+            {unkeyed.includes(item.verb) ? null : (
+              <DropdownMenuShortcut>{item.keys}</DropdownMenuShortcut>
+            )}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

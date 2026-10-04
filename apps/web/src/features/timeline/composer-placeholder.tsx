@@ -4,7 +4,7 @@ import { useId, useRef } from 'react';
 import { Textarea } from '@/components/ui/textarea.tsx';
 import { HOTKEY_PRIORITY, useHotkey } from '@/lib/keyboard/index.ts';
 
-export function ComposerPlaceholder() {
+export function ComposerPlaceholder({ onEscape }: { readonly onEscape: () => void }) {
   const id = useId();
   const box = useRef<HTMLTextAreaElement | null>(null);
   useHotkey('n', () => box.current?.focus(), {
@@ -25,6 +25,12 @@ export function ComposerPlaceholder() {
         rows={2}
         aria-describedby={`${id}-hint`}
         placeholder="Notes, calls and tasks arrive in the next milestone."
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return;
+          event.preventDefault();
+          event.currentTarget.blur();
+          onEscape();
+        }}
         className="resize-none"
       />
       <p id={`${id}-hint`} className="text-faint text-xs">

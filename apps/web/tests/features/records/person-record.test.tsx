@@ -1,7 +1,10 @@
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { screen, waitFor, within } from '@testing-library/react';
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { SyncAction } from '@gravity/shared/events';
+import type { FieldDefinitionRow } from '@gravity/shared/records';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { restoreModulesAfterThisFile } from '../../../tests-support.ts';
+import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
 import { serveJson } from '../../support/fetch.ts';
 import { stubLayoutSize } from '../../support/layout-size.ts';
 import { leadFixture } from '../../support/lead-fixture.ts';
@@ -18,6 +21,8 @@ afterAll(() => setViewport(false));
 const { PersonRecord } = await import('@/features/records/person-record.tsx');
 const { ContextPanelProvider } = await import('@/lib/context-panel.tsx');
 const { setLeadTrail, setRecordTrail } = await import('@/lib/record-trail.ts');
+const { CopyLinkProvider } = await import('@/lib/copy-link.tsx');
+const { CRM_DELTA_HANDLERS } = await import('@/lib/realtime/crm-deltas.tsx');
 
 const person = personFixture({
   location: 'London',
@@ -53,6 +58,13 @@ function serve() {
     if (url.pathname === '/api/people/per1') return { body: record };
     if (url.pathname === '/api/leads/l2' && method === 'PATCH') {
       return { body: { lead: leadFixture({ id: 'l2', key: 'YOD-2', number: 2, syncId: 20 }) } };
+    }
+    if (url.pathname === '/api/leads/l1' && method === 'PATCH') {
+      return {
+        body: {
+          lead: leadFixture({ id: 'l1', key: 'YOD-1', nextAction: 'Call back', syncId: 21 }),
+        },
+      };
     }
     return { body: { activities: [], nextCursor: null } };
   });
@@ -142,13 +154,24 @@ describe('PersonRecord', () => {
     );
   });
 
-  test('the card menu offers the record verbs', async () => {
-    serve();
+  test('the card menu sets the next action, with no key hint because N is the note', async () => {
+    const sent = serve();
     renderRecord();
     await userEvent.click(await screen.findByRole('button', { name: 'More actions for YOD-1' }));
-    const items = (await screen.findAllByRole('menuitem')).map((item) => item.textContent ?? '');
-    expect(items.some((item) => item.startsWith('Set the priority'))).toBe(true);
-    expect(items.some((item) => item.startsWith('Set the next action'))).toBe(false);
+    const items = await screen.findAllByRole('menuitem');
+    const nextAction = items.find((item) => item.textContent?.startsWith('Set the next action'));
+    expect(nextAction?.textContent).toBe('Set the next action');
+    expect(
+      items.find((item) => item.textContent?.startsWith('Set the priority')),
+    ).toHaveTextContent('P');
+    if (nextAction === undefined) throw new Error('missing next action item');
+    await userEvent.click(nextAction);
+    await userEvent.type(await screen.findByPlaceholderText('Send the intro'), 'Call back{Enter}');
+    await waitFor(() =>
+      expect(sent.some((entry) => entry.url === '/api/leads/l1' && entry.method === 'PATCH')).toBe(
+        true,
+      ),
+    );
   });
 
   test('N focuses the note composer', async () => {
@@ -157,6 +180,180 @@ describe('PersonRecord', () => {
     await screen.findByRole('heading', { name: 'Ada Lovelace' });
     await userEvent.keyboard('n');
     expect(document.activeElement).toBe(screen.getByLabelText('Note'));
+  });
+
+  test('keys keep working in the read-only composer and Escape returns to the lead card', async () => {
+    serve();
+    renderRecord('l2');
+    await screen.findByRole('heading', { name: 'Ada Lovelace' });
+    await userEvent.keyboard('n');
+    await userEvent.keyboard('6');
+    expect(screen.getByRole('button', { name: /Changes/ })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.keyboard('{Escape}');
+    expect(document.activeElement).toBe(screen.getByTestId('lead-card-YOD-2'));
+  });
+
+  test('saving on blur', async () => {
+    const sent = serve();
+    renderRecord();
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Location' }));
+    const input = screen.getByLabelText('Location');
+    await userEvent.clear(input);
+    await userEvent.type(input, 'Paris');
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(sent.find((entry) => entry.method === 'PATCH')?.body).toEqual({ location: 'Paris' }),
+    );
+  });
+
+  test('an empty name is refused and nothing is sent', async () => {
+    const sent = serve();
+    renderRecord();
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Name' }));
+    await userEvent.clear(screen.getByLabelText('Name'));
+    await userEvent.keyboard('{Enter}');
+    expect(screen.getByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit Name' })).toHaveTextContent('Ada Lovelace');
+    expect(sent.some((entry) => entry.method === 'PATCH')).toBe(false);
+  });
+
+  test('saved values are trimmed, and a value that trims to the stored one sends nothing', async () => {
+    const sent = serve();
+    renderRecord();
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Location' }));
+    await userEvent.clear(screen.getByLabelText('Location'));
+    await userEvent.type(screen.getByLabelText('Location'), '  London  {Enter}');
+    expect(sent.some((entry) => entry.method === 'PATCH')).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Edit Name' }));
+    await userEvent.clear(screen.getByLabelText('Name'));
+    await userEvent.type(screen.getByLabelText('Name'), ' Ada King  {Enter}');
+    await waitFor(() =>
+      expect(sent.find((entry) => entry.method === 'PATCH')?.body).toEqual({ name: 'Ada King' }),
+    );
+  });
+
+  test('an invalid number keeps the stored value and says why', async () => {
+    const seats: FieldDefinitionRow = {
+      id: 'f1',
+      object: 'person',
+      pipelineId: null,
+      key: 'seats',
+      label: 'Seats',
+      type: 'number',
+      options: [],
+      description: '',
+      example: '',
+      position: 0,
+      syncId: 1,
+      archivedAt: null,
+    };
+    const sent = serveJson((url) =>
+      url.pathname === '/api/people/per1'
+        ? { body: { ...record, person: { ...person, fields: { seats: 12 } } } }
+        : { body: { activities: [], nextCursor: null } },
+    );
+    renderWithClient(
+      <ContextPanelProvider>
+        <PersonRecord personId="per1" focusLeadId={null} />
+      </ContextPanelProvider>,
+      { bootstrap: bootstrapFixture({ fields: [seats] }) },
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Seats' }));
+    const input = screen.getByLabelText('Seats');
+    await userEvent.clear(input);
+    await userEvent.type(input, 'twelve{Enter}');
+    expect(screen.getByText('Enter a number.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Seats')).toHaveAttribute('aria-invalid', 'true');
+    expect(sent.some((entry) => entry.method === 'PATCH')).toBe(false);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('button', { name: 'Edit Seats' })).toHaveTextContent('12');
+  });
+
+  test('a window refocus does not move the lead in focus on a deep-linked record', async () => {
+    serve();
+    renderRecord();
+    const second = await screen.findByTestId('lead-card-YOD-2');
+    fireEvent.blur(window);
+    fireEvent.focusIn(second, { relatedTarget: null });
+    expect(screen.getByTestId('lead-card-YOD-1')).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('copy link names the lead actually in focus, not a stale one from the URL', async () => {
+    const writeText = mock(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    serve();
+    renderWithClient(
+      <ContextPanelProvider>
+        <CopyLinkProvider>
+          <PersonRecord personId="per1" focusLeadId="gone" />
+        </CopyLinkProvider>
+      </ContextPanelProvider>,
+    );
+    await screen.findByRole('heading', { name: 'Ada Lovelace' });
+    await userEvent.keyboard('{Meta>}{Shift>}c{/Shift}{/Meta}');
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith('http://localhost:3300/people/per1?lead=l1'),
+    );
+  });
+
+  test('a person delta relabels the open record', async () => {
+    serve();
+    const { client } = renderRecord();
+    await screen.findByRole('heading', { name: 'Ada Lovelace' });
+    const handler = CRM_DELTA_HANDLERS.find(([model]) => model === 'person')?.[1];
+    const delta: SyncAction = {
+      syncId: 9,
+      organizationId: 'o1',
+      scopes: ['workspace:o1'],
+      action: 'update',
+      model: 'person',
+      modelId: 'per1',
+      data: { ...person, name: 'Ada Byron', syncId: 9 },
+      actor: { type: 'user', id: 'u2' },
+      at: new Date(0).toISOString(),
+    };
+    act(() => {
+      handler?.(delta, client);
+    });
+    expect(await screen.findByRole('heading', { name: 'Ada Byron' })).toBeInTheDocument();
+  });
+
+  test('an optimistic edit holds while the server is slow to answer', async () => {
+    let answer: (response: Response) => void = () => undefined;
+    globalThis.fetch = mock((input: string, init: RequestInit = {}) => {
+      const path = new URL(input, 'http://localhost:3300').pathname;
+      if (path === '/api/people/per1' && init.method === 'PATCH') {
+        return new Promise<Response>((resolve) => {
+          answer = resolve;
+        });
+      }
+      const body = path === '/api/people/per1' ? record : { activities: [], nextCursor: null };
+      return Promise.resolve(Response.json(body));
+    }) as unknown as typeof fetch;
+    renderRecord();
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Name' }));
+    await userEvent.clear(screen.getByLabelText('Name'));
+    await userEvent.type(screen.getByLabelText('Name'), 'Ada King{Enter}');
+    expect(await screen.findByRole('heading', { name: 'Ada King' })).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByRole('heading', { name: 'Ada King' })).toBeInTheDocument();
+    await act(async () => {
+      answer(Response.json({ person: { ...person, name: 'Ada King', syncId: 6 } }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screen.getByRole('heading', { name: 'Ada King' })).toBeInTheDocument();
+  });
+
+  test('[ and ] work while the record is still failing to load', async () => {
+    serveJson(() => ({
+      status: 500,
+      body: { error: { code: 'internal', message: 'The database is down.' } },
+    }));
+    setRecordTrail('/people', ['per0', 'per1', 'per2']);
+    renderRecord();
+    await screen.findByText('Could not load this person');
+    await userEvent.keyboard(']');
+    expect(navigation.push).toHaveBeenCalledWith('/people/per2');
   });
 
   test('[ and ] step through the list the record was opened from', async () => {

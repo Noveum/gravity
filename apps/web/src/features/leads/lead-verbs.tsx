@@ -249,7 +249,7 @@ export function LeadVerbs({
       {selection.targets.length > 1 ? (
         <section
           aria-label="Selected leads"
-          className="flex items-center gap-1 border-border border-t bg-surface px-3 py-2 text-dense"
+          className="hidden items-center gap-1 border-border border-t bg-surface px-3 py-2 text-dense min-[900px]:flex"
         >
           <span className="mr-2 text-muted">{selection.targets.length} selected</span>
           <Button size="sm" variant="ghost" onClick={clicked('stage')}>

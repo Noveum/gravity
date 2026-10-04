@@ -13,6 +13,7 @@ export interface EditableFieldProps {
   readonly placeholder?: string;
   readonly type?: EditableFieldType;
   readonly required?: boolean;
+  readonly inline?: boolean;
   readonly onSave: (value: string) => void;
 }
 
@@ -38,12 +39,31 @@ export function AttributeRow({
   );
 }
 
+function Frame({
+  inline,
+  label,
+  children,
+}: {
+  readonly inline: boolean;
+  readonly label: ReactNode;
+  readonly children: ReactNode;
+}) {
+  if (!inline) return <AttributeRow label={label}>{children}</AttributeRow>;
+  return (
+    <div className="flex min-w-0 flex-1 items-center">
+      {label}
+      {children}
+    </div>
+  );
+}
+
 export function EditableField({
   label,
   value,
   placeholder = 'Empty',
   type = 'text',
   required = false,
+  inline = false,
   onSave,
 }: EditableFieldProps) {
   const id = useId();
@@ -82,7 +102,7 @@ export function EditableField({
 
   if (!editing) {
     return (
-      <AttributeRow label={label}>
+      <Frame inline={inline} label={inline ? null : label}>
         <button
           ref={button}
           type="button"
@@ -100,11 +120,18 @@ export function EditableField({
         >
           {value === '' ? placeholder : value}
         </button>
-      </AttributeRow>
+      </Frame>
     );
   }
   return (
-    <AttributeRow label={<label htmlFor={id}>{label}</label>}>
+    <Frame
+      inline={inline}
+      label={
+        <label htmlFor={id} className={inline ? 'sr-only' : undefined}>
+          {label}
+        </label>
+      }
+    >
       <form
         className="flex min-w-0 flex-1 flex-col gap-0.5 py-0.5"
         onSubmit={(event) => {
@@ -137,6 +164,6 @@ export function EditableField({
           </p>
         )}
       </form>
-    </AttributeRow>
+    </Frame>
   );
 }

@@ -60,7 +60,7 @@ function removes(action: SyncAction): boolean {
   );
 }
 
-function withoutPipelines(bootstrap: Bootstrap, pipelineIds: readonly string[]): Bootstrap {
+export function withoutPipelines(bootstrap: Bootstrap, pipelineIds: readonly string[]): Bootstrap {
   if (pipelineIds.length === 0) return bootstrap;
   const gone = (pipelineId: string | null) =>
     pipelineId !== null && pipelineIds.includes(pipelineId);

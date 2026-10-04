@@ -421,6 +421,15 @@ describe('LeadVerbs', () => {
     await waitFor(() => expect(button).toHaveFocus());
   });
 
+  test('the bulk bar shows only on screens 900px wide and larger', async () => {
+    renderWithVerbs();
+    await screen.findByTestId('lead-row-YOD-2');
+    await userEvent.keyboard('x{Shift>}j{/Shift}');
+    const bar = screen.getByRole('region', { name: 'Selected leads' });
+    expect(bar).toHaveClass('hidden', 'min-[900px]:flex');
+    expect(bar).not.toHaveClass('flex');
+  });
+
   test('more than 50 leads asks to choose again, with a count of what changes', async () => {
     renderWithVerbs({ rows: manyLeads(51) });
     await screen.findByTestId('lead-row-YOD-51');

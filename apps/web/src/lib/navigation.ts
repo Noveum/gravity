@@ -45,8 +45,10 @@ export interface Breadcrumb {
   readonly href?: string;
 }
 
+const PAGE_LABELS: Readonly<Record<string, string>> = { mcp: 'MCP clients' };
+
 function titleCase(segment: string): string {
-  return `${segment.slice(0, 1).toUpperCase()}${segment.slice(1)}`;
+  return PAGE_LABELS[segment] ?? `${segment.slice(0, 1).toUpperCase()}${segment.slice(1)}`;
 }
 
 export function leadsHref(pipelineKey: string): string {

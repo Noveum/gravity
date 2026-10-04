@@ -29,6 +29,16 @@ describe('SettingsNav', () => {
     expect(within(nav).getByRole('link', { name: 'Members' })).not.toHaveAttribute('aria-current');
   });
 
+  test('lists MCP clients last and marks it when open', () => {
+    navigation.pathname = '/settings/mcp';
+    renderWithClient(<SettingsNav />);
+    const links = within(screen.getByRole('navigation', { name: 'Settings' })).getAllByRole('link');
+    const last = links.at(-1);
+    expect(last).toHaveAccessibleName('MCP clients');
+    expect(last).toHaveAttribute('href', '/settings/mcp');
+    expect(last).toHaveAttribute('aria-current', 'page');
+  });
+
   test('lists each pipeline under Brands with its brand', () => {
     navigation.pathname = '/settings/pipelines/p1';
     renderWithClient(<SettingsNav />);
@@ -45,6 +55,13 @@ describe('SettingsContent', () => {
     expect(screen.getByText('members here')).toBeInTheDocument();
     expect(screen.queryByText(/900 pixels/)).not.toBeInTheDocument();
     expect(screen.getByText('members here')).not.toHaveClass('hidden');
+  });
+
+  test('MCP clients stay open at every width, like members', () => {
+    navigation.pathname = '/settings/mcp';
+    renderWithClient(<SettingsContent>mcp here</SettingsContent>);
+    expect(screen.queryByText(/900 pixels/)).not.toBeInTheDocument();
+    expect(screen.getByText('mcp here')).not.toHaveClass('hidden');
   });
 
   test('brands, pipelines and fields give way to a notice under 900px', () => {

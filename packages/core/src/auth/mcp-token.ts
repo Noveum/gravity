@@ -415,17 +415,30 @@ export interface McpGrantView {
   readonly clientName: string;
   readonly organizationId: string;
   readonly organizationName: string;
+  readonly clientLogo: string | null;
+  readonly redirectHosts: string[];
   readonly scopes: string;
   readonly createdAt: Date;
   readonly lastUsedAt: Date | null;
 }
 
-export function listMcpGrants(userId: string): Promise<McpGrantView[]> {
-  return db
+function redirectHostsOf(stored: string): string[] {
+  const hosts = new Set<string>();
+  for (const entry of stored.split(',')) {
+    const uri = entry.trim();
+    if (URL.canParse(uri)) hosts.add(redirectHostOf(uri));
+  }
+  return [...hosts];
+}
+
+export async function listMcpGrants(userId: string): Promise<McpGrantView[]> {
+  const rows = await db
     .select({
       id: schema.mcpGrant.id,
       clientId: schema.mcpGrant.clientId,
       clientName: schema.oauthApplication.name,
+      icon: schema.oauthApplication.icon,
+      redirectUrls: schema.oauthApplication.redirectUrls,
       organizationId: schema.mcpGrant.organizationId,
       organizationName: schema.organization.name,
       scopes: schema.mcpGrant.scopes,
@@ -440,6 +453,11 @@ export function listMcpGrants(userId: string): Promise<McpGrantView[]> {
     .innerJoin(schema.organization, eq(schema.organization.id, schema.mcpGrant.organizationId))
     .where(and(eq(schema.mcpGrant.userId, userId), isNull(schema.mcpGrant.revokedAt)))
     .orderBy(desc(schema.mcpGrant.createdAt));
+  return rows.map(({ icon, redirectUrls, ...grant }) => ({
+    ...grant,
+    clientLogo: icon !== null && isAllowedLogoUri(icon) ? icon : null,
+    redirectHosts: redirectHostsOf(redirectUrls),
+  }));
 }
 
 export async function revokeMcpGrant(

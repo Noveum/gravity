@@ -13,6 +13,7 @@ export const DUPLICATES_ROOT = 'duplicates';
 
 export const queryKeys = {
   workspaces: ['workspaces'] as const,
+  mcpGrants: ['mcp-grants'] as const,
   bootstrap: [BOOTSTRAP_ROOT] as const,
   leads: (pipelineId: string, search: string) => [LEADS_ROOT, pipelineId, search] as const,
   lead: (id: string) => [LEAD_ROOT, id] as const,

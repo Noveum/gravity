@@ -50,6 +50,10 @@ describe('navigation', () => {
       { label: 'Settings', href: '/settings/members' },
       { label: 'Members' },
     ]);
+    expect(breadcrumbsFor('/settings/mcp')).toEqual([
+      { label: 'Settings', href: '/settings/members' },
+      { label: 'MCP clients' },
+    ]);
     expect(breadcrumbsFor('/onboarding')).toEqual([]);
   });
 

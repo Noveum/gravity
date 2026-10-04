@@ -489,6 +489,42 @@ describe('grants', () => {
     });
   });
 
+  test('a listed connection names the client logo and every host it can send the user back to', async () => {
+    const clientId = await insertMcpClient(workspace.adminUser.id, {
+      name: 'Desk agent',
+      icon: 'https://agent.example.com/logo.png',
+      redirectUrl:
+        'http://127.0.0.1:4321/callback,https://agent.example.com/cb,https://agent.example.com/other,cursor://anysphere.cursor-retrieval/oauth',
+    });
+    await recordMcpGrant({
+      clientId,
+      userId: workspace.adminUser.id,
+      organizationId: workspace.organizationId,
+      scopes: 'openid gravity.read',
+    });
+    const [listed] = await listMcpGrants(workspace.adminUser.id);
+    expect(listed).toMatchObject({
+      clientLogo: 'https://agent.example.com/logo.png',
+      redirectHosts: ['127.0.0.1:4321', 'agent.example.com', 'cursor://anysphere.cursor-retrieval'],
+    });
+  });
+
+  test('a listed connection never carries an unsafe logo or an unreadable redirect', async () => {
+    const clientId = await insertMcpClient(workspace.adminUser.id, {
+      icon: 'javascript:alert(1)',
+      redirectUrl: 'not a url,https://agent.example.com/cb',
+    });
+    await recordMcpGrant({
+      clientId,
+      userId: workspace.adminUser.id,
+      organizationId: workspace.organizationId,
+      scopes: 'openid gravity.read',
+    });
+    const [listed] = await listMcpGrants(workspace.adminUser.id);
+    expect(listed?.clientLogo).toBeNull();
+    expect(listed?.redirectHosts).toEqual(['agent.example.com']);
+  });
+
   test('a user cannot revoke another user connection', async () => {
     const minted = await mintMcpToken(workspace.organizationId, workspace.adminUser.id);
     const other = await addMember(workspace, 'Olga Other', 'member');

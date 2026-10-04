@@ -10,6 +10,7 @@ const ITEMS = [
   { href: '/settings/members', label: 'Members' },
   { href: '/settings/brands', label: 'Brands' },
   { href: '/settings/fields', label: 'Custom fields' },
+  { href: '/settings/mcp', label: 'MCP clients' },
 ] as const;
 
 function NavLink({

@@ -5,6 +5,7 @@ import { isAllowedRedirectUri } from '@gravity/shared/utils';
 import { Check, TriangleAlert } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
+import { ClientLogo } from '@/components/client-logo.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { Kbd } from '@/components/ui/kbd.tsx';
@@ -135,34 +136,6 @@ export function DenyConnection({ consentCode }: { readonly consentCode: string }
       </Button>
       <FailureNotice message={failure} />
     </div>
-  );
-}
-
-function ClientLogo({ name, src }: { readonly name: string; readonly src: string | null }) {
-  const [failed, setFailed] = useState(false);
-  if (src === null || failed) {
-    return (
-      <span
-        aria-hidden="true"
-        className="flex size-9 items-center justify-center rounded-md border border-border bg-surface-2 font-medium text-dense text-muted"
-      >
-        {Array.from(name.trim())[0]?.toUpperCase() ?? '?'}
-      </span>
-    );
-  }
-  return (
-    // biome-ignore lint/performance/noImgElement: a client logo on a third-party host must not go through the image optimizer
-    <img
-      data-testid="client-logo"
-      src={src}
-      alt=""
-      width={36}
-      height={36}
-      referrerPolicy="no-referrer"
-      decoding="async"
-      onError={() => setFailed(true)}
-      className="size-9 rounded-md border border-border bg-surface-2 object-contain"
-    />
   );
 }
 

@@ -62,6 +62,13 @@ describe('restorable', () => {
     });
   }
 
+  test('the list of MCP connections is never written to the offline cache', () => {
+    const client = new QueryClient();
+    client.setQueryData(queryKeys.mcpGrants, { connections: [] });
+    expect(queryKeys.mcpGrants).toEqual(['mcp-grants']);
+    expect(persistedFrom(client)).toMatchObject({ clientState: { queries: [] } });
+  });
+
   test('a lead list with a malformed row is dropped while a valid one is kept', () => {
     const client = restorable({
       buster: 'b',

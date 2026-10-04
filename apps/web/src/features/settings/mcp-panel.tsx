@@ -44,6 +44,17 @@ const connectionsSchema = z.object({ connections: z.array(connectionSchema) });
 type Connections = z.infer<typeof connectionsSchema>;
 const revokedSchema = z.object({ ok: z.literal(true) });
 const GRAVITY_PREFIX = 'gravity.';
+
+function primaryHost(connection: Connection): string | null {
+  return connection.redirectHosts[0] ?? null;
+}
+
+function revokeLabel(connection: Connection): string {
+  const host = primaryHost(connection);
+  return host === null
+    ? `Revoke ${connection.clientName}`
+    : `Revoke ${connection.clientName} (${host})`;
+}
 const SKELETON_ROWS = ['a', 'b', 'c'];
 
 function ConnectionsSkeleton() {
@@ -85,7 +96,7 @@ function ConnectionRow({
         <Button
           size="sm"
           variant="ghost"
-          aria-label={`Revoke ${connection.clientName}`}
+          aria-label={revokeLabel(connection)}
           onClick={(event) => onRevoke(event.currentTarget)}
         >
           Revoke
@@ -220,8 +231,9 @@ export function McpPanel({ serverUrl }: { readonly serverUrl: string }) {
   const revoke = useMutation({
     mutationFn: (connection: Connection) =>
       apiFetch(`/api/mcp-grants/${connection.id}`, revokedSchema, { method: 'DELETE' }),
-    onSuccess: (_result, connection) => {
+    onSuccess: async (_result, connection) => {
       handOffFocus(connection.id);
+      await client.cancelQueries({ queryKey: queryKeys.mcpGrants });
       client.setQueryData(queryKeys.mcpGrants, (current: Connections | undefined) =>
         current === undefined
           ? current
@@ -300,6 +312,9 @@ export function McpPanel({ serverUrl }: { readonly serverUrl: string }) {
           <DialogHeader>
             <DialogTitle>Revoke {confirming?.clientName}?</DialogTitle>
             <DialogDescription>
+              {confirming === null || primaryHost(confirming) === null
+                ? ''
+                : `${confirming.clientName} returns to ${primaryHost(confirming)}. `}
               Its tokens for {confirming?.organizationName} stop working at once. It can connect
               again only after you approve it.
             </DialogDescription>

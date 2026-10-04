@@ -98,7 +98,9 @@ describe('McpPanel', () => {
   test('Escape closes the confirmation and nothing is sent', async () => {
     const sent = serveJson(() => ({ body: { connections: [CONNECTION] } }));
     renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Revoke Desk agent' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    );
     expect(screen.getByRole('button', { name: 'Revoke access' })).toBeInTheDocument();
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(isConfirming()).toBe(false));
@@ -109,7 +111,9 @@ describe('McpPanel', () => {
   test('closing the confirmation puts focus back on the Revoke button that opened it', async () => {
     serveJson(() => ({ body: { connections: [CONNECTION, SECOND] } }));
     renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
-    const revoke = await screen.findByRole('button', { name: 'Revoke Mail agent' });
+    const revoke = await screen.findByRole('button', {
+      name: 'Revoke Mail agent (agent.example.com)',
+    });
     await userEvent.click(revoke);
     expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
     await userEvent.keyboard('{Escape}');
@@ -119,7 +123,9 @@ describe('McpPanel', () => {
   test('Cancel keeps the connection and sends nothing', async () => {
     const sent = serveJson(() => ({ body: { connections: [CONNECTION] } }));
     renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Revoke Desk agent' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(isConfirming()).toBe(false));
     expect(sent.some((entry) => entry.method === 'DELETE')).toBe(false);
@@ -135,7 +141,9 @@ describe('McpPanel', () => {
         : { body: { connections: [CONNECTION] } },
     );
     renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Revoke Desk agent' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Revoke access' }));
     expect(await screen.findByText('Could not revoke Desk agent')).toBeInTheDocument();
     expect(screen.getByText('You cannot revoke that connection.')).toBeInTheDocument();
@@ -153,7 +161,9 @@ describe('McpPanel', () => {
         : { body: { ok: true } };
     });
     renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Revoke Desk agent' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Revoke access' }));
     expect(await screen.findByText('Could not revoke Desk agent')).toBeInTheDocument();
     expect(screen.getByRole('listitem', { name: 'Desk agent' })).toBeInTheDocument();
@@ -175,7 +185,9 @@ describe('McpPanel', () => {
       return { body: { connections: gone ? [] : [CONNECTION] } };
     });
     renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Revoke Desk agent' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Revoke access' }));
     await waitFor(() => expect(isListed('Desk agent')).toBe(false));
     expect(screen.getByText('That connection does not exist.')).toBeInTheDocument();
@@ -191,10 +203,14 @@ describe('McpPanel', () => {
       return { body: { connections: revoked ? [SECOND] : [CONNECTION, SECOND] } };
     });
     renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Revoke Desk agent' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Revoke access' }));
     await waitFor(() => expect(isListed('Desk agent')).toBe(false));
-    expect(screen.getByRole('button', { name: 'Revoke Mail agent' })).toHaveFocus();
+    expect(
+      screen.getByRole('button', { name: 'Revoke Mail agent (agent.example.com)' }),
+    ).toHaveFocus();
   });
 
   test('says how to connect when there are no connections', async () => {
@@ -253,17 +269,54 @@ describe('McpPanel', () => {
 describe('McpPanel revocation', () => {
   const wire = installDeferredFetch();
 
+  test('the confirmation names the address the client returns to', async () => {
+    renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
+    await waitFor(() => expect(wire.waiting()).toBe(1));
+    act(() => wire.answer(200, { connections: [SECOND] }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Revoke Mail agent (agent.example.com)' }),
+    );
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Mail agent returns to agent.example.com. Its tokens for Acme Studio stop working at once.',
+    );
+  });
+
+  test('a list refetch still in flight cannot bring a revoked row back', async () => {
+    const rendered = renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
+    await waitFor(() => expect(wire.waiting()).toBe(1));
+    act(() => wire.answer(200, { connections: [CONNECTION, SECOND] }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke access' }));
+    await waitFor(() => expect(wire.waiting()).toBe(1));
+    act(() => {
+      rendered.client.invalidateQueries({ queryKey: ['mcp-grants'] }).catch(() => undefined);
+    });
+    await waitFor(() => expect(wire.waiting()).toBe(2));
+    act(() => wire.answer(200, { ok: true }));
+    await waitFor(() => expect(isListed('Desk agent')).toBe(false));
+    act(() => wire.answer(200, { connections: [CONNECTION, SECOND] }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(isListed('Desk agent')).toBe(false);
+    expect(isListed('Mail agent')).toBe(true);
+  });
+
   test('keeps the row until the server has confirmed, then removes it', async () => {
     renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
     await waitFor(() => expect(wire.waiting()).toBe(1));
     act(() => wire.answer(200, { connections: [CONNECTION, SECOND] }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Revoke Desk agent' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Revoke access' }));
     await waitFor(() => expect(wire.waiting()).toBe(1));
     expect(wire.sent.at(-1)).toMatchObject({ path: '/api/mcp-grants/g1', method: 'DELETE' });
     const pending = screen.getByRole('listitem', { name: 'Desk agent' });
     expect(pending).toHaveAttribute('aria-busy', 'true');
-    expect(within(pending).getByRole('button', { name: 'Revoke Desk agent' })).toBeEnabled();
+    expect(
+      within(pending).getByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    ).toBeEnabled();
     act(() => wire.answer(200, { ok: true }));
     await waitFor(() => expect(isListed('Desk agent')).toBe(false));
     expect(screen.getByRole('listitem', { name: 'Mail agent' })).toBeInTheDocument();
@@ -274,7 +327,9 @@ describe('McpPanel revocation', () => {
     renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
     await waitFor(() => expect(wire.waiting()).toBe(1));
     act(() => wire.answer(200, { connections: [CONNECTION] }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Revoke Desk agent' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Revoke access' }));
     await waitFor(() => expect(wire.waiting()).toBe(1));
     act(() =>
@@ -292,10 +347,14 @@ describe('McpPanel revocation', () => {
     renderWithClient(<McpPanel serverUrl={SERVER_URL} />);
     await waitFor(() => expect(wire.waiting()).toBe(1));
     act(() => wire.answer(200, { connections: [CONNECTION] }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Revoke Desk agent' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Revoke access' }));
     await waitFor(() => expect(wire.waiting()).toBe(1));
-    await userEvent.click(screen.getByRole('button', { name: 'Revoke Desk agent' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Revoke Desk agent (127.0.0.1:4321)' }),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Revoke access' }));
     expect(wire.sent.filter((entry) => entry.method === 'DELETE')).toHaveLength(1);
     act(() => wire.answer(200, { ok: true }));

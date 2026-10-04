@@ -234,6 +234,26 @@ describe('AppShell', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  test('C opens quick create from the shell and the shortcut list names it', async () => {
+    renderShell();
+    await userEvent.keyboard('c');
+    expect(await screen.findByRole('dialog', { name: 'Add a person' })).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add a person' })).toBeNull());
+    await userEvent.keyboard('?');
+    const overlay = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+    expect(within(overlay).getByText('Quick create')).toBeInTheDocument();
+  });
+
+  test('C types into the palette search instead of opening quick create', async () => {
+    renderShell();
+    await userEvent.keyboard('{Control>}k{/Control}');
+    await screen.findByRole('dialog', { name: 'Command palette' });
+    await userEvent.keyboard('c');
+    expect(screen.getByPlaceholderText('Type a command or search')).toHaveValue('c');
+    expect(screen.queryByRole('dialog', { name: 'Add a person' })).toBeNull();
+  });
+
   test('paints brand names from the hydrated bootstrap without asking the server', () => {
     const server = new QueryClient();
     server.setQueryData(queryKeys.bootstrap, bootstrapFixture());

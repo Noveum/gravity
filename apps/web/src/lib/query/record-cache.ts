@@ -18,6 +18,7 @@ import {
   matchesListQuery,
   newestListed,
   newestOf,
+  newestRows,
   type Pages,
   placeInLists,
 } from './pages.ts';
@@ -50,18 +51,31 @@ function searchOf(key: readonly unknown[]): string | null {
   return typeof search === 'string' ? search : null;
 }
 
-export function allCachedPeople(client: QueryClient): PersonRow[] {
-  return cachedRows(client, PEOPLE_ROOT, readPeople);
-}
-
-export function allCachedCompanies(client: QueryClient): CompanyRow[] {
-  return cachedRows(client, COMPANIES_ROOT, readCompanies);
-}
-
 function companyRecords(client: QueryClient): (readonly [readonly unknown[], CompanyRecord])[] {
   return client
     .getQueriesData<CompanyRecord>({ queryKey: [COMPANY_ROOT] })
     .flatMap(([key, record]) => (record === undefined ? [] : [[key, record] as const]));
+}
+
+function personRecords(client: QueryClient): PersonRecord[] {
+  return client
+    .getQueriesData<PersonRecord>({ queryKey: [PERSON_ROOT] })
+    .flatMap(([, record]) => (record === undefined ? [] : [record]));
+}
+
+export function allCachedPeople(client: QueryClient): PersonRow[] {
+  return newestRows([
+    ...cachedRows(client, PEOPLE_ROOT, readPeople),
+    ...personRecords(client).map((record) => record.person),
+    ...companyRecords(client).flatMap(([, record]) => record.people.map((entry) => entry.person)),
+  ]);
+}
+
+export function allCachedCompanies(client: QueryClient): CompanyRow[] {
+  return newestRows([
+    ...cachedRows(client, COMPANIES_ROOT, readCompanies),
+    ...companyRecords(client).map(([, record]) => record.company),
+  ]);
 }
 
 export function cachedPerson(client: QueryClient, id: string): PersonRow | undefined {

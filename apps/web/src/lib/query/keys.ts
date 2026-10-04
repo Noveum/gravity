@@ -9,6 +9,7 @@ export const COMPANIES_ROOT = 'companies';
 export const COMPANY_ROOT = 'company';
 export const TIMELINE_ROOT = 'timeline';
 export const SEARCH_ROOT = 'search';
+export const DUPLICATES_ROOT = 'duplicates';
 
 export const queryKeys = {
   workspaces: ['workspaces'] as const,
@@ -22,4 +23,5 @@ export const queryKeys = {
   timeline: (subjectType: ActivityEntityType, subjectId: string, filter: TimelineFilter) =>
     [TIMELINE_ROOT, subjectType, subjectId, filter] as const,
   search: (term: string) => [SEARCH_ROOT, term] as const,
+  duplicates: (probe: string) => [DUPLICATES_ROOT, probe] as const,
 } as const;

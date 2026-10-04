@@ -1,18 +1,39 @@
 'use client';
 
-import { Command } from 'cmdk';
+import { parseLeadKey } from '@gravity/shared/utils';
+import { useQueryClient } from '@tanstack/react-query';
+import { Command, defaultFilter } from 'cmdk';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowRight, CircleHelp, Palette, PanelRight, Search } from 'lucide-react';
+import {
+  ArrowRight,
+  Building2,
+  CircleHelp,
+  Palette,
+  PanelRight,
+  Search,
+  Target,
+  User,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 import { Kbd } from '@/components/ui/kbd.tsx';
+import { personHref } from '@/features/leads/lead-groups.ts';
 import { COPY_LINK_BINDING } from '@/lib/copy-link.tsx';
 import { formatBinding, useHotkey } from '@/lib/keyboard/index.ts';
 import { NAV_ITEMS } from '@/lib/navigation.ts';
+import {
+  EMPTY_HITS,
+  HIT_LIMIT,
+  mergeHits,
+  personHitOf,
+  searchCachedRecords,
+} from '@/lib/query/record-search.ts';
+import { useRecordSearch } from '@/lib/query/use-record-search.ts';
 
 const PALETTE_BINDING = 'mod+k';
+const RECORD_VALUE_PREFIX = 'record-';
 
 export interface PaletteCommand {
   readonly id: string;
@@ -89,6 +110,10 @@ const itemClassName =
 const groupClassName =
   '[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:text-faint [&_[cmdk-group-heading]]:uppercase';
 
+function paletteFilter(value: string, search: string, keywords?: string[]): number {
+  return value.startsWith(RECORD_VALUE_PREFIX) ? 1 : defaultFilter(value, search, keywords);
+}
+
 function groupedByName(commands: readonly PaletteCommand[]): [string, PaletteCommand[]][] {
   const groups = new Map<string, PaletteCommand[]>();
   for (const command of commands) {
@@ -116,7 +141,17 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const client = useQueryClient();
   const [term, setTerm] = useState('');
+  const local = useMemo(
+    () => (open ? searchCachedRecords(client, term) : EMPTY_HITS),
+    [client, term, open],
+  );
+  const remote = useRecordSearch(open ? term : '');
+  const people = mergeHits(local.people, (remote.data?.people ?? []).map(personHitOf), HIT_LIMIT);
+  const companies = mergeHits(local.companies, remote.data?.companies ?? [], HIT_LIMIT);
+  const leads = mergeHits(local.leads, remote.data?.leads ?? [], HIT_LIMIT);
+  const leadKey = parseLeadKey(term);
 
   const groups = useMemo(
     () =>
@@ -143,6 +178,12 @@ export function CommandPalette({
     command.run();
   };
 
+  const go = (href: string) => {
+    setTerm('');
+    onOpenChange(false);
+    router.push(href);
+  };
+
   return (
     <Dialog
       open={open}
@@ -157,14 +198,14 @@ export function CommandPalette({
         className="top-[12vh] max-w-xl translate-y-0 p-0"
       >
         <DialogTitle className="sr-only">Command palette</DialogTitle>
-        <Command loop className="flex flex-col overflow-hidden">
+        <Command loop filter={paletteFilter} className="flex flex-col overflow-hidden">
           <div className="flex items-center gap-2 border-border border-b px-3">
             <Search className="size-4 shrink-0 text-faint" aria-hidden="true" />
             <Command.Input
               autoFocus
               value={term}
               onValueChange={setTerm}
-              placeholder="Type a command"
+              placeholder="Type a command or search"
               className="h-11 w-full bg-transparent text-base text-text outline-none placeholder:text-faint"
             />
           </div>
@@ -172,6 +213,63 @@ export function CommandPalette({
             <Command.Empty className="px-2.5 py-6 text-center text-muted text-dense">
               Nothing matches that.
             </Command.Empty>
+            {leadKey === null && people.length + companies.length + leads.length === 0 ? null : (
+              <Command.Group heading="Records" className={groupClassName}>
+                {leadKey === null ? null : (
+                  <Command.Item
+                    value={`${RECORD_VALUE_PREFIX}open-${leadKey.key}-${leadKey.number}`}
+                    className={itemClassName}
+                    onSelect={() => go(`/l/${leadKey.key}-${leadKey.number}`)}
+                  >
+                    <ArrowRight className="size-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                    <span className="flex-1 truncate">
+                      Open {leadKey.key}-{leadKey.number}
+                    </span>
+                  </Command.Item>
+                )}
+                {people.map((person) => (
+                  <Command.Item
+                    key={person.id}
+                    value={`${RECORD_VALUE_PREFIX}person-${person.id}`}
+                    className={itemClassName}
+                    onSelect={() => go(`/people/${person.id}`)}
+                  >
+                    <User className="size-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                    <span className="flex-1 truncate">{person.name}</span>
+                    <span className="truncate text-faint text-xs">
+                      {person.email ?? person.companyName ?? ''}
+                    </span>
+                  </Command.Item>
+                ))}
+                {companies.map((company) => (
+                  <Command.Item
+                    key={company.id}
+                    value={`${RECORD_VALUE_PREFIX}company-${company.id}`}
+                    className={itemClassName}
+                    onSelect={() => go(`/companies/${company.id}`)}
+                  >
+                    <Building2 className="size-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                    <span className="flex-1 truncate">{company.name}</span>
+                    <span className="truncate text-faint text-xs">
+                      {company.primaryDomain ?? ''}
+                    </span>
+                  </Command.Item>
+                ))}
+                {leads.map((lead) => (
+                  <Command.Item
+                    key={lead.id}
+                    value={`${RECORD_VALUE_PREFIX}lead-${lead.id}`}
+                    className={itemClassName}
+                    onSelect={() => go(personHref(lead))}
+                  >
+                    <Target className="size-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                    <span className="flex-1 truncate">
+                      {lead.key} {lead.personName}
+                    </span>
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            )}
             {groups.map(([group, commands]) => {
               const Icon = GROUP_ICONS[group] ?? ArrowRight;
               return (

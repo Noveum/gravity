@@ -8,6 +8,7 @@ import { ShortcutsOverlay } from '@/components/shortcuts-overlay.tsx';
 import { overlayClassName } from '@/components/ui/dialog.tsx';
 import { leadViewsFor } from '@/features/filters/list-query.ts';
 import { LeadUndoHotkeys } from '@/features/leads/lead-undo.ts';
+import { QuickCreate } from '@/features/quick-create/quick-create-dialog.tsx';
 import { useWorkspace, type WorkspaceData } from '@/features/workspace/use-workspace.ts';
 import { ContextPanelProvider, useContextPanel } from '@/lib/context-panel.tsx';
 import { CopyLinkProvider, useCopyLink } from '@/lib/copy-link.tsx';
@@ -149,6 +150,7 @@ export function AppShell({
           <div data-app-shell className="relative flex h-dvh w-full overflow-hidden bg-bg">
             <CrmDeltaHandlers />
             <LeadUndoHotkeys workspaceId={workspace.id} />
+            <QuickCreate />
             {NAV_ITEMS.map((item) => (
               <NavChord key={item.id} item={item} />
             ))}

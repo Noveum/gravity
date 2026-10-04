@@ -11,6 +11,8 @@ import { queryKeys } from '@/lib/query/keys.ts';
 import { cachedLead } from '@/lib/query/lead-cache.ts';
 import type { Pages } from '@/lib/query/pages.ts';
 import {
+  allCachedCompanies,
+  allCachedPeople,
   applyEmployment,
   cachedPerson,
   placeCompany,
@@ -272,5 +274,42 @@ describe('prependActivity', () => {
     prependActivity(cache, activityFixture());
     prependActivity(cache, activityFixture());
     expect(timeline(cache, 'l1', 'all')).toEqual(['a1', 'a0']);
+  });
+});
+
+describe('allCachedPeople and allCachedCompanies', () => {
+  test('read every list and every record cache and keep the newest copy of an id', () => {
+    const client = new QueryClient();
+    client.setQueryData<Pages<PersonPage>>(queryKeys.people(''), {
+      pages: [
+        {
+          people: [
+            personFixture({ id: 'a', name: 'Listed Old', syncId: 1 }),
+            personFixture({ id: 'b', name: 'Only Listed', syncId: 1 }),
+          ],
+          nextCursor: null,
+        },
+      ],
+      pageParams: [null],
+    });
+    client.setQueryData<PersonRecord>(queryKeys.person('a'), {
+      person: personFixture({ id: 'a', name: 'Recorded New', syncId: 9 }),
+      employments: [],
+      leads: [],
+    });
+    client.setQueryData<CompanyRecord>(queryKeys.company('c'), {
+      company: companyFixture({ id: 'c', name: 'Recorded Co' }),
+      people: [
+        {
+          person: personFixture({ id: 'd', name: 'On Company' }),
+          employment: employmentFixture({ personId: 'd', companyId: 'c' }),
+        },
+      ],
+      leads: [],
+    });
+    const people = allCachedPeople(client);
+    expect(people.map((person) => person.id).sort()).toEqual(['a', 'b', 'd']);
+    expect(people.find((person) => person.id === 'a')?.name).toBe('Recorded New');
+    expect(allCachedCompanies(client).map((company) => company.id)).toEqual(['c']);
   });
 });

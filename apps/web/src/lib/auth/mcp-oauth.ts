@@ -1,13 +1,30 @@
 import { bindMcpCredential, cappedTransaction, unbindMcpCredential } from '@gravity/core';
 import { and, db, eq, isNull, schema } from '@gravity/db';
+import { MCP_OAUTH_SCOPES } from '@gravity/shared/constants';
 import { isAllowedRedirectUri } from '@gravity/shared/utils';
 import { z } from 'zod';
-import { auth, MCP_TOKEN_RATE_LIMIT_PROBE_HEADER } from '@/lib/auth/server.ts';
-import { mcpServerUrl, serverEnv } from '@/lib/env.ts';
+import {
+  auth,
+  MCP_AUTHORIZE_START_PATH,
+  MCP_TOKEN_RATE_LIMIT_PROBE_HEADER,
+} from '@/lib/auth/server.ts';
+import { absoluteUrl, mcpServerUrl, publicAppUrl, serverEnv } from '@/lib/env.ts';
 
 export const MCP_AUTHORIZE_PATH = '/api/auth/mcp/authorize';
 export const MCP_TOKEN_PATH = '/api/auth/mcp/token';
 export const MCP_REGISTER_PATH = '/api/auth/mcp/register';
+export const UNAUTHENTICATED_BODY_LIMIT_BYTES = 64 * 1024;
+
+const CLIENT_METADATA_LIMIT_BYTES = 2048;
+const UNNAMED_CLIENT = 'Unnamed agent';
+const UNSERVED_AUTH_PATHS = new Set([
+  MCP_AUTHORIZE_PATH,
+  '/api/auth/mcp/get-session',
+  '/api/auth/mcp/userinfo',
+  '/api/auth/mcp/jwks',
+  '/api/auth/oauth2/consent',
+]);
+const UNSERVED_AUTH_PREFIX = '/api/auth/.well-known';
 
 type AuthHandler = (request: Request) => Promise<Response>;
 
@@ -29,6 +46,70 @@ function oauthError(error: OAuthErrorCode, description: string, status = 400): R
   return Response.json({ error, error_description: description }, { status, headers: NO_STORE });
 }
 
+function bodyTooLarge(): Response {
+  return oauthError('invalid_request', 'The request body is larger than 64KB.', 413);
+}
+
+async function cappedBody(request: Request): Promise<string | null> {
+  const declared = Number(request.headers.get('content-length') ?? '0');
+  if (declared > UNAUTHENTICATED_BODY_LIMIT_BYTES) return null;
+  const reader = request.clone().body?.getReader();
+  if (reader === undefined) return '';
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > UNAUTHENTICATED_BODY_LIMIT_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+export function mcpAuthorizationServerMetadata() {
+  return {
+    issuer: publicAppUrl(),
+    authorization_endpoint: absoluteUrl(MCP_AUTHORIZE_START_PATH),
+    token_endpoint: absoluteUrl(MCP_TOKEN_PATH),
+    registration_endpoint: absoluteUrl(MCP_REGISTER_PATH),
+    scopes_supported: [...MCP_OAUTH_SCOPES],
+    response_types_supported: ['code'],
+    response_modes_supported: ['query'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
+    code_challenge_methods_supported: ['S256'],
+  };
+}
+
+export function mcpProtectedResourceMetadata() {
+  return {
+    resource: mcpServerUrl(),
+    authorization_servers: [publicAppUrl()],
+    scopes_supported: [...MCP_OAUTH_SCOPES],
+    bearer_methods_supported: ['header'],
+  };
+}
+
+function normalizedPath(pathname: string): string {
+  let decoded = pathname;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    decoded = pathname;
+  }
+  return decoded.toLowerCase().replace(/\/+$/, '');
+}
+
+export function refuseUnservedAuthPath(request: Request): Response | null {
+  const path = normalizedPath(new URL(request.url).pathname);
+  if (!(UNSERVED_AUTH_PATHS.has(path) || path.startsWith(UNSERVED_AUTH_PREFIX))) return null;
+  return new Response('Not Found', { status: 404 });
+}
+
 function sameResource(values: readonly string[]): boolean {
   const expected = mcpServerUrl().replace(/\/+$/, '');
   return values.every((value) => value.replace(/\/+$/, '') === expected);
@@ -38,37 +119,76 @@ function targetRefusal(): Response {
   return oauthError('invalid_target', `This server only issues tokens for ${mcpServerUrl()}.`);
 }
 
-export function refuseUnsafeAuthorize(request: Request): Response | null {
-  const url = new URL(request.url);
-  if (url.pathname !== MCP_AUTHORIZE_PATH) return null;
-  const prompts = url.searchParams.getAll('prompt');
-  if (prompts.length !== 1 || prompts[0] !== 'consent') {
+function repeatedParameter(search: URLSearchParams): string | undefined {
+  return [...new Set(search.keys())].find((key) => search.getAll(key).length > 1);
+}
+
+export function refuseUnsafeAuthorize(search: URLSearchParams): Response | null {
+  const repeated = repeatedParameter(search);
+  if (repeated !== undefined) {
+    return oauthError('invalid_request', `The ${repeated} parameter was sent more than once.`);
+  }
+  if (search.get('prompt') !== 'consent') {
     return oauthError('invalid_request', 'Explicit consent is required.');
   }
-  const challenges = url.searchParams.getAll('code_challenge');
   if (
-    challenges.length > 0 &&
-    (challenges.length !== 1 || !codeChallengeSchema.safeParse(challenges[0]).success)
+    !codeChallengeSchema.safeParse(search.get('code_challenge')).success ||
+    search.get('code_challenge_method') !== 'S256'
   ) {
-    return oauthError('invalid_request', 'The PKCE code challenge is invalid.');
+    return oauthError('invalid_request', 'An S256 PKCE code challenge is required.');
   }
-  if (!sameResource(url.searchParams.getAll('resource'))) return targetRefusal();
+  if (!sameResource(search.getAll('resource'))) return targetRefusal();
   return null;
 }
 
+export async function startMcpAuthorization(request: Request): Promise<Response> {
+  const incoming = new URL(request.url);
+  const search = new URLSearchParams();
+  for (const [key, value] of incoming.searchParams) {
+    if (key !== 'prompt') search.append(key, value);
+  }
+  search.set('prompt', 'consent');
+  const refused = refuseUnsafeAuthorize(search);
+  if (refused !== null) return refused;
+  const authorize = new URL(`${MCP_AUTHORIZE_PATH}?${search.toString()}`, incoming);
+  return await auth.handler(new Request(authorize, { method: 'GET', headers: request.headers }));
+}
+
+const blankAsMissing = (value: unknown) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+
 const registrationSchema = z.looseObject({
   redirect_uris: z.array(z.string().max(2000)).min(1).max(5),
-  client_name: z
-    .string({ error: 'A client_name of up to 100 characters is required.' })
-    .max(100)
-    .trim()
-    .min(1),
+  client_name: z.preprocess(blankAsMissing, z.string().max(100).trim().optional()),
+  logo_uri: z
+    .string()
+    .max(2000)
+    .refine(
+      (value) =>
+        !value.includes(',') && URL.canParse(value) && new URL(value).protocol === 'https:',
+      { message: 'logo_uri must be an https URL.' },
+    )
+    .optional(),
+  metadata: z
+    .record(z.string(), z.unknown())
+    .refine((value) => Buffer.byteLength(JSON.stringify(value)) <= CLIENT_METADATA_LIMIT_BYTES, {
+      message: 'metadata must be at most 2KB.',
+    })
+    .optional(),
 });
 
-export async function refuseUnsafeRegistration(request: Request): Promise<Response | null> {
+function defaultClientName(redirectUri: string | undefined): string {
+  if (redirectUri === undefined || !URL.canParse(redirectUri)) return UNNAMED_CLIENT;
+  const host = new URL(redirectUri).hostname;
+  return host.length > 0 ? host : UNNAMED_CLIENT;
+}
+
+export async function screenRegistration(request: Request): Promise<Response | Request> {
+  const text = await cappedBody(request);
+  if (text === null) return bodyTooLarge();
   let body: unknown;
   try {
-    body = JSON.parse(await request.clone().text()) as unknown;
+    body = JSON.parse(text) as unknown;
   } catch {
     return oauthError('invalid_client_metadata', 'The registration body is not valid JSON.');
   }
@@ -82,11 +202,20 @@ export async function refuseUnsafeRegistration(request: Request): Promise<Respon
   const refused = parsed.data.redirect_uris.find(
     (uri) => uri !== uri.trim() || !isAllowedRedirectUri(uri),
   );
-  if (refused === undefined) return null;
-  return oauthError(
-    'invalid_redirect_uri',
-    `${refused} is not an allowed redirect URI. Use https, a loopback http address, or an app scheme.`,
-  );
+  if (refused !== undefined) {
+    return oauthError(
+      'invalid_redirect_uri',
+      `${refused} is not an allowed redirect URI. Use https, a loopback http address, or an app scheme.`,
+    );
+  }
+  const screened = {
+    ...parsed.data,
+    client_name: parsed.data.client_name ?? defaultClientName(parsed.data.redirect_uris[0]),
+  };
+  const headers = new Headers(request.headers);
+  headers.delete('content-length');
+  headers.set('content-type', 'application/json');
+  return new Request(request.url, { method: 'POST', headers, body: JSON.stringify(screened) });
 }
 
 const tokenRequestSchema = z
@@ -108,18 +237,18 @@ const tokenResponseSchema = z.looseObject({
 
 const authorizationCodeSchema = z.object({ mcpGrantId: z.string().min(1) });
 
-async function parsedTokenRequest(request: Request): Promise<TokenRequest | null> {
+function parsedTokenRequest(request: Request, text: string): TokenRequest | null {
   const mediaType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
   let raw: unknown;
   if (mediaType === 'application/x-www-form-urlencoded') {
-    const search = new URLSearchParams(await request.clone().text());
+    const search = new URLSearchParams(text);
     for (const key of new Set(search.keys())) {
       if (search.getAll(key).length !== 1) return null;
     }
     raw = Object.fromEntries(search);
   } else if (mediaType === 'application/json') {
     try {
-      raw = JSON.parse(await request.clone().text()) as unknown;
+      raw = JSON.parse(text) as unknown;
     } catch {
       return null;
     }
@@ -233,31 +362,21 @@ async function securedTokenResponse(
   return new Response(JSON.stringify(secured), { status: response.status, headers });
 }
 
-export async function handleMcpTokenRequest(
-  request: Request,
-  post: AuthHandler,
-): Promise<Response> {
-  const limited = await rateLimited(request, post);
-  if (limited !== null) return limited;
-  const body = await parsedTokenRequest(request);
-  if (body === null) return oauthError('invalid_request', 'The token request is invalid.');
-  if (body.grant_type !== 'authorization_code' && body.grant_type !== 'refresh_token') {
-    return oauthError('unsupported_grant_type', 'The requested grant type is not supported.');
+async function exchangeAuthorizationCode(request: Request, body: TokenRequest): Promise<Response> {
+  if (body.code === undefined) {
+    return oauthError('invalid_request', 'An authorization code is required.');
   }
-  if (body.resource !== undefined && !sameResource([body.resource])) return targetRefusal();
-  if (body.grant_type === 'authorization_code') {
-    if (body.code === undefined) {
-      return oauthError('invalid_request', 'An authorization code is required.');
-    }
-    if (!codeVerifierSchema.safeParse(body.code_verifier).success) {
-      return oauthError('invalid_request', 'The PKCE code verifier is invalid.');
-    }
-    const grantId = await grantOfCode(body.code);
-    if (grantId === null || !(await activeGrant(grantId))) {
-      return oauthError('invalid_grant', RECONNECT);
-    }
-    return securedTokenResponse(await issueToken(request, body), grantId, null);
+  if (!codeVerifierSchema.safeParse(body.code_verifier).success) {
+    return oauthError('invalid_request', 'The PKCE code verifier is invalid.');
   }
+  const grantId = await grantOfCode(body.code);
+  if (grantId === null || !(await activeGrant(grantId))) {
+    return oauthError('invalid_grant', RECONNECT);
+  }
+  return securedTokenResponse(await issueToken(request, body), grantId, null);
+}
+
+async function exchangeRefreshToken(request: Request, body: TokenRequest): Promise<Response> {
   if (body.refresh_token === undefined) {
     return oauthError('invalid_request', 'A refresh token is required.');
   }
@@ -276,4 +395,20 @@ export async function handleMcpTokenRequest(
     binding.grantId,
     binding.credential,
   );
+}
+
+export async function handleMcpTokenRequest(
+  request: Request,
+  post: AuthHandler,
+): Promise<Response> {
+  const limited = await rateLimited(request, post);
+  if (limited !== null) return limited;
+  const text = await cappedBody(request);
+  if (text === null) return bodyTooLarge();
+  const body = parsedTokenRequest(request, text);
+  if (body === null) return oauthError('invalid_request', 'The token request is invalid.');
+  if (body.resource !== undefined && !sameResource([body.resource])) return targetRefusal();
+  if (body.grant_type === 'authorization_code') return exchangeAuthorizationCode(request, body);
+  if (body.grant_type === 'refresh_token') return exchangeRefreshToken(request, body);
+  return oauthError('unsupported_grant_type', 'The requested grant type is not supported.');
 }

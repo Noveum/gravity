@@ -2,25 +2,38 @@ import { describe, expect, test } from 'bun:test';
 import { refuseUnsafeAuthorize } from '@/lib/auth/mcp-oauth.ts';
 import { mcpServerUrl } from '@/lib/env.ts';
 
-describe('refuseUnsafeAuthorize', () => {
-  function authorize(search: Record<string, string>): Request {
-    return new Request(
-      `http://localhost:3300/api/auth/mcp/authorize?${new URLSearchParams(search).toString()}`,
-    );
-  }
+const CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 
-  test('ignores every other auth path', () => {
-    expect(refuseUnsafeAuthorize(new Request('http://localhost:3300/api/auth/session'))).toBeNull();
+function search(extra: Record<string, string>): URLSearchParams {
+  return new URLSearchParams({
+    prompt: 'consent',
+    scope: 'openid gravity.read',
+    code_challenge: CHALLENGE,
+    code_challenge_method: 'S256',
+    ...extra,
+  });
+}
+
+describe('refuseUnsafeAuthorize', () => {
+  test('passes a consent request with an S256 challenge for this MCP server', () => {
+    expect(refuseUnsafeAuthorize(search({}))).toBeNull();
+    expect(refuseUnsafeAuthorize(search({ resource: mcpServerUrl() }))).toBeNull();
   });
 
   test('refuses a resource that is not this MCP server', async () => {
-    const refused = refuseUnsafeAuthorize(
-      authorize({ prompt: 'consent', resource: 'https://other.example.com/mcp' }),
-    );
+    const refused = refuseUnsafeAuthorize(search({ resource: 'https://other.example.com/mcp' }));
     expect(refused?.status).toBe(400);
     expect(await refused?.json()).toMatchObject({ error: 'invalid_target' });
-    expect(
-      refuseUnsafeAuthorize(authorize({ prompt: 'consent', resource: mcpServerUrl() })),
-    ).toBeNull();
+  });
+
+  test('refuses a repeated parameter and names it', async () => {
+    const doubled = search({});
+    doubled.append('scope', 'gravity.approve');
+    const refused = refuseUnsafeAuthorize(doubled);
+    expect(refused?.status).toBe(400);
+    expect(await refused?.json()).toMatchObject({
+      error: 'invalid_request',
+      error_description: expect.stringContaining('scope'),
+    });
   });
 });

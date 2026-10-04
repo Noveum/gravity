@@ -1,14 +1,8 @@
-import { absoluteUrl } from '@/lib/env.ts';
+import { startMcpAuthorization } from '@/lib/auth/mcp-oauth.ts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export function GET(request: Request): Response {
-  const incoming = new URL(request.url);
-  const target = new URL(absoluteUrl('/api/auth/mcp/authorize'));
-  for (const [key, value] of incoming.searchParams) {
-    if (key !== 'prompt') target.searchParams.append(key, value);
-  }
-  target.searchParams.set('prompt', 'consent');
-  return Response.redirect(target.toString(), 302);
+export function GET(request: Request): Promise<Response> {
+  return startMcpAuthorization(request);
 }

@@ -18,6 +18,7 @@ import {
 } from '@gravity/core/test-support';
 import { db, eq, schema } from '@gravity/db';
 import { POST as authPost, GET } from '@/app/api/auth/[...all]/route.ts';
+import { GET as startAuthorization } from '@/app/api/oauth/start/route.ts';
 import { auth } from '@/lib/auth/server.ts';
 import { mcpServerUrl } from '@/lib/env.ts';
 import { withNativeFetch } from '../../../../support/native-fetch.ts';
@@ -42,16 +43,6 @@ function authorizeSearch(extra: Record<string, string> = {}): URLSearchParams {
     state: 'state_test',
     ...extra,
   });
-}
-
-function authorizeRequest(
-  search: URLSearchParams,
-  cookie?: string,
-  path = '/api/auth/mcp/authorize',
-): Request {
-  const request = new Request(`${APP_ORIGIN}${path}?${search.toString()}`);
-  if (cookie !== undefined) request.headers.set('cookie', cookie);
-  return request;
 }
 
 function tokenRequest(body: Record<string, string>, form = true): Request {
@@ -135,58 +126,115 @@ function exchange(code: string): Request {
 }
 
 describe('authorize', () => {
-  test('refuses a request without exactly one prompt=consent', async () => {
-    expect((await GET(authorizeRequest(authorizeSearch()))).status).toBe(400);
-    const doubled = authorizeSearch({ prompt: 'consent' });
-    doubled.append('prompt', 'consent');
-    expect((await GET(authorizeRequest(doubled))).status).toBe(400);
-  });
+  function start(search: URLSearchParams, signedIn = true): Promise<Response> {
+    const request = new Request(`${APP_ORIGIN}/api/oauth/start?${search.toString()}`);
+    if (signedIn) request.headers.set('cookie', cookie);
+    return withNativeFetch(() => startAuthorization(request));
+  }
 
-  test('refuses a code challenge that is not an S256 digest', async () => {
-    const search = authorizeSearch({
-      prompt: 'consent',
-      code_challenge: 'A'.repeat(42),
-      code_challenge_method: 'S256',
-    });
-    expect((await GET(authorizeRequest(search, cookie))).status).toBe(400);
-  });
+  function pkceSearch(extra: Record<string, string> = {}): URLSearchParams {
+    return authorizeSearch({ code_challenge: CHALLENGE, code_challenge_method: 'S256', ...extra });
+  }
 
-  test('refuses another resource with invalid_target', async () => {
-    const search = authorizeSearch({
-      prompt: 'consent',
-      code_challenge: CHALLENGE,
-      code_challenge_method: 'S256',
-      resource: 'https://elsewhere.example.com/mcp',
-    });
-    const response = await GET(authorizeRequest(search, cookie));
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ error: 'invalid_target' });
-  });
-
-  test('a signed in user continues to the consent page', async () => {
-    const search = authorizeSearch({
-      prompt: 'consent',
-      code_challenge: CHALLENGE,
-      code_challenge_method: 'S256',
-      resource: mcpServerUrl(),
-    });
-    const response = await GET(authorizeRequest(search, cookie));
+  test('a signed in user continues to the consent page even when the client asks for none', async () => {
+    const response = await start(pkceSearch({ prompt: 'none', resource: mcpServerUrl() }));
     expect(response.status).toBe(302);
     const location = new URL(response.headers.get('location') ?? '', APP_ORIGIN);
     expect(location.pathname).toBe('/oauth/authorize');
     expect(location.searchParams.get('consent_code')).not.toBeNull();
+    const [pending] = await db.select().from(schema.verification);
+    expect(JSON.parse(pending?.value ?? '{}')).toMatchObject({ requireConsent: true });
   });
 
-  test('alternate authorize paths never skip the consent checks', async () => {
-    const search = authorizeSearch({ code_challenge: CHALLENGE, code_challenge_method: 'S256' });
-    for (const path of [
-      '/api/auth/mcp/authorize/',
-      '/api/auth/mcp/AUTHORIZE',
-      '/api/auth/mcp/%61uthorize',
+  test('a signed out user is sent to sign in with consent still forced', async () => {
+    const response = await start(pkceSearch({ prompt: 'login' }), false);
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get('location') ?? '', APP_ORIGIN);
+    expect(location.pathname).toBe('/login');
+    expect(location.searchParams.getAll('prompt')).toEqual(['consent']);
+    expect(location.searchParams.get('client_id')).toBe(CLIENT_ID);
+  });
+
+  test('refuses a code challenge that is missing, malformed or not S256', async () => {
+    for (const search of [
+      authorizeSearch(),
+      pkceSearch({ code_challenge: 'A'.repeat(42) }),
+      pkceSearch({ code_challenge_method: 'plain' }),
+      authorizeSearch({ code_challenge: CHALLENGE }),
     ]) {
-      const response = await GET(authorizeRequest(search, cookie, path));
-      expect(response.status).toBe(404);
+      const response = await start(search);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: 'invalid_request' });
     }
+    expect(await db.select().from(schema.verification)).toHaveLength(0);
+  });
+
+  test('refuses another resource with invalid_target', async () => {
+    const response = await start(pkceSearch({ resource: 'https://elsewhere.example.com/mcp' }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'invalid_target' });
+  });
+
+  test('refuses every repeated parameter before better-auth reads it', async () => {
+    for (const [key, value] of [
+      ['scope', 'openid gravity.write gravity.approve'],
+      ['code_challenge_method', 'plain'],
+      ['state', 'state_other'],
+      ['redirect_uri', 'https://elsewhere.example.com/cb'],
+    ] as const) {
+      const search = pkceSearch();
+      search.append(key, value);
+      const response = await start(search);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: 'invalid_request' });
+    }
+    expect(await db.select().from(schema.verification)).toHaveLength(0);
+  });
+
+  test('a disabled client is refused before any consent request exists', async () => {
+    await db
+      .update(schema.oauthApplication)
+      .set({ disabled: true })
+      .where(eq(schema.oauthApplication.clientId, CLIENT_ID));
+    const response = await start(pkceSearch());
+    expect(response.headers.get('location')).toContain('error=client_disabled');
+    expect(await db.select().from(schema.verification)).toHaveLength(0);
+  });
+});
+
+describe('unserved better-auth endpoints', () => {
+  test('the raw plugin endpoints answer 404 on every spelling', async () => {
+    await withNativeFetch(async () => {
+      const search = authorizeSearch({
+        prompt: 'consent',
+        code_challenge: CHALLENGE,
+        code_challenge_method: 'S256',
+      }).toString();
+      for (const path of [
+        `/api/auth/mcp/authorize?${search}`,
+        `/api/auth/mcp/authorize/?${search}`,
+        `/api/auth/mcp/AUTHORIZE?${search}`,
+        `/api/auth/mcp/%61uthorize?${search}`,
+        '/api/auth/mcp/get-session',
+        '/api/auth/mcp/userinfo',
+        '/api/auth/mcp/jwks',
+        '/api/auth/.well-known/oauth-authorization-server',
+        '/api/auth/.well-known/oauth-protected-resource',
+        '/api/auth/.well-known/openid-configuration',
+      ]) {
+        const request = new Request(`${APP_ORIGIN}${path}`);
+        request.headers.set('cookie', cookie);
+        expect({ path, status: (await GET(request)).status }).toEqual({ path, status: 404 });
+      }
+      const consent = await authPost(
+        new Request(`${APP_ORIGIN}/api/auth/oauth2/consent`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie, origin: APP_ORIGIN },
+          body: JSON.stringify({ accept: true }),
+        }),
+      );
+      expect(consent.status).toBe(404);
+    });
     expect(await db.select().from(schema.verification)).toHaveLength(0);
   });
 });
@@ -210,9 +258,6 @@ describe('dynamic client registration', () => {
         registerRequest({ redirect_uris: [CALLBACK_URL], client_name: 'x'.repeat(101) }),
       );
       expect(await named.json()).toMatchObject({ error: 'invalid_client_metadata' });
-      const unnamed = await authPost(registerRequest({ redirect_uris: [CALLBACK_URL] }));
-      expect(unnamed.status).toBe(400);
-      expect(await unnamed.json()).toMatchObject({ error: 'invalid_client_metadata' });
     });
     expect(await db.select().from(schema.oauthApplication)).toHaveLength(1);
   });
@@ -282,6 +327,94 @@ describe('dynamic client registration', () => {
         type: 'public',
       });
     });
+  });
+
+  test('a client without a name is registered under its redirect host', async () => {
+    await withNativeFetch(async () => {
+      for (const [uris, expected] of [
+        [[CALLBACK_URL], '127.0.0.1'],
+        [['com.example.agent:/oauth'], 'Unnamed agent'],
+      ] as const) {
+        const response = await authPost(
+          registerRequest({ redirect_uris: uris, token_endpoint_auth_method: 'none' }),
+        );
+        expect(response.status).toBe(201);
+        const clientId = String(((await response.json()) as { client_id?: unknown }).client_id);
+        const [stored] = await db
+          .select()
+          .from(schema.oauthApplication)
+          .where(eq(schema.oauthApplication.clientId, clientId));
+        expect(stored?.name).toBe(expected);
+      }
+      const blank = await authPost(
+        registerRequest({ client_name: '   ', redirect_uris: ['https://agent.example.com/cb'] }),
+      );
+      expect(blank.status).toBe(201);
+    });
+    const names = (await db.select().from(schema.oauthApplication)).map((row) => row.name);
+    expect(names).toContain('agent.example.com');
+  });
+
+  test('refuses OS handler redirect schemes', async () => {
+    await withNativeFetch(async () => {
+      for (const uri of [
+        'ms-msdt:/id PCWDiagnostic',
+        'search-ms:query=calc',
+        'ms-settings:privacy',
+        'ms-officecmd:{}',
+        'ms-word:ofe|u|https://evil.example/a.docx',
+        'smb://evil.example/share',
+      ]) {
+        const response = await authPost(
+          registerRequest({ client_name: 'Handler', redirect_uris: [uri] }),
+        );
+        expect({ uri, status: response.status }).toEqual({ uri, status: 400 });
+      }
+    });
+    expect(await db.select().from(schema.oauthApplication)).toHaveLength(1);
+  });
+
+  test('accepts only an https logo and small metadata', async () => {
+    await withNativeFetch(async () => {
+      for (const extra of [
+        { logo_uri: 'javascript:alert(1)' },
+        { logo_uri: 'http://agent.example.com/logo.png' },
+        { logo_uri: 'https://agent.example.com/a.png,javascript:alert(1)' },
+        { metadata: { padding: 'x'.repeat(2100) } },
+      ]) {
+        const response = await authPost(
+          registerRequest({ client_name: 'Logo', redirect_uris: [CALLBACK_URL], ...extra }),
+        );
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ error: 'invalid_client_metadata' });
+      }
+      const fine = await authPost(
+        registerRequest({
+          client_name: 'Logo',
+          redirect_uris: [CALLBACK_URL],
+          logo_uri: 'https://agent.example.com/logo.png',
+          metadata: { build: '1.2.3' },
+          token_endpoint_auth_method: 'none',
+        }),
+      );
+      expect(fine.status).toBe(201);
+    });
+    const icons = (await db.select().from(schema.oauthApplication)).map((row) => row.icon);
+    expect(icons).toContain('https://agent.example.com/logo.png');
+  });
+
+  test('refuses a registration body above 64KB without storing it', async () => {
+    await withNativeFetch(async () => {
+      const response = await authPost(
+        registerRequest({
+          client_name: 'Large',
+          redirect_uris: [CALLBACK_URL],
+          software_statement: 'x'.repeat(70_000),
+        }),
+      );
+      expect(response.status).toBe(413);
+    });
+    expect(await db.select().from(schema.oauthApplication)).toHaveLength(1);
   });
 
   test('limits registrations per address', async () => {
@@ -485,6 +618,106 @@ describe('token', () => {
       } finally {
         issueThenRevoke.mockRestore();
       }
+    });
+  });
+
+  test('a consent code or a code without a recorded grant is never exchanged', async () => {
+    await withNativeFetch(async () => {
+      const consentCode = await insertMcpConsentRequest({
+        clientId: CLIENT_ID,
+        userId: workspace.adminUser.id,
+        scope: ['openid', 'gravity.read'],
+        redirectUri: CALLBACK_URL,
+      });
+      expect(await (await authPost(exchange(consentCode))).json()).toMatchObject({
+        error: 'invalid_grant',
+      });
+      const ungranted = await insertMcpConsentRequest({
+        clientId: CLIENT_ID,
+        userId: workspace.adminUser.id,
+        scope: ['openid', 'gravity.read'],
+        redirectUri: CALLBACK_URL,
+      });
+      const [row] = await db
+        .select()
+        .from(schema.verification)
+        .where(eq(schema.verification.identifier, ungranted));
+      await db
+        .update(schema.verification)
+        .set({
+          value: JSON.stringify({ ...JSON.parse(row?.value ?? '{}'), requireConsent: false }),
+        })
+        .where(eq(schema.verification.identifier, ungranted));
+      expect(await (await authPost(exchange(ungranted))).json()).toMatchObject({
+        error: 'invalid_grant',
+      });
+      expect(await db.select().from(schema.oauthAccessToken)).toHaveLength(0);
+      expect(await db.select().from(schema.verification)).toHaveLength(2);
+    });
+  });
+
+  test('a refresh for a revoked grant is refused before better-auth issues anything', async () => {
+    await withNativeFetch(async () => {
+      const issued = (await (await authPost(exchange(await authorizationCode()))).json()) as Record<
+        string,
+        unknown
+      >;
+      await db.update(schema.mcpGrant).set({ revokedAt: new Date() });
+      const issue = spyOn(auth.api, 'mcpOAuthToken');
+      try {
+        const refreshed = await authPost(
+          tokenRequest(
+            {
+              grant_type: 'refresh_token',
+              refresh_token: String(issued['refresh_token']),
+              client_id: CLIENT_ID,
+            },
+            false,
+          ),
+        );
+        expect(await refreshed.json()).toMatchObject({ error: 'invalid_grant' });
+        expect(issue).not.toHaveBeenCalled();
+      } finally {
+        issue.mockRestore();
+      }
+    });
+  });
+
+  test('a client disabled after consent gets no token', async () => {
+    await withNativeFetch(async () => {
+      const code = await authorizationCode();
+      await db
+        .update(schema.oauthApplication)
+        .set({ disabled: true })
+        .where(eq(schema.oauthApplication.clientId, CLIENT_ID));
+      expect(await (await authPost(exchange(code))).json()).toMatchObject({
+        error: 'invalid_client',
+      });
+      expect(await db.select().from(schema.oauthAccessToken)).toHaveLength(0);
+    });
+  });
+
+  test('a repeated token parameter is refused without consuming the code', async () => {
+    await withNativeFetch(async () => {
+      const code = await authorizationCode();
+      const body = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        client_id: CLIENT_ID,
+        redirect_uri: CALLBACK_URL,
+        code_verifier: MCP_TEST_CODE_VERIFIER,
+      });
+      body.append('redirect_uri', 'https://elsewhere.example.com/cb');
+      const doubled = await authPost(
+        new Request(`${APP_ORIGIN}/api/auth/mcp/token`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body,
+        }),
+      );
+      expect(await doubled.json()).toMatchObject({ error: 'invalid_request' });
+      expect(await db.select().from(schema.oauthAccessToken)).toHaveLength(0);
+      expect((await authPost(exchange(code))).status).toBe(200);
     });
   });
 

@@ -79,10 +79,32 @@ export function signUpIsOpen(): boolean {
   );
 }
 
-const publicAppUrlSchema = z.preprocess(blankToUndefined, z.url().default('http://localhost:3300'));
+const DEVELOPMENT_ORIGIN = 'http://localhost:3300';
+const optionalUrl = z.preprocess(blankToUndefined, z.url().optional());
 
-export function publicAppUrl(): string {
-  return publicAppUrlSchema.parse(process.env['NEXT_PUBLIC_APP_URL']).replace(/\/+$/, '');
+export function publicAppUrl(environment: Environment = process.env): string {
+  const authUrl = optionalUrl.parse(environment['BETTER_AUTH_URL']);
+  if (environment['NODE_ENV'] !== 'production') {
+    return new URL(authUrl ?? DEVELOPMENT_ORIGIN).origin;
+  }
+  const appUrl = optionalUrl.parse(environment['NEXT_PUBLIC_APP_URL']);
+  if (authUrl === undefined || appUrl === undefined) {
+    const missing = [
+      authUrl === undefined ? 'BETTER_AUTH_URL' : null,
+      appUrl === undefined ? 'NEXT_PUBLIC_APP_URL' : null,
+    ].filter((name) => name !== null);
+    throw new Error(
+      `Set ${missing.join(' and ')} to the public origin of this deployment. Gravity never falls back to localhost in production.`,
+    );
+  }
+  const origin = new URL(authUrl).origin;
+  const appOrigin = new URL(appUrl).origin;
+  if (origin !== appOrigin) {
+    throw new Error(
+      `BETTER_AUTH_URL (${origin}) and NEXT_PUBLIC_APP_URL (${appOrigin}) must name the same origin, because sign in, OAuth and the MCP server are all advertised on one origin.`,
+    );
+  }
+  return origin;
 }
 
 export function absoluteUrl(path: string): string {

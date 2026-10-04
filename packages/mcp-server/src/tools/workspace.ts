@@ -8,6 +8,7 @@ import {
   listSavedViews,
   listStages,
   memberRowOf,
+  oneLine,
 } from '@gravity/core';
 import { CONTEXT_TOKENS } from '@gravity/shared/constants';
 import type { FieldDefinitionRow } from '@gravity/shared/records';
@@ -21,6 +22,7 @@ const FILTER_EXAMPLE =
 const CHARS_PER_TOKEN = 4;
 const TEXT_BUDGET = CONTEXT_TOKENS.default * CHARS_PER_TOKEN;
 const PLAYBOOK_INDENT = '    ';
+const PLAYBOOK_FLOOR = 1500;
 const PLAYBOOK_CUT = `${PLAYBOOK_INDENT}(playbook cut to fit ${CONTEXT_TOKENS.default} tokens; read the rest in the app)`;
 
 interface FittedPlaybook {
@@ -55,7 +57,7 @@ function fitPlaybook(raw: string, share: number): FittedPlaybook {
     limit -= textCost(indented(shown)) - room;
     shown = cutAt(body, limit);
   }
-  if (limit <= 0) return { body: '', truncated: true, lines: room < 0 ? [] : [PLAYBOOK_CUT] };
+  if (limit <= 0) return { body: '', truncated: true, lines: [PLAYBOOK_CUT] };
   return { body: shown, truncated: true, lines: [...indented(shown), PLAYBOOK_CUT] };
 }
 
@@ -63,8 +65,18 @@ function fitPlaybooks(
   bodies: ReadonlyMap<string, string>,
   available: number,
 ): Map<string, FittedPlaybook> {
-  const share = Math.floor(available / Math.max(1, bodies.size));
-  return new Map([...bodies].map(([brandId, body]) => [brandId, fitPlaybook(body, share)]));
+  const byCost = [...bodies]
+    .map(([brandId, body]) => ({ brandId, body, cost: textCost(indented(body.trim())) }))
+    .sort((left, right) => left.cost - right.cost);
+  let left = Math.max(0, available);
+  const fitted = new Map<string, FittedPlaybook>();
+  byCost.forEach((entry, index) => {
+    const fair = Math.floor(left / (byCost.length - index));
+    const share = entry.cost <= fair ? entry.cost : Math.max(fair, PLAYBOOK_FLOOR);
+    left = Math.max(0, left - share);
+    fitted.set(entry.brandId, fitPlaybook(entry.body, share));
+  });
+  return fitted;
 }
 
 function fieldView(field: FieldDefinitionRow) {
@@ -158,23 +170,23 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
       const personFields = fields.filter((field) => field.object === 'person');
       const companyFields = fields.filter((field) => field.object === 'company');
       const render = (playbookLinesOf: (brandId: string) => readonly string[]) => [
-        `Workspace ${organization.name} (${organization.slug}) ${links.app}`,
+        `Workspace ${oneLine(organization.name)} (${organization.slug}) ${links.app}`,
         `You are ${principal.role}.`,
         ...brandViews.flatMap((brand) => [
-          `Brand ${brand.name}${brand.playbook === null ? '' : `, playbook v${brand.playbook.version}`}`,
+          `Brand ${oneLine(brand.name)}${brand.playbook === null ? '' : `, playbook v${brand.playbook.version}`}`,
           ...playbookLinesOf(brand.id),
           ...brand.pipelines.flatMap((pipeline) => [
-            `  Pipeline ${pipeline.key} ${pipeline.name} (${pipeline.kind}) ${pipeline.url}`,
-            `    Stages: ${pipeline.stages.map((stage) => `${stage.name} [${stage.category}] ${stage.id}`).join('; ')}`,
+            `  Pipeline ${pipeline.key} ${oneLine(pipeline.name)} (${pipeline.kind}) ${pipeline.url}`,
+            `    Stages: ${pipeline.stages.map((stage) => `${oneLine(stage.name)} [${stage.category}] ${stage.id}`).join('; ')}`,
             ...fieldsLine('    Lead fields', leadFieldsOf(pipeline.id)),
           ]),
         ]),
         ...fieldsLine('Person fields', personFields),
         ...fieldsLine('Company fields', companyFields),
-        `Members: ${memberViews.map((member) => `${member.name} <${member.email}> ${member.role} ${member.userId}`).join('; ')}`,
+        `Members: ${memberViews.map((member) => `${oneLine(member.name)} <${member.email}> ${member.role} ${member.userId}`).join('; ')}`,
         ...viewViews.map(
           (view) =>
-            `Saved view ${view.name} (${view.object}${view.pipelineKey === null ? '' : `, ${view.pipelineKey}`}, ${view.visibility}) ${view.id}`,
+            `Saved view ${oneLine(view.name)} (${view.object}${view.pipelineKey === null ? '' : `, ${view.pipelineKey}`}, ${view.visibility}) ${view.id}`,
         ),
         `Filters use this shape: ${FILTER_EXAMPLE}`,
       ];

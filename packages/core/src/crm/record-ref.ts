@@ -1,7 +1,12 @@
 import { and, asc, db, eq, isNull, type SQL, schema } from '@gravity/db';
 import { notFound, validationFailed } from '@gravity/shared/errors';
 import { assertCan, type Principal } from '@gravity/shared/policy';
-import { normalizeDomain, normalizeLinkedinProfileUrl, parseLeadKey } from '@gravity/shared/utils';
+import {
+  normalizeDomain,
+  parseIdentityInput,
+  parseLeadKey,
+  type RecordLinks,
+} from '@gravity/shared/utils';
 import { arrayOverlaps } from 'drizzle-orm';
 import { getLeadByKey } from './lead-service.ts';
 
@@ -12,7 +17,6 @@ export interface ResolvedRecordRef {
   readonly id: string;
 }
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SHOWN_REF_LENGTH = 80;
 const LINKEDIN_HOST = /(?:^|\.)linkedin\.com$/;
 const HOST_WITH_PATH = /^(?:[a-z][a-z0-9+.-]*:\/\/)?[^/?#]+[/?#]./i;
@@ -64,12 +68,14 @@ async function leadWhere(organizationId: string, leadId: string): Promise<string
     .select({ id: schema.lead.id })
     .from(schema.lead)
     .innerJoin(schema.pipeline, eq(schema.pipeline.id, schema.lead.pipelineId))
+    .innerJoin(schema.person, eq(schema.person.id, schema.lead.personId))
     .where(
       and(
         eq(schema.lead.organizationId, organizationId),
         eq(schema.lead.id, leadId),
         isNull(schema.lead.archivedAt),
         isNull(schema.pipeline.archivedAt),
+        isNull(schema.person.archivedAt),
       ),
     )
     .limit(1);
@@ -90,9 +96,50 @@ function found(type: RecordRefType, id: string | null, ref: string): ResolvedRec
   return { type, id };
 }
 
+export interface ResolveRecordRefOptions {
+  readonly links?: RecordLinks;
+}
+
+const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+function appLinkTarget(
+  ref: string,
+  links: RecordLinks,
+): { type: RecordRefType; rest: string } | null {
+  const bare = (value: string) => value.replace(SCHEME, '').toLowerCase();
+  const candidates: [RecordRefType, string][] = [
+    ['person', bare(links.person(''))],
+    ['company', bare(links.company(''))],
+    ['lead', bare(links.lead(''))],
+  ];
+  const lowered = bare(ref);
+  for (const [type, prefix] of candidates) {
+    if (!lowered.startsWith(prefix)) continue;
+    const tail = ref.replace(SCHEME, '').slice(prefix.length);
+    const rest = (tail.split(/[/?#]/)[0] ?? '').trim();
+    if (rest.length === 0) return null;
+    try {
+      return { type, rest: decodeURIComponent(rest) };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+async function resolveLeadKey(
+  principal: Principal,
+  key: string,
+  ref: string,
+): Promise<ResolvedRecordRef> {
+  const lead = await getLeadByKey(principal, key);
+  return found('lead', await leadWhere(principal.organizationId, lead.id), ref);
+}
+
 export async function resolveRecordRef(
   principal: Principal,
   raw: string,
+  options: ResolveRecordRefOptions = {},
 ): Promise<ResolvedRecordRef> {
   assertCan(principal, 'record:read');
   const ref = raw.trim();
@@ -100,22 +147,30 @@ export async function resolveRecordRef(
     throw validationFailed('Name a record by email, LinkedIn URL, domain, lead key or id.');
   }
   const organizationId = principal.organizationId;
-  if (parseLeadKey(ref) !== null) {
-    const lead = await getLeadByKey(principal, ref);
-    return found('lead', lead.archivedAt === null ? lead.id : null, ref);
-  }
-  const linkedinUrl = normalizeLinkedinProfileUrl(ref);
-  if (linkedinUrl !== null) {
+  if (parseLeadKey(ref) !== null) return await resolveLeadKey(principal, ref, ref);
+  const app = options.links === undefined ? null : appLinkTarget(ref, options.links);
+  if (app !== null) {
+    if (app.type === 'lead') return await resolveLeadKey(principal, app.rest, ref);
     return found(
-      'person',
-      await personWhere(organizationId, eq(schema.person.linkedinUrl, linkedinUrl)),
+      app.type,
+      app.type === 'person'
+        ? await personWhere(organizationId, eq(schema.person.id, app.rest))
+        : await companyWhere(organizationId, eq(schema.company.id, app.rest)),
       ref,
     );
   }
-  if (EMAIL.test(ref)) {
+  const identity = parseIdentityInput(ref);
+  if (identity?.kind === 'linkedin') {
     return found(
       'person',
-      await personWhere(organizationId, arrayOverlaps(schema.person.emails, [ref.toLowerCase()])),
+      await personWhere(organizationId, eq(schema.person.linkedinUrl, identity.linkedinUrl)),
+      ref,
+    );
+  }
+  if (identity?.kind === 'email') {
+    return found(
+      'person',
+      await personWhere(organizationId, arrayOverlaps(schema.person.emails, [identity.email])),
       ref,
     );
   }

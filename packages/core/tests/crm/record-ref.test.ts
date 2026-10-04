@@ -1,9 +1,11 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { db, eq, schema } from '@gravity/db';
+import { recordLinks } from '@gravity/shared/utils';
 import { createBrand } from '../../src/crm/brand-service.ts';
 import { createLead } from '../../src/crm/lead-service.ts';
 import { upsertPerson } from '../../src/crm/person-service.ts';
 import { resolveRecordRef } from '../../src/crm/record-ref.ts';
+import { newId } from '../../src/internal.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
 
@@ -146,5 +148,121 @@ describe('resolveRecordRef', () => {
     await expect(resolveRecordRef(workspace.admin, '   ')).rejects.toMatchObject({
       code: 'validation_failed',
     });
+  });
+});
+
+describe('resolveRecordRef of a lead whose person is archived', () => {
+  test('is refused by key and by id', async () => {
+    await db
+      .update(schema.person)
+      .set({ archivedAt: new Date() })
+      .where(eq(schema.person.id, personId));
+    await expect(resolveRecordRef(workspace.admin, 'LUM-1')).rejects.toMatchObject({
+      code: 'not_found',
+    });
+    await expect(resolveRecordRef(workspace.admin, leadId)).rejects.toMatchObject({
+      code: 'not_found',
+    });
+  });
+});
+
+describe('resolveRecordRef with two matches', () => {
+  test('the oldest live person sharing a secondary email wins', async () => {
+    const newer = newId();
+    const older = newId();
+    await db.insert(schema.person).values({
+      id: newer,
+      organizationId: workspace.organizationId,
+      name: 'Newer',
+      emails: ['newer@tie.example', 'shared@tie.example'],
+      createdAt: new Date('2026-02-01T00:00:00Z'),
+    });
+    await db.insert(schema.person).values({
+      id: older,
+      organizationId: workspace.organizationId,
+      name: 'Older',
+      emails: ['older@tie.example', 'shared@tie.example'],
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    expect(await resolveRecordRef(workspace.admin, 'shared@tie.example')).toEqual({
+      type: 'person',
+      id: older,
+    });
+    await db
+      .update(schema.person)
+      .set({ archivedAt: new Date() })
+      .where(eq(schema.person.id, older));
+    expect(await resolveRecordRef(workspace.admin, 'shared@tie.example')).toEqual({
+      type: 'person',
+      id: newer,
+    });
+  });
+
+  test('the oldest live company sharing a non-primary domain wins', async () => {
+    const newer = newId();
+    const older = newId();
+    await db.insert(schema.company).values({
+      id: newer,
+      organizationId: workspace.organizationId,
+      name: 'Newer Co',
+      domains: ['newer.example', 'shared-co.example'],
+      createdAt: new Date('2026-02-01T00:00:00Z'),
+    });
+    await db.insert(schema.company).values({
+      id: older,
+      organizationId: workspace.organizationId,
+      name: 'Older Co',
+      domains: ['older.example', 'shared-co.example'],
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    expect(await resolveRecordRef(workspace.admin, 'https://shared-co.example')).toEqual({
+      type: 'company',
+      id: older,
+    });
+  });
+});
+
+describe('resolveRecordRef of the app own links', () => {
+  const links = recordLinks('https://crm.example.com');
+
+  test('a person, company or lead link on the canonical origin resolves to that record', async () => {
+    const principal = workspace.admin;
+    const options = { links };
+    expect(
+      await resolveRecordRef(principal, `https://crm.example.com/people/${personId}`, options),
+    ).toEqual({ type: 'person', id: personId });
+    expect(
+      await resolveRecordRef(
+        principal,
+        `https://crm.example.com/companies/${companyId}/?tab=x`,
+        options,
+      ),
+    ).toEqual({ type: 'company', id: companyId });
+    expect(
+      await resolveRecordRef(principal, 'https://crm.example.com/l/lum-1#top', options),
+    ).toEqual({ type: 'lead', id: leadId });
+    expect(
+      await resolveRecordRef(principal, `CRM.example.com/people/${personId}`, options),
+    ).toEqual({ type: 'person', id: personId });
+  });
+
+  test('a link of another origin or another workspace is not followed', async () => {
+    const options = { links };
+    await expect(
+      resolveRecordRef(workspace.admin, `https://evil.example/people/${personId}`, options),
+    ).rejects.toMatchObject({ code: 'not_found' });
+    const other = await createWorkspace('Other');
+    await expect(
+      resolveRecordRef(other.admin, `https://crm.example.com/people/${personId}`, options),
+    ).rejects.toMatchObject({ code: 'not_found' });
+    await expect(
+      resolveRecordRef(other.admin, 'https://crm.example.com/l/LUM-1', options),
+    ).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  test('without the app links such a URL is read as a domain', async () => {
+    await expect(
+      resolveRecordRef(workspace.admin, `https://crm.example.com/people/${personId}`),
+    ).rejects.toMatchObject({ code: 'not_found' });
   });
 });

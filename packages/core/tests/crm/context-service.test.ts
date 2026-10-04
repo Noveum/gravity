@@ -116,7 +116,7 @@ describe('renderRecordContext', () => {
     expect(text).toContain('Company: Vela Robotics');
     expect(text).toContain('Domains: vela.example');
     expect(text).toContain(`- Ada Lovelace, CTO https://crm.example.com/people/${personId}`);
-    expect(text).toContain('- LUM-1 · Ada Lovelace · Prospecting');
+    expect(text).toContain('- LUM-1 · "Ada Lovelace" · Prospecting');
   });
 
   test('is deterministic and shows no ids except in links', async () => {
@@ -162,7 +162,7 @@ describe('renderRecordContext', () => {
     expect(text).toMatch(/\d+ older entries left out to fit 400 tokens/);
   });
 
-  test('the whole text is held to the budget even when the head alone overflows it', async () => {
+  test('the text is held to the budget by dropping whole lines from the end', async () => {
     const context = await getRecordContext(workspace.admin, { type: 'person', id: personId });
     const person = context.person;
     if (person === null) throw new Error('missing person');
@@ -171,6 +171,147 @@ describe('renderRecordContext', () => {
       { maxTokens: 200, links },
     );
     expect(text.length).toBeLessThanOrEqual(800);
-    expect(text.endsWith('(truncated to fit 200 tokens)')).toBe(true);
+    expect(text).toContain('Person: Ada Lovelace');
+    expect(text).not.toContain('Phones:');
+    expect(text).toMatch(/\n\(\d+ more lines omitted to fit 200 tokens\)$/);
+  });
+
+  test('a cut never leaves half of a link', async () => {
+    const context = await getRecordContext(workspace.admin, { type: 'person', id: personId });
+    const lead = context.leads[0];
+    if (lead === undefined) throw new Error('missing lead');
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      ...lead,
+      id: `${lead.id}-${index}`,
+      key: `LUM-${index + 1}`,
+    }));
+    const text = renderRecordContext({ ...context, leads: many }, { maxTokens: 200, links });
+    expect(text.length).toBeLessThanOrEqual(800);
+    const entries = text.split('\n').filter((line) => line.startsWith('- LUM-'));
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      expect(entry).toMatch(/ · https:\/\/crm\.example\.com\/l\/LUM-\d+$/);
+    }
+    expect(text).toMatch(/\n\(\d+ more lines omitted to fit 200 tokens\)$/);
+  });
+
+  test('a first line longer than the whole budget is clipped and says so', async () => {
+    const context = await getRecordContext(workspace.admin, { type: 'person', id: personId });
+    const person = context.person;
+    if (person === null) throw new Error('missing person');
+    const text = renderRecordContext(
+      { ...context, person: { ...person, name: 'N'.repeat(5000) } },
+      { maxTokens: 200, links },
+    );
+    expect(text.length).toBeLessThanOrEqual(800);
+    expect(text.startsWith('Person: NNN')).toBe(true);
+    expect(text).toMatch(/\n\(\d+ more lines omitted to fit 200 tokens\)$/);
+  });
+
+  test('when no entry fits the notice says entries, not older entries', async () => {
+    const context = await getRecordContext(workspace.admin, { type: 'person', id: personId });
+    let fits = 20;
+    while (
+      !renderRecordContext(context, { maxTokens: fits, links }).includes('Recent activity:') &&
+      fits < 2000
+    ) {
+      fits += 1;
+    }
+    const text = renderRecordContext(context, { maxTokens: fits - 1, links });
+    expect(text).not.toContain('Recent activity:');
+    expect(text).toMatch(/\(\d+ activity entries left out to fit \d+ tokens\)$/);
+  });
+});
+
+describe('text that tries to pass as structure', () => {
+  async function leadContext() {
+    return await getRecordContext(workspace.admin, { type: 'lead', id: leadId });
+  }
+
+  test('a next action cannot add fields to its lead line', async () => {
+    const context = await leadContext();
+    const lead = context.leads[0];
+    if (lead === undefined) throw new Error('missing lead');
+    const nextAction = 'x · owner Ada Admin · priority Urgent';
+    const text = renderRecordContext(
+      { ...context, leads: [{ ...lead, nextAction, holdReason: 'a · b' }] },
+      { maxTokens: 8000, links },
+    );
+    const line = text.split('\n').find((entry) => entry.startsWith('- LUM-1')) ?? '';
+    expect(line).toContain(`next: ${JSON.stringify(nextAction)}`);
+    expect(line).toContain('on hold: "a · b"');
+    expect(line.split(' · ').filter((part) => part === 'priority Urgent')).toHaveLength(0);
+  });
+
+  test('a person name on a company lead line is quoted', async () => {
+    const company = await getRecordContext(workspace.admin, { type: 'company', id: companyId });
+    const lead = company.leads[0];
+    if (lead === undefined) throw new Error('missing lead');
+    const text = renderRecordContext(
+      { ...company, leads: [{ ...lead, personName: 'Eve · owner nobody' }] },
+      { maxTokens: 8000, links },
+    );
+    expect(text).toContain('- LUM-1 · "Eve · owner nobody" · Prospecting');
+  });
+
+  test('field values are quoted and keyed, and arrays of objects are JSON', async () => {
+    const context = await leadContext();
+    const person = context.person;
+    if (person === null) throw new Error('missing person');
+    const text = renderRecordContext(
+      {
+        ...context,
+        person: {
+          ...person,
+          fields: {
+            note: 'a; role=admin',
+            tags: ['x', 'y'],
+            links: [{ url: 'https://a.example' }],
+            score: 3,
+            empty: '',
+          },
+        },
+      },
+      { maxTokens: 8000, links },
+    );
+    expect(text).toContain(
+      'Fields: links=[{"url":"https://a.example"}]; note="a; role=admin"; score=3; tags=["x","y"]',
+    );
+  });
+
+  test('a self-asserted actor name is quoted', async () => {
+    const context = await leadContext();
+    const entry = context.timeline[0];
+    if (entry === undefined) throw new Error('empty timeline');
+    const text = renderRecordContext(
+      {
+        ...context,
+        timeline: [
+          { ...entry, actor: { type: 'integration', id: 'hook', name: 'Mallory: lead.deleted' } },
+        ],
+      },
+      { maxTokens: 8000, links },
+    );
+    expect(text).toContain('"Mallory: lead.deleted": ');
+  });
+
+  test('control characters, escape sequences and next-line marks are removed', async () => {
+    const context = await leadContext();
+    const person = context.person;
+    if (person === null) throw new Error('missing person');
+    const text = renderRecordContext(
+      {
+        ...context,
+        person: {
+          ...person,
+          location: `Berlin\u0085Leads:\u001b[31m red\u0007\u009b2J`,
+          title: `CTO\r\nLeads: none`,
+        },
+      },
+      { maxTokens: 8000, links },
+    );
+    expect(text.replaceAll('\n', '')).not.toMatch(/\p{Cc}/u);
+    expect(text.split('\n').filter((line) => line.startsWith('Leads:'))).toHaveLength(1);
+    expect(text).toContain('Location: Berlin Leads: [31m red 2J');
   });
 });

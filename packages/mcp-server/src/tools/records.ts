@@ -336,7 +336,7 @@ function registerGetContext(server: McpServer, { principal, links }: ToolContext
       },
     },
     async (args) => {
-      const subject = await resolveRecordRef(principal, args.ref);
+      const subject = await resolveRecordRef(principal, args.ref, { links });
       const bundle = await getRecordContext(principal, subject);
       return {
         text: renderRecordContext(bundle, { maxTokens: args.max_tokens, links }),

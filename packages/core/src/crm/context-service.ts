@@ -61,9 +61,9 @@ export async function getRecordContext(
   subject: ResolvedRecordRef,
 ): Promise<RecordContext> {
   assertCan(principal, 'record:read');
-  const names = await contextNames(principal);
   if (subject.type === 'company') {
-    const [record, timeline] = await Promise.all([
+    const [names, record, timeline] = await Promise.all([
+      contextNames(principal),
       getCompanyRecord(principal, subject.id),
       listTimeline(principal, {
         subjectType: 'company',
@@ -85,7 +85,8 @@ export async function getRecordContext(
   }
   const lead = subject.type === 'lead' ? await getLead(principal, subject.id) : null;
   const personId = lead?.personId ?? subject.id;
-  const [record, timeline] = await Promise.all([
+  const [names, record, timeline] = await Promise.all([
+    contextNames(principal),
     getPersonRecord(principal, personId),
     listTimeline(principal, { subjectType: 'person', subjectId: personId, limit: TIMELINE_LIMIT }),
   ]);
@@ -105,23 +106,38 @@ export async function getRecordContext(
   };
 }
 
+const SEPARATORS_AND_CONTROLS = /[\p{Cc}\s]+/gu;
+const PLAIN_KEY = /^[A-Za-z0-9_.-]+$/;
+
+function oneLine(text: string): string {
+  return text.replace(SEPARATORS_AND_CONTROLS, ' ').trim();
+}
+
+function quoted(text: string): string {
+  return JSON.stringify(oneLine(text));
+}
+
 function present(value: string | null | undefined): value is string {
   return value !== null && value !== undefined && value !== '';
 }
 
 function fieldValue(value: unknown): string | null {
   if (value === null || value === undefined || value === '') return null;
-  if (Array.isArray(value)) return value.map(String).join('|');
-  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+  if (typeof value === 'string') return quoted(value);
+  return typeof value === 'number' || typeof value === 'boolean'
+    ? String(value)
+    : JSON.stringify(value);
+}
+
+function sortedKeys(keys: readonly string[]): string[] {
+  return [...keys].sort((a, b) => a.localeCompare(b, 'en'));
 }
 
 function fieldsLine(fields: Readonly<Record<string, unknown>>): string[] {
-  const entries = Object.entries(fields)
-    .sort(([a], [b]) => a.localeCompare(b, 'en'))
-    .flatMap(([key, value]) => {
-      const text = fieldValue(value);
-      return text === null ? [] : [`${key}=${text}`];
-    });
+  const entries = sortedKeys(Object.keys(fields)).flatMap((key) => {
+    const text = fieldValue(fields[key]);
+    return text === null ? [] : [`${PLAIN_KEY.test(key) ? key : quoted(key)}=${text}`];
+  });
   return entries.length === 0 ? [] : [`Fields: ${entries.join('; ')}`];
 }
 
@@ -174,13 +190,13 @@ function leadLine(lead: LeadRow, context: RecordContext, links: RecordLinks): st
   const next = lead.nextActionAt === null ? '' : ` by ${lead.nextActionAt.slice(0, 10)}`;
   const parts = [
     `${lead.key}${lead.id === context.focusLeadId ? ' (in focus)' : ''}`,
-    ...(context.company === null ? [] : [lead.personName]),
+    ...(context.company === null ? [] : [quoted(lead.personName)]),
     names.pipelines[lead.pipelineId] ?? 'Unknown pipeline',
     `stage ${names.stages[lead.stageId] ?? 'Unknown stage'} (${lead.stageCategory})`,
     `owner ${owner}`,
     `priority ${leadPriorityLabel(lead.priority)}`,
-    ...(present(lead.nextAction) ? [`next: ${lead.nextAction}${next}`] : []),
-    ...(present(lead.holdReason) ? [`on hold: ${lead.holdReason}`] : []),
+    ...(present(lead.nextAction) ? [`next: ${quoted(lead.nextAction)}${next}`] : []),
+    ...(present(lead.holdReason) ? [`on hold: ${quoted(lead.holdReason)}`] : []),
     links.lead(lead.key),
   ];
   return `- ${parts.join(' · ')}`;
@@ -199,12 +215,12 @@ function textOf(payload: Record<string, unknown>, key: string): string | null {
 function changedKeys(payload: Record<string, unknown>): string[] {
   const changes = payload['changes'];
   return typeof changes === 'object' && changes !== null && !Array.isArray(changes)
-    ? Object.keys(changes).sort()
+    ? sortedKeys(Object.keys(changes))
     : [];
 }
 
 function actorName(activity: ActivityRow, names: ContextNames): string {
-  if (activity.actor.name !== undefined) return activity.actor.name;
+  if (activity.actor.name !== undefined) return quoted(activity.actor.name);
   if (activity.actor.type === 'user') return names.members[activity.actor.id] ?? 'A former member';
   if (activity.actor.type === 'system') return 'Gravity';
   return activity.actor.type === 'agent' ? 'An agent' : 'An integration';
@@ -214,10 +230,6 @@ function activityLine(activity: ActivityRow, names: ContextNames): string {
   const subject = textOf(activity.payload, 'key') ?? textOf(activity.payload, 'name');
   const changes = changedKeys(activity.payload);
   return `${activity.occurredAt.slice(0, 10)} ${actorName(activity, names)}: ${activity.kind}${subject === null ? '' : ` ${subject}`}${changes.length === 0 ? '' : ` (${changes.join(', ')})`}`;
-}
-
-function oneLine(text: string): string {
-  return text.replace(/\s+/g, ' ').trim();
 }
 
 function clip(text: string, length: number): string {
@@ -234,23 +246,31 @@ function subjectLines(context: RecordContext, links: RecordLinks): string[] {
 }
 
 export function renderRecordContext(context: RecordContext, options: RenderContextOptions): string {
-  const head = subjectLines(context, options.links).map(oneLine);
-  const leads = leadLines(context, options.links).map(oneLine);
+  const core = [...subjectLines(context, options.links), ...leadLines(context, options.links)].map(
+    oneLine,
+  );
   const timeline = context.timeline.map((activity) =>
     oneLine(activityLine(activity, context.names)),
   );
   const budget = options.maxTokens * CHARS_PER_TOKEN;
-  const compose = (count: number) =>
-    [
-      ...head,
-      ...leads,
+  const compose = (count: number) => {
+    const omitted = timeline.length - count;
+    const notice =
+      omitted === 0
+        ? []
+        : [
+            count === 0
+              ? `(${omitted} activity entries left out to fit ${options.maxTokens} tokens)`
+              : `(${omitted} older entries left out to fit ${options.maxTokens} tokens)`,
+          ];
+    return [
+      ...core,
       ...(count === 0
         ? []
         : ['Recent activity:', ...timeline.slice(0, count).map((line) => `- ${line}`)]),
-      ...(count < timeline.length
-        ? [`(${timeline.length - count} older entries left out to fit ${options.maxTokens} tokens)`]
-        : []),
+      ...notice,
     ].join('\n');
+  };
   let count = timeline.length;
   let text = compose(count);
   while (text.length > budget && count > 0) {
@@ -258,6 +278,24 @@ export function renderRecordContext(context: RecordContext, options: RenderConte
     text = compose(count);
   }
   if (text.length <= budget) return text;
-  const notice = `\n(truncated to fit ${options.maxTokens} tokens)`;
-  return `${clip(text, Math.max(0, budget - notice.length))}${notice}`;
+  return cutLines(core, timeline.length === 0 ? 0 : timeline.length + 1, options.maxTokens, budget);
+}
+
+function cutLines(
+  lines: readonly string[],
+  extraLines: number,
+  maxTokens: number,
+  budget: number,
+): string {
+  const total = lines.length + extraLines;
+  const render = (keep: number, text: readonly string[]) =>
+    [...text, `(${total - keep} more lines omitted to fit ${maxTokens} tokens)`].join('\n');
+  let keep = lines.length;
+  while (keep > 1 && render(keep, lines.slice(0, keep)).length > budget) keep -= 1;
+  const kept = lines.slice(0, keep);
+  const text = render(keep, kept);
+  if (text.length <= budget) return text;
+  const first = kept[0] ?? '';
+  const spare = budget - (text.length - first.length);
+  return render(keep, [clip(first, Math.max(0, spare)), ...kept.slice(1)]);
 }

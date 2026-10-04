@@ -1,5 +1,4 @@
-import { emailSignInEnabled } from "@crm/auth/email";
-import { enabledProviders } from "@crm/auth/server";
+import { emailSignInEnabled, enabledProviders } from "@crm/auth/config";
 import { isDemoMode } from "@crm/database/client";
 import t from "@crm/i18n/translations/en.json";
 import { Suspense } from "react";

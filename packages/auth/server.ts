@@ -8,20 +8,13 @@ import { getDatabase, isDemoMode } from "../database/client";
 import * as schema from "../database/schema";
 import { demoUser } from "../database/seed";
 import t from "../i18n/translations/en.json";
-import { emailSignInEnabled, emailSignInPlugin } from "./email";
+import { emailSignInEnabled } from "./config";
+import { emailSignInPlugin } from "./email";
 import { appUrl, authPlugins } from "./options";
 import { databaseRateLimit } from "./rate-limit";
 
-export function enabledProviders() {
-  return [
-    process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-      ? "google"
-      : null,
-    process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
-      ? "github"
-      : null,
-  ].filter((value): value is "google" | "github" => value !== null);
-}
+export { enabledProviders } from "./config";
+
 async function createAuth() {
   return createAuthForDatabase(await getDatabase());
 }

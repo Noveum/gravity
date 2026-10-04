@@ -3,16 +3,7 @@ import { APIError } from "better-auth/api";
 import { emailOTP } from "better-auth/plugins";
 import { z } from "zod";
 import t from "../i18n/translations/en.json";
-
-function sender() {
-  const from = process.env.EMAIL_FROM?.trim();
-  if (!from || /[\r\n]/.test(from)) return null;
-  const address = from.match(/<([^<>]+)>$/)?.[1] ?? from;
-  return z.email().safeParse(address).success ? from : null;
-}
-export function emailSignInEnabled() {
-  return Boolean(process.env.RESEND_API_KEY?.trim() && sender());
-}
+import { emailSender } from "./config";
 export async function sendSignInCode({
   email,
   otp,
@@ -20,7 +11,7 @@ export async function sendSignInCode({
   email: string;
   otp: string;
 }) {
-  const from = sender();
+  const from = emailSender();
   const key = process.env.RESEND_API_KEY;
   if (
     !from ||

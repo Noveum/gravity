@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { db, schema, sql } from '@gravity/db';
 import type { OrgRole } from '@gravity/shared/constants';
 import { DomainError } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
+import { bindMcpCredential, recordMcpGrant } from './auth/mcp-token.ts';
 import { newId } from './internal.ts';
 import { acceptInvite, createInvite } from './org/invite-service.ts';
 import { resolvePrincipal } from './org/member-service.ts';
@@ -127,4 +129,105 @@ export async function refusal(attempt: Promise<unknown>): Promise<DomainError> {
     throw error;
   }
   throw new Error('Expected the call to be refused, but it succeeded.');
+}
+
+export const MCP_TEST_SECRET = 'gravity-test-secret-0123456789abcdef';
+export const MCP_TEST_CODE_VERIFIER = 'gravity-test-code-verifier-0123456789abcdefghijklmnop';
+
+export function mcpTestSecret(): string {
+  const configured = process.env['BETTER_AUTH_SECRET'];
+  if (configured !== undefined && configured.length >= 16) return configured;
+  process.env['BETTER_AUTH_SECRET'] = MCP_TEST_SECRET;
+  return MCP_TEST_SECRET;
+}
+
+function compactId(): string {
+  return newId().replace(/-/g, '');
+}
+
+export interface TestMcpClientOptions {
+  readonly clientId?: string;
+  readonly name?: string;
+  readonly redirectUrl?: string;
+}
+
+export async function insertMcpClient(
+  userId: string,
+  options: TestMcpClientOptions = {},
+): Promise<string> {
+  const clientId = options.clientId ?? `gravity_test_${compactId()}`;
+  await db.insert(schema.oauthApplication).values({
+    id: newId(),
+    name: options.name ?? 'Test agent',
+    clientId,
+    redirectUrls: options.redirectUrl ?? 'http://127.0.0.1:4321/callback',
+    type: 'public',
+    userId,
+  });
+  return clientId;
+}
+
+export interface TestMcpConsentRequest {
+  readonly clientId: string;
+  readonly userId: string;
+  readonly scope: readonly string[];
+  readonly redirectUri: string;
+  readonly state?: string;
+  readonly codeVerifier?: string;
+  readonly expiresAt?: Date;
+}
+
+export async function insertMcpConsentRequest(request: TestMcpConsentRequest): Promise<string> {
+  const consentCode = compactId();
+  const verifier = request.codeVerifier ?? MCP_TEST_CODE_VERIFIER;
+  await db.insert(schema.verification).values({
+    id: newId(),
+    identifier: consentCode,
+    value: JSON.stringify({
+      clientId: request.clientId,
+      redirectURI: request.redirectUri,
+      scope: request.scope,
+      userId: request.userId,
+      requireConsent: true,
+      state: request.state ?? 'state-test',
+      codeChallenge: createHash('sha256').update(verifier).digest('base64url'),
+      codeChallengeMethod: 'S256',
+    }),
+    expiresAt: request.expiresAt ?? new Date(Date.now() + 600_000),
+  });
+  return consentCode;
+}
+
+export interface MintedMcpToken {
+  readonly token: string;
+  readonly clientId: string;
+  readonly grantId: string;
+  readonly rawAccessToken: string;
+}
+
+export async function mintMcpToken(
+  organizationId: string,
+  userId: string,
+  scopes = 'openid gravity.read gravity.write',
+): Promise<MintedMcpToken> {
+  const secret = mcpTestSecret();
+  const clientId = await insertMcpClient(userId);
+  const grantId = await recordMcpGrant({ clientId, userId, organizationId, scopes });
+  const rawAccessToken = `at_${compactId()}${compactId()}`;
+  await db.insert(schema.oauthAccessToken).values({
+    id: newId(),
+    accessToken: rawAccessToken,
+    refreshToken: `rt_${compactId()}${compactId()}`,
+    accessTokenExpiresAt: new Date(Date.now() + 3_600_000),
+    refreshTokenExpiresAt: new Date(Date.now() + 86_400_000),
+    clientId,
+    userId,
+    scopes,
+  });
+  return {
+    token: bindMcpCredential(rawAccessToken, grantId, secret),
+    clientId,
+    grantId,
+    rawAccessToken,
+  };
 }

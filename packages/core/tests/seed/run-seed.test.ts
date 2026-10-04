@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 const RUN_SEED = fileURLToPath(new URL('../../src/seed/run-seed.ts', import.meta.url));
 const PACKAGE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
-let listener: ReturnType<typeof Bun.listen> | null = null;
+let listener: { stop: (closeActive?: boolean) => void } | null = null;
 
 afterEach(() => {
   listener?.stop(true);

@@ -1,5 +1,5 @@
 {
-  "id": "72d3658b-6dfb-4091-8e9e-21974fd92509",
+  "id": "64c27c82-ddb7-49b4-a548-9a23a3b09ff2",
   "prevId": "c5463cd4-8c6d-466a-9211-48e7d44dbc62",
   "version": "7",
   "dialect": "postgresql",
@@ -1718,15 +1718,17 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "import_source_person_id_person_id_fk": {
-          "name": "import_source_person_id_person_id_fk",
+        "import_source_person_fk": {
+          "name": "import_source_person_fk",
           "tableFrom": "import_source",
           "tableTo": "person",
           "columnsFrom": [
-            "person_id"
+            "person_id",
+            "organization_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "organization_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -3808,7 +3810,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "person_id_organization_unique": {
+          "name": "person_id_organization_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "organization_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

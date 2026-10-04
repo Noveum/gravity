@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { boolean, date, index, jsonb, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  date,
+  index,
+  jsonb,
+  pgTable,
+  text,
+  unique,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import {
   archivedAtColumn,
   createdAtColumn,
@@ -66,6 +75,7 @@ export const person = pgTable(
     uniqueIndex('person_org_linkedin_provider_unique')
       .on(table.organizationId, table.linkedinProviderId)
       .where(sql`${table.linkedinProviderId} is not null and ${table.archivedAt} is null`),
+    unique('person_id_organization_unique').on(table.id, table.organizationId),
     index('person_org_linkedin_url_idx').on(table.organizationId, table.linkedinUrl),
     index('person_emails_gin').using('gin', table.emails),
     index('person_name_trgm').using('gin', table.name.op('gin_trgm_ops')),

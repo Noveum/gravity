@@ -1,30 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { db, eq, schema, sql } from '../../src/index.ts';
-
-function failureOf(error: unknown): { code: string | null; constraint: string | null } {
-  let cursor: unknown = error;
-  for (let depth = 0; depth < 5; depth += 1) {
-    if (typeof cursor !== 'object' || cursor === null) break;
-    const code = (cursor as { code?: unknown }).code;
-    if (typeof code === 'string' && /^\d{5}$/.test(code)) {
-      const constraint = (cursor as { constraint_name?: unknown }).constraint_name;
-      return { code, constraint: typeof constraint === 'string' ? constraint : null };
-    }
-    cursor = (cursor as { cause?: unknown }).cause;
-  }
-  return { code: null, constraint: null };
-}
-
-async function violation(
-  run: () => Promise<unknown>,
-): Promise<{ code: string | null; constraint: string | null }> {
-  try {
-    await run();
-  } catch (error: unknown) {
-    return failureOf(error);
-  }
-  return { code: null, constraint: null };
-}
+import { violation } from '../support/violation.ts';
 
 function insertLead(id: string, number: number, stageCategory: 'open' | 'lost') {
   return db.insert(schema.lead).values({

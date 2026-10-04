@@ -418,6 +418,42 @@ describe('findPersonMatch', () => {
     ).toBeNull();
   });
 
+  test('probes the linked id, then the provider id, then the email, then the LinkedIn URL', async () => {
+    const context = { principal: workspace.admin };
+    const byUrl = await upsertPerson(context, {
+      name: 'By Url',
+      linkedinUrl: 'https://www.linkedin.com/in/by-url',
+    });
+    const byEmail = await upsertPerson(context, {
+      name: 'By Email',
+      emails: ['mail@vela.example'],
+      linkedinUrl: 'https://www.linkedin.com/in/by-url-too',
+    });
+    const byProvider = await upsertPerson(context, {
+      name: 'By Provider',
+      linkedinProviderId: 'ACoAAA1',
+    });
+    const input = personInputSchema.parse({
+      name: 'Anyone',
+      emails: ['mail@vela.example'],
+      linkedinUrl: 'https://www.linkedin.com/in/by-url',
+      linkedinProviderId: 'ACoAAA1',
+    });
+    const matchedBy = async (next: typeof input, lock: boolean) => {
+      const { match } = await withBatch(context, async (batch) => ({
+        match: await findPersonMatch(batch.tx, batch.organizationId, next, { lock }),
+      }));
+      return match === null ? null : [match.matchedBy, match.row.id];
+    };
+    expect(await matchedBy(input, true)).toEqual(['linkedin_provider_id', byProvider.person.id]);
+    expect(await matchedBy(input, false)).toEqual(['linkedin_provider_id', byProvider.person.id]);
+    const withoutProvider = { ...input, linkedinProviderId: null };
+    expect(await matchedBy(withoutProvider, true)).toEqual(['email', byEmail.person.id]);
+    const urlOnly = { ...withoutProvider, emails: [] };
+    expect(await matchedBy(urlOnly, true)).toEqual(['linkedin_url', byUrl.person.id]);
+    expect(await matchedBy({ ...urlOnly, linkedinUrl: null }, true)).toBeNull();
+  });
+
   test('runs unlocked inside a read-only transaction and skips archived people', async () => {
     const context = { principal: workspace.admin };
     const ada = await upsertPerson(context, { name: 'Ada', emails: ['ada@vela.example'] });

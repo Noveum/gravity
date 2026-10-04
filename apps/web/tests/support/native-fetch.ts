@@ -5,6 +5,8 @@ export async function withNativeFetch<T>(run: () => Promise<T>): Promise<T> {
     Headers: globalThis.Headers,
     Request: globalThis.Request,
     Response: globalThis.Response,
+    AbortController: globalThis.AbortController,
+    AbortSignal: globalThis.AbortSignal,
   };
   Object.assign(globalThis, nativeFetchGlobals);
   try {

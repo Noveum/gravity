@@ -7,6 +7,7 @@ const TEST_DATABASES = [
   'gravity_test_rts',
   'gravity_test_rt',
   'gravity_test_web',
+  'gravity_test_mcp',
 ] as const;
 
 const DATABASE_NAME = /^gravity_test(?:_[a-z0-9]+)*$/;
@@ -30,7 +31,7 @@ function assertLocalServer(url: string): void {
   if (LOCAL_HOSTS.has(host)) return;
   if (process.env['GRAVITY_ALLOW_REMOTE_TEST_SETUP'] === '1') return;
   throw new Error(
-    `Refusing to create test databases on ${host}:${port}. This creates six databases and pushes the whole schema into each, which must never happen on a deployed server. Point DATABASE_URL at the local stack from bun run infra:up, or set GRAVITY_ALLOW_REMOTE_TEST_SETUP=1 if you are certain.`,
+    `Refusing to create test databases on ${host}:${port}. This creates ${TEST_DATABASES.length} databases and pushes the whole schema into each, which must never happen on a deployed server. Point DATABASE_URL at the local stack from bun run infra:up, or set GRAVITY_ALLOW_REMOTE_TEST_SETUP=1 if you are certain.`,
   );
 }
 

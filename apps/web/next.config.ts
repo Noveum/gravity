@@ -10,6 +10,7 @@ const workspacePackages = [
   '@gravity/shared',
   '@gravity/db',
   '@gravity/core',
+  '@gravity/mcp-server',
   '@gravity/services',
   '@gravity/realtime-client',
   '@gravity/realtime-server',

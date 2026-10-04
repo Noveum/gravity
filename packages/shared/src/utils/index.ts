@@ -7,6 +7,7 @@ export * from './identity.ts';
 export * from './initials.ts';
 export * from './logo-uri.ts';
 export * from './pipeline-key.ts';
+export * from './record-links.ts';
 export * from './redirect-uri.ts';
 export * from './relative-time.ts';
 export * from './slug.ts';

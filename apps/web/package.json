@@ -17,6 +17,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@gravity/core": "workspace:*",
     "@gravity/db": "workspace:*",
+    "@gravity/mcp-server": "workspace:*",
     "@gravity/realtime-client": "workspace:*",
     "@gravity/realtime-server": "workspace:*",
     "@gravity/services": "workspace:*",

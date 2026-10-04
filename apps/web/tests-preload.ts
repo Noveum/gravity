@@ -13,6 +13,8 @@ export const nativeFetchGlobals = {
   Headers: globalThis.Headers,
   Request: globalThis.Request,
   Response: globalThis.Response,
+  AbortController: globalThis.AbortController,
+  AbortSignal: globalThis.AbortSignal,
 };
 
 GlobalRegistrator.register({

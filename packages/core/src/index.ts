@@ -18,6 +18,7 @@ export * from './crm/lookups.ts';
 export * from './crm/person-lookup.ts';
 export * from './crm/person-service.ts';
 export * from './crm/pipeline-service.ts';
+export * from './crm/playbook-service.ts';
 export * from './crm/record-service.ts';
 export * from './crm/rows.ts';
 export * from './crm/scopes.ts';

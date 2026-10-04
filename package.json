@@ -52,6 +52,8 @@
   "overrides": {
     "@better-auth/core": "1.6.26",
     "@better-auth/passkey": "1.6.26",
+    "@better-fetch/fetch": "1.3.1",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "better-auth": "1.6.26"
   }
 }

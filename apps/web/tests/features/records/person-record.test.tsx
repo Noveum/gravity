@@ -311,7 +311,7 @@ describe('PersonRecord', () => {
     serve();
     renderWithClient(
       <ContextPanelProvider>
-        <CopyLinkProvider>
+        <CopyLinkProvider workspaceSlug="acme">
           <PersonRecord personId="per1" focusLeadId="gone" />
         </CopyLinkProvider>
       </ContextPanelProvider>,
@@ -319,7 +319,7 @@ describe('PersonRecord', () => {
     await screen.findByRole('heading', { name: 'Ada Lovelace' });
     await userEvent.keyboard('{Meta>}{Shift>}c{/Shift}{/Meta}');
     await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith('http://localhost:3300/people/per1?lead=l1'),
+      expect(writeText).toHaveBeenCalledWith('http://localhost:3300/people/per1?lead=l1&w=acme'),
     );
   });
 

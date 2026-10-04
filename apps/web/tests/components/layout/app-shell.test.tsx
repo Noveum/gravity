@@ -296,7 +296,9 @@ describe('AppShell', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     renderShell();
     await runPaletteCommand('Copy link');
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(window.location.href));
+    const expected = new URL(window.location.href);
+    expected.searchParams.set('w', 'acme-studio');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expected.toString()));
   });
 
   test('the palette copies the focused record for an agent, the same text as the key', async () => {

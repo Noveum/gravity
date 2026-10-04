@@ -149,7 +149,7 @@ export function AppShell({
       initialCursor={realtimeCursor}
     >
       <ContextPanelProvider>
-        <CopyLinkProvider>
+        <CopyLinkProvider workspaceSlug={workspace.slug}>
           <CopyForAgentProvider>
             <div data-app-shell className="relative flex h-dvh w-full overflow-hidden bg-bg">
               <CrmDeltaHandlers />

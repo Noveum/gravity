@@ -23,13 +23,13 @@ describe('copy link', () => {
     const writeText = mock(() => Promise.resolve());
     stubClipboard(writeText);
     renderWithClient(
-      <CopyLinkProvider>
+      <CopyLinkProvider workspaceSlug="acme">
         <Target />
       </CopyLinkProvider>,
     );
     await userEvent.keyboard('{Meta>}{Shift>}c{/Shift}{/Meta}');
     await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith('http://localhost:3300/people/per1?lead=l1'),
+      expect(writeText).toHaveBeenCalledWith('http://localhost:3300/people/per1?lead=l1&w=acme'),
     );
     expect(await screen.findByText('Link copied')).toBeInTheDocument();
   });
@@ -38,16 +38,27 @@ describe('copy link', () => {
     const writeText = mock(() => Promise.resolve());
     stubClipboard(writeText);
     window.history.replaceState(null, '', '/leads/YOD?q=ada');
-    renderWithClient(<CopyLinkProvider>{null}</CopyLinkProvider>);
+    renderWithClient(<CopyLinkProvider workspaceSlug="acme">{null}</CopyLinkProvider>);
     await userEvent.keyboard('{Control>}{Shift>}c{/Shift}{/Control}');
     await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith('http://localhost:3300/leads/YOD?q=ada'),
+      expect(writeText).toHaveBeenCalledWith('http://localhost:3300/leads/YOD?q=ada&w=acme'),
+    );
+  });
+
+  test('names the workspace once, replacing a stale one from the URL', async () => {
+    const writeText = mock(() => Promise.resolve());
+    stubClipboard(writeText);
+    window.history.replaceState(null, '', '/people/per1?w=elsewhere');
+    renderWithClient(<CopyLinkProvider workspaceSlug="acme">{null}</CopyLinkProvider>);
+    await userEvent.keyboard('{Meta>}{Shift>}c{/Shift}{/Meta}');
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith('http://localhost:3300/people/per1?w=acme'),
     );
   });
 
   test('says so when the browser refuses the clipboard', async () => {
     stubClipboard(() => Promise.reject(new Error('denied')));
-    renderWithClient(<CopyLinkProvider>{null}</CopyLinkProvider>);
+    renderWithClient(<CopyLinkProvider workspaceSlug="acme">{null}</CopyLinkProvider>);
     await userEvent.keyboard('{Meta>}{Shift>}c{/Shift}{/Meta}');
     expect(await screen.findByText('Could not copy the link')).toBeInTheDocument();
   });
@@ -56,7 +67,7 @@ describe('copy link', () => {
     const writeText = mock(() => Promise.resolve());
     stubClipboard(writeText);
     renderWithClient(
-      <CopyLinkProvider>
+      <CopyLinkProvider workspaceSlug="acme">
         <Dialog open>
           <DialogContent aria-describedby={undefined}>
             <DialogTitle>Rename</DialogTitle>

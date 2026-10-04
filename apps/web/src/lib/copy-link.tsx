@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_LINK_PARAM } from '@gravity/shared/utils';
 import {
   createContext,
   type ReactNode,
@@ -21,14 +22,19 @@ interface CopyLinkApi {
 
 const CopyLinkContext = createContext<CopyLinkApi | null>(null);
 
-export function CopyLinkProvider({ children }: { readonly children: ReactNode }) {
+export function CopyLinkProvider({
+  workspaceSlug,
+  children,
+}: {
+  readonly workspaceSlug: string;
+  readonly children: ReactNode;
+}) {
   const target = useRef<string | null>(null);
   const { toast } = useToast();
   const copy = useCallback(async () => {
-    const url =
-      target.current === null
-        ? window.location.href
-        : new URL(target.current, window.location.origin).toString();
+    const link = new URL(target.current ?? window.location.href, window.location.origin);
+    link.searchParams.set(WORKSPACE_LINK_PARAM, workspaceSlug);
+    const url = link.toString();
     try {
       await navigator.clipboard.writeText(url);
       toast({ title: 'Link copied', description: url });
@@ -39,7 +45,7 @@ export function CopyLinkProvider({ children }: { readonly children: ReactNode })
         tone: 'danger',
       });
     }
-  }, [toast]);
+  }, [toast, workspaceSlug]);
   const copyNow = useCallback(() => {
     copy().catch(() => undefined);
   }, [copy]);

@@ -185,8 +185,8 @@ async function nextLeadNumber(batch: SyncBatch, pipelineId: string): Promise<num
 
 export async function createLeadIn(batch: SyncBatch, input: LeadCreate): Promise<LeadRow> {
   const organizationId = batch.organizationId;
-  const pipeline = await livePipeline(batch.tx, organizationId, input.pipelineId, true);
   await livePerson(batch.tx, organizationId, input.personId, 'share');
+  const pipeline = await livePipeline(batch.tx, organizationId, input.pipelineId, true);
   const stage = startingStage(await lockedStagesOf(batch, [pipeline.id]), input.stageId);
   if (isOpenCategory(stage.category)) {
     const existing = await openLeadFor(batch.tx, organizationId, input.personId, pipeline.id);
@@ -310,7 +310,7 @@ export async function createLeadsIn(
 ): Promise<LeadRow[]> {
   if (drafts.length === 0) return [];
   const organizationId = batch.organizationId;
-  const pipeline = await livePipeline(batch.tx, organizationId, pipelineId);
+  const pipeline = await livePipeline(batch.tx, organizationId, pipelineId, true);
   const prepared = await prepareLeadsIn(batch, pipeline.id, drafts, checking);
   const first = await reserveLeadNumbers(batch, pipeline.id, prepared.length);
   await batch.tx.insert(schema.lead).values(
@@ -383,7 +383,7 @@ export async function quickCreateLead(
     return await retryOnUniqueViolation(
       () =>
         withBatch(context, async (batch) => {
-          await livePipeline(batch.tx, batch.organizationId, parsed.pipelineId, true);
+          await livePipeline(batch.tx, batch.organizationId, parsed.pipelineId);
           const upserted = await upsertPersonIn(batch, parsed.person);
           clash.probe = { personId: upserted.person.id, pipelineId: parsed.pipelineId };
           const lead = await createLeadIn(batch, {

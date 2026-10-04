@@ -20,7 +20,7 @@ import {
   resetDatabase,
   type TestWorkspace,
 } from '../../src/test-support.ts';
-import { writerBackendPid } from '../support/rival-connection.ts';
+import { racingRival, writerBackendPid } from '../support/rival-connection.ts';
 
 const HEADER = 'Name,Email,Company,Domain,Title,Stage,Owner,Tier,Ref';
 const MAPPING = {
@@ -941,6 +941,25 @@ describe('commitImport', () => {
       { pipelineId, person: { name: 'Quick One', emails: ['quick@vela.example'] } },
     );
     expect(quick.lead.key).toBe('LUM-61');
+  });
+
+  test('a chunk waiting on the pipeline holds no stage lock, so a stage edit never deadlocks it', async () => {
+    let stagesLocked = false;
+    const report = await racingRival(
+      (tx) => tx`select id from pipeline where id = ${pipelineId} for update`,
+      () =>
+        run(
+          request(['Ada Lovelace,ada@vela.example,,,,,,,', 'Grace Hopper,grace@q.example,,,,,,,']),
+        ),
+      async (tx) => {
+        await tx`set local lock_timeout = '500ms'`;
+        await tx`select id from stage where pipeline_id = ${pipelineId} for update`;
+        stagesLocked = true;
+      },
+    );
+    expect(stagesLocked).toBe(true);
+    expect(report.status).toBe('completed');
+    expect(report.rows.map((row) => row.leadKey)).toEqual(['LUM-1', 'LUM-2']);
   });
 
   test('a failure after the rows were written blames no row', async () => {

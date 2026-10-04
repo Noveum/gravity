@@ -102,6 +102,12 @@ domain verified in Resend, otherwise every send fails.
 - **Server state.** TanStack Query for fetching, with optimistic mutations. The realtime stream invalidates and patches the cache; it never triggers a full refetch of a list the user is looking at.
 - **Realtime.** Every mutation writes rows, bumps `sync_id` and inserts its `SyncAction`s into `outbox` in the same transaction; the route publishes after commit and the outbox job republishes anything left unpublished. The realtime server fans each action out to subscribed clients. Contract lives in `packages/shared/src/events`.
   A scope decides who is delivered a row, so it has to match who may read it.
+- **Lock order.** A transaction that locks more than one kind of CRM row takes them in one order:
+  person, then pipeline, then stage, then lead. `createLeadIn` share-locks the person before it locks the
+  pipeline, `quickCreateLead` upserts the person before `createLeadIn` locks the pipeline, `createLeadsIn`
+  (the import) locks the pipeline before it share-locks the stages, and stage edits lock the pipeline
+  before the stage. Two writers that take the same rows in different orders can each hold what the other
+  waits for, and Postgres then aborts one of them as a deadlock.
 - **Socket lifetime.** A socket never outlives its session. Signing out publishes a session revocation on
   the control channel and the hub closes that connection, and the hub also sweeps the sessions behind every
   open connection on an interval, so an expired or deleted session is dropped even when nothing announced it.

@@ -8,11 +8,13 @@ import {
   changeLead,
   changeLeads,
   createLead,
+  createLeadsIn,
   getLead,
   getLeadByKey,
   quickCreateLead,
 } from '../../src/crm/lead-service.ts';
 import { upsertPerson } from '../../src/crm/person-service.ts';
+import { withBatch } from '../../src/crm/sync-batch.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import {
   createWorkspace,
@@ -570,6 +572,74 @@ describe('quickCreateLead', () => {
     expect(
       await db.select().from(schema.lead).where(eq(schema.lead.personId, graceId)),
     ).toHaveLength(1);
+  });
+});
+
+describe('lock order: person, then pipeline, then stage, then lead', () => {
+  async function lockAfter(tx: Parameters<Parameters<typeof racingRival>[0]>[0], table: string) {
+    await tx`set local lock_timeout = '500ms'`;
+    if (table === 'pipeline') await tx`select id from pipeline where id = ${pipelineId} for update`;
+    else await tx`select id from stage where pipeline_id = ${pipelineId} for update`;
+  }
+
+  test('createLead takes the person before the pipeline', async () => {
+    let pipelineLocked = false;
+    const created = await racingRival(
+      (tx) => tx`select id from person where id = ${personId} for update`,
+      () => createLead(context(), { personId, pipelineId }),
+      async (tx) => {
+        await lockAfter(tx, 'pipeline');
+        pipelineLocked = true;
+      },
+    );
+    expect(pipelineLocked).toBe(true);
+    expect(created.lead.key).toBe('YOD-1');
+  });
+
+  test('quickCreateLead upserts the person before it locks the pipeline', async () => {
+    let pipelineLocked = false;
+    const created = await racingRival(
+      (tx) => tx`select id from person where id = ${personId} for update`,
+      () =>
+        quickCreateLead(context(), {
+          pipelineId,
+          person: { name: 'Ada Lovelace', emails: ['ada@acme.io'] },
+        }),
+      async (tx) => {
+        await lockAfter(tx, 'pipeline');
+        pipelineLocked = true;
+      },
+    );
+    expect(pipelineLocked).toBe(true);
+    expect(created.person.id).toBe(personId);
+  });
+
+  test('createLeadsIn locks the pipeline before it reads the stages', async () => {
+    let stagesLocked = false;
+    const created = await racingRival(
+      (tx) => tx`select id from pipeline where id = ${pipelineId} for update`,
+      () =>
+        withBatch(context(), async (batch) => ({
+          leads: await createLeadsIn(batch, pipelineId, [
+            {
+              personId,
+              stageId: undefined,
+              ownerId: undefined,
+              priority: 0,
+              source: 'import',
+              nextAction: null,
+              nextActionAt: null,
+              fields: {},
+            },
+          ]),
+        })),
+      async (tx) => {
+        await lockAfter(tx, 'stage');
+        stagesLocked = true;
+      },
+    );
+    expect(stagesLocked).toBe(true);
+    expect(created.leads.map((lead) => lead.key)).toEqual(['YOD-1']);
   });
 });
 

@@ -43,10 +43,10 @@ export interface CompanyQueryOptions {
 
 export type RowLock = 'update' | 'share';
 
-type StoredCompany = typeof schema.company.$inferSelect;
+export type StoredCompany = typeof schema.company.$inferSelect;
 type CompanyPatch = z.infer<typeof companyPatchSchema>;
 
-const COMPANY_DIFF_KEYS = [
+export const COMPANY_DIFF_KEYS = [
   'name',
   'domains',
   'primaryDomain',
@@ -108,27 +108,47 @@ export async function companyRowById(
   return row;
 }
 
-async function findCompanyMatch(batch: SyncBatch, input: CompanyInput) {
+export async function findCompanyMatch(
+  executor: Executor,
+  organizationId: string,
+  input: CompanyInput,
+  lock: boolean,
+): Promise<StoredCompany | undefined> {
   const live = and(
-    eq(schema.company.organizationId, batch.organizationId),
+    eq(schema.company.organizationId, organizationId),
     isNull(schema.company.archivedAt),
   );
-  const byDomain = input.domains.length > 0;
-  const [row] = await batch.tx
+  const query = executor
     .select()
     .from(schema.company)
     .where(
       and(
         live,
-        byDomain
+        input.domains.length > 0
           ? arrayOverlaps(schema.company.domains, input.domains)
           : sql`lower(${schema.company.name}) = lower(${input.name})`,
       ),
     )
     .orderBy(asc(schema.company.createdAt), asc(schema.company.id))
-    .limit(1)
-    .for('update');
+    .limit(1);
+  const [row] = lock ? await query.for('update') : await query;
   return row;
+}
+
+export function mergedCompanyValues(
+  existing: StoredCompany,
+  input: CompanyInput,
+  fields: Record<string, unknown>,
+): CompanyRow {
+  return {
+    ...companyRowOf(existing),
+    domains: union(existing.domains, input.domains),
+    primaryDomain: existing.primaryDomain ?? input.domains[0] ?? null,
+    size: existing.size ?? input.size,
+    segment: existing.segment ?? input.segment,
+    location: existing.location ?? input.location,
+    fields,
+  };
 }
 
 function emitCompany(
@@ -220,19 +240,11 @@ async function insertCompanyIn(batch: SyncBatch, input: CompanyInput): Promise<C
 
 export async function upsertCompanyIn(batch: SyncBatch, raw: CompanyInput): Promise<CompanyUpsert> {
   const input: CompanyInput = { ...raw, domains: lowercased(raw.domains) };
-  const existing = await findCompanyMatch(batch, input);
+  const existing = await findCompanyMatch(batch.tx, batch.organizationId, input, true);
   if (existing === undefined)
     return { company: await insertCompanyIn(batch, input), created: true };
   const merged = await mergeFieldInputIn(batch, 'company', existing, input.fields);
-  const next: CompanyRow = {
-    ...companyRowOf(existing),
-    domains: union(existing.domains, input.domains),
-    primaryDomain: existing.primaryDomain ?? input.domains[0] ?? null,
-    size: existing.size ?? input.size,
-    segment: existing.segment ?? input.segment,
-    location: existing.location ?? input.location,
-    fields: merged.fields,
-  };
+  const next = mergedCompanyValues(existing, input, merged.fields);
   return {
     company: await saveCompanyChangesIn(batch, existing, next, merged.meta),
     created: false,

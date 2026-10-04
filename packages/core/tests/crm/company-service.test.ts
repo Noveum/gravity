@@ -4,6 +4,8 @@ import { scopes } from '@gravity/shared/events';
 import { companyInputSchema } from '@gravity/shared/validators';
 import {
   companyRowById,
+  findCompanyMatch,
+  mergedCompanyValues,
   selectCompanyRows,
   updateCompany,
   upsertCompany,
@@ -226,5 +228,64 @@ describe('company reads', () => {
     await expect(companyRowById(db, workspace.organizationId, acme.company.id)).rejects.toThrow(
       'That company does not exist.',
     );
+  });
+});
+
+describe('findCompanyMatch', () => {
+  test('matches by domain, then by name without a domain, and merges by filling blanks', async () => {
+    const created = await upsertCompany(
+      { principal: workspace.admin },
+      { name: 'Vela Robotics', domains: ['vela.example'], size: '50' },
+    );
+    const byDomain = await findCompanyMatch(
+      db,
+      workspace.organizationId,
+      companyInputSchema.parse({ name: 'Other name', domains: ['VELA.example'] }),
+      false,
+    );
+    expect(byDomain?.id).toBe(created.company.id);
+    const byName = await findCompanyMatch(
+      db,
+      workspace.organizationId,
+      companyInputSchema.parse({ name: 'vela robotics' }),
+      false,
+    );
+    expect(byName?.id).toBe(created.company.id);
+    const next = mergedCompanyValues(
+      required(byDomain, 'the domain match'),
+      companyInputSchema.parse({
+        name: 'X',
+        domains: ['vela.io'],
+        size: '500',
+        segment: 'Robotics',
+      }),
+      {},
+    );
+    expect(next).toMatchObject({
+      name: 'Vela Robotics',
+      size: '50',
+      segment: 'Robotics',
+      domains: ['vela.example', 'vela.io'],
+    });
+  });
+
+  test('stays inside the workspace, skips archived companies and runs read-only', async () => {
+    const created = await upsertCompany(
+      { principal: workspace.admin },
+      { name: 'Vela Robotics', domains: ['vela.example'] },
+    );
+    const input = companyInputSchema.parse({ name: 'Vela Robotics', domains: ['vela.example'] });
+    const other = await createWorkspace('Other');
+    expect(await findCompanyMatch(db, other.organizationId, input, false)).toBeUndefined();
+    const preview = await db.transaction(
+      (tx) => findCompanyMatch(tx, workspace.organizationId, input, false),
+      { accessMode: 'read only' },
+    );
+    expect(preview?.id).toBe(created.company.id);
+    await db
+      .update(schema.company)
+      .set({ archivedAt: new Date() })
+      .where(eq(schema.company.id, created.company.id));
+    expect(await findCompanyMatch(db, workspace.organizationId, input, false)).toBeUndefined();
   });
 });

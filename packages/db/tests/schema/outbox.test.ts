@@ -1,13 +1,9 @@
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { db, eq, isNull, pool, schema, sql } from '../../src/index.ts';
+import { beforeEach, describe, expect, test } from 'bun:test';
+import { db, eq, isNull, schema, sql } from '../../src/index.ts';
 
 beforeEach(async () => {
   await db.execute(sql`truncate table outbox, organization restart identity cascade`);
   await db.insert(schema.organization).values({ id: 'o1', name: 'Acme', slug: 'acme' });
-});
-
-afterAll(async () => {
-  await pool.end();
 });
 
 describe('outbox', () => {

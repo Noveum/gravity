@@ -4,7 +4,13 @@ import { personInputSchema } from '@gravity/shared/validators';
 import { upsertCompany } from '../../src/crm/company-service.ts';
 import { addEmployment, endEmployment } from '../../src/crm/employment-service.ts';
 import { createFieldDefinition } from '../../src/crm/field-service.ts';
-import { updatePerson, upsertPerson, upsertPersonIn } from '../../src/crm/person-service.ts';
+import {
+  findPersonMatch,
+  mergedPersonValues,
+  updatePerson,
+  upsertPerson,
+  upsertPersonIn,
+} from '../../src/crm/person-service.ts';
 import { withBatch } from '../../src/crm/sync-batch.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
@@ -377,6 +383,100 @@ describe('updatePerson', () => {
     expect(changed.person).toMatchObject({
       emails: ['ada@acme.com'],
       primaryEmail: 'ada@acme.com',
+    });
+  });
+});
+
+describe('findPersonMatch', () => {
+  test('prefers a linked id, then email, with or without a lock, and never across workspaces', async () => {
+    const context = { principal: workspace.admin };
+    const linked = await upsertPerson(context, { name: 'Linked', emails: ['linked@vela.example'] });
+    const byEmail = await upsertPerson(context, { name: 'Ada', emails: ['ada@vela.example'] });
+    const input = personInputSchema.parse({ name: 'Ada', emails: ['ada@vela.example'] });
+    expect(
+      await findPersonMatch(db, workspace.organizationId, input, { lock: false }),
+    ).toMatchObject({
+      matchedBy: 'email',
+      row: { id: byEmail.person.id },
+    });
+    expect(
+      await findPersonMatch(db, workspace.organizationId, input, {
+        lock: false,
+        preferredId: linked.person.id,
+      }),
+    ).toMatchObject({ matchedBy: 'source_id', row: { id: linked.person.id } });
+    const locked = await withBatch(context, async (batch) => ({
+      match: await findPersonMatch(batch.tx, batch.organizationId, input, { lock: true }),
+    }));
+    expect(locked.match?.row.id).toBe(byEmail.person.id);
+    const other = await createWorkspace('Other');
+    expect(
+      await findPersonMatch(db, other.organizationId, input, {
+        lock: false,
+        preferredId: linked.person.id,
+      }),
+    ).toBeNull();
+  });
+
+  test('runs unlocked inside a read-only transaction and skips archived people', async () => {
+    const context = { principal: workspace.admin };
+    const ada = await upsertPerson(context, { name: 'Ada', emails: ['ada@vela.example'] });
+    const input = personInputSchema.parse({ name: 'Ada', emails: ['ada@vela.example'] });
+    const preview = await db.transaction(
+      (tx) => findPersonMatch(tx, workspace.organizationId, input, { lock: false }),
+      { accessMode: 'read only' },
+    );
+    expect(preview?.row.id).toBe(ada.person.id);
+    await db
+      .update(schema.person)
+      .set({ archivedAt: new Date() })
+      .where(eq(schema.person.id, ada.person.id));
+    expect(
+      await findPersonMatch(db, workspace.organizationId, input, {
+        lock: false,
+        preferredId: ada.person.id,
+      }),
+    ).toBeNull();
+  });
+
+  test('upsertPersonIn merges into the preferred person even when the email is new', async () => {
+    const context = { principal: workspace.admin };
+    const linked = await upsertPerson(context, { name: 'No Email' });
+    const merged = await withBatch(context, (batch) =>
+      upsertPersonIn(
+        batch,
+        personInputSchema.parse({ name: 'No Email', emails: ['new@vela.example'] }),
+        linked.person.id,
+      ),
+    );
+    expect(merged).toMatchObject({ created: false, matchedBy: 'source_id' });
+    expect(merged.person.emails).toEqual(['new@vela.example']);
+  });
+
+  test('mergedPersonValues fills blanks and never replaces a value', async () => {
+    const existing = await upsertPerson(
+      { principal: workspace.admin },
+      { name: 'Ada', emails: ['ada@vela.example'], location: 'London' },
+    );
+    const [stored] = await db
+      .select()
+      .from(schema.person)
+      .where(eq(schema.person.id, existing.person.id));
+    const next = mergedPersonValues(
+      required(stored, 'the stored person'),
+      personInputSchema.parse({
+        name: 'A. L.',
+        emails: ['ada@home.example'],
+        location: 'Paris',
+        timezone: 'Europe/London',
+      }),
+      {},
+    );
+    expect(next).toMatchObject({
+      name: 'Ada',
+      location: 'London',
+      timezone: 'Europe/London',
+      emails: ['ada@vela.example', 'ada@home.example'],
     });
   });
 });

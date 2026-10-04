@@ -10,7 +10,7 @@ import {
 } from '@gravity/shared/validators';
 import { arrayOverlaps } from 'drizzle-orm';
 import type { z } from 'zod';
-import { newId, requireRow } from '../internal.ts';
+import { type Executor, newId, requireRow } from '../internal.ts';
 import { diffValues, recordActivity } from './activity-service.ts';
 import { liveCompany, upsertCompanyIn } from './company-service.ts';
 import { asConflict } from './conflicts.ts';
@@ -34,7 +34,7 @@ export {
   selectPersonRows,
 } from './person-lookup.ts';
 
-export type PersonMatch = 'linkedin_provider_id' | 'email' | 'linkedin_url';
+export type PersonMatch = 'source_id' | 'linkedin_provider_id' | 'email' | 'linkedin_url';
 
 export interface PersonUpsert {
   readonly person: PersonRow;
@@ -49,10 +49,10 @@ interface PendingPersonAction {
   readonly changes: Record<string, unknown>;
 }
 
-type StoredPerson = typeof schema.person.$inferSelect;
+export type StoredPerson = typeof schema.person.$inferSelect;
 type PersonPatch = z.infer<typeof personPatchSchema>;
 
-const PERSON_DIFF_KEYS = [
+export const PERSON_DIFF_KEYS = [
   'name',
   'emails',
   'primaryEmail',
@@ -71,12 +71,24 @@ function touchesLeads(pending: PendingPersonAction | null): boolean {
   return pending?.action === 'update' && LEAD_DERIVED_KEYS.some((key) => key in pending.changes);
 }
 
-async function findPersonMatch(batch: SyncBatch, input: PersonInput) {
+export interface PersonMatchOptions {
+  readonly lock: boolean;
+  readonly preferredId?: string | null | undefined;
+}
+
+export async function findPersonMatch(
+  executor: Executor,
+  organizationId: string,
+  input: PersonInput,
+  options: PersonMatchOptions,
+): Promise<{ row: StoredPerson; matchedBy: PersonMatch } | null> {
   const live = and(
-    eq(schema.person.organizationId, batch.organizationId),
+    eq(schema.person.organizationId, organizationId),
     isNull(schema.person.archivedAt),
   );
+  const preferredId = options.preferredId ?? null;
   const probes: [PersonMatch, SQL | undefined][] = [
+    ['source_id', preferredId === null ? undefined : eq(schema.person.id, preferredId)],
     [
       'linkedin_provider_id',
       input.linkedinProviderId === null
@@ -94,13 +106,13 @@ async function findPersonMatch(batch: SyncBatch, input: PersonInput) {
   ];
   for (const [matchedBy, condition] of probes) {
     if (condition === undefined) continue;
-    const [row] = await batch.tx
+    const query = executor
       .select()
       .from(schema.person)
       .where(and(live, condition))
       .orderBy(asc(schema.person.createdAt), asc(schema.person.id))
-      .limit(1)
-      .for('update');
+      .limit(1);
+    const [row] = options.lock ? await query.for('update') : await query;
     if (row !== undefined) return { row, matchedBy };
   }
   return null;
@@ -180,13 +192,12 @@ async function savePersonChangesIn(
   return { syncId, action: 'update', changes };
 }
 
-async function mergePersonIn(
-  batch: SyncBatch,
+export function mergedPersonValues(
   existing: StoredPerson,
   input: PersonInput,
-): Promise<PendingPersonAction | null> {
-  const merged = await mergeFieldInputIn(batch, 'person', existing, input.fields);
-  const next: StoredPerson = {
+  fields: Record<string, unknown>,
+): StoredPerson {
+  return {
     ...existing,
     emails: union(existing.emails, input.emails),
     primaryEmail: existing.primaryEmail ?? input.emails[0] ?? null,
@@ -196,9 +207,22 @@ async function mergePersonIn(
     location: existing.location ?? input.location,
     timezone: existing.timezone ?? input.timezone,
     doNotContact: existing.doNotContact || input.doNotContact,
-    fields: merged.fields,
+    fields,
   };
-  return await savePersonChangesIn(batch, existing, next, merged.meta);
+}
+
+async function mergePersonIn(
+  batch: SyncBatch,
+  existing: StoredPerson,
+  input: PersonInput,
+): Promise<PendingPersonAction | null> {
+  const merged = await mergeFieldInputIn(batch, 'person', existing, input.fields);
+  return await savePersonChangesIn(
+    batch,
+    existing,
+    mergedPersonValues(existing, input, merged.fields),
+    merged.meta,
+  );
 }
 
 async function announcePersonIn(
@@ -252,9 +276,16 @@ function patchedPerson(
   };
 }
 
-export async function upsertPersonIn(batch: SyncBatch, raw: PersonInput): Promise<PersonUpsert> {
+export async function upsertPersonIn(
+  batch: SyncBatch,
+  raw: PersonInput,
+  preferredId: string | null = null,
+): Promise<PersonUpsert> {
   const input: PersonInput = { ...raw, emails: lowercased(raw.emails) };
-  const match = await findPersonMatch(batch, input);
+  const match = await findPersonMatch(batch.tx, batch.organizationId, input, {
+    lock: true,
+    preferredId,
+  });
   const written =
     match === null
       ? await insertPersonIn(batch, input)

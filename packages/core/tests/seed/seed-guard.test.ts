@@ -32,6 +32,23 @@ describe('assertLocalSeedTarget', () => {
     expect(() => assertLocalSeedTarget(target(LOCAL, 'production'), true)).not.toThrow();
   });
 
+  test('refuses an authority that postgres.js could read as another host', () => {
+    for (const url of [
+      'postgres://u:p@db.remote.io@localhost:5436/gravity',
+      'postgres://u@x:p@localhost:5436/gravity',
+      'postgres://u:p@localhost,db.remote.io/gravity',
+      'postgres://u:p,x@localhost:5436/gravity',
+    ]) {
+      expect(() => assertLocalSeedTarget(target(url), false)).toThrow(/--allow-remote/);
+    }
+  });
+
+  test('reads NODE_ENV without regard to case or surrounding space', () => {
+    for (const nodeEnv of ['Production', ' production ', 'PRODUCTION\n']) {
+      expect(() => assertLocalSeedTarget(target(LOCAL, nodeEnv), false)).toThrow(/production/);
+    }
+  });
+
   test('refuses an unset, unparsable, multi host or host overriding url', () => {
     expect(() => assertLocalSeedTarget(target(undefined), false)).toThrow(/DATABASE_URL/);
     expect(() => assertLocalSeedTarget(target('not a url'), false)).toThrow(/--allow-remote/);

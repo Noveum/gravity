@@ -26,7 +26,14 @@ export interface SeedArgs {
 
 const SEED_ARG_DEFAULTS = { slug: 'demo', domain: 'gravity.test' } as const;
 
+function hasAmbiguousAuthority(databaseUrl: string): boolean {
+  const afterScheme = databaseUrl.split('//')[1] ?? '';
+  const authority = afterScheme.split(/[/?#]/)[0] ?? '';
+  return authority.includes(',') || authority.split('@').length > 2;
+}
+
 function isLocalDatabase(databaseUrl: string): boolean {
+  if (hasAmbiguousAuthority(databaseUrl.trim())) return false;
   let url: URL;
   try {
     url = new URL(databaseUrl.trim());
@@ -39,7 +46,7 @@ function isLocalDatabase(databaseUrl: string): boolean {
 
 export function assertLocalSeedTarget(target: SeedTarget, allowRemote: boolean): void {
   if (allowRemote) return;
-  if (target.nodeEnv === 'production') {
+  if (target.nodeEnv?.trim().toLowerCase() === 'production') {
     throw new Error(
       'The demo seed is a local development tool and NODE_ENV is production. Pass --allow-remote to run it anyway.',
     );

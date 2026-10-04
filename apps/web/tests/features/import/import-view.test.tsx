@@ -1,68 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ImportView } from '@/features/import/import-view.tsx';
 import { bootstrapFixture } from '../../support/bootstrap-fixture.ts';
 import { serveJson } from '../../support/fetch.ts';
+import { choose, outcome, report, SUBMIT } from '../../support/import-fixtures.ts';
 import { renderWithClient } from '../../support/render.tsx';
-
-const CSV =
-  'Full Name,Work Email,Stage\nAda Lovelace,ada@vela.example,Ready\nGrace Hopper,grace@quarry.example,New\n';
-
-function outcome(row: number, label: string, overrides: Record<string, unknown> = {}) {
-  return {
-    row,
-    status: 'create',
-    label,
-    matchedBy: null,
-    recordId: null,
-    changes: [],
-    kept: [],
-    company: 'none',
-    lead: 'create',
-    leadKey: null,
-    issues: [],
-    ...overrides,
-  };
-}
-
-function report(
-  mode: 'preview' | 'commit',
-  rows = [outcome(1, 'Ada Lovelace'), outcome(2, 'Grace Hopper')],
-) {
-  const count = (status: string) => rows.filter((row) => row['status'] === status).length;
-  return {
-    report: {
-      mode,
-      status: 'completed',
-      target: 'leads',
-      totals: {
-        rows: rows.length,
-        processed: rows.length,
-        created: count('create'),
-        merged: count('merge'),
-        unchanged: count('unchanged'),
-        skipped: count('skipped'),
-        invalid: count('invalid'),
-        companiesCreated: 0,
-        leadsCreated: rows.filter((row) => row['lead'] === 'create' && row['status'] !== 'skipped')
-          .length,
-        leadsExisting: 0,
-      },
-      rows,
-      failure: null,
-    },
-  };
-}
-
-async function choose(content: string | Uint8Array<ArrayBuffer> = CSV, name = 'people.csv') {
-  await userEvent.upload(
-    screen.getByLabelText('Import file'),
-    new File([content], name, { type: name.endsWith('.json') ? 'application/json' : 'text/csv' }),
-  );
-}
-
-const SUBMIT = '{Meta>}{Enter}{/Meta}';
 
 describe('ImportView', () => {
   test('suggests a mapping, previews with Cmd+Enter and imports with a second Cmd+Enter', async () => {
@@ -220,20 +163,29 @@ describe('ImportView', () => {
       release = resolve;
     });
     const original = globalThis.fetch;
-    serveJson(() => ({ body: report('preview') }));
-    const served = globalThis.fetch;
-    globalThis.fetch = ((input: string, init?: RequestInit) =>
-      gate.then(() => served(input, init))) as unknown as typeof fetch;
-    renderWithClient(<ImportView initialTarget="people" initialPipelineKey={null} />);
-    await choose();
-    await screen.findByLabelText('Field for Full Name');
-    await userEvent.keyboard(SUBMIT);
-    await userEvent.selectOptions(screen.getByLabelText('Field for Stage'), 'person.title');
-    release();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(screen.queryByText('2 new')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Field for Stage')).toHaveValue('person.title');
-    globalThis.fetch = original;
+    try {
+      serveJson(() => ({ body: report('preview') }));
+      const served = globalThis.fetch;
+      let answered: Promise<Response> = Promise.resolve(new Response());
+      globalThis.fetch = ((input: string, init?: RequestInit) => {
+        answered = gate.then(() => served(input, init));
+        return answered;
+      }) as unknown as typeof fetch;
+      renderWithClient(<ImportView initialTarget="people" initialPipelineKey={null} />);
+      await choose();
+      await screen.findByLabelText('Field for Full Name');
+      await userEvent.keyboard(SUBMIT);
+      await userEvent.selectOptions(screen.getByLabelText('Field for Stage'), 'person.title');
+      await act(async () => {
+        release();
+        await answered;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(screen.queryByText('2 new')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Field for Stage')).toHaveValue('person.title');
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 
   test('a re-run says what was already there and offers nothing to import', async () => {

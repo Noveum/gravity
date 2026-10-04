@@ -9,6 +9,7 @@ import {
 } from '@gravity/shared/import';
 import type { FieldDefinitionRow } from '@gravity/shared/records';
 import Link from 'next/link';
+import type { Ref } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { Kbd } from '@/components/ui/kbd.tsx';
 import type { WorkspaceData } from '@/features/workspace/use-workspace.ts';
@@ -20,7 +21,22 @@ function counted(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
+function StepHeading({
+  headingRef,
+  children,
+}: {
+  readonly headingRef: Ref<HTMLHeadingElement>;
+  readonly children: string;
+}) {
+  return (
+    <h2 ref={headingRef} tabIndex={-1} className="font-medium text-sm text-text outline-none">
+      {children}
+    </h2>
+  );
+}
+
 export interface MappingStepProps {
+  readonly headingRef: Ref<HTMLHeadingElement>;
   readonly table: ImportTable;
   readonly target: ImportTarget;
   readonly mapping: ImportMapping;
@@ -30,6 +46,7 @@ export interface MappingStepProps {
 }
 
 export function MappingStep({
+  headingRef,
   table,
   target,
   mapping,
@@ -39,6 +56,7 @@ export function MappingStep({
 }: MappingStepProps) {
   return (
     <div className="flex flex-col gap-3">
+      <StepHeading headingRef={headingRef}>Map the columns</StepHeading>
       <MappingTable
         table={table}
         target={target}
@@ -57,17 +75,22 @@ export function MappingStep({
 }
 
 export function PreviewStep({
+  headingRef,
   staged,
+  commitFailed,
   onBack,
   onCommit,
 }: {
+  readonly headingRef: Ref<HTMLHeadingElement>;
   readonly staged: Staged;
+  readonly commitFailed: boolean;
   readonly onBack: () => void;
   readonly onCommit: () => void;
 }) {
   const writable = rowsToWrite(staged.report);
   return (
-    <div className="flex flex-col gap-3">
+    <div aria-live="polite" className="flex flex-col gap-3">
+      <StepHeading headingRef={headingRef}>Check the preview</StepHeading>
       <ImportReportView report={staged.report} />
       <div className="flex items-center justify-end gap-2">
         {writable === 0 ? (
@@ -81,7 +104,7 @@ export function PreviewStep({
         </Button>
         {writable === 0 ? null : (
           <Button variant="primary" onClick={onCommit}>
-            Import {counted(writable, 'row')}
+            {commitFailed ? 'Run the same file again' : `Import ${counted(writable, 'row')}`}
             <Kbd keys={['mod', 'enter']} aria-hidden="true" />
           </Button>
         )}
@@ -103,23 +126,35 @@ function listFor(workspace: WorkspaceData, draft: Done['draft']): { href: string
 }
 
 export function ResultStep({
+  headingRef,
   done,
   workspace,
-  onAgain,
+  onRerun,
+  onAnother,
 }: {
+  readonly headingRef: Ref<HTMLHeadingElement>;
   readonly done: Done;
   readonly workspace: WorkspaceData;
-  readonly onAgain: () => void;
+  readonly onRerun: () => void;
+  readonly onAnother: () => void;
 }) {
   const list = listFor(workspace, done.draft);
   return (
-    <div className="flex flex-col gap-3">
+    <div aria-live="polite" className="flex flex-col gap-3">
+      <StepHeading headingRef={headingRef}>Import result</StepHeading>
       <ImportReportView report={done.report} />
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={onAgain}>
+        <Button variant="ghost" onClick={onAnother}>
           Import another file
+          <Kbd keys={['n']} aria-hidden="true" />
         </Button>
-        <Button asChild variant="primary">
+        {done.report.status === 'partial' ? (
+          <Button variant="primary" onClick={onRerun}>
+            Run the same file again
+            <Kbd keys={['mod', 'enter']} aria-hidden="true" />
+          </Button>
+        ) : null}
+        <Button asChild variant={done.report.status === 'partial' ? 'secondary' : 'primary'}>
           <Link href={list.href}>{list.label}</Link>
         </Button>
       </div>

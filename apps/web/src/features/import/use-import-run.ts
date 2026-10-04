@@ -5,8 +5,10 @@ import { useRef, useState } from 'react';
 import { useToast } from '@/components/ui/toast.tsx';
 import type { WorkspaceData } from '@/features/workspace/use-workspace.ts';
 import { messageOf } from '@/lib/api/client.ts';
+import { isRetryable } from '@/lib/query/fetcher.ts';
 import { useDelayedFlag } from '@/lib/use-delayed-flag.ts';
 import { draftOf, type ImportInputs, importIssues } from './import-draft.ts';
+import { rowsToWrite } from './import-report.tsx';
 import { type ImportDraft, useImportCommit, useImportPreview } from './use-import.ts';
 
 export interface Staged {
@@ -34,6 +36,8 @@ export function useImportRun(inputs: ImportInputs, workspace: WorkspaceData) {
   const preview = useImportPreview();
   const commit = useImportCommit();
   const requested = useRef<ImportInputs | null>(null);
+  const sending = useRef(false);
+  const [commitFailed, setCommitFailed] = useState(false);
   const [staged, setStaged] = useState<Staged | null>(null);
   const [done, setDone] = useState<Done | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -68,17 +72,19 @@ export function useImportRun(inputs: ImportInputs, workspace: WorkspaceData) {
     });
   }
 
-  function runCommit(): void {
-    if (showing === null || committing) return;
-    const { draft } = showing;
+  function commitDraft(draft: ImportDraft): void {
+    if (sending.current) return;
+    sending.current = true;
     setFailure(null);
+    setCommitFailed(false);
     commit.mutate(draft, {
       onSuccess: (report) => {
+        sending.current = false;
         setDone({ report, draft });
         setStaged(null);
         toast(
           report.status === 'completed'
-            ? { title: `Imported ${rowCount(report.totals.processed)}`, tone: 'success' }
+            ? { title: `Imported ${rowCount(rowsToWrite(report))}`, tone: 'success' }
             : {
                 title: 'The import stopped part way',
                 description: report.failure?.message ?? '',
@@ -86,12 +92,27 @@ export function useImportRun(inputs: ImportInputs, workspace: WorkspaceData) {
               },
         );
       },
-      onError: (error) =>
+      onError: (error) => {
+        sending.current = false;
+        const retry = isRetryable(error);
+        setCommitFailed(retry);
         setFailure({
-          message: messageOf(error, 'The import did not complete. Try again.'),
+          message: `${messageOf(error, 'The import did not complete.')}${
+            retry ? ' Some batches may already be saved. Run the same file again to continue.' : ''
+          }`,
           inputs: null,
-        }),
+        });
+      },
     });
+  }
+
+  function runCommit(): void {
+    if (showing === null || rowsToWrite(showing.report) === 0) return;
+    commitDraft(showing.draft);
+  }
+
+  function runAgain(): void {
+    if (done?.report.status === 'partial') commitDraft(done.draft);
   }
 
   return {
@@ -103,14 +124,19 @@ export function useImportRun(inputs: ImportInputs, workspace: WorkspaceData) {
     previewing: preview.isPending,
     runPreview,
     runCommit,
+    runAgain,
+    commitFailed,
     fail: (message: string | null) =>
       setFailure(message === null ? null : { message, inputs: null }),
     dismissPreview: () => {
       requested.current = null;
+      setCommitFailed(false);
+      setFailure(null);
       setStaged(null);
     },
     reset: () => {
       requested.current = null;
+      setCommitFailed(false);
       setStaged(null);
       setDone(null);
       setFailure(null);

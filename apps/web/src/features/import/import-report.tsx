@@ -41,6 +41,15 @@ function shownRows(rows: readonly ImportRowOutcome[]): readonly ImportRowOutcome
   return [...problems, ...rest].slice(0, SHOWN_ROWS);
 }
 
+function statusLabel(row: ImportRowOutcome): string {
+  if (row.status === 'skipped') {
+    const code = row.issues[0]?.code;
+    if (code === 'conflict') return 'Conflict';
+    if (code === 'same_record') return 'Same record';
+  }
+  return STATUS_LABELS[row.status];
+}
+
 function leadText(row: ImportRowOutcome, preview: boolean): string {
   if (row.lead === 'exists') return `${row.leadKey ?? 'A lead'} already in pipeline`;
   if (row.lead === 'create') return preview ? 'New lead' : (row.leadKey ?? 'New lead');
@@ -92,13 +101,18 @@ export function ImportReportView({ report }: { readonly report: ImportReport }) 
             </li>
           ))}
       </ul>
-      {report.failure === null ? null : (
-        <p role="alert" className="text-danger text-dense">
-          {report.failure.row === null
-            ? report.failure.message
-            : `Stopped at row ${report.failure.row}: ${report.failure.message}`}
-        </p>
-      )}
+      {report.status === 'partial' || report.failure !== null ? (
+        <div role="alert" className="flex flex-col gap-0.5 text-danger text-dense">
+          <p>{`Processed ${totals.processed} of ${totals.rows} rows`}</p>
+          {report.failure === null ? null : (
+            <p>
+              {report.failure.row === null
+                ? report.failure.message
+                : `Stopped at row ${report.failure.row}: ${report.failure.message}`}
+            </p>
+          )}
+        </div>
+      ) : null}
       <table className="w-full table-fixed text-dense">
         <caption className="sr-only">
           {preview ? 'What the import will do' : 'What the import did'}
@@ -122,12 +136,10 @@ export function ImportReportView({ report }: { readonly report: ImportReport }) 
                 {row.label}
               </td>
               <td>
-                <Badge tone={STATUS_TONES[row.status]}>{STATUS_LABELS[row.status]}</Badge>
+                <Badge tone={STATUS_TONES[row.status]}>{statusLabel(row)}</Badge>
               </td>
               <td className="truncate pr-3 text-muted">{leadText(row, preview)}</td>
-              <td className="truncate text-muted" title={noteText(row)}>
-                {noteText(row)}
-              </td>
+              <td className="break-words py-1 text-muted">{noteText(row)}</td>
             </tr>
           ))}
         </tbody>

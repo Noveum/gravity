@@ -7,6 +7,7 @@ import {
   type ImportTarget,
   importRequestSchema,
   MAX_IMPORT_BYTES,
+  MAX_IMPORT_ROWS,
   mappingIssues,
   parseImportTable,
   suggestMapping,
@@ -30,13 +31,18 @@ export interface ImportInputs {
   readonly source: string;
 }
 
+export const IMPORT_MAX_SIZE = `${(MAX_IMPORT_BYTES / 1_000_000).toFixed(1)} MB`;
+export const IMPORT_LIMITS_COPY = `Up to ${MAX_IMPORT_ROWS.toLocaleString('en-US')} rows and ${IMPORT_MAX_SIZE}.`;
+
 export function formatOf(name: string): ImportFormat {
   return name.toLowerCase().endsWith('.json') ? 'json' : 'csv';
 }
 
 export async function readImportFile(chosen: File): Promise<LoadedFile> {
   if (chosen.size > MAX_IMPORT_BYTES) {
-    throw new Error(`${chosen.name} is larger than 2.0 MB. Split it, or use bun run import.`);
+    throw new Error(
+      `${chosen.name} is larger than ${IMPORT_MAX_SIZE}. Split it, or use bun run import.`,
+    );
   }
   const format = formatOf(chosen.name);
   const content = decodeImportBytes(new Uint8Array(await chosen.arrayBuffer()), HTTP_IMPORT_LIMITS);

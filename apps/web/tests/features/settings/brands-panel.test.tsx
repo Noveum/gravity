@@ -170,6 +170,24 @@ describe('BrandsPanel', () => {
     expect(sent).toHaveLength(0);
   });
 
+  test('the key of an archived pipeline is never suggested and refused when typed', async () => {
+    const sent = serveJson(() => ({ body: {} }));
+    renderWithClient(<BrandsPanel />, {
+      bootstrap: bootstrapFixture({ retiredPipelineKeys: ['NIM'] }),
+    });
+    const form = screen.getByRole('form', { name: 'New brand' });
+    await userEvent.type(within(form).getByLabelText('Brand name'), 'Nimbus');
+    const key = within(form).getByLabelText('Pipeline key');
+    expect(key).not.toHaveValue('NIM');
+    await userEvent.type(key, 'nim', { initialSelectionStart: 0, initialSelectionEnd: 5 });
+    expect(key).toHaveValue('NIM');
+    await userEvent.click(within(form).getByRole('button', { name: 'Create brand' }));
+    expect(within(form).getByRole('alert')).toHaveTextContent(
+      'That key belonged to an archived pipeline.',
+    );
+    expect(sent).toHaveLength(0);
+  });
+
   test('a refused pipeline keeps its draft and the message', async () => {
     serveJson((_url, method) =>
       method === 'GET'

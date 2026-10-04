@@ -72,6 +72,22 @@ describe('createBrand', () => {
     ).rejects.toThrow('Another pipeline already uses that key.');
   });
 
+  test('never reuses the key of an archived pipeline, derived or typed', async () => {
+    const first = await createBrand({ principal: workspace.admin }, { name: 'Yodu' });
+    await archiveBrand({ principal: workspace.admin }, first.brand.id);
+    const derived = await createBrand({ principal: workspace.admin }, { name: 'Yodel' });
+    expect(derived.pipeline.key).not.toBe('YOD');
+    const before = await configurationFootprint();
+    const refused = await refusal(
+      createBrand({ principal: workspace.admin }, { name: 'Yonder', pipelineKey: 'yod' }),
+    );
+    expect(refused).toMatchObject({
+      status: 409,
+      message: 'That key belonged to an archived pipeline.',
+    });
+    expect(await configurationFootprint()).toEqual(before);
+  });
+
   test('a duplicate name is a 409, whatever its case, and writes nothing', async () => {
     await createBrand({ principal: workspace.admin }, { name: 'Yodu' });
     const before = await configurationFootprint();

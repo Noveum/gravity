@@ -17,6 +17,7 @@ export interface WorkspaceData {
   readonly userId: string;
   readonly brands: readonly BrandRow[];
   readonly pipelines: readonly PipelineRow[];
+  readonly retiredPipelineKeys: readonly string[];
   readonly members: readonly MemberRow[];
   readonly savedViews: readonly SavedViewRow[];
   readonly brandById: ReadonlyMap<string, BrandRow>;
@@ -34,6 +35,7 @@ export interface WorkspaceData {
 }
 
 const NO_STAGES: readonly StageRow[] = [];
+const NO_KEYS: readonly string[] = [];
 
 function stagesByPipeline(stages: readonly StageRow[]): ReadonlyMap<string, readonly StageRow[]> {
   const grouped = new Map<string, StageRow[]>();
@@ -59,6 +61,7 @@ export function useWorkspace(): WorkspaceData {
       userId: data?.me.userId ?? '',
       brands,
       pipelines,
+      retiredPipelineKeys: data?.retiredPipelineKeys ?? NO_KEYS,
       members,
       savedViews: data?.savedViews ?? [],
       brandById: new Map(brands.map((brand) => [brand.id, brand])),

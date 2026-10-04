@@ -1,4 +1,4 @@
-import { and, asc, count, db, eq, isNull, schema } from '@gravity/db';
+import { and, asc, count, db, eq, isNotNull, isNull, or, schema } from '@gravity/db';
 import { defaultStagesFor, type PipelineKind } from '@gravity/shared/constants';
 import { conflict, validationFailed } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
@@ -8,7 +8,7 @@ import { pipelineCreateSchema, pipelineUpdateSchema } from '@gravity/shared/vali
 import { newId, requireRow } from '../internal.ts';
 import { asConflict } from './conflicts.ts';
 import { archiveFieldsOfPipelineIn } from './field-service.ts';
-import { liveBrand, livePipeline, openLeadCount } from './lookups.ts';
+import { assertPipelineKeyNotRetired, liveBrand, livePipeline, openLeadCount } from './lookups.ts';
 import { pipelineRowOf, stageRowOf } from './rows.ts';
 import { pipelineScopes } from './scopes.ts';
 import { type SyncBatch, type WithActions, withBatch } from './sync-batch.ts';
@@ -26,6 +26,7 @@ export async function insertPipelineIn(
   batch: SyncBatch,
   seed: PipelineSeed,
 ): Promise<{ pipeline: PipelineRow; stages: StageRow[] }> {
+  await assertPipelineKeyNotRetired(batch.tx, batch.organizationId, seed.key);
   const [siblings] = await batch.tx
     .select({ total: count() })
     .from(schema.pipeline)
@@ -211,6 +212,22 @@ export async function archivePipeline(
       throw conflict(`Close the ${openLeadsPhrase(open)} in ${current.name} before archiving it.`);
     return { pipeline: await archivePipelineIn(batch, pipelineId) };
   });
+}
+
+export async function listRetiredPipelineKeys(principal: Principal): Promise<string[]> {
+  assertCan(principal, 'record:read');
+  const rows = await db
+    .select({ key: schema.pipeline.key })
+    .from(schema.pipeline)
+    .innerJoin(schema.brand, eq(schema.brand.id, schema.pipeline.brandId))
+    .where(
+      and(
+        eq(schema.pipeline.organizationId, principal.organizationId),
+        or(isNotNull(schema.pipeline.archivedAt), isNotNull(schema.brand.archivedAt)),
+      ),
+    )
+    .orderBy(asc(schema.pipeline.key));
+  return rows.map((row) => row.key);
 }
 
 export async function listPipelines(principal: Principal): Promise<PipelineRow[]> {

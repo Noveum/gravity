@@ -64,9 +64,13 @@ export function withoutPipelines(bootstrap: Bootstrap, pipelineIds: readonly str
   if (pipelineIds.length === 0) return bootstrap;
   const gone = (pipelineId: string | null) =>
     pipelineId !== null && pipelineIds.includes(pipelineId);
+  const retired = bootstrap.pipelines
+    .filter((pipeline) => gone(pipeline.id))
+    .map((pipeline) => pipeline.key);
   return {
     ...bootstrap,
     pipelines: bootstrap.pipelines.filter((pipeline) => !gone(pipeline.id)),
+    retiredPipelineKeys: [...new Set([...bootstrap.retiredPipelineKeys, ...retired])],
     stages: bootstrap.stages.filter((stage) => !gone(stage.pipelineId)),
     fields: bootstrap.fields.filter((field) => !gone(field.pipelineId)),
     savedViews: bootstrap.savedViews.filter((view) => !gone(view.pipelineId)),
@@ -74,11 +78,11 @@ export function withoutPipelines(bootstrap: Bootstrap, pipelineIds: readonly str
 }
 
 function applyPipeline(patch: BootstrapPatch, bootstrap: Bootstrap, action: SyncAction): Bootstrap {
-  const next = {
+  if (removes(action)) return withoutPipelines(bootstrap, [action.modelId]);
+  return {
     ...bootstrap,
     pipelines: applyRow(patch, bootstrap.pipelines, action, pipelineRowSchema),
   };
-  return removes(action) ? withoutPipelines(next, [action.modelId]) : next;
 }
 
 function applyBrand(patch: BootstrapPatch, bootstrap: Bootstrap, action: SyncAction): Bootstrap {

@@ -4,6 +4,7 @@ import {
   archivePipeline,
   createPipeline,
   listPipelines,
+  listRetiredPipelineKeys,
   updatePipeline,
 } from '../../src/crm/pipeline-service.ts';
 import { listStages } from '../../src/crm/stage-service.ts';
@@ -66,6 +67,35 @@ describe('createPipeline', () => {
       message: 'Another pipeline already uses that key.',
     });
     expect(await configurationFootprint()).toEqual(before);
+  });
+
+  test('refuses the key of an archived pipeline with a 409 and writes nothing', async () => {
+    const deals = await createPipeline(
+      { principal: workspace.admin },
+      { brandId, name: 'Deals', key: 'DLS', kind: 'deals' },
+    );
+    await archivePipeline({ principal: workspace.admin }, deals.pipeline.id);
+    const before = await configurationFootprint();
+    const refused = await refusal(
+      createPipeline({ principal: workspace.admin }, { brandId, name: 'Deals again', key: 'dls' }),
+    );
+    expect(refused).toMatchObject({
+      status: 409,
+      message: 'That key belonged to an archived pipeline.',
+    });
+    expect(await configurationFootprint()).toEqual(before);
+  });
+
+  test('lists the keys of archived pipelines, which stay taken', async () => {
+    const deals = await createPipeline(
+      { principal: workspace.admin },
+      { brandId, name: 'Deals', key: 'DLS', kind: 'deals' },
+    );
+    expect(await listRetiredPipelineKeys(workspace.admin)).toEqual([]);
+    await archivePipeline({ principal: workspace.admin }, deals.pipeline.id);
+    expect(await listRetiredPipelineKeys(workspace.admin)).toEqual(['DLS']);
+    const other = await createWorkspace('Other');
+    expect(await listRetiredPipelineKeys(other.admin)).toEqual([]);
   });
 
   test('a brand of another workspace is a 404 and writes nothing', async () => {

@@ -4,6 +4,7 @@ import {
   listFieldDefinitions,
   listMembers,
   listPipelines,
+  listRetiredPipelineKeys,
   listSavedViews,
   listStages,
   listViewPreferences,
@@ -36,16 +37,25 @@ export async function bootstrapVersion(context: ApiContext): Promise<string> {
 
 export async function bootstrapPayload(context: ApiContext): Promise<Bootstrap> {
   const principal = context.principal;
-  const [brands, pipelines, stages, fields, members, savedViews, viewPreferences] =
-    await Promise.all([
-      listBrands(principal),
-      listPipelines(principal),
-      listStages(principal),
-      listFieldDefinitions(principal),
-      listMembers(principal),
-      listSavedViews(principal),
-      listViewPreferences(principal),
-    ]);
+  const [
+    brands,
+    pipelines,
+    retiredPipelineKeys,
+    stages,
+    fields,
+    members,
+    savedViews,
+    viewPreferences,
+  ] = await Promise.all([
+    listBrands(principal),
+    listPipelines(principal),
+    listRetiredPipelineKeys(principal),
+    listStages(principal),
+    listFieldDefinitions(principal),
+    listMembers(principal),
+    listSavedViews(principal),
+    listViewPreferences(principal),
+  ]);
   return {
     organization: {
       id: principal.organizationId,
@@ -55,6 +65,7 @@ export async function bootstrapPayload(context: ApiContext): Promise<Bootstrap> 
     me: { userId: principal.userId, role: principal.role },
     brands,
     pipelines,
+    retiredPipelineKeys,
     stages,
     fields,
     members: members.map(memberRowOf),

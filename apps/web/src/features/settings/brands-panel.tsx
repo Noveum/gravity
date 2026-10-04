@@ -42,12 +42,23 @@ function asKind(value: string): PipelineKind {
 function useTakenKeys(): ReadonlySet<string> {
   const workspace = useWorkspace();
   return useMemo(
-    () => new Set(workspace.pipelines.map((pipeline) => pipeline.key)),
-    [workspace.pipelines],
+    () =>
+      new Set([
+        ...workspace.pipelines.map((pipeline) => pipeline.key),
+        ...workspace.retiredPipelineKeys,
+      ]),
+    [workspace.pipelines, workspace.retiredPipelineKeys],
   );
 }
 
+function takenKeyMessage(key: string, retired: readonly string[]): string {
+  return retired.includes(key)
+    ? 'That key belonged to an archived pipeline.'
+    : 'Another pipeline already uses that key.';
+}
+
 function NewBrandForm() {
+  const workspace = useWorkspace();
   const taken = useTakenKeys();
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
@@ -73,7 +84,7 @@ function NewBrandForm() {
       return;
     }
     if (taken.has(pipelineKey)) {
-      refused.setError('Another pipeline already uses that key.');
+      refused.setError(takenKeyMessage(pipelineKey, workspace.retiredPipelineKeys));
       return;
     }
     refused.setError(null);

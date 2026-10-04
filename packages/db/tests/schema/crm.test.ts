@@ -108,7 +108,7 @@ describe('pipeline keys', () => {
     expect(result.code).toBe('23514');
   });
 
-  test('are unique among live pipelines and free again once archived', async () => {
+  test('are unique per workspace even after the pipeline is archived', async () => {
     const duplicate = () =>
       db.insert(schema.pipeline).values({
         id: 'p2',
@@ -123,8 +123,8 @@ describe('pipeline keys', () => {
       .update(schema.pipeline)
       .set({ archivedAt: new Date() })
       .where(eq(schema.pipeline.id, 'p1'));
-    await duplicate();
-    expect(await db.select().from(schema.pipeline)).toHaveLength(2);
+    expect((await violation(duplicate)).constraint).toBe('pipeline_org_key_unique');
+    expect(await db.select().from(schema.pipeline)).toHaveLength(1);
   });
 });
 

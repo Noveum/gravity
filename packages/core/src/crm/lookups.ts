@@ -1,5 +1,5 @@
-import { and, asc, count, eq, inArray, isNull, schema } from '@gravity/db';
-import { notFound, validationFailed } from '@gravity/shared/errors';
+import { and, asc, count, eq, inArray, isNotNull, isNull, schema } from '@gravity/db';
+import { conflict, notFound, validationFailed } from '@gravity/shared/errors';
 import type { StageRow } from '@gravity/shared/records';
 import type { Executor } from '../internal.ts';
 import { stageRowOf } from './rows.ts';
@@ -95,10 +95,27 @@ export async function takenPipelineKeys(
   const rows = await executor
     .select({ key: schema.pipeline.key })
     .from(schema.pipeline)
-    .where(
-      and(eq(schema.pipeline.organizationId, organizationId), isNull(schema.pipeline.archivedAt)),
-    );
+    .where(eq(schema.pipeline.organizationId, organizationId));
   return new Set(rows.map((row) => row.key));
+}
+
+export async function assertPipelineKeyNotRetired(
+  executor: Executor,
+  organizationId: string,
+  key: string,
+): Promise<void> {
+  const [retired] = await executor
+    .select({ id: schema.pipeline.id })
+    .from(schema.pipeline)
+    .where(
+      and(
+        eq(schema.pipeline.organizationId, organizationId),
+        eq(schema.pipeline.key, key),
+        isNotNull(schema.pipeline.archivedAt),
+      ),
+    )
+    .limit(1);
+  if (retired !== undefined) throw conflict('That key belonged to an archived pipeline.');
 }
 
 export async function openLeadCount(

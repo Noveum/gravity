@@ -22,6 +22,7 @@ export const bootstrapSchema = z.object({
   me: z.object({ userId: z.string(), role: z.enum(ORG_ROLES) }),
   brands: z.array(brandRowSchema),
   pipelines: z.array(pipelineRowSchema),
+  retiredPipelineKeys: z.array(z.string()),
   stages: z.array(stageRowSchema),
   fields: z.array(fieldDefinitionRowSchema),
   members: z.array(memberRowSchema),

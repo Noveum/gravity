@@ -71,9 +71,7 @@ export const pipeline = pgTable(
   },
   (table) => [
     index('pipeline_brand_idx').on(table.brandId),
-    uniqueIndex('pipeline_org_key_unique')
-      .on(table.organizationId, table.key)
-      .where(sql`${table.archivedAt} is null`),
+    uniqueIndex('pipeline_org_key_unique').on(table.organizationId, table.key),
     check('pipeline_key_format', sql`${table.key} ~ '^[A-Z]{2,5}$'`),
     check('pipeline_kind', sql`${table.kind} in ('people', 'deals')`),
   ],

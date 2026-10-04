@@ -41,6 +41,7 @@ export function bootstrapFixture(overrides: Partial<Bootstrap> = {}): Bootstrap 
         archivedAt: null,
       },
     ],
+    retiredPipelineKeys: [],
     stages: DEFAULT_PROSPECTING_STAGES.map((stage, index) => ({
       id: stageId(stage.name),
       pipelineId: 'p1',

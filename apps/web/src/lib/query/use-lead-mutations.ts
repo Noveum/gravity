@@ -1,6 +1,6 @@
 'use client';
 
-import { type LeadRow, leadStateOf, resolveLeadChange } from '@gravity/shared/records';
+import type { LeadRow } from '@gravity/shared/records';
 import type { LeadChange, quickCreateSchema } from '@gravity/shared/validators';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
@@ -13,17 +13,11 @@ import {
   LEADS_ROOT,
   PEOPLE_ROOT,
   PERSON_ROOT,
-  queryKeys,
 } from './keys.ts';
-import { cachedLead, placeLead, removeLead } from './lead-cache.ts';
+import { beginLeadChange, placeLead, removeLead } from './lead-cache.ts';
 import { cancelLoadedQueries } from './pages.ts';
 import { placeCompany, placePerson } from './record-cache.ts';
-import {
-  type Bootstrap,
-  leadEnvelopeSchema,
-  leadsEnvelopeSchema,
-  quickCreateEnvelopeSchema,
-} from './schemas.ts';
+import { leadEnvelopeSchema, leadsEnvelopeSchema, quickCreateEnvelopeSchema } from './schemas.ts';
 import { useRetryToast } from './use-retry-toast.ts';
 
 export interface ChangeLeadsInput {
@@ -32,19 +26,7 @@ export interface ChangeLeadsInput {
 }
 
 interface ChangeLeadsContext {
-  readonly previous: readonly LeadRow[];
-}
-
-function optimisticRow(
-  lead: LeadRow,
-  change: LeadChange,
-  bootstrap: Bootstrap | undefined,
-): LeadRow | null {
-  try {
-    return { ...lead, ...resolveLeadChange(leadStateOf(lead), change, bootstrap?.stages ?? []) };
-  } catch {
-    return null;
-  }
+  readonly settle: () => void;
 }
 
 function failureTitle(leads: readonly LeadRow[]): string {
@@ -77,23 +59,26 @@ export function useChangeLeads() {
     mutationFn: sendChange,
     onMutate: async (input) => {
       await cancelLoadedQueries(client, LEADS_ROOT, LEAD_ROOT, PERSON_ROOT, COMPANY_ROOT);
-      const bootstrap = client.getQueryData<Bootstrap>(queryKeys.bootstrap);
-      const previous = input.leads.map((lead) => cachedLead(client, lead.id) ?? lead);
-      for (const lead of previous) {
-        const optimistic = optimisticRow(lead, input.change, bootstrap);
-        if (optimistic !== null) placeLead(client, optimistic);
-      }
-      return { previous };
+      const settles = input.leads.flatMap((lead) => {
+        const settle = beginLeadChange(client, lead, input.change);
+        return settle === null ? [] : [settle];
+      });
+      return {
+        settle: () => {
+          for (const settle of settles) settle();
+        },
+      };
     },
     onError: (error, input, context) => {
-      for (const lead of context?.previous ?? []) placeLead(client, lead);
+      context?.settle();
       failed(failureTitle(input.leads), error, () => mutation.mutate(input));
     },
-    onSuccess: (leads) => {
+    onSuccess: (leads, _input, context) => {
       for (const lead of leads) {
         noteServerRow(client, 'lead', lead.id, lead.syncId);
         placeLead(client, lead);
       }
+      context?.settle();
     },
   });
   return mutation;

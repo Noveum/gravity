@@ -114,6 +114,46 @@ describe('late echoes of answered changes', () => {
     }
   });
 
+  test('overlapping changes to one lead: the first answer keeps the second change visible', async () => {
+    const { client, result } = setup();
+    act(() => {
+      result.current.mutate({
+        leads: [leadFixture()],
+        change: { type: 'update', patch: { priority: 2 } },
+      });
+    });
+    act(() => {
+      result.current.mutate({ leads: [leadFixture()], change: toReady });
+    });
+    await waitFor(() => expect(server.waiting()).toBe(2));
+    expect(cachedLead(client, 'l1')).toMatchObject({ priority: 2, stageId: 'ready' });
+    server.answer(200, { lead: leadFixture({ priority: 2, syncId: 11 }) });
+    await waitFor(() => expect(cachedLead(client, 'l1')?.syncId).toBe(11));
+    expect(cachedLead(client, 'l1')).toMatchObject({ priority: 2, stageId: 'ready' });
+    server.answer(200, { lead: leadFixture({ priority: 2, stageId: 'ready', syncId: 12 }) });
+    await waitFor(() => expect(cachedLead(client, 'l1')?.syncId).toBe(12));
+    expect(cachedLead(client, 'l1')).toMatchObject({ priority: 2, stageId: 'ready' });
+  });
+
+  test('overlapping changes to one lead: a refused second change rolls back to the first answer', async () => {
+    const { client, result } = setup();
+    act(() => {
+      result.current.mutate({
+        leads: [leadFixture()],
+        change: { type: 'update', patch: { priority: 2 } },
+      });
+    });
+    act(() => {
+      result.current.mutate({ leads: [leadFixture()], change: toReady });
+    });
+    await waitFor(() => expect(server.waiting()).toBe(2));
+    server.answer(200, { lead: leadFixture({ priority: 2, syncId: 11 }) });
+    await waitFor(() => expect(cachedLead(client, 'l1')?.syncId).toBe(11));
+    server.answer(409, { error: { code: 'conflict', message: 'No.' } });
+    await waitFor(() => expect(cachedLead(client, 'l1')?.stageId).toBe('new'));
+    expect(cachedLead(client, 'l1')).toMatchObject({ priority: 2, syncId: 11 });
+  });
+
   test('quick create records the lead, person and company it was answered with', async () => {
     const unregister = registerCrmDeltaHandlers();
     try {

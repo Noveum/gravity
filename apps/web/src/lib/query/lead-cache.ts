@@ -1,5 +1,11 @@
 import { leadFilterRegistry } from '@gravity/shared/filters';
-import type { FieldDefinitionRow, LeadRow } from '@gravity/shared/records';
+import {
+  type FieldDefinitionRow,
+  type LeadRow,
+  leadStateOf,
+  resolveLeadChange,
+} from '@gravity/shared/records';
+import type { LeadChange } from '@gravity/shared/validators';
 import type { QueryClient } from '@tanstack/react-query';
 import { COMPANY_ROOT, LEAD_ROOT, LEADS_ROOT, PERSON_ROOT, queryKeys } from './keys.ts';
 import {
@@ -106,8 +112,75 @@ function placeInRecordLeads(client: QueryClient, id: string, row: LeadRow | null
   );
 }
 
+interface PendingLead {
+  base: LeadRow;
+  readonly changes: { readonly change: LeadChange }[];
+}
+
+const pendingByClient = new WeakMap<QueryClient, Map<string, PendingLead>>();
+
+function pendingOf(client: QueryClient): Map<string, PendingLead> {
+  const existing = pendingByClient.get(client);
+  if (existing !== undefined) return existing;
+  const created = new Map<string, PendingLead>();
+  pendingByClient.set(client, created);
+  return created;
+}
+
+function withChange(
+  lead: LeadRow,
+  change: LeadChange,
+  bootstrap: Bootstrap | undefined,
+): LeadRow | null {
+  try {
+    return { ...lead, ...resolveLeadChange(leadStateOf(lead), change, bootstrap?.stages ?? []) };
+  } catch {
+    return null;
+  }
+}
+
+function shownRow(client: QueryClient, pending: PendingLead): LeadRow {
+  const bootstrap = bootstrapOf(client);
+  return pending.changes.reduce(
+    (row, entry) => withChange(row, entry.change, bootstrap) ?? row,
+    pending.base,
+  );
+}
+
+export function beginLeadChange(
+  client: QueryClient,
+  lead: LeadRow,
+  change: LeadChange,
+): (() => void) | null {
+  const all = pendingOf(client);
+  const pending = all.get(lead.id) ?? { base: cachedLead(client, lead.id) ?? lead, changes: [] };
+  if (withChange(shownRow(client, pending), change, bootstrapOf(client)) === null) return null;
+  const entry = { change };
+  pending.changes.push(entry);
+  all.set(lead.id, pending);
+  writeLead(client, shownRow(client, pending));
+  return () => {
+    const index = pending.changes.indexOf(entry);
+    if (index === -1) return;
+    pending.changes.splice(index, 1);
+    if (pending.changes.length === 0 && all.get(lead.id) === pending) all.delete(lead.id);
+    const shown = shownRow(client, pending);
+    if (!isStale(cachedLead(client, lead.id), shown)) writeLead(client, shown);
+  };
+}
+
 export function placeLead(client: QueryClient, row: LeadRow): void {
-  if (isStale(cachedLead(client, row.id), row)) return;
+  const pending = pendingByClient.get(client)?.get(row.id);
+  if (pending === undefined) {
+    if (!isStale(cachedLead(client, row.id), row)) writeLead(client, row);
+    return;
+  }
+  if (isStale(pending.base, row)) return;
+  pending.base = row;
+  writeLead(client, shownRow(client, pending));
+}
+
+function writeLead(client: QueryClient, row: LeadRow): void {
   const fields = bootstrapOf(client)?.fields ?? [];
   const context = cacheContextOf(client);
   placeInLists(

@@ -3,7 +3,7 @@ import { and, db, desc, eq, gt, inArray, isNull, lt, or, schema } from '@gravity
 import { consentedScopes, grantsReads, grantsWrites, scopeList } from '@gravity/shared/constants';
 import { forbidden, notFound, unauthorized, validationFailed } from '@gravity/shared/errors';
 import type { Principal } from '@gravity/shared/policy';
-import { isAllowedRedirectUri } from '@gravity/shared/utils';
+import { isAllowedLogoUri, isAllowedRedirectUri } from '@gravity/shared/utils';
 import { z } from 'zod';
 import { cappedTransaction } from '../crm/sync-batch.ts';
 import { type Executor, newId } from '../internal.ts';
@@ -211,6 +211,16 @@ async function writeMcpGrant(
   input: RecordMcpGrantInput,
   now: Date,
 ): Promise<string> {
+  await executor
+    .select({ id: schema.member.id })
+    .from(schema.member)
+    .where(
+      and(
+        eq(schema.member.userId, input.userId),
+        eq(schema.member.organizationId, input.organizationId),
+      ),
+    )
+    .for('share');
   await resolvePrincipal(input.userId, input.organizationId, executor);
   const grantId = newId();
   await executor
@@ -316,6 +326,7 @@ async function consentRequestOf(
 export interface PendingMcpConsent {
   readonly clientId: string;
   readonly clientName: string;
+  readonly clientLogo: string | null;
   readonly scopes: string[];
 }
 
@@ -325,7 +336,12 @@ export async function pendingMcpConsent(
   now: Date = new Date(),
 ): Promise<PendingMcpConsent> {
   const { value, client } = await consentRequestOf(userId, consentCode, now);
-  return { clientId: value.clientId, clientName: client.name, scopes: value.scope };
+  return {
+    clientId: value.clientId,
+    clientName: client.name,
+    clientLogo: client.icon !== null && isAllowedLogoUri(client.icon) ? client.icon : null,
+    scopes: value.scope,
+  };
 }
 
 export type FinalizeMcpConsentInput =

@@ -1,7 +1,7 @@
 import { bindMcpCredential, cappedTransaction, unbindMcpCredential } from '@gravity/core';
 import { and, db, eq, isNull, schema } from '@gravity/db';
 import { MCP_OAUTH_SCOPES } from '@gravity/shared/constants';
-import { isAllowedRedirectUri } from '@gravity/shared/utils';
+import { isAllowedLogoUri, isAllowedRedirectUri } from '@gravity/shared/utils';
 import { z } from 'zod';
 import {
   auth,
@@ -163,11 +163,7 @@ const registrationSchema = z.looseObject({
   logo_uri: z
     .string()
     .max(2000)
-    .refine(
-      (value) =>
-        !value.includes(',') && URL.canParse(value) && new URL(value).protocol === 'https:',
-      { message: 'logo_uri must be an https URL.' },
-    )
+    .refine(isAllowedLogoUri, { message: 'logo_uri must be an https URL.' })
     .optional(),
   metadata: z
     .record(z.string(), z.unknown())

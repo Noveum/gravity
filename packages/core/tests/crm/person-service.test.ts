@@ -8,8 +8,8 @@ import { updatePerson, upsertPerson, upsertPersonIn } from '../../src/crm/person
 import { withBatch } from '../../src/crm/sync-batch.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
 import { createWorkspace, resetDatabase, type TestWorkspace } from '../../src/test-support.ts';
+import { racingRival } from '../support/rival-connection.ts';
 import { emitted, modelCounts, openLeadFor, required } from './record-fixtures.ts';
-import { racingRival } from './rival-connection.ts';
 
 let workspace: TestWorkspace;
 

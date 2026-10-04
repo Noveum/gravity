@@ -27,7 +27,7 @@ import {
   resetDatabase,
   type TestWorkspace,
 } from '../../src/test-support.ts';
-import { racingRival } from '../crm/rival-connection.ts';
+import { racingRival } from '../support/rival-connection.ts';
 
 const CALLBACK = 'http://127.0.0.1:9000/callback';
 
@@ -204,8 +204,25 @@ describe('consent', () => {
     expect(await pendingMcpConsent(workspace.adminUser.id, code)).toEqual({
       clientId,
       clientName: 'Desk agent',
+      clientLogo: null,
       scopes: ['openid', 'gravity.read'],
     });
+  });
+
+  test('shows a stored https logo and drops any other', async () => {
+    const logoOf = async (icon: string) => {
+      const clientId = await insertMcpClient(workspace.adminUser.id, {
+        redirectUrl: CALLBACK,
+        icon,
+      });
+      const code = await consentRequest(clientId, ['openid', 'gravity.read']);
+      return (await pendingMcpConsent(workspace.adminUser.id, code)).clientLogo;
+    };
+    expect(await logoOf('https://agent.example.com/logo.png')).toBe(
+      'https://agent.example.com/logo.png',
+    );
+    expect(await logoOf('javascript:alert(1)')).toBeNull();
+    expect(await logoOf('http://agent.example.com/logo.png')).toBeNull();
   });
 
   test('approval binds the client and user to the chosen workspace without approval rights', async () => {
@@ -645,6 +662,30 @@ describe('races', () => {
     const codes = await db.select().from(schema.verification);
     expect(codes.map((row) => row.identifier)).toEqual(['rival-code']);
     expect(await db.select().from(schema.mcpGrant)).toHaveLength(0);
+  });
+
+  test('a first approval holds the membership, so a racing removal cannot leave a live grant', async () => {
+    const member = await addMember(workspace, 'Rita Racer', 'member');
+    const clientId = await registeredClient();
+    const code = await consentRequest(clientId, ['openid', 'gravity.read'], member.userId);
+    await expect(
+      racingRival(
+        (tx) =>
+          tx`select id from member where user_id = ${member.userId} and organization_id = ${workspace.organizationId} for update`,
+        () =>
+          finalizeMcpConsent({
+            userId: member.userId,
+            consentCode: code,
+            accept: true,
+            organizationId: workspace.organizationId,
+            allowApproval: false,
+          }),
+        (tx) =>
+          tx`delete from member where user_id = ${member.userId} and organization_id = ${workspace.organizationId}`,
+      ),
+    ).rejects.toMatchObject({ code: 'forbidden' });
+    expect(await db.select().from(schema.mcpGrant)).toHaveLength(0);
+    expect(await pendingMcpConsent(member.userId, code)).toMatchObject({ clientId });
   });
 
   test('an approval and a denial of one request cannot both succeed', async () => {

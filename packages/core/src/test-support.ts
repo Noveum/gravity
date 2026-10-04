@@ -149,6 +149,7 @@ export interface TestMcpClientOptions {
   readonly clientId?: string;
   readonly name?: string;
   readonly redirectUrl?: string;
+  readonly icon?: string;
 }
 
 export async function insertMcpClient(
@@ -161,6 +162,7 @@ export async function insertMcpClient(
     name: options.name ?? 'Test agent',
     clientId,
     redirectUrls: options.redirectUrl ?? 'http://127.0.0.1:4321/callback',
+    icon: options.icon ?? null,
     type: 'public',
     userId,
   });

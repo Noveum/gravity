@@ -20,7 +20,7 @@ import {
   resetDatabase,
   type TestWorkspace,
 } from '../../src/test-support.ts';
-import { racingRival } from './rival-connection.ts';
+import { racingRival } from '../support/rival-connection.ts';
 
 let workspace: TestWorkspace;
 let pipelineId = '';

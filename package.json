@@ -42,6 +42,7 @@
     "db:test-setup": "bun run --filter '@gravity/db' test-setup",
     "db:studio": "bun run --filter '@gravity/db' studio",
     "import": "bun --env-file=.env packages/core/src/import/run-cli.ts",
+    "db:seed": "bun --env-file=.env packages/core/src/seed/run-seed.ts",
     "prepare": "lefthook install || true"
   },
   "devDependencies": {

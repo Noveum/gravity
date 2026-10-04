@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 import { CopyLinkProvider, useCopyLinkTarget } from '@/lib/copy-link.tsx';
 import { renderWithClient } from '../support/render.tsx';
 
@@ -49,5 +50,24 @@ describe('copy link', () => {
     renderWithClient(<CopyLinkProvider>{null}</CopyLinkProvider>);
     await userEvent.keyboard('{Meta>}{Shift>}c{/Shift}{/Meta}');
     expect(await screen.findByText('Could not copy the link')).toBeInTheDocument();
+  });
+
+  test('does not fire while a dialog owns the keyboard', async () => {
+    const writeText = mock(() => Promise.resolve());
+    stubClipboard(writeText);
+    renderWithClient(
+      <CopyLinkProvider>
+        <Dialog open>
+          <DialogContent aria-describedby={undefined}>
+            <DialogTitle>Rename</DialogTitle>
+            <button type="button">Inside</button>
+          </DialogContent>
+        </Dialog>
+      </CopyLinkProvider>,
+    );
+    screen.getByRole('button', { name: 'Inside' }).focus();
+    await userEvent.keyboard('{Meta>}{Shift>}c{/Shift}{/Meta}');
+    expect(writeText).not.toHaveBeenCalled();
+    expect(screen.queryByText('Link copied')).not.toBeInTheDocument();
   });
 });

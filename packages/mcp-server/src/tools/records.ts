@@ -13,7 +13,12 @@ import {
   resolveRecordRef,
   searchRecords,
 } from '@gravity/core';
-import { CONTEXT_TOKENS, leadPriorityLabel, SEARCH_RESULT_LIMIT } from '@gravity/shared/constants';
+import {
+  CONTEXT_TOKENS,
+  clampContextTokens,
+  leadPriorityLabel,
+  SEARCH_RESULT_LIMIT,
+} from '@gravity/shared/constants';
 import {
   type DomainError,
   isDomainError,
@@ -55,11 +60,6 @@ interface LeadNames {
 }
 
 const filterArgumentSchema = z.object({ filter: filterGroupQuerySchema });
-
-function clampContextTokens(value: number | undefined): number {
-  if (value === undefined) return CONTEXT_TOKENS.default;
-  return Math.min(CONTEXT_TOKENS.max, Math.max(CONTEXT_TOKENS.min, value));
-}
 
 async function leadNamesFor(principal: Principal): Promise<LeadNames> {
   const [stages, members] = await Promise.all([listStages(principal), listMembers(principal)]);

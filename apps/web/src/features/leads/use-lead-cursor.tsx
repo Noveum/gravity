@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { WorkspaceData } from '@/features/workspace/use-workspace.ts';
 import { useContextPanel } from '@/lib/context-panel.tsx';
+import { useCopyForAgentTarget } from '@/lib/copy-for-agent.tsx';
 import { HOTKEY_PRIORITY, useHotkey } from '@/lib/keyboard/index.ts';
 import { setLeadTrail } from '@/lib/record-trail.ts';
 import { watchWindowRefocus } from '@/lib/window-refocus.ts';
@@ -92,6 +93,7 @@ export function useLeadCursor({ ordered, step }: LeadCursorOptions): LeadCursor 
     return ordered.find((lead) => lead.id === neighbour) ?? ordered[0];
   }, [ordered, orderedIds, activeId]);
   const activeLeadId = active?.id;
+  useCopyForAgentTarget(activeLeadId ?? null);
   const activeKey = active?.key;
 
   useEffect(() => {

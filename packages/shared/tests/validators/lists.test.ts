@@ -64,10 +64,19 @@ describe('contextQuerySchema', () => {
     expect(contextQuerySchema.parse({ ref: 'x', maxTokens: '700' }).maxTokens).toBe(700);
   });
 
-  test('refuses a blank or oversized ref and a budget outside the bounds', () => {
+  test('brings a budget outside the bounds inside them instead of refusing it', () => {
+    expect(contextQuerySchema.parse({ ref: 'x', maxTokens: '10' }).maxTokens).toBe(
+      CONTEXT_TOKENS.min,
+    );
+    expect(contextQuerySchema.parse({ ref: 'x', maxTokens: '99999' }).maxTokens).toBe(
+      CONTEXT_TOKENS.max,
+    );
+  });
+
+  test('refuses a blank or oversized ref and a budget that is not a whole number', () => {
     expect(() => contextQuerySchema.parse({ ref: '  ' })).toThrow(ZodError);
     expect(() => contextQuerySchema.parse({ ref: 'x'.repeat(501) })).toThrow(ZodError);
-    for (const maxTokens of [CONTEXT_TOKENS.min - 1, CONTEXT_TOKENS.max + 1, 1.5, 'many']) {
+    for (const maxTokens of [1.5, 'many']) {
       expect(() => contextQuerySchema.parse({ ref: 'x', maxTokens })).toThrow(ZodError);
     }
   });

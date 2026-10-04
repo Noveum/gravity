@@ -3,6 +3,7 @@ import { type RenderResult, render } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { ToastProvider } from '@/components/ui/toast.tsx';
 import { TooltipProvider } from '@/components/ui/tooltip.tsx';
+import { CopyForAgentProvider } from '@/lib/copy-for-agent.tsx';
 import { HotkeyProvider } from '@/lib/keyboard/index.ts';
 import { queryKeys } from '@/lib/query/keys.ts';
 import type { Bootstrap } from '@/lib/query/schemas.ts';
@@ -32,7 +33,9 @@ export function renderWithClient(
     <QueryClientProvider client={client}>
       <TooltipProvider>
         <ToastProvider>
-          <HotkeyProvider>{ui}</HotkeyProvider>
+          <HotkeyProvider>
+            <CopyForAgentProvider>{ui}</CopyForAgentProvider>
+          </HotkeyProvider>
         </ToastProvider>
       </TooltipProvider>
     </QueryClientProvider>,

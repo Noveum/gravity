@@ -1,4 +1,9 @@
-import { getRecordContext, renderRecordContext, resolveRecordRef } from '@gravity/core';
+import {
+  contextLabel,
+  getRecordContext,
+  renderRecordContext,
+  resolveRecordRef,
+} from '@gravity/core';
 import { recordLinks } from '@gravity/shared/utils';
 import { contextQuerySchema } from '@gravity/shared/validators';
 import { handle, searchParamsOf } from '@/lib/api/handler.ts';
@@ -12,6 +17,13 @@ export async function GET(request: Request): Promise<Response> {
     const links = recordLinks(publicAppUrl());
     const subject = await resolveRecordRef(principal, query.ref, { links });
     const context = await getRecordContext(principal, subject);
-    return { subject, text: renderRecordContext(context, { maxTokens: query.maxTokens, links }) };
+    return Response.json(
+      {
+        subject,
+        label: contextLabel(context),
+        text: renderRecordContext(context, { maxTokens: query.maxTokens, links }),
+      },
+      { headers: { 'cache-control': 'private, no-store' } },
+    );
   });
 }

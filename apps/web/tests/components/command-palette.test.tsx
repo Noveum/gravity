@@ -32,4 +32,16 @@ describe('paletteCommands', () => {
     expect(toggle).toHaveBeenCalledTimes(1);
     expect(copy).toHaveBeenCalledTimes(1);
   });
+
+  test('offers copy for agent with its shortcut only when the shell provides it', () => {
+    const copy = mock();
+    expect(paletteCommands(mock()).map((command) => command.id)).not.toContain('copy-for-agent');
+    const command = paletteCommands(mock(), { copyForAgent: copy }).find(
+      (entry) => entry.id === 'copy-for-agent',
+    );
+    expect(command?.label).toBe('Copy for agent');
+    expect(command?.shortcut).toBe('mod+shift+a');
+    command?.run();
+    expect(copy).toHaveBeenCalledTimes(1);
+  });
 });

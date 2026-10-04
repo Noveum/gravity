@@ -32,6 +32,7 @@ mock.module('next/navigation', () => ({
 const { AppShell } = await import('@/components/layout/app-shell.tsx');
 const { ThemeProvider } = await import('@/components/theme-provider.tsx');
 const { useContextPanel } = await import('@/lib/context-panel.tsx');
+const { useCopyForAgentTarget } = await import('@/lib/copy-for-agent.tsx');
 const { createQueryClient } = await import('@/lib/query/provider.tsx');
 const { queryKeys } = await import('@/lib/query/keys.ts');
 
@@ -42,6 +43,11 @@ function Peeker() {
   const { show } = useContextPanel();
   useEffect(() => show(<p>Peek body</p>, 'Lead YOD-1'), [show]);
   return null;
+}
+
+function FocusedRecord({ target }: { readonly target: string }) {
+  useCopyForAgentTarget(target);
+  return <p>Record body</p>;
 }
 
 function shellElement(body: ReactNode) {
@@ -275,6 +281,45 @@ describe('AppShell', () => {
     renderShell();
     await runPaletteCommand('Copy link');
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(window.location.href));
+  });
+
+  test('the palette copies the focused record for an agent, the same text as the key', async () => {
+    const writeText = mock((_text: string) => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    globalThis.fetch = mock((input: RequestInfo | URL) => {
+      requested.push(String(input));
+      return Promise.resolve(
+        Response.json({
+          subject: { type: 'lead', id: 'l2' },
+          label: 'YOD-2 · Ada Lovelace',
+          text: 'Person: Ada Lovelace',
+        }),
+      );
+    }) as unknown as typeof fetch;
+    renderShell(<FocusedRecord target="l2" />);
+    await runPaletteCommand('Copy for agent');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Person: Ada Lovelace'));
+    expect(requested.filter((path) => path.startsWith('/api/context'))).toEqual([
+      '/api/context?ref=l2',
+    ]);
+    expect(await screen.findByText('Copied YOD-2 · Ada Lovelace')).toBeInTheDocument();
+    await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
+    expect(writeText.mock.calls[1]?.[0]).toBe('Person: Ada Lovelace');
+  });
+
+  test('the palette says to focus a record first when none is focused', async () => {
+    renderShell();
+    await runPaletteCommand('Copy for agent');
+    expect(await screen.findByText('Focus a record first')).toBeInTheDocument();
+    expect(requested.filter((path) => path.startsWith('/api/context'))).toEqual([]);
+  });
+
+  test('Cmd+Shift+A does nothing on a page with no record', async () => {
+    renderShell();
+    await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');
+    expect(requested.filter((path) => path.startsWith('/api/context'))).toEqual([]);
+    expect(screen.queryByText('Focus a record first')).not.toBeInTheDocument();
   });
 
   test('the palette toggles the context panel once it has something to show', async () => {

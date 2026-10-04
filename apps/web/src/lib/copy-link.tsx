@@ -10,7 +10,7 @@ import {
   useRef,
 } from 'react';
 import { useToast } from '@/components/ui/toast.tsx';
-import { useHotkey } from '@/lib/keyboard/index.ts';
+import { HOTKEY_PRIORITY, useHotkey } from '@/lib/keyboard/index.ts';
 
 export const COPY_LINK_BINDING = 'mod+shift+c';
 
@@ -46,6 +46,7 @@ export function CopyLinkProvider({ children }: { readonly children: ReactNode })
   useHotkey(COPY_LINK_BINDING, copyNow, {
     label: 'Copy link to this record or view',
     section: 'General',
+    priority: HOTKEY_PRIORITY.surface,
     allowInInput: true,
   });
   const api = useMemo<CopyLinkApi>(

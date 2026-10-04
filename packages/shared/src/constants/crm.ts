@@ -189,6 +189,11 @@ export const SEARCH_RESULT_LIMIT = 8;
 
 export const CONTEXT_TOKENS = { min: 200, default: 2000, max: 8000 } as const;
 
+export function clampContextTokens(value: number | undefined): number {
+  if (value === undefined) return CONTEXT_TOKENS.default;
+  return Math.min(CONTEXT_TOKENS.max, Math.max(CONTEXT_TOKENS.min, value));
+}
+
 export function leadPriorityLabel(priority: number): string {
   const known = LEAD_PRIORITIES.find((entry) => entry === priority);
   return known === undefined ? LEAD_PRIORITY_LABELS[0] : LEAD_PRIORITY_LABELS[known];

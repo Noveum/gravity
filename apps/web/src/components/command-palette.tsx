@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 import { Kbd } from '@/components/ui/kbd.tsx';
 import { MAX_LIST_SEARCH_LENGTH } from '@/features/filters/list-query.ts';
 import { personHref } from '@/features/leads/lead-groups.ts';
+import { COPY_FOR_AGENT_BINDING } from '@/lib/copy-for-agent.tsx';
 import { COPY_LINK_BINDING } from '@/lib/copy-link.tsx';
 import { formatBinding, useHotkey } from '@/lib/keyboard/index.ts';
 import { NAV_ITEMS } from '@/lib/navigation.ts';
@@ -49,6 +50,7 @@ export interface PaletteActions {
   readonly showShortcuts?: () => void;
   readonly toggleContextPanel?: (() => void) | undefined;
   readonly copyLink?: (() => void) | undefined;
+  readonly copyForAgent?: (() => void) | undefined;
 }
 
 function optionalCommand(
@@ -81,6 +83,12 @@ export function paletteCommands(
       label: 'Copy link',
       group: 'View',
       shortcut: COPY_LINK_BINDING,
+    }),
+    ...optionalCommand(actions.copyForAgent, {
+      id: 'copy-for-agent',
+      label: 'Copy for agent',
+      group: 'View',
+      shortcut: COPY_FOR_AGENT_BINDING,
     }),
     {
       id: 'toggle-theme',
@@ -131,6 +139,7 @@ export interface CommandPaletteProps {
   readonly onShowShortcuts: () => void;
   readonly onToggleContextPanel?: (() => void) | undefined;
   readonly onCopyLink?: (() => void) | undefined;
+  readonly onCopyForAgent?: (() => void) | undefined;
 }
 
 export function CommandPalette({
@@ -139,6 +148,7 @@ export function CommandPalette({
   onShowShortcuts,
   onToggleContextPanel,
   onCopyLink,
+  onCopyForAgent,
 }: CommandPaletteProps) {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
@@ -162,9 +172,18 @@ export function CommandPalette({
           showShortcuts: onShowShortcuts,
           toggleContextPanel: onToggleContextPanel,
           copyLink: onCopyLink,
+          copyForAgent: onCopyForAgent,
         }),
       ),
-    [router, setTheme, resolvedTheme, onShowShortcuts, onToggleContextPanel, onCopyLink],
+    [
+      router,
+      setTheme,
+      resolvedTheme,
+      onShowShortcuts,
+      onToggleContextPanel,
+      onCopyLink,
+      onCopyForAgent,
+    ],
   );
 
   useHotkey(PALETTE_BINDING, () => onOpenChange(true), {

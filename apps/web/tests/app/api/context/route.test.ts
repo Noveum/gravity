@@ -4,6 +4,7 @@ import {
   createLead,
   getRecordContext,
   renderRecordContext,
+  updatePerson,
   upsertPerson,
 } from '@gravity/core';
 import {
@@ -61,6 +62,14 @@ describe('/api/context', () => {
     expect(body.text).toContain(`${ORIGIN}/people/${personId}`);
   });
 
+  test('names what was copied and is never cached', async () => {
+    const person = await ask(`ref=${personId}`);
+    expect(person.headers.get('cache-control')).toBe('private, no-store');
+    expect(((await person.json()) as { label: string }).label).toBe('Ada Lovelace');
+    const lead = (await (await ask(`ref=${leadKey}`)).json()) as { label: string };
+    expect(lead.label).toBe(`${leadKey} · Ada Lovelace`);
+  });
+
   test('a lead id or key puts that lead in focus', async () => {
     const byId = await ask(`ref=${leadId}`);
     expect(((await byId.json()) as { subject: unknown }).subject).toEqual({
@@ -81,18 +90,34 @@ describe('/api/context', () => {
     expect(await textOf(await ask(`ref=${personId}&maxTokens=700`))).toBe(expected);
   });
 
-  test('a smaller token budget gives a shorter text', async () => {
+  test('a record too large for the budget is cut, shorter and marked', async () => {
+    for (let index = 0; index < 40; index += 1) {
+      await updatePerson({ principal: workspace.admin }, personId, { location: `City ${index}` });
+    }
     const small = await textOf(await ask(`ref=${personId}&maxTokens=${CONTEXT_TOKENS.min}`));
     const large = await textOf(await ask(`ref=${personId}&maxTokens=${CONTEXT_TOKENS.max}`));
     expect(small.length).toBeLessThanOrEqual(CONTEXT_TOKENS.min * 4);
-    expect(large.length).toBeGreaterThanOrEqual(small.length);
+    expect(small.length).toBeLessThan(large.length);
+    expect(small).toMatch(/\(\d+ older entries left out to fit 200 tokens\)/);
+    expect(large).not.toContain('left out to fit');
   });
 
-  test('refuses a missing ref and a token budget outside the bounds', async () => {
+  test('a budget outside the bounds is brought inside them, as in the MCP tool', async () => {
+    const low = await ask(`ref=${personId}&maxTokens=10`);
+    expect(low.status).toBe(200);
+    const subject = { type: 'person', id: personId } as const;
+    const expected = renderRecordContext(await getRecordContext(workspace.admin, subject), {
+      maxTokens: CONTEXT_TOKENS.min,
+      links: recordLinks(ORIGIN),
+    });
+    expect(await textOf(low)).toBe(expected);
+    expect((await ask(`ref=${personId}&maxTokens=999999`)).status).toBe(200);
+  });
+
+  test('refuses a missing ref and a budget that is not a whole number', async () => {
     expect((await ask('maxTokens=500')).status).toBe(422);
-    expect((await ask(`ref=${personId}&maxTokens=${CONTEXT_TOKENS.min - 1}`)).status).toBe(422);
-    expect((await ask(`ref=${personId}&maxTokens=${CONTEXT_TOKENS.max + 1}`)).status).toBe(422);
     expect((await ask(`ref=${personId}&maxTokens=abc`)).status).toBe(422);
+    expect((await ask(`ref=${personId}&maxTokens=1.5`)).status).toBe(422);
   });
 
   test('answers not found for an unknown ref and for a record of another workspace', async () => {

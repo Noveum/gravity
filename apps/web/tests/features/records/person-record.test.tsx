@@ -412,7 +412,13 @@ describe('PersonRecord', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     const sent = serveJson((url) => {
       if (url.pathname === '/api/context') {
-        return { body: { subject: { type: 'lead', id: 'l2' }, text: 'Lead YOD-2' } };
+        return {
+          body: {
+            subject: { type: 'lead', id: 'l2' },
+            label: 'YOD-2 · Ada Lovelace',
+            text: 'Lead YOD-2',
+          },
+        };
       }
       if (url.pathname === '/api/people/per1') return { body: record };
       return { body: { activities: [], nextCursor: null } };
@@ -424,6 +430,7 @@ describe('PersonRecord', () => {
     expect(sent.find((entry) => entry.url.startsWith('/api/context'))?.url).toBe(
       '/api/context?ref=l2',
     );
+    expect(await screen.findByText('Copied YOD-2 · Ada Lovelace')).toBeInTheDocument();
   });
 
   test('Cmd+Shift+A falls back to the person when the lead from the link is gone', async () => {
@@ -431,7 +438,13 @@ describe('PersonRecord', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     const sent = serveJson((url) => {
       if (url.pathname === '/api/context') {
-        return { body: { subject: { type: 'person', id: 'per1' }, text: 'Person Ada' } };
+        return {
+          body: {
+            subject: { type: 'person', id: 'per1' },
+            label: 'Ada Lovelace',
+            text: 'Person Ada',
+          },
+        };
       }
       if (url.pathname === '/api/people/per1') return { body: { ...record, leads: [] } };
       return { body: { activities: [], nextCursor: null } };
@@ -443,6 +456,7 @@ describe('PersonRecord', () => {
     expect(sent.find((entry) => entry.url.startsWith('/api/context'))?.url).toBe(
       '/api/context?ref=per1',
     );
+    expect(await screen.findByText('Copied Ada Lovelace')).toBeInTheDocument();
   });
 
   test('Cmd+Shift+A still works from the read-only note composer', async () => {
@@ -450,7 +464,13 @@ describe('PersonRecord', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     serveJson((url) => {
       if (url.pathname === '/api/context') {
-        return { body: { subject: { type: 'lead', id: 'l1' }, text: 'Lead YOD-1' } };
+        return {
+          body: {
+            subject: { type: 'lead', id: 'l1' },
+            label: 'YOD-1 · Ada Lovelace',
+            text: 'Lead YOD-1',
+          },
+        };
       }
       if (url.pathname === '/api/people/per1') return { body: record };
       return { body: { activities: [], nextCursor: null } };
@@ -460,6 +480,62 @@ describe('PersonRecord', () => {
     await userEvent.keyboard('n');
     expect(document.activeElement).toBe(screen.getByLabelText('Note'));
     await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Lead YOD-1'));
+  });
+
+  test('the record menu copies the same text as the key', async () => {
+    const writeText = mock((_text: string) => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const sent = serveJson((url) => {
+      if (url.pathname === '/api/context') {
+        return {
+          body: {
+            subject: { type: 'lead', id: 'l1' },
+            label: 'YOD-1 · Ada Lovelace',
+            text: 'Lead YOD-1',
+          },
+        };
+      }
+      if (url.pathname === '/api/people/per1') return { body: record };
+      return { body: { activities: [], nextCursor: null } };
+    });
+    renderRecord();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'More actions for Ada Lovelace' }),
+    );
+    const item = await screen.findByRole('menuitem', { name: /Copy for agent/ });
+    expect(item).toHaveTextContent('Cmd Shift A');
+    await userEvent.click(item);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Lead YOD-1'));
+    await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
+    const urls = sent
+      .filter((entry) => entry.url.startsWith('/api/context'))
+      .map((entry) => entry.url);
+    expect(urls).toEqual(['/api/context?ref=l1', '/api/context?ref=l1']);
+  });
+
+  test('a guest can copy a record for an agent from the record menu', async () => {
+    const writeText = mock((_text: string) => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    serveJson((url) => {
+      if (url.pathname === '/api/context') {
+        return {
+          body: {
+            subject: { type: 'lead', id: 'l1' },
+            label: 'YOD-1 · Ada Lovelace',
+            text: 'Lead YOD-1',
+          },
+        };
+      }
+      if (url.pathname === '/api/people/per1') return { body: record };
+      return { body: { activities: [], nextCursor: null } };
+    });
+    renderRecord(null, bootstrapFixture({ me: { userId: 'u3', role: 'guest' } }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'More actions for Ada Lovelace' }),
+    );
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Copy for agent/ }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('Lead YOD-1'));
   });
 

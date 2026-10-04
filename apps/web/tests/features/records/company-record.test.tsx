@@ -78,7 +78,9 @@ describe('CompanyRecord', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     const sent = serveJson((url) => {
       if (url.pathname === '/api/context') {
-        return { body: { subject: { type: 'company', id: 'c1' }, text: 'Company: Acme' } };
+        return {
+          body: { subject: { type: 'company', id: 'c1' }, label: 'Acme', text: 'Company: Acme' },
+        };
       }
       if (url.pathname === '/api/companies/c1') return { body: record };
       return { body: { activities: [], nextCursor: null } };
@@ -86,6 +88,28 @@ describe('CompanyRecord', () => {
     renderWithClient(<CompanyRecord companyId="c1" />);
     expect(await screen.findByTestId('lead-card-YOD-1')).toHaveAttribute('aria-current', 'true');
     await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Company: Acme'));
+    expect(sent.find((entry) => entry.url.startsWith('/api/context'))?.url).toBe(
+      '/api/context?ref=c1',
+    );
+    expect(await screen.findByText('Copied Acme')).toBeInTheDocument();
+  });
+
+  test('the record menu copies the company, the same text as the key', async () => {
+    const writeText = mock((_text: string) => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const sent = serveJson((url) => {
+      if (url.pathname === '/api/context') {
+        return {
+          body: { subject: { type: 'company', id: 'c1' }, label: 'Acme', text: 'Company: Acme' },
+        };
+      }
+      if (url.pathname === '/api/companies/c1') return { body: record };
+      return { body: { activities: [], nextCursor: null } };
+    });
+    renderWithClient(<CompanyRecord companyId="c1" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'More actions for Acme' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Copy for agent/ }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('Company: Acme'));
     expect(sent.find((entry) => entry.url.startsWith('/api/context'))?.url).toBe(
       '/api/context?ref=c1',

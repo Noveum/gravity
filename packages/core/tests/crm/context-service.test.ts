@@ -2,7 +2,11 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { db, eq, schema } from '@gravity/db';
 import { recordLinks } from '@gravity/shared/utils';
 import { createBrand } from '../../src/crm/brand-service.ts';
-import { getRecordContext, renderRecordContext } from '../../src/crm/context-service.ts';
+import {
+  contextLabel,
+  getRecordContext,
+  renderRecordContext,
+} from '../../src/crm/context-service.ts';
 import { changeLead, createLead } from '../../src/crm/lead-service.ts';
 import { updatePerson, upsertPerson } from '../../src/crm/person-service.ts';
 import { closeRealtime } from '../../src/realtime/publisher.ts';
@@ -313,5 +317,28 @@ describe('text that tries to pass as structure', () => {
     expect(text.replaceAll('\n', '')).not.toMatch(/\p{Cc}/u);
     expect(text.split('\n').filter((line) => line.startsWith('Leads:'))).toHaveLength(1);
     expect(text).toContain('Location: Berlin Leads: [31m red 2J');
+  });
+});
+
+describe('contextLabel', () => {
+  test('names a lead by key and person, a person by name and a company by name', async () => {
+    const lead = await getRecordContext(workspace.admin, { type: 'lead', id: leadId });
+    const person = await getRecordContext(workspace.admin, { type: 'person', id: personId });
+    const company = await getRecordContext(workspace.admin, { type: 'company', id: companyId });
+    expect(contextLabel(lead)).toBe('LUM-1 · Ada Lovelace');
+    expect(contextLabel(person)).toBe('Ada Lovelace');
+    expect(contextLabel(company)).toBe('Vela Robotics');
+  });
+
+  test('stays on one line and is cut when the name is long', async () => {
+    await updatePerson({ principal: workspace.admin }, personId, {
+      name: `Ada\n${'Lovelace '.repeat(15)}`,
+    });
+    const label = contextLabel(
+      await getRecordContext(workspace.admin, { type: 'person', id: personId }),
+    );
+    expect(label).not.toContain('\n');
+    expect(label.length).toBeLessThanOrEqual(60);
+    expect(label.endsWith('...')).toBe(true);
   });
 });

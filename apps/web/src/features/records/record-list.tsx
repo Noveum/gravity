@@ -7,6 +7,7 @@ import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
 import { survivingNeighbour } from '@/features/leads/lead-groups.ts';
 import { cn } from '@/lib/cn.ts';
+import { useCopyForAgentTarget } from '@/lib/copy-for-agent.tsx';
 import { listRowHover } from '@/lib/interaction.ts';
 import { HOTKEY_PRIORITY, useHotkey } from '@/lib/keyboard/index.ts';
 import { type RecordBasePath, setRecordTrail } from '@/lib/record-trail.ts';
@@ -63,6 +64,7 @@ export function RecordList<T extends { readonly id: string }>({
     return rows.find((row) => row.id === neighbour) ?? rows[0];
   }, [rows, ids, activeId]);
   const activeRowId = active?.id;
+  useCopyForAgentTarget(activeRowId ?? null);
 
   useEffect(() => {
     previousOrder.current = ids;

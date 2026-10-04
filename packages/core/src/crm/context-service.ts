@@ -113,8 +113,20 @@ export function oneLine(text: string): string {
   return text.replace(SEPARATORS_AND_CONTROLS, ' ').trim();
 }
 
+const LABEL_LENGTH = 60;
+const LABEL_ELLIPSIS = '...';
+
 function quoted(text: string): string {
   return JSON.stringify(oneLine(text));
+}
+
+export function contextLabel(context: RecordContext): string {
+  const focused = context.leads.find((lead) => lead.id === context.focusLeadId);
+  const name = oneLine(context.person?.name ?? context.company?.name ?? '');
+  const label = focused === undefined ? name : `${focused.key} · ${name}`;
+  return label.length <= LABEL_LENGTH
+    ? label
+    : `${clip(label, LABEL_LENGTH - LABEL_ELLIPSIS.length).trimEnd()}${LABEL_ELLIPSIS}`;
 }
 
 function present(value: string | null | undefined): value is string {

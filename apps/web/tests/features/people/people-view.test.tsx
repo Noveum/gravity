@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { PersonRow } from '@gravity/shared/records';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -80,6 +80,36 @@ describe('PeopleView', () => {
       expect(screen.getByTestId('record-row-per3')).toHaveAttribute('data-active', 'true'),
     );
     expect(screen.getByTestId('record-row-per1')).not.toHaveAttribute('data-active');
+  });
+
+  test('Cmd+Shift+A copies the focused person for an agent', async () => {
+    const writeText = mock((_text: string) => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const sent = serveJson((url) =>
+      url.pathname === '/api/context'
+        ? {
+            body: {
+              subject: { type: 'person', id: 'per2' },
+              label: 'Grace Hopper',
+              text: 'Person: Grace Hopper',
+            },
+          }
+        : {
+            body: {
+              people: [person('per1', 'Ada Lovelace'), person('per2', 'Grace Hopper')],
+              nextCursor: null,
+            },
+          },
+    );
+    renderWithClient(<PeopleView />);
+    await screen.findByTestId('record-row-per1');
+    await userEvent.keyboard('j');
+    await userEvent.keyboard('{Meta>}{Shift>}a{/Shift}{/Meta}');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Person: Grace Hopper'));
+    expect(sent.find((entry) => entry.url.startsWith('/api/context'))?.url).toBe(
+      '/api/context?ref=per2',
+    );
+    expect(await screen.findByText('Copied Grace Hopper')).toBeInTheDocument();
   });
 
   test('clicking a row remembers the trail too', async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   CONTEXT_TOKENS,
+  clampContextTokens,
   DEFAULT_DEAL_STAGES,
   DEFAULT_PROSPECTING_STAGES,
   defaultStagesFor,
@@ -47,6 +48,13 @@ describe('timelineFilterMatches', () => {
 describe('context bounds and priority labels', () => {
   test('the token bounds are fixed', () => {
     expect(CONTEXT_TOKENS).toEqual({ min: 200, default: 2000, max: 8000 });
+  });
+
+  test('a budget is brought inside the bounds and an absent one takes the default', () => {
+    expect(clampContextTokens(undefined)).toBe(2000);
+    expect(clampContextTokens(10)).toBe(200);
+    expect(clampContextTokens(500)).toBe(500);
+    expect(clampContextTokens(90000)).toBe(8000);
   });
 
   test('a priority is named and an unknown one reads as no priority', () => {

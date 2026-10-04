@@ -11,11 +11,12 @@ import type { LeadListSelection } from '@/features/leads/use-lead-cursor.tsx';
 import { ComposerPlaceholder } from '@/features/timeline/composer-placeholder.tsx';
 import { Timeline } from '@/features/timeline/timeline.tsx';
 import { useCan } from '@/features/workspace/use-can.ts';
+import { useCopyForAgentTarget } from '@/lib/copy-for-agent.tsx';
 import { useCopyLinkTarget } from '@/lib/copy-link.tsx';
 import { useDelayedFlag } from '@/lib/use-delayed-flag.ts';
 import { watchWindowRefocus } from '@/lib/window-refocus.ts';
 import { LeadCard } from './lead-card.tsx';
-import { useCopyForAgent } from './use-copy-for-agent.ts';
+import { RecordMenu } from './record-menu.tsx';
 
 export const RECORD_VERBS: readonly VerbMode[] = ['stage', 'owner', 'priority', 'hold', 'close'];
 
@@ -74,7 +75,7 @@ export function RecordLayout({
   const { selection, requestVerb } = useRecordSelection(focused);
   const heading = useRef<HTMLHeadingElement | null>(null);
   useCopyLinkTarget(linkFor(focused?.id ?? null));
-  useCopyForAgent(subjectType === 'person' && focused !== undefined ? focused.id : recordId);
+  useCopyForAgentTarget(subjectType === 'person' && focused !== undefined ? focused.id : recordId);
   useEffect(() => watchWindowRefocus(), []);
   const returnFocus = () => {
     const card = focused === undefined ? null : document.getElementById(`lead-card-${focused.id}`);
@@ -84,11 +85,14 @@ export function RecordLayout({
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto lg:grid lg:grid-cols-[minmax(320px,420px)_minmax(0,1fr)] lg:overflow-hidden">
       <div className="flex flex-col gap-5 border-border p-4 lg:min-h-0 lg:overflow-y-auto lg:border-r">
-        <header className="flex flex-col gap-0.5">
-          <h1 ref={heading} tabIndex={-1} className="font-medium text-lg text-text">
-            {title}
-          </h1>
-          {subtitle === null ? null : <p className="text-dense text-muted">{subtitle}</p>}
+        <header className="flex items-start gap-2">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <h1 ref={heading} tabIndex={-1} className="font-medium text-lg text-text">
+              {title}
+            </h1>
+            {subtitle === null ? null : <p className="text-dense text-muted">{subtitle}</p>}
+          </div>
+          <RecordMenu name={title} />
         </header>
         {attributes}
         {sections}

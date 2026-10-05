@@ -60,15 +60,19 @@ ALTER TABLE "stages" ADD COLUMN "pipeline" text DEFAULT 'deal' NOT NULL;--> stat
 ALTER TABLE "stages" ADD COLUMN "archived_at" timestamp with time zone;--> statement-breakpoint
 UPDATE "enrollments" SET "status" = 'paused', "pause_reason" = 'reply' WHERE "status" = 'paused_reply';--> statement-breakpoint
 UPDATE "enrollments" SET "status" = 'paused', "pause_reason" = 'archived' WHERE "status" = 'paused_archived';--> statement-breakpoint
-UPDATE "enrollments" AS "later" SET "status" = 'stopped', "pause_reason" = NULL
-WHERE "later"."status" IN ('running', 'paused') AND EXISTS (
-  SELECT 1 FROM "enrollments" AS "earlier"
-  WHERE "earlier"."organization_id" = "later"."organization_id"
-    AND "earlier"."relationship_id" = "later"."relationship_id"
-    AND "earlier"."sequence_id" = "later"."sequence_id"
-    AND "earlier"."status" IN ('running', 'paused')
-    AND "earlier"."id" < "later"."id"
+UPDATE "enrollments" SET "status" = 'stopped', "pause_reason" = NULL
+WHERE "id" IN (
+  SELECT "id" FROM (
+    SELECT "id", row_number() OVER (
+      PARTITION BY "organization_id", "relationship_id", "sequence_id"
+      ORDER BY CASE "status" WHEN 'running' THEN 0 ELSE 1 END, "id"
+    ) AS "rank"
+    FROM "enrollments"
+    WHERE "status" IN ('running', 'paused')
+  ) AS "ranked"
+  WHERE "rank" > 1
 );--> statement-breakpoint
+UPDATE "enrollments" SET "status" = 'paused', "pause_reason" = 'manual' WHERE "status" = 'running';--> statement-breakpoint
 INSERT INTO "stages" ("organization_id", "product_id", "name", "position", "pipeline", "category")
 SELECT "products"."organization_id", "products"."id", "outreach"."name", "outreach"."position", 'outreach', "outreach"."category"
 FROM "products"

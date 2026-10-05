@@ -60,7 +60,7 @@ describe("the outreach migration", () => {
           ('${demoId(401)}', '${org}', '${demoId(11)}', 'Second sequence', '${steps}');
         INSERT INTO enrollments (id, organization_id, product_id, relationship_id, sequence_id, status) VALUES
           ('${demoId(500)}', '${org}', '${demoId(10)}', '${demoId(300)}', '${demoId(400)}', 'paused_reply'),
-          ('${demoId(501)}', '${org}', '${demoId(11)}', '${demoId(301)}', '${demoId(401)}', 'running'),
+          ('${demoId(501)}', '${org}', '${demoId(11)}', '${demoId(301)}', '${demoId(401)}', 'paused_reply'),
           ('${demoId(502)}', '${org}', '${demoId(11)}', '${demoId(301)}', '${demoId(401)}', 'running'),
           ('${demoId(503)}', '${org}', '${demoId(10)}', '${demoId(300)}', '${demoId(400)}', 'completed'),
           ('${demoId(504)}', '${org}', '${demoId(10)}', '${demoId(300)}', '${demoId(400)}', 'paused_archived');
@@ -121,8 +121,8 @@ describe("the outreach migration", () => {
       }>("SELECT id, status, pause_reason FROM enrollments ORDER BY id");
       expect(enrollments.rows).toEqual([
         { id: demoId(500), status: "paused", pause_reason: "reply" },
-        { id: demoId(501), status: "running", pause_reason: null },
-        { id: demoId(502), status: "stopped", pause_reason: null },
+        { id: demoId(501), status: "stopped", pause_reason: null },
+        { id: demoId(502), status: "paused", pause_reason: "manual" },
         { id: demoId(503), status: "completed", pause_reason: null },
         { id: demoId(504), status: "stopped", pause_reason: null },
       ]);

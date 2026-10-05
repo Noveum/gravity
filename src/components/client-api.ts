@@ -38,5 +38,6 @@ export function dateLabel(value: string, timeZone = "UTC") {
 export interface Organization {
   id: string;
   name: string;
+  slug: string;
   timezone: string;
 }

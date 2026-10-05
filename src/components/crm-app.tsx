@@ -206,6 +206,7 @@ function CrmShell({ children }: { children: ReactNode }) {
     assigningOwners.size === 1 ? ([...assigningOwners][0] ?? "") : "";
   const openCount =
     data?.actions.filter((action) => action.status !== "completed").length ?? 0;
+  const outreachTab = section === "outreach" ? outreachTabFor(pathname) : null;
   const pageItem = (id: Section): SidebarItem => {
     const href = sectionPath(id);
     return {
@@ -214,7 +215,12 @@ function CrmShell({ children }: { children: ReactNode }) {
       icon: viewIcons[id],
       hint: sectionHint(id),
       href,
-      active: section === id,
+      active:
+        id === "sequences"
+          ? section === "sequences" || outreachTab === "sequences"
+          : id === "outreach"
+            ? section === "outreach" && outreachTab !== "sequences"
+            : section === id,
       onSelect: () => leaveDrawer(href),
     };
   };
@@ -290,7 +296,6 @@ function CrmShell({ children }: { children: ReactNode }) {
   const productName = crm.productId
     ? crm.product(crm.productId)?.name
     : undefined;
-  const outreachTab = section === "outreach" ? outreachTabFor(pathname) : null;
   const crumbs = breadcrumbsFor({
     view: label(section),
     ...(recordId || outreachTab ? { viewHref: sectionPath(section) } : {}),

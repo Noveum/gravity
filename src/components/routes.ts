@@ -82,7 +82,9 @@ export interface Route {
 }
 
 export function sectionPath(section: Section) {
-  return sectionPaths[section];
+  return section === "sequences"
+    ? outreachPath("sequences")
+    : sectionPaths[section];
 }
 
 export function routeFor(pathname: string): Route | null {

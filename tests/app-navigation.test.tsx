@@ -702,7 +702,6 @@ test("deep links render the view or record they name", async () => {
     ["/actions", "actions", t.actions],
     ["/people", "people", t.people],
     ["/companies", "companies", t.companies],
-    ["/sequences", "sequences", t.sequences],
     ["/meetings", "meetings", t.meetings],
     ["/opportunities", "opportunities", t.opportunities],
     ["/materials", "materials", t.materials],

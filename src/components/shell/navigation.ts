@@ -1,3 +1,4 @@
+import { bindingLabel, shortcuts } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import {
   Bot,
@@ -83,5 +84,11 @@ export function breadcrumbsFor({
   ];
 }
 
-const keyHints: Record<string, string> = t.keys;
-export const sectionHint = (section: Section) => keyHints[section] ?? "";
+export const sectionHint = (section: Section) => {
+  const binding = shortcuts.find((entry) => entry.view === section)
+    ?.bindings[0];
+  return binding ? bindingLabel(binding, false) : "";
+};
+
+export const sectionShortcut = (section: Section) =>
+  shortcuts.find((entry) => entry.view === section)?.id;

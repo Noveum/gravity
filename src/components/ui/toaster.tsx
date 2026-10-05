@@ -11,18 +11,28 @@ import {
 import { createPortal } from "react-dom";
 
 export type ToastTone = "neutral" | "success" | "danger";
+export interface ToastAction {
+  label: string;
+  run: () => void;
+}
 export interface Toast {
   id: number;
   title: string;
   tone: ToastTone;
+  action?: ToastAction;
 }
-export type Notify = (title: string, tone?: ToastTone) => void;
+export type Notify = (
+  title: string,
+  tone?: ToastTone,
+  action?: ToastAction,
+) => number;
 export const maxToasts = 3;
 export const toastDuration: Record<ToastTone, number> = {
   neutral: 5000,
   success: 4000,
   danger: 8000,
 };
+export const actionToastDuration = 8000;
 
 interface Countdown {
   remaining: number;
@@ -47,24 +57,25 @@ export function useToasts() {
     },
     [dismiss],
   );
-  const notify = useCallback(
-    (title: string, tone: ToastTone = "neutral") => {
-      if (!title) return;
+  const notify = useCallback<Notify>(
+    (title, tone = "neutral", action) => {
+      if (!title) return 0;
       const id = ++next.current;
       setToasts((current) =>
         [
           ...current.filter(
             (toast) => toast.title !== title || toast.tone !== tone,
           ),
-          { id, title, tone },
+          { id, title, tone, ...(action ? { action } : {}) },
         ].slice(-maxToasts),
       );
       const countdown: Countdown = {
-        remaining: toastDuration[tone],
+        remaining: action ? actionToastDuration : toastDuration[tone],
         startedAt: Date.now(),
       };
       countdowns.current.set(id, countdown);
       if (!paused.current) run(id, countdown);
+      return id;
     },
     [run],
   );
@@ -109,6 +120,18 @@ function raise(element: HTMLElement) {
   element.showPopover();
 }
 
+const holdsDialog = (node: Node) =>
+  node instanceof HTMLDialogElement ||
+  (node instanceof Element && !!node.querySelector("dialog"));
+
+export function dialogChanged(mutations: readonly MutationRecord[]) {
+  return mutations.some((mutation) =>
+    mutation.type === "attributes"
+      ? mutation.target instanceof HTMLDialogElement
+      : [...mutation.addedNodes, ...mutation.removedNodes].some(holdsDialog),
+  );
+}
+
 function useOpenDialog() {
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
   useEffect(() => {
@@ -119,7 +142,9 @@ function useOpenDialog() {
         ) ?? null,
       );
     sync();
-    const observer = new MutationObserver(sync);
+    const observer = new MutationObserver((mutations) => {
+      if (dialogChanged(mutations)) sync();
+    });
     observer.observe(document.body, {
       subtree: true,
       childList: true,
@@ -143,6 +168,18 @@ function ToastItem({
     <div className={`toast toast-${toast.tone}`}>
       <Icon size={15} aria-hidden className="toast-icon" />
       <span className="toast-title">{toast.title}</span>
+      {toast.action && (
+        <button
+          type="button"
+          className="ghost toast-action"
+          onClick={() => {
+            onDismiss(toast.id);
+            toast.action?.run();
+          }}
+        >
+          {toast.action.label}
+        </button>
+      )}
       <button
         type="button"
         className="ghost icon-button"

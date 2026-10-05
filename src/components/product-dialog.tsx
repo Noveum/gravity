@@ -2,7 +2,7 @@
 import t from "@crm/i18n/translations/en.json";
 import { Plus } from "lucide-react";
 import { useRef, useState } from "react";
-import { submitOnModEnter, useModalLifecycle } from "./modal-lifecycle";
+import { submitOnSaveKey, useModalLifecycle } from "./modal-lifecycle";
 import { ShortcutHint } from "./ui/shortcut-hint";
 
 export function ProductDialog({
@@ -37,7 +37,7 @@ export function ProductDialog({
         {t.productCreationDetail}
       </p>
       <form
-        onKeyDown={submitOnModEnter}
+        onKeyDown={submitOnSaveKey}
         onSubmit={async (event) => {
           event.preventDefault();
           if (submitting.current) return;
@@ -71,7 +71,7 @@ export function ProductDialog({
         </label>
         <div className="dialog-actions">
           <button type="button" onClick={onClose} disabled={busy}>
-            {t.cancel} <ShortcutHint keys={t.keys.close} />
+            {t.cancel} <ShortcutHint id="back" />
           </button>
           <button
             type="submit"
@@ -83,7 +83,7 @@ export function ProductDialog({
           >
             <Plus size={14} aria-hidden />
             {busy ? t.saving : t.newProduct}
-            <ShortcutHint keys={t.keys.submit} />
+            <ShortcutHint id="save" />
           </button>
         </div>
       </form>

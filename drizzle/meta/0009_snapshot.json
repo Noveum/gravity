@@ -1,5 +1,5 @@
 {
-  "id": "e8d5797a-a62b-4938-8b28-c8587332625d",
+  "id": "2d6dd658-4d15-4bfc-9d3a-40e06e5f3dda",
   "prevId": "723e87c0-89aa-4f39-8093-d45490de30da",
   "version": "7",
   "dialect": "postgresql",
@@ -727,12 +727,25 @@
           "notNull": true,
           "default": "''"
         },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
         }
       },
       "indexes": {},
@@ -2566,41 +2579,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "messages_activity_idx": {
-          "name": "messages_activity_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "product_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "messages_organization_id_organizations_id_fk": {
           "name": "messages_organization_id_organizations_id_fk",
@@ -2792,63 +2771,6 @@
           "notNull": true,
           "default": "'USD'"
         },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'open'"
-        },
-        "probability": {
-          "name": "probability",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expected_close_date": {
-          "name": "expected_close_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "lost_reason": {
-          "name": "lost_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "version": {
           "name": "version",
           "type": "integer",
@@ -2868,21 +2790,6 @@
           ],
           "columnsTo": [
             "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "opportunities_organization_id_owner_id_memberships_organization_id_user_id_fk": {
-          "name": "opportunities_organization_id_owner_id_memberships_organization_id_user_id_fk",
-          "tableFrom": "opportunities",
-          "tableTo": "memberships",
-          "columnsFrom": [
-            "organization_id",
-            "owner_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "user_id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -2936,24 +2843,7 @@
           "withCheck": "true"
         }
       },
-      "checkConstraints": {
-        "deal_amount_nonnegative": {
-          "name": "deal_amount_nonnegative",
-          "value": "\"opportunities\".\"amount_minor\" IS NULL OR \"opportunities\".\"amount_minor\" >= 0"
-        },
-        "deal_probability_valid": {
-          "name": "deal_probability_valid",
-          "value": "\"opportunities\".\"probability\" IS NULL OR (\"opportunities\".\"probability\" >= 0 AND \"opportunities\".\"probability\" <= 100)"
-        },
-        "deal_status_valid": {
-          "name": "deal_status_valid",
-          "value": "\"opportunities\".\"status\" IN ('open', 'won', 'lost')"
-        },
-        "deal_currency_valid": {
-          "name": "deal_currency_valid",
-          "value": "\"opportunities\".\"currency\" ~ '^[A-Z]{3}$'"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": true
     },
     "public.organizations": {
@@ -3063,12 +2953,39 @@
           "primaryKey": false,
           "notNull": false
         },
+        "other_emails": {
+          "name": "other_emails",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "linkedin_url": {
+          "name": "linkedin_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
         "summary": {
           "name": "summary",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "default": "''"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -3124,110 +3041,6 @@
           "columns": [
             "organization_id",
             "id"
-          ]
-        }
-      },
-      "policies": {
-        "gravity_server_access": {
-          "name": "gravity_server_access",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "gravity_app"
-          ],
-          "using": "true",
-          "withCheck": "true"
-        }
-      },
-      "checkConstraints": {},
-      "isRLSEnabled": true
-    },
-    "public.pipelines": {
-      "name": "pipelines",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "product_id": {
-          "name": "product_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "pipelines_organization_id_organizations_id_fk": {
-          "name": "pipelines_organization_id_organizations_id_fk",
-          "tableFrom": "pipelines",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "pipelines_organization_id_product_id_products_organization_id_id_fk": {
-          "name": "pipelines_organization_id_product_id_products_organization_id_id_fk",
-          "tableFrom": "pipelines",
-          "tableTo": "products",
-          "columnsFrom": [
-            "organization_id",
-            "product_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "pipelines_organization_id_product_id_id_unique": {
-          "name": "pipelines_organization_id_product_id_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "organization_id",
-            "product_id",
-            "id"
-          ]
-        },
-        "pipelines_organization_id_product_id_name_unique": {
-          "name": "pipelines_organization_id_product_id_name_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "organization_id",
-            "product_id",
-            "name"
           ]
         }
       },
@@ -3881,19 +3694,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "pipeline_id": {
-          "name": "pipeline_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'open'"
-        },
         "name": {
           "name": "name",
           "type": "text",
@@ -3905,6 +3705,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
         }
       },
       "indexes": {},
@@ -3917,23 +3724,6 @@
             "organization_id"
           ],
           "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "stages_organization_id_product_id_pipeline_id_pipelines_organization_id_product_id_id_fk": {
-          "name": "stages_organization_id_product_id_pipeline_id_pipelines_organization_id_product_id_id_fk",
-          "tableFrom": "stages",
-          "tableTo": "pipelines",
-          "columnsFrom": [
-            "organization_id",
-            "product_id",
-            "pipeline_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "product_id",
             "id"
           ],
           "onDelete": "no action",

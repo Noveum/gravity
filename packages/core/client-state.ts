@@ -14,13 +14,30 @@ export function productSnapshot(
   );
   const people = snapshot.people.filter((person) => personIds.has(person.id));
   const companyIds = new Set(people.map((person) => person.companyId));
+  const inBrand = (productIds: readonly string[]) =>
+    !productIds.length || productIds.includes(productId);
   return {
     ...snapshot,
     relationships,
     people,
-    companies: snapshot.companies.filter((company) =>
-      companyIds.has(company.id),
+    companies: snapshot.companies.filter(
+      (company) =>
+        companyIds.has(company.id) ||
+        (!snapshot.people.some((person) => person.companyId === company.id) &&
+          inBrand(
+            snapshot.archived.people
+              .filter((person) => person.companyId === company.id)
+              .flatMap((person) => person.productIds),
+          )),
     ),
+    archived: {
+      people: snapshot.archived.people.filter((person) =>
+        person.productIds.includes(productId),
+      ),
+      companies: snapshot.archived.companies.filter((company) =>
+        inBrand(company.productIds),
+      ),
+    },
     actions: scoped(snapshot.actions),
     sequences: scoped(snapshot.sequences),
     enrollments: scoped(snapshot.enrollments),
@@ -32,6 +49,7 @@ export function productSnapshot(
     opportunities: scoped(snapshot.opportunities),
     pipelines: scoped(snapshot.pipelines),
     messageStats: scoped(snapshot.messageStats),
+    touchStats: scoped(snapshot.touchStats),
     members: snapshot.members.map((member) => ({
       ...member,
       productIds: member.productIds.filter((id) => id === productId),

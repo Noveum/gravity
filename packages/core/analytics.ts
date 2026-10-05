@@ -103,6 +103,7 @@ export function overview(
     (d) =>
       d.status !== "open" &&
       d.closedAt &&
+      new Date(d.closedAt).getTime() <= now.getTime() &&
       dateKey(d.closedAt, options.timeZone) >= from &&
       dateKey(d.closedAt, options.timeZone) <= today,
   );
@@ -134,11 +135,35 @@ export function overview(
   const meetings = data.meetings.filter(
     (m) =>
       m.status === "held" &&
+      new Date(m.startsAt).getTime() <= now.getTime() &&
       owner(relationshipOwner(m.relationshipId)) &&
       dateKey(m.startsAt, options.timeZone) >= from &&
       dateKey(m.startsAt, options.timeZone) <= today,
   );
   const pendingRelationships = new Set(pending.map((a) => a.relationshipId));
+  const touches = data.touchStats.filter(
+    (t) =>
+      owner(t.sentBy ?? t.senderId) &&
+      (!options.channel || t.channel === options.channel),
+  );
+  const outreachPending = touches.filter(
+    (t) =>
+      t.enrollmentStatus === "running" &&
+      (t.status === "planned" || t.status === "approved"),
+  );
+  for (const touch of outreachPending)
+    pendingRelationships.add(touch.relationshipId);
+  const outreachDue = outreachPending.filter(
+    (t) => dateKey(t.dueAt, options.timeZone) <= today,
+  );
+  const reportedSent = touches.filter(
+    (t) =>
+      t.status === "sent" &&
+      t.sentAt &&
+      new Date(t.sentAt).getTime() <= now.getTime() &&
+      dateKey(t.sentAt, options.timeZone) >= from &&
+      dateKey(t.sentAt, options.timeZone) <= today,
+  );
   return {
     today,
     from,
@@ -178,5 +203,12 @@ export function overview(
     waiting: pending.filter((a) => a.owedBy === "them"),
     blocked: pending.filter((a) => a.status === "blocked"),
     completed: actions.filter((a) => a.status === "completed"),
+    outreachPending,
+    outreachDue,
+    outreachOverdue: outreachDue.filter(
+      (t) => dateKey(t.dueAt, options.timeZone) < today,
+    ),
+    outreachFollowups: outreachPending.filter((t) => t.followUp > 0),
+    reportedSent,
   };
 }

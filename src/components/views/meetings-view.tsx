@@ -1,7 +1,8 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
+import { Pencil } from "lucide-react";
 import { dateLabel, label } from "../client-api";
-import { useWorkspaceData } from "../crm/crm-context";
+import { useCreate, useEdit, useWorkspaceData } from "../crm/crm-context";
 import { useRevealedRecord } from "../crm/use-revealed-record";
 import { EmptyState } from "../ui/states";
 
@@ -9,6 +10,22 @@ export function MeetingsView() {
   const crm = useWorkspaceData();
   const { data, search, product, personFor, busy, userId, timeZone } = crm;
   const focusedRecord = useRevealedRecord();
+  useCreate(() =>
+    data.relationships.length
+      ? crm.openRecordDialog({ kind: "meeting" })
+      : false,
+  );
+  useEdit(() => {
+    const active =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+            .closest<HTMLElement>("[data-record-id]")
+            ?.getAttribute("data-record-id")
+        : undefined;
+    const id = active ?? focusedRecord;
+    if (!data.meetings.some((meeting) => meeting.id === id)) return false;
+    return crm.openRecordDialog({ kind: "meeting", id });
+  });
   const meetings = data.meetings.filter((meeting) =>
     [meeting.title, personFor(meeting.relationshipId)?.name]
       .join(" ")
@@ -44,7 +61,22 @@ export function MeetingsView() {
                 </button>
               </p>
             </div>
-            <span className="badge">{label(meeting.status)}</span>
+            <div className="meeting-actions">
+              <span className="badge">{label(meeting.status)}</span>
+              <button
+                type="button"
+                className="ghost"
+                aria-keyshortcuts="E"
+                aria-label={`${t.editMeeting}: ${meeting.title}`}
+                title={`${t.editMeeting} (E)`}
+                onClick={() =>
+                  crm.openRecordDialog({ kind: "meeting", id: meeting.id })
+                }
+              >
+                <Pencil size={13} aria-hidden />
+                {t.edit}
+              </button>
+            </div>
           </div>
           <p>{meeting.summary}</p>
           {meeting.proposedCommitment && (

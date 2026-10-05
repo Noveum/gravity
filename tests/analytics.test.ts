@@ -15,6 +15,10 @@ import {
   pipelineSchema,
 } from "../packages/core/crm";
 import { serialize } from "../packages/core/dto";
+import {
+  opportunityChangeSchema,
+  RecordService,
+} from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
@@ -96,6 +100,7 @@ test("reports use organization days, actual outcomes, and synced messages rather
     { ...first, id: "lost", status: "lost", closedAt: "2026-10-02T23:00:00Z" },
     { ...first, id: "legacy", status: "won", closedAt: null },
     { ...first, id: "old", status: "won", closedAt: "2026-09-01T00:00:00Z" },
+    { ...first, id: "future", status: "won", closedAt: "2026-10-05T06:00:00Z" },
   ];
   snapshot.actions = [
     {
@@ -358,7 +363,7 @@ test("multiple pipelines stay product-bound and only admins can create them", as
     .from(s.stages)
     .where(eq(s.stages.pipelineId, created.id));
   expect(stages).toHaveLength(5);
-  expect(stages.map((stage) => stage.kind)).toEqual([
+  expect(stages.map((stage) => stage.category)).toEqual([
     "open",
     "open",
     "open",
@@ -436,4 +441,117 @@ test("MCP reports and deal writes use the same service and grant boundaries", as
   });
   expect(denied.isError).toBe(true);
   expect(denied.content[0].text).toContain("FORBIDDEN");
+});
+
+test("outreach follow-up workload and reported sends never inflate synced message totals", async () => {
+  const snapshot = serialize(
+    await service.snapshot(admin, { organizationId: org }),
+  );
+  const fixture = snapshot.touchStats[0];
+  const now = new Date("2026-10-05T00:30:00Z");
+  snapshot.messageStats = [];
+  snapshot.touchStats = [
+    {
+      ...fixture,
+      id: "due",
+      status: "planned",
+      enrollmentStatus: "running",
+      followUp: 2,
+      dueAt: "2026-10-03T00:00:00Z",
+      senderId: demoUser,
+      sentBy: null,
+      sentAt: null,
+    },
+    {
+      ...fixture,
+      id: "paused",
+      status: "planned",
+      enrollmentStatus: "paused",
+      followUp: 3,
+      dueAt: "2026-10-03T00:00:00Z",
+      senderId: demoUser,
+      sentBy: null,
+      sentAt: null,
+    },
+    {
+      ...fixture,
+      id: "reported",
+      status: "sent",
+      sentBy: demoUser,
+      sentAt: "2026-10-04T00:00:00Z",
+    },
+    {
+      ...fixture,
+      id: "future",
+      status: "sent",
+      sentBy: demoUser,
+      sentAt: "2026-10-05T23:00:00Z",
+    },
+  ];
+  const report = overview(snapshot, {
+    days: 7,
+    timeZone: "UTC",
+    now,
+    ownerId: demoUser,
+  });
+  expect(report.outreachDue.map((t) => t.id)).toEqual(["due"]);
+  expect(report.outreachFollowups.map((t) => t.id)).toEqual(["due"]);
+  expect(report.reportedSent.map((t) => t.id)).toEqual(["reported"]);
+  expect(report.sent).toBe(0);
+});
+
+test("keyboard/drag stage mutations keep sales outcomes consistent and versioned", async () => {
+  const saved = await service.saveOpportunity(admin, dealInput());
+  const records = new RecordService(local.db);
+  const won = await records.changeOpportunity(
+    admin,
+    opportunityChangeSchema.parse({
+      organizationId: org,
+      opportunityId: saved.id,
+      version: 1,
+      stageId: demoId(803),
+    }),
+  );
+  expect(won).toMatchObject({ status: "won", probability: 100, version: 2 });
+  expect(won.closedAt).toBeInstanceOf(Date);
+  const reopened = await records.changeOpportunity(
+    admin,
+    opportunityChangeSchema.parse({
+      organizationId: org,
+      opportunityId: saved.id,
+      version: 2,
+      stageId: demoId(800),
+    }),
+  );
+  expect(reopened).toMatchObject({
+    status: "open",
+    closedAt: null,
+    version: 3,
+  });
+});
+
+test("archived identities cannot be written through the richer deal editor or counted in message reports", async () => {
+  await local.db
+    .update(s.people)
+    .set({ archivedAt: new Date() })
+    .where(eq(s.people.id, demoId(200)));
+  await expect(
+    service.saveOpportunity(admin, dealInput()),
+  ).rejects.toMatchObject({ code: "RECORD_ARCHIVED" });
+  const report = await service.overview(admin, {
+    organizationId: org,
+    days: 7,
+  });
+  expect(report.sent).toBe(0);
+  const activity = await service.messageActivity(
+    admin,
+    messageActivitySchema.parse({
+      organizationId: org,
+      from: report.from,
+      through: report.through,
+    }),
+  );
+  expect(activity.items.every((r) => r.relationshipId !== demoId(300))).toBe(
+    true,
+  );
 });

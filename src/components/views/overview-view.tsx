@@ -19,10 +19,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { dateLabel, errorText, requestJson } from "../client-api";
 import { useWorkspaceData } from "../crm/crm-context";
 import { useModalLifecycle } from "../modal-lifecycle";
+import { followUpLabel } from "../outreach/touch-labels";
 
 interface Drill {
   title: string;
-  kind: "deals" | "actions" | "messages" | "meetings";
+  kind: "deals" | "actions" | "messages" | "meetings" | "touches";
   ids?: string[];
   ownerId?: string;
   direction?: "inbound" | "outbound";
@@ -312,7 +313,7 @@ export function OverviewView() {
                           <button
                             type="button"
                             key={stage.id}
-                            className={`stage-summary stage-${stage.kind}`}
+                            className={`stage-summary stage-${stage.category}`}
                             onClick={() =>
                               open(
                                 `${pipeline.name} · ${stage.name}`,
@@ -389,6 +390,30 @@ export function OverviewView() {
             </button>
           </div>
           <p className="muted report-note">{t.moneyCoverageNote}</p>
+        </section>
+        <section className="report-card">
+          <h2>{t.overviewOutreachQueue}</h2>
+          {[
+            { title: t.outreachDueNow, rows: report.outreachDue },
+            { title: t.outreachOverdue, rows: report.outreachOverdue },
+            {
+              title: t.outreachFollowupsPlanned,
+              rows: report.outreachFollowups,
+            },
+            { title: t.outreachReportedSent, rows: report.reportedSent },
+          ].map(({ title, rows }) => (
+            <button
+              type="button"
+              className="report-row"
+              key={title}
+              onClick={() => open(title, "touches", rows)}
+            >
+              <span>{title}</span>
+              <strong>{rows.length}</strong>
+              <ArrowUpRight size={13} aria-hidden />
+            </button>
+          ))}
+          <p className="muted report-note">{t.outreachReportNote}</p>
         </section>
         <section className="report-card">
           <h2>{t.dealDataHealth}</h2>
@@ -652,7 +677,9 @@ function ReportDrawer({
         ? crm.data.actions.filter((r) => ids.has(r.id))
         : drill.kind === "meetings"
           ? crm.data.meetings.filter((r) => ids.has(r.id))
-          : [];
+          : drill.kind === "touches"
+            ? crm.data.touchStats.filter((r) => ids.has(r.id))
+            : [];
   return (
     <dialog
       ref={modal}
@@ -699,12 +726,22 @@ function ReportDrawer({
                 onClose();
                 if (drill.kind === "deals")
                   crm.go(`/opportunities?deal=${row.id}`);
+                else if (drill.kind === "touches" && "status" in row)
+                  crm.go(
+                    `/outreach/${row.status === "sent" ? "sent" : "today"}?touch=${row.id}`,
+                  );
                 else if (drill.kind === "actions")
                   crm.openPerson(row.relationshipId, row.id);
                 else crm.reveal("meetings", row.id);
               }}
             >
-              <strong>{"name" in row ? row.name : row.title}</strong>
+              <strong>
+                {"name" in row
+                  ? row.name
+                  : "title" in row
+                    ? row.title
+                    : followUpLabel(row.followUp)}
+              </strong>
               <span>
                 {crm.personFor(row.relationshipId)?.name} ·{" "}
                 {crm.product(row.productId)?.name}

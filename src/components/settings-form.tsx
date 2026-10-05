@@ -2,7 +2,7 @@
 import t from "@crm/i18n/translations/en.json";
 import { Plus } from "lucide-react";
 import { useRef, useState } from "react";
-import { submitOnModEnter } from "./modal-lifecycle";
+import { submitOnSaveKey } from "./modal-lifecycle";
 import { ShortcutHint } from "./ui/shortcut-hint";
 
 export function SettingsForm({
@@ -26,7 +26,7 @@ export function SettingsForm({
       ].map((kind) => (
         <form
           key={kind}
-          onKeyDown={submitOnModEnter}
+          onKeyDown={submitOnSaveKey}
           onSubmit={async (event) => {
             event.preventDefault();
             if (submitting.current) return;
@@ -68,7 +68,7 @@ export function SettingsForm({
               : kind === "organization"
                 ? t.newOrganization
                 : t.newProduct}
-            <ShortcutHint keys={t.keys.submit} />
+            <ShortcutHint id="save" />
           </button>
         </form>
       ))}

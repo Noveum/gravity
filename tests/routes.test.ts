@@ -129,7 +129,7 @@ test("analytics HTTP reads and versioned deal mutations enforce scope and return
   );
   expect((await messages.json()).items).toHaveLength(3);
   const body = {
-    operation: "opportunity",
+    operation: "deal",
     organizationId: demoId(1),
     productId: demoId(10),
     relationshipId: demoId(300),
@@ -253,7 +253,7 @@ describe("CRM HTTP contracts", () => {
         .select()
         .from(s.stages)
         .where(eq(s.stages.productId, product.id)),
-    ).toHaveLength(5);
+    ).toHaveLength(14);
     expect(
       await db
         .select()
@@ -303,6 +303,126 @@ describe("CRM HTTP contracts", () => {
       relationshipId: demoId(302),
       productId: demoId(12),
     });
+  });
+});
+describe("record editing HTTP contracts", () => {
+  test("every record operation runs the authorized service, refuses cross-site posts and invalid bodies", async () => {
+    const company = await crm({
+      operation: "company",
+      organizationId: demoId(1),
+      name: "Fictional Route Company",
+      domain: "route-company.example.test",
+    });
+    expect(company.status).toBe(200);
+    const created = await company.json();
+    expect(
+      (
+        await crm(
+          {
+            operation: "company",
+            organizationId: demoId(1),
+            companyId: created.id,
+            version: created.version,
+            name: "Cross site",
+          },
+          demoUser,
+          "http://untrusted.example",
+        )
+      ).status,
+    ).toBe(403);
+    const [mira] = await db
+      .select()
+      .from(s.people)
+      .where(eq(s.people.id, demoId(200)));
+    const person = await crm({
+      operation: "person-update",
+      organizationId: demoId(1),
+      personId: demoId(200),
+      version: mira?.version,
+      name: "Mira Chen",
+      email: mira?.email,
+      companyId: created.id,
+      linkedinUrl: "https://linkedin.com/in/fictional",
+    });
+    expect(person.status).toBe(200);
+    expect((await person.json()).companyId).toBe(created.id);
+    const archived = await crm({
+      operation: "person-archive",
+      organizationId: demoId(1),
+      personId: demoId(205),
+      version: 1,
+      archived: true,
+    });
+    expect(archived.status).toBe(200);
+    const listed = await (await read(`organizationId=${demoId(1)}`)).json();
+    expect(
+      listed.people.some((row: { id: string }) => row.id === demoId(205)),
+    ).toBe(false);
+    const byPerson = await read(
+      `operation=person&organizationId=${demoId(1)}&personId=${demoId(205)}`,
+    );
+    expect((await byPerson.json()).person.archivedAt).toBeTruthy();
+    const meeting = await crm({
+      operation: "meeting",
+      organizationId: demoId(1),
+      relationshipId: demoId(301),
+      title: "Fictional route meeting",
+      startsAt: "2026-11-03T09:00:00.000Z",
+      status: "scheduled",
+    });
+    expect(meeting.status).toBe(200);
+    const opportunity = await crm(
+      {
+        operation: "opportunity",
+        organizationId: demoId(1),
+        relationshipId: demoId(301),
+        stageId: demoId(810),
+        name: "Fictional route deal",
+        amountMinor: 1000,
+      },
+      "demo-restricted",
+    );
+    expect(opportunity.status).toBe(200);
+    const deal = await opportunity.json();
+    const moved = await crm(
+      {
+        operation: "opportunity-change",
+        organizationId: demoId(1),
+        opportunityId: deal.id,
+        version: deal.version,
+        stageId: demoId(813),
+      },
+      "demo-restricted",
+    );
+    expect((await moved.json()).stageId).toBe(demoId(813));
+    expect(
+      (
+        await crm(
+          {
+            operation: "company-archive",
+            organizationId: demoId(1),
+            companyId: created.id,
+            version: 99,
+            archived: true,
+          },
+          demoUser,
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await crm({
+          operation: "opportunity-change",
+          organizationId: demoId(1),
+          opportunityId: deal.id,
+          version: 2,
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await crm({ operation: "delete-everything", organizationId: demoId(1) }))
+        .status,
+    ).toBe(400);
   });
 });
 describe("signed integration HTTP contracts", () => {

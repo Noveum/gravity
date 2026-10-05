@@ -51,20 +51,30 @@ Live updates never approve, send, or replace an unsaved draft. Draft edits are b
 | Cmd/Ctrl K | Searchable commands; Up/Down selects an enabled match; Enter opens it |
 | ? | Searchable shortcut guide |
 | / | Focus search in the current view; Escape clears it, then returns to the view |
-| J/K or Down/Up | Focus visible records in every record view; Enter opens the focused record |
+| Cmd/Ctrl Shift L | Toggle light and dark theme |
+| [ | Toggle the sidebar |
+| J/K or Down/Up | Focus visible records in every record view |
 | Home / End | Focus first / last visible record |
-| C | Create a person from any workspace view |
+| Space / Enter | Peek at the focused row / open its record |
+| X | Select or clear the focused row |
+| Shift J/K or Shift Down/Up | Extend the selection down / up |
+| C | Create in the current view; a person where the view has no create of its own |
 | Shift P | Add a product to the current organization (admins only) |
 | Shift O | Start creating a new organization |
 | N | Open next-action scheduling |
 | G then A/P/C/S/M/O/F/I/T/R | Actions / People / Companies / Sequences / Meetings / Opportunities / Materials / Connections / Settings / Outreach |
 | O / P | Focus organization / product selector; native arrows and Enter choose |
+| D / S / A | On the actions list: mark done / snooze to the next working morning / assign to a teammate |
+| Cmd/Ctrl Z | Undo the last action or outreach change |
+| D / S / Shift S / E | On outreach touch lists: record a send that already happened / snooze / skip with a reason / edit the draft |
+| Shift Left / Shift Right | Move a focused board card to the previous / next stage |
+| M | Move a focused pipeline card to any stage, including closing |
 | H / L | Focus the record list / detail panel |
-| E | Expand or restore the detail panel |
+| E | Expand or restore the detail panel; edit the open record |
 | 1 / 2 / 3 | Conversation / Evidence / Draft, when available |
 | B | Return to the previous inspected record |
 | Cmd/Ctrl Enter | Submit a create/settings form after native validation; save an edited draft |
-| Escape | Close an inspector and restore its trigger; native dialogs cancel unless saving |
+| Escape | Back out one level: close an inspector and restore its trigger; native dialogs cancel unless saving |
 | Tab / Shift Tab | Standard focus navigation; native modal focus containment |
 
 Single-key shortcuts pause while typing, during IME composition, and behind modals or menus. Child controls retain consumed keys, and dividers/inspectors keep their own arrow navigation. Go-to chords expire after 900 ms. Record movement changes focus rather than opening links or downloading files; Enter activates the focused control. No shortcut approves a draft, accepts a meeting commitment, or sends a message. Native validation and synchronous submission guards apply to modifier submission. The complete searchable guide uses the same view mapping as navigation and hides unavailable creation actions. Visible key hints accompany navigation links, workspace/product selectors, creation buttons, modal submission/cancellation, and commands. Cmd/Ctrl hints adapt to the device after hydration. Add product is available from the Products sidebar, view toolbar, empty state, settings, and command palette.

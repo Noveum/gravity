@@ -1,29 +1,29 @@
 "use client";
+import { bindingLabel, type ShortcutId, shortcut } from "@crm/core/shortcuts";
 import { useEffect, useState } from "react";
+import { macPlatform } from "../shortcuts";
 
-/** Keep the server and first client render identical, then use platform keys. */
 export function ShortcutHint({
-  keys,
+  id,
   className = "",
   decorative = true,
 }: {
-  keys: string;
+  id: ShortcutId;
   className?: string;
   decorative?: boolean;
 }) {
-  const [isMac, setIsMac] = useState<boolean | null>(null);
+  const [mac, setMac] = useState(false);
   useEffect(() => {
-    setIsMac(/Mac|iPhone|iPad/.test(navigator.platform));
+    setMac(macPlatform());
   }, []);
-  if (!keys) return null;
-  const display =
-    isMac === null ? keys : keys.replace("⌘ / Ctrl", isMac ? "⌘" : "Ctrl");
+  const binding = shortcut(id).bindings[0];
+  if (!binding) return null;
   return (
     <span
       className={`shortcut-hint ${className}`}
       aria-hidden={decorative || undefined}
     >
-      <kbd>{display}</kbd>
+      <kbd>{bindingLabel(binding, mac)}</kbd>
     </span>
   );
 }

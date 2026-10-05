@@ -227,14 +227,16 @@ export function mcpHandler(
           }),
           annotations: { readOnlyHint: true },
         },
-        async ({ companyId, productId }) =>
-          result(
-            await service.companyContext(
-              principal,
-              { organizationId, productId },
-              companyId,
-            ),
-          ),
+        async ({ companyId, productId }) => {
+          const context = await service.companyContext(
+            principal,
+            { organizationId, productId },
+            companyId,
+          );
+          if (context.company.archivedAt)
+            throw new DomainError("NOT_FOUND", 404);
+          return result(context);
+        },
       );
       server.registerTool(
         "get_person_context",
@@ -244,10 +246,16 @@ export function mcpHandler(
           inputSchema: z.object({ relationshipId: z.uuid() }),
           annotations: { readOnlyHint: true },
         },
-        async ({ relationshipId }) =>
-          result(
-            await service.context(principal, organizationId, relationshipId),
-          ),
+        async ({ relationshipId }) => {
+          const context = await service.context(
+            principal,
+            organizationId,
+            relationshipId,
+          );
+          if (context.person?.archivedAt)
+            throw new DomainError("NOT_FOUND", 404);
+          return result(context);
+        },
       );
       server.registerTool(
         "list_materials",

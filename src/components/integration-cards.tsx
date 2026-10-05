@@ -24,7 +24,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dateLabel, errorText, requestJson } from "./client-api";
 import {
-  submitOnModEnter,
+  submitOnSaveKey,
   useModalLifecycle,
   useReadyFocus,
 } from "./modal-lifecycle";
@@ -649,7 +649,7 @@ function ConnectDialog({
         </>
       ) : (
         <form
-          onKeyDown={submitOnModEnter}
+          onKeyDown={submitOnSaveKey}
           onSubmit={async (event) => {
             event.preventDefault();
             if (pending.current) return;

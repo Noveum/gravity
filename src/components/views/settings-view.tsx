@@ -17,7 +17,7 @@ export function SettingsView() {
       </section>
       <p className="callout">{t.organizationIsolation}</p>
       <a className="auth-link" href="/onboarding">
-        {t.createWorkspace} <ShortcutHint keys={t.keys.createOrganization} />
+        {t.createWorkspace} <ShortcutHint id="create-organization" />
       </a>
       <SettingsForm
         organizationId={crm.organizationId}

@@ -27,6 +27,7 @@ import {
   pipelineSchema,
 } from "../packages/core/crm";
 import { type ClientSnapshot, serialize } from "../packages/core/dto";
+import { shortcutLabel } from "../packages/core/shortcuts";
 import { createLocalDatabase } from "../packages/database/client";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
@@ -150,6 +151,7 @@ beforeEach(() => {
   missingContexts.clear();
   request.mockReset();
   request.mockImplementation(async (url) => {
+    if (url.startsWith("/api/outreach")) throw new Error("NOT_FOUND");
     const params = new URL(url, "http://localhost").searchParams;
     const organizationId = params.get("organizationId") || demoId(1);
     if (
@@ -716,7 +718,6 @@ test("deep links render the view or record they name", async () => {
     ["/actions", "actions", t.actions],
     ["/people", "people", t.people],
     ["/companies", "companies", t.companies],
-    ["/sequences", "sequences", t.sequences],
     ["/meetings", "meetings", t.meetings],
     ["/opportunities", "opportunities", t.opportunities],
     ["/materials", "materials", t.materials],
@@ -741,7 +742,15 @@ test("deep links render the view or record they name", async () => {
     cleanup();
   }
   mount("/outreach");
-  expect(screen.getByRole("heading", { name: t.outreachSoon })).toBeTruthy();
+  await waitFor(() => expect(window.location.pathname).toBe("/outreach/today"));
+  expect(
+    within(screen.getByRole("navigation", { name: t.outreachTabsLabel }))
+      .getByRole("link", { name: t.outreachTabs.today })
+      .getAttribute("aria-current"),
+  ).toBe("page");
+  expect(
+    await screen.findByRole("heading", { name: t.outreachLoadError }),
+  ).toBeTruthy();
   cleanup();
   mount(`/people/${demoId(200)}`);
   expect(heading("Mira Chen", 2)).toBeTruthy();
@@ -1279,7 +1288,7 @@ test("product creation is reachable from sidebar, toolbar, keyboard and commands
   const buttons = screen.getAllByRole("button", { name: t.newProduct });
   expect(buttons).toHaveLength(2);
   for (const button of buttons) {
-    expect(button.textContent).toContain(t.keys.createProduct);
+    expect(button.textContent).toContain(shortcutLabel("create-product"));
     fireEvent.click(button);
     const dialog = screen.getByRole("dialog", { name: t.newProduct });
     expect(within(dialog).getByText(organizations[0].name)).toBeTruthy();
@@ -1384,11 +1393,11 @@ test("visible go-to hints include Outreach and the help button opens the map", a
   expect(screen.getByLabelText(t.mcpEndpoint)).toBeTruthy();
   fireEvent.keyDown(document.body, { key: "g" });
   fireEvent.keyDown(document.body, { key: "r" });
-  await waitFor(() => expect(window.location.pathname).toBe("/outreach"));
+  await waitFor(() => expect(window.location.pathname).toBe("/outreach/today"));
   fireEvent.click(screen.getByRole("button", { name: t.keyboardHelp }));
   expect(
     within(screen.getByRole("dialog", { name: t.keyboardHelp })).getByText(
-      t.keys.createProduct,
+      shortcutLabel("create-product"),
     ),
   ).toBeTruthy();
 });
@@ -1421,9 +1430,9 @@ test("Overview metrics drill into real deals and message history with keyboard n
   await waitFor(() =>
     expect(window.location.search).toContain(`deal=${demoId(1100)}`),
   );
-  expect(screen.getByRole("dialog", { name: t.editDeal })).toBeTruthy();
+  expect(screen.getByRole("dialog", { name: t.editOpportunity })).toBeTruthy();
   fireEvent.click(
-    within(screen.getByRole("dialog", { name: t.editDeal })).getByRole(
+    within(screen.getByRole("dialog", { name: t.editOpportunity })).getByRole(
       "button",
       { name: t.cancel },
     ),
@@ -1462,8 +1471,8 @@ test("deal form retains typed value when currency changes and saves all fields w
       : regular(url, init),
   );
   mount(`/opportunities?deal=${demoId(1100)}`);
-  const dialog = screen.getByRole("dialog", { name: t.editDeal });
-  const amount = within(dialog).getByLabelText(t.dealAmount);
+  const dialog = screen.getByRole("dialog", { name: t.editOpportunity });
+  const amount = within(dialog).getByLabelText(t.amount);
   await waitFor(() => expect(amount.hasAttribute("disabled")).toBe(false));
   await waitFor(() =>
     expect(dialog.querySelector("fieldset")?.disabled).toBe(false),
@@ -1484,7 +1493,9 @@ test("deal form retains typed value when currency changes and saves all fields w
   });
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   await waitFor(() =>
-    expect(screen.queryByRole("dialog", { name: t.editDeal })).toBeNull(),
+    expect(
+      screen.queryByRole("dialog", { name: t.editOpportunity }),
+    ).toBeNull(),
   );
   const saved = (
     await service.snapshot(principal, { organizationId: demoId(1) })

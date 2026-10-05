@@ -20,12 +20,12 @@ test("all CRM and authentication tables have RLS with only the trusted server po
     SELECT relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'r'
   `);
-  expect(tables.rows).toHaveLength(41);
+  expect(tables.rows).toHaveLength(43);
   expect(tables.rows.every((table) => table.relrowsecurity)).toBe(true);
   const policies = await local.client.query<{ roles: string[] }>(`
     SELECT roles FROM pg_policies WHERE schemaname = 'public'
   `);
-  expect(policies.rows).toHaveLength(41);
+  expect(policies.rows).toHaveLength(43);
   expect(
     policies.rows.every((policy) => policy.roles.join() === "gravity_app"),
   ).toBe(true);
@@ -58,6 +58,33 @@ test("browser roles cannot read CRM, sessions, or signing keys even if table gra
         await local.client.exec("RESET ROLE");
       }
     }
+  }
+});
+
+test("runtime role holds read and write grants on every public table", async () => {
+  await local.client.exec("SET ROLE gravity_test_runtime");
+  try {
+    const tables = await local.client.query<{
+      relname: string;
+      granted: boolean;
+    }>(`
+      SELECT c.relname,
+        has_table_privilege(current_user, c.oid, 'SELECT')
+          AND has_table_privilege(current_user, c.oid, 'INSERT')
+          AND has_table_privilege(current_user, c.oid, 'UPDATE')
+          AND has_table_privilege(current_user, c.oid, 'DELETE') AS granted
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'r'
+      ORDER BY c.relname
+    `);
+    expect(tables.rows).toHaveLength(43);
+    expect(
+      tables.rows
+        .filter((table) => !table.granted)
+        .map((table) => table.relname),
+    ).toEqual([]);
+  } finally {
+    await local.client.exec("RESET ROLE");
   }
 });
 

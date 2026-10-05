@@ -2,7 +2,13 @@ import { ZodError } from "zod";
 import { DomainError } from "./policy";
 export function errorResponse(error: unknown) {
   if (error instanceof DomainError)
-    return Response.json({ error: error.code }, { status: error.status });
+    return Response.json(
+      {
+        error: error.code,
+        ...(error.details ? { details: error.details } : {}),
+      },
+      { status: error.status },
+    );
   if (error instanceof ZodError || error instanceof SyntaxError)
     return Response.json({ error: "INVALID_INPUT" }, { status: 400 });
   return Response.json({ error: "INTERNAL_ERROR" }, { status: 500 });

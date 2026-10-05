@@ -57,7 +57,10 @@ test("upgrading existing deals preserves stage IDs and values without inventing 
         "Legacy fixture",
       ],
     );
-    await db.exec(await readFile("drizzle/0009_eminent_photon.sql", "utf8"));
+    for (const entry of journal.entries.filter(
+      (e: { idx: number }) => e.idx >= 9,
+    ))
+      await db.exec(await readFile(`drizzle/${entry.tag}.sql`, "utf8"));
     const deals = await db.query(
       "SELECT stage_id,amount_minor,currency,version,status,owner_id,created_at,closed_at FROM opportunities",
     );
@@ -74,12 +77,12 @@ test("upgrading existing deals preserves stage IDs and values without inventing 
       },
     ]);
     const stages = await db.query(
-      "SELECT id,kind,pipeline_id FROM stages ORDER BY position",
+      "SELECT id,category,pipeline_id FROM stages WHERE pipeline = 'deal' ORDER BY position",
     );
     expect(stages.rows).toHaveLength(2);
-    expect(stages.rows[0]).toMatchObject({ id: demoId(803), kind: "won" });
+    expect(stages.rows[0]).toMatchObject({ id: demoId(803), category: "won" });
     expect(stages.rows[1]).toMatchObject({
-      kind: "lost",
+      category: "lost",
       pipeline_id: (stages.rows[0] as { pipeline_id: string }).pipeline_id,
     });
     const grants = await db.query(

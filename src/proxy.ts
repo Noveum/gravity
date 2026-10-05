@@ -20,7 +20,7 @@ export const config = {
     "/meetings",
     "/opportunities",
     "/materials",
-    "/outreach",
+    "/outreach/:path*",
     "/connections",
     "/assistants",
     "/settings/:path*",

@@ -1,8 +1,6 @@
-import t from "@crm/i18n/translations/en.json";
-import { SequencesView } from "@/components/views/sequences-view";
-import { pageTitle } from "../page-title";
+import { redirect } from "next/navigation";
+import { outreachPath } from "@/components/routes";
 
-export const metadata = pageTitle(t.sequences);
 export default function Page() {
-  return <SequencesView />;
+  redirect(outreachPath("sequences"));
 }

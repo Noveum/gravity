@@ -1,6 +1,7 @@
 "use client";
 import { productSnapshot } from "@crm/core/client-state";
 import type { ClientContext, ClientSnapshot } from "@crm/core/dto";
+import { emptySelection, type SelectionState } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -9,6 +10,7 @@ import {
   type RefObject,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -35,6 +37,34 @@ export interface Peek {
 }
 const noPeek: Peek = { relationshipId: "", companyId: "", actionId: "" };
 type Snapshot = ClientSnapshot;
+type Action = Snapshot["actions"][number];
+export interface ActionPlan {
+  actionId: string;
+  version: number;
+  status?: "open" | "completed";
+  dueAt?: string;
+  ownerId?: string;
+}
+export type ViewVerb =
+  | "touch-sent"
+  | "touch-snooze"
+  | "touch-skip"
+  | "touch-edit"
+  | "touch-undo"
+  | "move-next"
+  | "move-previous"
+  | "move-to";
+export type ViewVerbs = Partial<Record<ViewVerb, () => boolean>>;
+export interface RecordDialogState {
+  kind: "person" | "company" | "meeting" | "opportunity";
+  id?: string;
+  relationshipId?: string;
+}
+interface Origin {
+  path: string;
+  focus: string;
+  record: string;
+}
 
 export interface CrmProps {
   initial: ClientSnapshot | null;
@@ -85,7 +115,22 @@ function useCrmState({
   const [expanded, setExpanded] = useState(false);
   const [searchState, setSearchState] = useState({ path: pathname, text: "" });
   const [personDialog, setPersonDialog] = useState(false);
-  const [actionDialog, setActionDialog] = useState(false);
+  const [recordDialog, setRecordDialog] = useState<RecordDialogState | null>(
+    null,
+  );
+  const [actionDialog, setActionDialogState] = useState({
+    open: false,
+    relationshipId: "",
+  });
+  const [selectionState, setSelectionState] = useState({
+    path: pathname,
+    selection: emptySelection,
+  });
+  const creator = useRef<(() => boolean) | null>(null);
+  const verbs = useRef<ViewVerbs>({});
+  const editor = useRef<(() => boolean) | null>(null);
+  const origin = useRef<Origin | null>(null);
+  const rowFocus = useRef("");
   const [busy, setBusy] = useState(false);
   const [focusedRecord, setFocusedRecord] = useState({ path: "", id: "" });
   const mutating = useRef(false);
@@ -121,6 +166,14 @@ function useCrmState({
         }
       : noPeek;
   const search = searchState.path === pathname ? searchState.text : "";
+  const selection =
+    selectionState.path === pathname
+      ? selectionState.selection
+      : emptySelection;
+  const setSelection = (next: SelectionState) =>
+    setSelectionState({ path: pathname, selection: next });
+  const setActionDialog = (open: boolean, relationshipId = "") =>
+    setActionDialogState({ open, relationshipId: open ? relationshipId : "" });
   const setSearch = (text: string) => setSearchState({ path: pathname, text });
   const currentOrg = organizations.find((org) => org.id === organizationId);
   const timeZone = currentOrg?.timezone || "UTC";
@@ -134,11 +187,76 @@ function useCrmState({
     setRecordHistory([]);
     setExpanded(false);
     setPersonDialog(false);
+    setRecordDialog(null);
     setActionDialog(false);
+    setSelectionState({ path: "", selection: emptySelection });
+  }
+  function rememberOrigin(href: string) {
+    const record = href.split("?")[0] ?? href;
+    const target = routeFor(record);
+    if (!target?.recordId) return;
+    if (route?.recordId) {
+      if (origin.current?.record !== pathname) origin.current = null;
+      return;
+    }
+    const focus =
+      document.activeElement instanceof HTMLElement
+        ? (document.activeElement
+            .closest<HTMLElement>("[data-nav-record]")
+            ?.getAttribute("data-nav-record") ?? "")
+        : "";
+    origin.current = {
+      path: `${pathname}${query.toString() ? `?${query}` : ""}`,
+      focus,
+      record,
+    };
   }
   function go(href: string) {
+    rememberOrigin(href);
     titleFocus.current = href.split("?")[0] ?? href;
     router.push(href);
+  }
+  function leaveRecord() {
+    if (!route?.recordId) return false;
+    const back =
+      origin.current?.record === pathname
+        ? origin.current
+        : { path: sectionPath(route.section), focus: route.recordId };
+    origin.current = null;
+    rowFocus.current = back.focus;
+    titleFocus.current = back.path.split("?")[0] ?? back.path;
+    router.push(back.path);
+    return true;
+  }
+  const registerCreate = useCallback((run: () => boolean) => {
+    creator.current = run;
+    return () => {
+      if (creator.current === run) creator.current = null;
+    };
+  }, []);
+  function create() {
+    return creator.current?.() ?? false;
+  }
+  const registerEdit = useCallback((run: () => boolean) => {
+    editor.current = run;
+    return () => {
+      if (editor.current === run) editor.current = null;
+    };
+  }, []);
+  function edit() {
+    return editor.current?.() ?? false;
+  }
+  const registerVerbs = useCallback((handlers: ViewVerbs) => {
+    verbs.current = { ...verbs.current, ...handlers };
+    return () => {
+      const remaining = { ...verbs.current };
+      for (const id of Object.keys(handlers) as ViewVerb[])
+        if (remaining[id] === handlers[id]) delete remaining[id];
+      verbs.current = remaining;
+    };
+  }, []);
+  function runVerb(id: ViewVerb) {
+    return verbs.current[id]?.() ?? false;
   }
   function goToSection(section: Section) {
     go(sectionPath(section));
@@ -215,7 +333,24 @@ function useCrmState({
     router.push(path);
   }
   async function mutate(body: object) {
-    if (mutating.current) return false;
+    return (await send(body)).ok;
+  }
+  async function planActions(items: ActionPlan[]) {
+    const { ok, result } = await send(
+      { operation: "plan", organizationId, items },
+      false,
+    );
+    return ok ? (result as Action[]) : null;
+  }
+  async function send(
+    body: object,
+    announce: boolean | string = true,
+    toastErrors = true,
+  ): Promise<{ ok: boolean; result?: unknown; error?: string }> {
+    if (mutating.current) {
+      if (toastErrors) notify(t.stillSaving, "neutral");
+      return { ok: false, error: t.stillSaving };
+    }
     mutating.current = true;
     const submittedOrganization = organizationId;
     setBusy(true);
@@ -225,9 +360,33 @@ function useCrmState({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (activeOrganization.current !== submittedOrganization) return true;
+      if (activeOrganization.current !== submittedOrganization)
+        return { ok: true, result };
       fetchGeneration.current++;
       const changed = body as { operation?: string; actionId?: string };
+      if (changed.operation === "plan") {
+        const updated = result as Action[];
+        for (const action of updated)
+          draftBuffers.rebase(action.id, action.version - 1, action.version);
+        setData((previous) =>
+          previous
+            ? {
+                ...previous,
+                asOf: new Date().toISOString(),
+                actions: previous.actions.map(
+                  (item) =>
+                    updated.find((action) => action.id === item.id) ?? item,
+                ),
+              }
+            : previous,
+        );
+      }
+      if (changed.operation)
+        setData((previous) =>
+          previous
+            ? patchRecords(previous, changed.operation ?? "", result)
+            : previous,
+        );
       if (changed.operation === "action") {
         const updatedAction = result as Snapshot["actions"][number];
         draftBuffers.drop(updatedAction.id, changed.actionId ?? "");
@@ -244,15 +403,17 @@ function useCrmState({
         );
       }
       void refresh();
-      notify(t.updated, "success");
-      return true;
+      if (announce)
+        notify(typeof announce === "string" ? announce : t.updated, "success");
+      return { ok: true, result };
     } catch (error) {
+      const message = errorText(error, timeZone);
       if (activeOrganization.current === submittedOrganization) {
-        notify(errorText(error), "danger");
+        if (toastErrors) notify(message, "danger");
         if (isAccessError(error, ["CONFLICT", "FORBIDDEN", "UNAUTHORIZED"]))
           void refresh();
       }
-      return false;
+      return { ok: false, error: message };
     } finally {
       mutating.current = false;
       setBusy(false);
@@ -323,6 +484,8 @@ function useCrmState({
     busy,
     mutating,
     mutate,
+    send,
+    planActions,
     revokeGrant,
     reloadOrganizations,
     switchOrganization,
@@ -347,8 +510,27 @@ function useCrmState({
     setExpanded,
     personDialog,
     setPersonDialog,
-    actionDialog,
+    recordDialog,
+    openRecordDialog: (next: RecordDialogState) => {
+      setRecordDialog(next);
+      return true;
+    },
+    closeRecordDialog: () => setRecordDialog(null),
+    actionDialog: actionDialog.open,
+    actionDialogRelationship: actionDialog.relationshipId,
     setActionDialog,
+    selection,
+    setSelection,
+    clearSelection: () => setSelection(emptySelection),
+    registerCreate,
+    create,
+    registerEdit,
+    edit,
+    registerVerbs,
+    runVerb,
+    leaveRecord,
+    rememberOrigin,
+    rowFocus,
     focusedRecord: focusedRecord.path === pathname ? focusedRecord.id : "",
     reveal,
     go,
@@ -382,6 +564,106 @@ export function useCrm() {
   const crm = useContext(CrmContext);
   if (!crm) throw new Error("CRM_PROVIDER_MISSING");
   return crm;
+}
+
+export function useCreate(run: () => boolean) {
+  const { registerCreate } = useCrm();
+  const latest = useRef(run);
+  useEffect(() => {
+    latest.current = run;
+  });
+  useEffect(() => registerCreate(() => latest.current()), [registerCreate]);
+}
+
+export function usePruneSelection(visible: string[]) {
+  const { selection, setSelection } = useCrm();
+  const key = visible.join(" ");
+  const hidden = selection.selected.some((id) => !visible.includes(id));
+  useEffect(() => {
+    if (!hidden) return;
+    const shown = new Set(key.split(" "));
+    setSelection({
+      selected: selection.selected.filter((id) => shown.has(id)),
+      anchor: shown.has(selection.anchor) ? selection.anchor : "",
+      base: selection.base.filter((id) => shown.has(id)),
+    });
+  }, [hidden, key, selection, setSelection]);
+}
+
+export function useVerbs(handlers: ViewVerbs) {
+  const { registerVerbs } = useCrm();
+  const latest = useRef(handlers);
+  useEffect(() => {
+    latest.current = handlers;
+  });
+  useEffect(() => {
+    const ids = Object.keys(latest.current) as ViewVerb[];
+    return registerVerbs(
+      Object.fromEntries(
+        ids.map((id) => [id, () => latest.current[id]?.() ?? false]),
+      ),
+    );
+  }, [registerVerbs]);
+}
+
+export function useEdit(run: () => boolean) {
+  const { registerEdit } = useCrm();
+  const latest = useRef(run);
+  useEffect(() => {
+    latest.current = run;
+  });
+  useEffect(() => registerEdit(() => latest.current()), [registerEdit]);
+}
+
+function upsert<T extends { id: string }>(rows: T[], row: T) {
+  return rows.some((item) => item.id === row.id)
+    ? rows.map((item) => (item.id === row.id ? row : item))
+    : [...rows, row];
+}
+
+export function patchRecords(
+  snapshot: Snapshot,
+  operation: string,
+  result: unknown,
+): Snapshot {
+  if (operation === "person-update")
+    return {
+      ...snapshot,
+      people: snapshot.people.map((person) =>
+        person.id === (result as Snapshot["people"][number]).id
+          ? (result as Snapshot["people"][number])
+          : person,
+      ),
+    };
+  if (operation === "company")
+    return {
+      ...snapshot,
+      companies: upsert(
+        snapshot.companies,
+        result as Snapshot["companies"][number],
+      ),
+    };
+  if (operation === "meeting")
+    return {
+      ...snapshot,
+      meetings: upsert(
+        snapshot.meetings,
+        result as Snapshot["meetings"][number],
+      ),
+    };
+  if (
+    operation === "deal" ||
+    operation === "opportunity" ||
+    operation === "opportunity-change"
+  )
+    return {
+      ...snapshot,
+      opportunities: upsert(
+        snapshot.opportunities,
+        result as Snapshot["opportunities"][number],
+      ),
+    };
+  return snapshot;
 }
 
 export function useWorkspaceData() {

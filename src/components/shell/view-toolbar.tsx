@@ -1,6 +1,7 @@
 "use client";
+import { shortcutLabel } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
-import { Plus, Search, X } from "lucide-react";
+import { Plus, Search, Send, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { RefObject } from "react";
 import { label } from "../client-api";
@@ -12,9 +13,11 @@ const actionKinds = ["reply", "approval", "review", "commitment", "research"];
 
 export function ViewToolbar({
   searchInput,
+  onEnroll,
   onCreateProduct,
 }: {
   searchInput: RefObject<HTMLInputElement | null>;
+  onEnroll: () => void;
   onCreateProduct: () => boolean;
 }) {
   const crm = useCrm();
@@ -24,6 +27,10 @@ export function ViewToolbar({
   const products = (crm.data?.products ?? []).filter(
     (product) => product.organizationId === crm.organizationId,
   );
+  const selectedLabel = t.selectedCount.replace(
+    "{count}",
+    String(crm.selection.selected.length),
+  );
   const filter = (change: Partial<ActionFilters>) =>
     router.replace(actionsPath({ ...filters, ...change }), { scroll: false });
   return (
@@ -32,7 +39,7 @@ export function ViewToolbar({
         <select
           aria-label={t.product}
           aria-keyshortcuts="P"
-          title={`${t.product} (${t.keys.product})`}
+          title={`${t.product} (${shortcutLabel("product")})`}
           value={crm.productId}
           onChange={(event) => crm.switchProduct(event.target.value)}
         >
@@ -43,7 +50,7 @@ export function ViewToolbar({
             </option>
           ))}
         </select>
-        <ShortcutHint keys={t.keys.product} />
+        <ShortcutHint id="product" />
       </div>
       {crm.isAdmin && (
         <button
@@ -51,11 +58,11 @@ export function ViewToolbar({
           className="ghost"
           aria-label={t.newProduct}
           aria-keyshortcuts="Shift+P"
-          title={`${t.newProduct} (${t.keys.createProduct})`}
+          title={`${t.newProduct} (${shortcutLabel("create-product")})`}
           onClick={onCreateProduct}
         >
           <Plus size={14} aria-hidden />
-          <ShortcutHint keys={t.keys.createProduct} />
+          <ShortcutHint id="create-product" />
         </button>
       )}
       {section !== "materials" && section !== "overview" && (
@@ -69,9 +76,27 @@ export function ViewToolbar({
             value={crm.search}
             onChange={(event) => crm.setSearch(event.target.value)}
           />
-          <ShortcutHint keys={t.keys.search} />
+          <ShortcutHint id="search" />
         </label>
       )}
+      <span className="selection-status" aria-live="polite">
+        {crm.selection.selected.length > 0 && (
+          <button
+            type="button"
+            className="chip"
+            aria-label={`${selectedLabel}: ${t.clearSelection}`}
+            onClick={crm.clearSelection}
+          >
+            {selectedLabel} <X size={12} aria-hidden />
+          </button>
+        )}
+        {section === "people" && crm.selection.selected.length > 0 && (
+          <button type="button" className="chip" onClick={onEnroll}>
+            <Send size={12} aria-hidden />
+            {t.enrollSelected}
+          </button>
+        )}
+      </span>
       {section === "actions" && (
         <>
           <select
@@ -121,7 +146,7 @@ export function ViewToolbar({
           >
             <Plus size={14} aria-hidden />
             {t.newAction}
-            <ShortcutHint keys={t.keys.schedule} />
+            <ShortcutHint id="schedule" />
           </button>
         </>
       )}
@@ -136,7 +161,7 @@ export function ViewToolbar({
         >
           <Plus size={14} aria-hidden />
           {t.addPerson}
-          <ShortcutHint keys={t.keys.create} />
+          <ShortcutHint id="create" />
         </button>
       )}
     </div>

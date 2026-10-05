@@ -1232,5 +1232,25 @@
     "completed": "Completed",
     "stopped": "Stopped"
   },
-  "enrollmentChange": "Change"
+  "enrollmentChange": "Change",
+  "pipelineChooseBrand": "Choose a brand to see its outreach pipeline",
+  "pipelineChooseBrandDetail": "The pipeline shows one brand at a time, because each brand has its own stages.",
+  "pipelineShow": "Show pipeline",
+  "pipelineBoard": "Outreach pipeline for {brand}",
+  "relationshipClosedMove": "Won, lost and not now move only through Move to (M) or a drag.",
+  "relationshipOpenEnd": "Already in the last open stage. Use Move to (M) to close it.",
+  "moveToMenu": "Move {name} to",
+  "moveToCommand": "Move to stage",
+  "currentStage": "Current stage",
+  "closeStageTitle": "Move {name} to {stage}?",
+  "closeStageDetail": "{stage} closes this relationship. Sequences keep their own status, so pause or stop them separately if needed.",
+  "closeStageConfirm": "Move to {stage}",
+  "stageCategory": {
+    "open": "Open",
+    "won": "Won",
+    "lost": "Lost",
+    "hold": "On hold"
+  },
+  "noNextStepShort": "No next step",
+  "ownedBy": "Owner: {name}"
 }

@@ -3,6 +3,7 @@ import {
   act,
   cleanup,
   fireEvent,
+  render,
   screen,
   waitFor,
   within,
@@ -15,6 +16,7 @@ import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { dateLabel } from "../src/components/client-api";
 import { outreachTabs } from "../src/components/routes";
+import { Shortcuts } from "../src/components/shortcuts";
 import {
   installCrmHarness,
   mountCrm,
@@ -461,5 +463,33 @@ describe("the sequences tab", () => {
       .from(s.enrollments)
       .where(eq(s.enrollments.id, demoId(501)));
     expect(enrollment?.status).toBe("running");
+  });
+});
+
+describe("the guide", () => {
+  test("lists the outreach verbs in their own section and the pipeline keys with the lists", () => {
+    render(<Shortcuts onClose={() => {}} />);
+    const section = screen.getByRole("region", {
+      name: t.shortcutSections.outreach,
+    });
+    expect(
+      [...section.querySelectorAll("[data-shortcut]")].map((row) =>
+        row.getAttribute("data-shortcut"),
+      ),
+    ).toEqual([
+      "touch-approve",
+      "touch-sent",
+      "touch-snooze",
+      "touch-skip",
+      "touch-edit",
+      "touch-undo",
+    ]);
+    expect(within(section).getByText(t.shortcutLabels.touchSkip)).toBeTruthy();
+    const lists = screen.getByRole("region", {
+      name: t.shortcutSections.lists,
+    });
+    expect(
+      lists.querySelector('[data-shortcut="move-to"]')?.textContent,
+    ).toContain(t.shortcutLabels.moveTo);
   });
 });

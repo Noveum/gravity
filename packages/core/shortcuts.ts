@@ -117,6 +117,7 @@ const definitions = {
     "lists",
     labels.movePrevious,
   ),
+  "move-to": define(["m"], "pipeline", "lists", labels.moveTo),
   done: define(["d"], "actions", "actions", labels.done),
   snooze: define(["s"], "actions", "actions", labels.snooze),
   assign: define(["a"], "actions", "actions", labels.assign),

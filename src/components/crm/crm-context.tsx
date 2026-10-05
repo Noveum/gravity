@@ -248,9 +248,12 @@ function useCrmState({
     return editor.current?.() ?? false;
   }
   const registerVerbs = useCallback((handlers: ViewVerbs) => {
-    verbs.current = handlers;
+    verbs.current = { ...verbs.current, ...handlers };
     return () => {
-      if (verbs.current === handlers) verbs.current = {};
+      const remaining = { ...verbs.current };
+      for (const id of Object.keys(handlers) as ViewVerb[])
+        if (remaining[id] === handlers[id]) delete remaining[id];
+      verbs.current = remaining;
     };
   }, []);
   function runVerb(id: ViewVerb) {

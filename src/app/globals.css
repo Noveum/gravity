@@ -3704,3 +3704,36 @@ tbody tr[data-selected] td:first-child::before {
     display: none;
   }
 }
+.outreach-board {
+  padding-top: 12px;
+}
+.relationship-card .deal-card-head {
+  align-items: center;
+}
+.relationship-card .row-owner {
+  flex-shrink: 0;
+}
+.relationship-due {
+  color: var(--gravity-faint);
+  font-variant-numeric: tabular-nums;
+}
+.relationship-due.overdue {
+  color: var(--gravity-warning);
+}
+.pipeline-stages section[data-category="hold"] .group-title {
+  color: var(--gravity-warning);
+}
+.pipeline-brand {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.stage-menu {
+  width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.menu-item-hint {
+  font-size: var(--text-2xs);
+  color: var(--gravity-faint);
+}

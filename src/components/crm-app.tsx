@@ -474,6 +474,20 @@ function CrmShell({ children }: { children: ReactNode }) {
                   ),
               },
               {
+                id: "move-to",
+                title: t.moveToCommand,
+                shortcut: hint("move-to"),
+                disabled: outreachTab !== "pipeline" || !paletteFocus.current,
+                run: () => {
+                  document
+                    .querySelector<HTMLElement>(
+                      `#records-panel [data-nav-record="${paletteFocus.current}"]`,
+                    )
+                    ?.focus();
+                  crm.runVerb("move-to");
+                },
+              },
+              {
                 id: "person",
                 title: t.addPerson,
                 shortcut: section === "people" ? hint("create") : "",

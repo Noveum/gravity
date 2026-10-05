@@ -765,6 +765,140 @@ describe("outreach verbs", () => {
   });
 });
 
+describe("outreach pipeline", () => {
+  const board = () =>
+    screen.getByRole("region", {
+      name: t.pipelineBoard.replace("{brand}", "AI Platform"),
+    });
+  const stage = (name: string) =>
+    within(board()).getByRole("region", { name: new RegExp(`^${name}`) });
+  const card = (name: string) =>
+    within(board()).getByRole("button", { name: new RegExp(`^${name}`) });
+  const moves = () =>
+    harness.posts
+      .filter((post) => post.operation === "relationship")
+      .map((post) => post.stageId);
+  async function openBoard() {
+    await mountCrm(harness, "/outreach/pipeline");
+    const prompt = await screen.findByRole("heading", {
+      name: t.pipelineChooseBrand,
+    });
+    expect(prompt).toBeTruthy();
+    expect(
+      (
+        screen.getByLabelText(t.product, {
+          selector: "#pipeline-brand",
+        }) as HTMLSelectElement
+      ).value,
+    ).toBe(demoId(10));
+    fireEvent.click(screen.getByRole("button", { name: t.pipelineShow }));
+    await waitFor(() => expect(board()).toBeTruthy());
+  }
+  test("Shift arrows move through open stages and never close, M closes only after confirmation, and a closed card refuses arrows", async () => {
+    binding("move-to");
+    await openBoard();
+    const amara = within(stage(t.outreachStages.contacted)).getByRole(
+      "button",
+      { name: /^Amara Stone/ },
+    );
+    amara.focus();
+    for (const name of [
+      t.outreachStages.followUp,
+      t.outreachStages.replied,
+      t.outreachStages.meeting,
+    ]) {
+      await press("{Shift>}{ArrowRight}{/Shift}");
+      await waitFor(() =>
+        expect(
+          within(stage(name)).getByRole("button", { name: /^Amara Stone/ }),
+        ).toBeTruthy(),
+      );
+      await waitFor(() =>
+        expect(document.activeElement).toBe(card("Amara Stone")),
+      );
+    }
+    await press("{Shift>}{ArrowRight}{/Shift}");
+    expect(await screen.findByText(t.relationshipOpenEnd)).toBeTruthy();
+    expect(moves()).toEqual([demoId(1203), demoId(1204), demoId(1205)]);
+    await press("m");
+    const menu = screen.getByRole("menu", {
+      name: t.moveToMenu.replace("{name}", "Amara Stone"),
+    });
+    expect(
+      within(menu)
+        .getAllByRole("menuitemradio")
+        .map((item) => item.textContent),
+    ).toHaveLength(9);
+    fireEvent.click(
+      within(menu).getByRole("menuitemradio", {
+        name: new RegExp(`^${t.outreachStages.won}`),
+      }),
+    );
+    const confirm = await screen.findByRole("dialog", {
+      name: t.closeStageTitle
+        .replace("{name}", "Amara Stone")
+        .replace("{stage}", t.outreachStages.won),
+    });
+    expect(moves()).toHaveLength(3);
+    fireEvent.click(
+      within(confirm).getByRole("button", {
+        name: t.closeStageConfirm.replace("{stage}", t.outreachStages.won),
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        within(stage(t.outreachStages.won)).getByRole("button", {
+          name: /^Amara Stone/,
+        }),
+      ).toBeTruthy(),
+    );
+    expect(moves()).toEqual([
+      demoId(1203),
+      demoId(1204),
+      demoId(1205),
+      demoId(1206),
+    ]);
+    card("Amara Stone").focus();
+    await press("{Shift>}{ArrowLeft}{/Shift}");
+    expect(await screen.findByText(t.relationshipClosedMove)).toBeTruthy();
+    expect(moves()).toHaveLength(4);
+  });
+  test("a drag into a closed stage asks first and Cancel leaves it, a drag between open stages moves at once, and cards show owner, next step and due date", async () => {
+    await openBoard();
+    const noor = card("Noor Haddad");
+    const article = noor.closest("article") as HTMLElement;
+    expect(article.textContent).toContain(
+      "Send follow-up 2 with the case study",
+    );
+    expect(article.textContent).toContain("AM");
+    expect(
+      within(article).getByTitle(t.ownedBy.replace("{name}", "Alex Morgan")),
+    ).toBeTruthy();
+    fireEvent.dragStart(article);
+    fireEvent.dragOver(stage(t.outreachStages.lost));
+    fireEvent.drop(stage(t.outreachStages.lost));
+    const confirm = await screen.findByRole("dialog", {
+      name: t.closeStageTitle
+        .replace("{name}", "Noor Haddad")
+        .replace("{stage}", t.outreachStages.lost),
+    });
+    fireEvent.click(within(confirm).getByRole("button", { name: t.cancel }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(moves()).toEqual([]);
+    fireEvent.dragStart(card("Noor Haddad").closest("article") as HTMLElement);
+    fireEvent.dragOver(stage(t.outreachStages.replied));
+    fireEvent.drop(stage(t.outreachStages.replied));
+    await waitFor(() =>
+      expect(
+        within(stage(t.outreachStages.replied)).getByRole("button", {
+          name: /^Noor Haddad/,
+        }),
+      ).toBeTruthy(),
+    );
+    expect(moves()).toEqual([demoId(1204)]);
+  });
+});
+
 describe("detail bindings", () => {
   test("E expands the peek, H returns to the list, L enters the detail and 1 2 3 switch tabs", async () => {
     for (const id of [

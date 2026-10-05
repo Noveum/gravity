@@ -12,6 +12,7 @@ import {
 } from "../outreach/outreach-data";
 import { OutreachTabs } from "../outreach/outreach-tabs";
 import { PausedRow } from "../outreach/paused-list";
+import { PipelineBoard } from "../outreach/pipeline-board";
 import { SentRow } from "../outreach/sent-list";
 import { TouchActions } from "../outreach/touch-actions";
 import { MarkSentDialog, SkipDialog } from "../outreach/touch-dialogs";
@@ -30,7 +31,6 @@ import {
   outreachPath,
   outreachTabFor,
   personPath,
-  touchTabs,
 } from "../routes";
 import { EmptyState, ErrorState, LoadingState } from "../ui/states";
 import { SequencesView } from "./sequences-view";
@@ -53,7 +53,7 @@ export function OutreachView() {
     ].map((touch) => [touch.id, touch]),
   );
   const verbs = useTouchVerbs({ touches, reload: outreach.reload });
-  useVerbs(tab && touchTabs.has(tab) ? verbs.keys : {});
+  useVerbs(verbs.keys);
   if (!tab) return null;
   const search = crm.search;
   const visible = <T extends Touch>(touches: readonly T[]) =>
@@ -127,7 +127,7 @@ export function OutreachView() {
         </TouchGroup>
       ) : null,
     sequences: () => <SequencesView />,
-    pipeline: () => null,
+    pipeline: () => <PipelineBoard />,
   };
   const counts: Record<keyof typeof t.outreachEmpty, number> = {
     today: today.length,

@@ -9,6 +9,16 @@ import {
   scheduleActionSchema,
 } from "../../packages/core/crm";
 import { type ClientSnapshot, serialize } from "../../packages/core/dto";
+import {
+  companyArchiveSchema,
+  companySchema,
+  meetingSchema,
+  opportunityChangeSchema,
+  opportunityCreateSchema,
+  personArchiveSchema,
+  personUpdateSchema,
+  RecordService,
+} from "../../packages/core/records";
 import { createLocalDatabase } from "../../packages/database/client";
 import { demoId, demoUser, seedDemo } from "../../packages/database/seed";
 import { requestJson } from "../../src/components/client-api";
@@ -93,6 +103,29 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
       );
     if (body.operation === "person")
       return service.createPerson(principal, personSchema.parse(body));
+    const records = new RecordService(harness.local.db);
+    const operations: Record<string, () => Promise<unknown>> = {
+      "person-update": () =>
+        records.updatePerson(principal, personUpdateSchema.parse(body)),
+      "person-archive": () =>
+        records.archivePerson(principal, personArchiveSchema.parse(body)),
+      company: () => records.saveCompany(principal, companySchema.parse(body)),
+      "company-archive": () =>
+        records.archiveCompany(principal, companyArchiveSchema.parse(body)),
+      meeting: () => records.saveMeeting(principal, meetingSchema.parse(body)),
+      opportunity: () =>
+        records.createOpportunity(
+          principal,
+          opportunityCreateSchema.parse(body),
+        ),
+      "opportunity-change": () =>
+        records.changeOpportunity(
+          principal,
+          opportunityChangeSchema.parse(body),
+        ),
+    };
+    const run = operations[body.operation];
+    if (run) return serialize(await run());
     throw new Error("UNSUPPORTED");
   }
   const params = new URL(url, "http://localhost").searchParams;
@@ -103,6 +136,14 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
         principal,
         organizationId,
         params.get("relationshipId") || "",
+      ),
+    );
+  if (params.get("operation") === "person")
+    return serialize(
+      await service.personContext(
+        principal,
+        organizationId,
+        params.get("personId") || "",
       ),
     );
   if (params.get("operation") === "company")

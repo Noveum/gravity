@@ -21,6 +21,7 @@ import { navigableRecords } from "./keyboard-navigation";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
 import { PersonDialog } from "./person-dialog";
 import { PeekPanel } from "./records/peek-panel";
+import { RecordDialogHost } from "./records/record-dialog-host";
 import {
   actionFilters,
   actionsPath,
@@ -41,6 +42,7 @@ import { recordsForPalette } from "./shell/palette-records";
 import { Sidebar, type SidebarGroup, type SidebarItem } from "./shell/sidebar";
 import { TopBar } from "./shell/top-bar";
 import { useShellShortcuts } from "./shell/use-shell-shortcuts";
+import { UserMenu } from "./shell/user-menu";
 import { ViewToolbar } from "./shell/view-toolbar";
 import { WorkspaceMenu } from "./shell/workspace-menu";
 import { macPlatform, Shortcuts } from "./shortcuts";
@@ -261,8 +263,14 @@ function CrmShell({ children }: { children: ReactNode }) {
   ];
   const recordName = recordId
     ? section === "people"
-      ? sourceData?.people.find((person) => person.id === recordId)?.name
-      : sourceData?.companies.find((company) => company.id === recordId)?.name
+      ? [
+          ...(sourceData?.people ?? []),
+          ...(sourceData?.archived.people ?? []),
+        ].find((person) => person.id === recordId)?.name
+      : [
+          ...(sourceData?.companies ?? []),
+          ...(sourceData?.archived.companies ?? []),
+        ].find((company) => company.id === recordId)?.name
     : peek.companyId
       ? sourceData?.companies.find((company) => company.id === peek.companyId)
           ?.name
@@ -314,23 +322,36 @@ function CrmShell({ children }: { children: ReactNode }) {
           />
         }
         footer={
-          <div className="sidebar-status" title={t.polling}>
-            <span className={`live-status sync-${crm.syncState}`}>
-              <span aria-hidden />
-            </span>
-            <span className="nav-label-text" aria-hidden>
-              {label(crm.syncState)}
-            </span>
-            <span className="sr-only">{label(crm.syncState)}</span>
-            {crm.demo && (
-              <span
-                className="badge status-badge nav-label-text"
-                title={t.demoDetail}
-              >
-                {t.demoMode}
+          <>
+            <UserMenu
+              name={crm.member(crm.userId)}
+              detail={crm.demo ? t.demo : t.brandSub}
+              demo={crm.demo}
+              onShortcuts={() => {
+                setDrawerOpen(false);
+                setHelpOpen(true);
+              }}
+              onNavigate={() => leaveDrawer(sectionPath("settings"))}
+              onError={(message) => crm.notify(message, "danger")}
+            />
+            <div className="sidebar-status" title={t.polling}>
+              <span className={`live-status sync-${crm.syncState}`}>
+                <span aria-hidden />
               </span>
-            )}
-          </div>
+              <span className="nav-label-text" aria-hidden>
+                {label(crm.syncState)}
+              </span>
+              <span className="sr-only">{label(crm.syncState)}</span>
+              {crm.demo && (
+                <span
+                  className="badge status-badge nav-label-text"
+                  title={t.demoDetail}
+                >
+                  {t.demoMode}
+                </span>
+              )}
+            </div>
+          </>
         }
       />
       {!appearance.sidebarCollapsed && (
@@ -452,6 +473,7 @@ function CrmShell({ children }: { children: ReactNode }) {
             }}
           />
         )}
+        <RecordDialogHost />
         {crm.personDialog && data && (
           <PersonDialog
             key={`${organizationId}-${crm.productId}`}

@@ -110,7 +110,10 @@ export function CompanyProfile({
   company,
   recordHeading = false,
 }: {
-  company: ClientCompanyContext["company"];
+  company: Pick<
+    ClientCompanyContext["company"],
+    "name" | "domain" | "description"
+  >;
   recordHeading?: boolean;
 }) {
   return (
@@ -235,6 +238,42 @@ export function PersonDetails({
             t.unknown
           )}
         </dd>
+        {!!context.person?.otherEmails.length && (
+          <>
+            <dt>{t.otherEmails}</dt>
+            <dd className="stacked-values">
+              {context.person.otherEmails.map((email) => (
+                <a key={email} href={`mailto:${email}`}>
+                  {email}
+                </a>
+              ))}
+            </dd>
+          </>
+        )}
+        {context.person?.phone && (
+          <>
+            <dt>{t.phone}</dt>
+            <dd>
+              <a href={`tel:${context.person.phone.replace(/[^+\d]/g, "")}`}>
+                {context.person.phone}
+              </a>
+            </dd>
+          </>
+        )}
+        {context.person?.linkedinUrl && (
+          <>
+            <dt>{t.linkedin}</dt>
+            <dd>
+              <a
+                href={context.person.linkedinUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t.linkedinProfile}
+              </a>
+            </dd>
+          </>
+        )}
         <dt>{t.company}</dt>
         <dd>
           {context.company ? (

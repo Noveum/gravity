@@ -1,7 +1,8 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
-import { useWorkspaceData } from "../crm/crm-context";
+import { useCreate, useWorkspaceData } from "../crm/crm-context";
+import { ArchivedList } from "../records/archived-list";
 import { peekOnSpace } from "../records/peek-keys";
 import { companyPath, personPath } from "../routes";
 import { EmptyState } from "../ui/states";
@@ -10,6 +11,7 @@ export function CompaniesView() {
   const crm = useWorkspaceData();
   const { data, search, product } = crm;
   const selected = new Set(crm.selection.selected);
+  useCreate(() => crm.openRecordDialog({ kind: "company" }));
   const companies = data.companies.filter((company) =>
     [company.name, company.domain]
       .join(" ")
@@ -88,6 +90,14 @@ export function CompaniesView() {
           })}
         </tbody>
       </table>
+      <ArchivedList
+        records={data.archived.companies.map((company) => ({
+          id: company.id,
+          name: company.name,
+          detail: company.domain ?? "",
+          href: companyPath(company.id),
+        }))}
+      />
     </div>
   );
 }

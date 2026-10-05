@@ -104,3 +104,36 @@ export function useCompanyContext(companyId: string) {
     ? { context: loaded.context, missing: loaded.missing }
     : { context: null, missing: false };
 }
+
+export function useArchivedPersonContext(personId: string) {
+  const { organizationId, sourceData, notify } = useCrm();
+  const asOf = sourceData?.asOf;
+  const scope = `${organizationId}/${personId}`;
+  const [loaded, setLoaded] = useState<{
+    scope: string;
+    context: ClientContext | null;
+    missing: boolean;
+  }>({ scope: "", context: null, missing: false });
+  useEffect(() => {
+    if (!personId || !organizationId || !asOf) return;
+    const controller = new AbortController();
+    requestJson<ClientContext>(
+      `/api/crm?operation=person&organizationId=${organizationId}&personId=${personId}`,
+      { signal: controller.signal },
+    )
+      .then((result) => {
+        if (!controller.signal.aborted)
+          setLoaded({ scope, context: result, missing: false });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        notify(errorText(error), "danger");
+        if (isAccessError(error, recordErrors))
+          setLoaded({ scope, context: null, missing: true });
+      });
+    return () => controller.abort();
+  }, [scope, personId, organizationId, asOf, notify]);
+  return loaded.scope === scope
+    ? { context: loaded.context, missing: loaded.missing }
+    : { context: null, missing: false };
+}

@@ -24,7 +24,7 @@ export const initials = (name: string) =>
 const menuWidth = 256;
 const viewportGap = 8;
 
-function layerFor(trigger: HTMLElement | null) {
+export function layerFor(trigger: HTMLElement | null) {
   return trigger?.closest<HTMLElement>('[aria-modal="true"]') ?? document.body;
 }
 

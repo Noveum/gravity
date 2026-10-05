@@ -261,8 +261,8 @@ describe("palette, search, guide and create", () => {
       ).toBe(demoId(302)),
     );
     fireEvent(dialog, new Event("cancel"));
-    fireEvent.click(screen.getByRole("link", { name: t.companies }));
-    await waitFor(() => expect(pathname()).toBe("/companies"));
+    fireEvent.click(screen.getByRole("link", { name: t.sequences }));
+    await waitFor(() => expect(pathname()).toBe("/sequences"));
     (document.activeElement as HTMLElement | null)?.blur();
     await press("c");
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -573,6 +573,140 @@ describe("dialogs and safety", () => {
     expect(
       screen.queryByRole("combobox", { name: t.commandSearch }),
     ).toBeNull();
+  });
+});
+
+describe("record editing keys", () => {
+  const card = (name: string) => screen.getByRole("button", { name });
+  const column = (name: string, product = "AI Platform") => {
+    const pipeline = screen
+      .getByRole("heading", { name: product, level: 2 })
+      .closest(".product-pipeline") as HTMLElement;
+    return within(pipeline).getByRole("region", { name });
+  };
+  const changes = () =>
+    harness.posts.filter((post) => post.operation === "opportunity-change") as {
+      stageId?: string;
+    }[];
+  test("E edits the open person record and the save key stores it", async () => {
+    binding("edit");
+    await mountCrm(harness, `/people/${demoId(200)}`);
+    (document.activeElement as HTMLElement | null)?.blur();
+    await press("e");
+    const dialog = screen.getByRole("dialog", { name: t.editPerson });
+    const title = within(dialog).getByLabelText(t.roleTitle);
+    await userEvent.setup().clear(title);
+    await userEvent.setup().type(title, "Head of AI");
+    await press("{Meta>}{Enter}{/Meta}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: t.editPerson })).toBeNull(),
+    );
+    expect(
+      harness.posts.find((post) => post.operation === "person-update"),
+    ).toMatchObject({ personId: demoId(200), title: "Head of AI" });
+    await waitFor(() => expect(screen.getByText("Head of AI")).toBeTruthy());
+  });
+  test("Shift arrows move the focused deal through open stages, never into won, and Undo moves it back", async () => {
+    binding("move-next");
+    binding("move-previous");
+    await mountCrm(harness, "/opportunities");
+    const name = "Northstar evaluation project";
+    card(name).focus();
+    await press("{Shift>}{ArrowRight}{/Shift}");
+    await waitFor(() =>
+      expect(
+        within(column("Proposal")).getByRole("button", { name }),
+      ).toBeTruthy(),
+    );
+    await waitFor(() => expect(document.activeElement).toBe(card(name)));
+    await press("{Shift>}{ArrowRight}{/Shift}");
+    expect(await screen.findByText(t.openStageEnd)).toBeTruthy();
+    expect(changes().map((post) => post.stageId)).toEqual([demoId(802)]);
+    expect(
+      within(column("Proposal")).getByRole("button", { name }),
+    ).toBeTruthy();
+    await press("{Shift>}{ArrowLeft}{/Shift}");
+    await waitFor(() =>
+      expect(
+        within(column("Evaluation")).getByRole("button", { name }),
+      ).toBeTruthy(),
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: t.undo }).at(-1) as HTMLElement,
+    );
+    await waitFor(() =>
+      expect(
+        within(column("Proposal")).getByRole("button", { name }),
+      ).toBeTruthy(),
+    );
+    expect(changes().map((post) => post.stageId)).toEqual([
+      demoId(802),
+      demoId(801),
+      demoId(802),
+    ]);
+  });
+  test("a won deal does not move by arrow key, E edits the focused deal and a drag closes it", async () => {
+    await mountCrm(harness, "/opportunities");
+    const name = "Cedar workflow pilot";
+    const article = card(name).closest("article") as HTMLElement;
+    fireEvent.dragStart(article);
+    fireEvent.dragOver(column("Won"));
+    expect(column("Won").hasAttribute("data-drop-target")).toBe(false);
+    fireEvent.drop(column("Won"));
+    expect(changes()).toHaveLength(0);
+    fireEvent.dragOver(column("Won", "Services"));
+    expect(column("Won", "Services").hasAttribute("data-drop-target")).toBe(
+      true,
+    );
+    fireEvent.drop(column("Won", "Services"));
+    await waitFor(() =>
+      expect(
+        within(column("Won", "Services")).getByRole("button", { name }),
+      ).toBeTruthy(),
+    );
+    expect(changes().map((post) => post.stageId)).toEqual([demoId(823)]);
+    card(name).focus();
+    await press("{Shift>}{ArrowLeft}{/Shift}");
+    expect(await screen.findByText(t.closedStageMove)).toBeTruthy();
+    expect(changes()).toHaveLength(1);
+    card(name).focus();
+    await press("e");
+    const dialog = screen.getByRole("dialog", { name: t.editOpportunity });
+    expect(
+      (within(dialog).getByLabelText(t.stage) as HTMLSelectElement).value,
+    ).toBe(demoId(823));
+  });
+  test("C creates a company that opens on its record, and C and E create and edit meetings", async () => {
+    await mountCrm(harness, "/companies");
+    await press("c");
+    const company = screen.getByRole("dialog", { name: t.newCompany });
+    await userEvent
+      .setup()
+      .type(within(company).getByLabelText(t.name), "Fictional Keyboard Co");
+    await press("{Meta>}{Enter}{/Meta}");
+    await waitFor(() => expect(pathname()).toMatch(/^\/companies\/.+/));
+    expect(
+      await screen.findByRole("heading", { name: "Fictional Keyboard Co" }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: t.meetings }));
+    await waitFor(() => expect(pathname()).toBe("/meetings"));
+    (document.activeElement as HTMLElement | null)?.blur();
+    await press("c");
+    expect(screen.getByRole("dialog", { name: t.newMeeting })).toBeTruthy();
+    fireEvent(
+      screen.getByRole("dialog", { name: t.newMeeting }),
+      new Event("cancel"),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: t.newMeeting })).toBeNull(),
+    );
+    screen.getByRole("button", { name: "Leena Rao" }).focus();
+    await press("e");
+    const meeting = screen.getByRole("dialog", { name: t.editMeeting });
+    expect(
+      (within(meeting).getByLabelText(t.meetingTitle) as HTMLInputElement)
+        .value,
+    ).toBe("Pilot scope discussion");
   });
 });
 

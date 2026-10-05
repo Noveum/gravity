@@ -4,6 +4,7 @@ import Link from "next/link";
 import { label } from "../client-api";
 import { useCreate, useWorkspaceData } from "../crm/crm-context";
 import { useWarmContext } from "../crm/record-context";
+import { ArchivedList } from "../records/archived-list";
 import { peekOnSpace } from "../records/peek-keys";
 import { companyPath, personPath } from "../routes";
 import { EmptyState } from "../ui/states";
@@ -101,6 +102,14 @@ export function PeopleView() {
           })}
         </tbody>
       </table>
+      <ArchivedList
+        records={data.archived.people.map((person) => ({
+          id: person.id,
+          name: person.name,
+          detail: person.title,
+          href: personPath(person.id),
+        }))}
+      />
     </div>
   );
 }

@@ -20,6 +20,8 @@ export type ShortcutScope =
   | "actions"
   | "detail"
   | "peek"
+  | "record"
+  | "board"
   | "row"
   | "dialog";
 export type ShortcutSection =
@@ -105,6 +107,13 @@ const definitions = {
     labels.extendPrevious,
     repeatable,
   ),
+  "move-next": define(["shift+arrowright"], "board", "lists", labels.moveNext),
+  "move-previous": define(
+    ["shift+arrowleft"],
+    "board",
+    "lists",
+    labels.movePrevious,
+  ),
   done: define(["d"], "actions", "actions", labels.done),
   snooze: define(["s"], "actions", "actions", labels.snooze),
   assign: define(["a"], "actions", "actions", labels.assign),
@@ -118,6 +127,7 @@ const definitions = {
   evidence: define(["2"], "detail", "details", labels.evidence),
   draft: define(["3"], "detail", "details", labels.draft),
   "previous-record": define(["b"], "peek", "details", labels.previousRecord),
+  edit: define(["e"], "record", "details", labels.edit),
   save: define(["e", "mod+enter"], "dialog", "dialogs", labels.save),
 } satisfies Record<string, Definition>;
 
@@ -285,6 +295,8 @@ const keyNames: Record<string, string> = {
   enter: "Enter",
   arrowdown: "↓",
   arrowup: "↑",
+  arrowright: "→",
+  arrowleft: "←",
   home: "Home",
   end: "End",
 };

@@ -1749,6 +1749,122 @@ ul.timeline {
   color: var(--gravity-muted);
   margin: 4px 0;
 }
+.deal-card[draggable="true"] {
+  cursor: grab;
+}
+.deal-card[data-dragging] {
+  opacity: 0.5;
+}
+.deal-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+}
+.deal-card-head .text-button {
+  min-height: 0;
+  padding: 0;
+  font-weight: 500;
+  white-space: normal;
+}
+.deal-card-edit {
+  --gravity-control: 22px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.deal-card:hover .deal-card-edit,
+.deal-card:focus-within .deal-card-edit {
+  opacity: 1;
+}
+@media (hover: none) {
+  .deal-card-edit {
+    opacity: 1;
+  }
+}
+.pipeline-stages section[data-drop-target] {
+  outline: 2px dashed var(--gravity-accent);
+  outline-offset: -2px;
+}
+.pipeline-stages section[data-category="won"] .group-title {
+  color: var(--gravity-success);
+}
+.pipeline-stages section[data-category="lost"] .group-title {
+  color: var(--gravity-faint);
+}
+.meeting-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 16px;
+}
+.record-page[data-archived] {
+  grid-template-columns: minmax(300px, 560px);
+}
+.archived-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.archived-notice p {
+  margin: 0;
+}
+.archived-list {
+  margin: 16px var(--gravity-row-x);
+  font-size: var(--text-xs);
+  color: var(--gravity-muted);
+}
+.archived-list summary {
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+}
+.archived-list summary span {
+  color: var(--gravity-faint);
+  font-variant-numeric: tabular-nums;
+}
+.archived-list ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.archived-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.stacked-values {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.user-menu-anchor {
+  position: relative;
+  margin-bottom: 4px;
+}
+.user-trigger {
+  width: 100%;
+}
+.user-trigger .workspace-name {
+  flex: 1;
+}
+:root[data-sidebar="collapsed"] .user-trigger {
+  justify-content: center;
+  padding: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .deal-card-edit {
+    transition: none;
+  }
+}
 
 .integration-grid {
   display: grid;
@@ -1995,6 +2111,11 @@ ul.timeline {
 }
 .dialog-fields {
   display: contents;
+}
+.field-hint {
+  display: block;
+  margin-top: -4px;
+  font-size: var(--text-2xs);
 }
 .checkbox-label {
   display: flex;

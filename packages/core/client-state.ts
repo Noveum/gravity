@@ -18,8 +18,10 @@ export function productSnapshot(
     ...snapshot,
     relationships,
     people,
-    companies: snapshot.companies.filter((company) =>
-      companyIds.has(company.id),
+    companies: snapshot.companies.filter(
+      (company) =>
+        companyIds.has(company.id) ||
+        !snapshot.people.some((person) => person.companyId === company.id),
     ),
     actions: scoped(snapshot.actions),
     sequences: scoped(snapshot.sequences),

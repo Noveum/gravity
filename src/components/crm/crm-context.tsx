@@ -45,6 +45,11 @@ export interface ActionPlan {
   dueAt?: string;
   ownerId?: string;
 }
+export interface RecordDialogState {
+  kind: "person" | "company" | "meeting" | "opportunity";
+  id?: string;
+  relationshipId?: string;
+}
 interface Origin {
   path: string;
   focus: string;
@@ -99,6 +104,9 @@ function useCrmState({
   const [expanded, setExpanded] = useState(false);
   const [searchState, setSearchState] = useState({ path: pathname, text: "" });
   const [personDialog, setPersonDialog] = useState(false);
+  const [recordDialog, setRecordDialog] = useState<RecordDialogState | null>(
+    null,
+  );
   const [actionDialog, setActionDialogState] = useState({
     open: false,
     relationshipId: "",
@@ -108,6 +116,7 @@ function useCrmState({
     selection: emptySelection,
   });
   const creator = useRef<(() => boolean) | null>(null);
+  const editor = useRef<(() => boolean) | null>(null);
   const origin = useRef<Origin | null>(null);
   const rowFocus = useRef("");
   const [busy, setBusy] = useState(false);
@@ -166,6 +175,7 @@ function useCrmState({
     setRecordHistory([]);
     setExpanded(false);
     setPersonDialog(false);
+    setRecordDialog(null);
     setActionDialog(false);
     setSelectionState({ path: "", selection: emptySelection });
   }
@@ -208,6 +218,15 @@ function useCrmState({
   }, []);
   function create() {
     return creator.current?.() ?? false;
+  }
+  const registerEdit = useCallback((run: () => boolean) => {
+    editor.current = run;
+    return () => {
+      if (editor.current === run) editor.current = null;
+    };
+  }, []);
+  function edit() {
+    return editor.current?.() ?? false;
   }
   function goToSection(section: Section) {
     go(sectionPath(section));
@@ -295,8 +314,9 @@ function useCrmState({
   }
   async function send(
     body: object,
-    announce = true,
-  ): Promise<{ ok: boolean; result?: unknown }> {
+    announce: boolean | string = true,
+    toastErrors = true,
+  ): Promise<{ ok: boolean; result?: unknown; error?: string }> {
     if (mutating.current) return { ok: false };
     mutating.current = true;
     const submittedOrganization = organizationId;
@@ -328,6 +348,12 @@ function useCrmState({
             : previous,
         );
       }
+      if (changed.operation)
+        setData((previous) =>
+          previous
+            ? patchRecords(previous, changed.operation ?? "", result)
+            : previous,
+        );
       if (changed.operation === "action") {
         const updatedAction = result as Snapshot["actions"][number];
         draftBuffers.drop(updatedAction.id, changed.actionId ?? "");
@@ -344,15 +370,17 @@ function useCrmState({
         );
       }
       void refresh();
-      if (announce) notify(t.updated, "success");
+      if (announce)
+        notify(typeof announce === "string" ? announce : t.updated, "success");
       return { ok: true, result };
     } catch (error) {
+      const message = errorText(error);
       if (activeOrganization.current === submittedOrganization) {
-        notify(errorText(error), "danger");
+        if (toastErrors) notify(message, "danger");
         if (isAccessError(error, ["CONFLICT", "FORBIDDEN", "UNAUTHORIZED"]))
           void refresh();
       }
-      return { ok: false };
+      return { ok: false, error: message };
     } finally {
       mutating.current = false;
       setBusy(false);
@@ -423,6 +451,7 @@ function useCrmState({
     busy,
     mutating,
     mutate,
+    send,
     planActions,
     revokeGrant,
     reloadOrganizations,
@@ -448,6 +477,12 @@ function useCrmState({
     setExpanded,
     personDialog,
     setPersonDialog,
+    recordDialog,
+    openRecordDialog: (next: RecordDialogState) => {
+      setRecordDialog(next);
+      return true;
+    },
+    closeRecordDialog: () => setRecordDialog(null),
     actionDialog: actionDialog.open,
     actionDialogRelationship: actionDialog.relationshipId,
     setActionDialog,
@@ -456,6 +491,8 @@ function useCrmState({
     clearSelection: () => setSelection(emptySelection),
     registerCreate,
     create,
+    registerEdit,
+    edit,
     leaveRecord,
     rememberOrigin,
     rowFocus,
@@ -501,6 +538,62 @@ export function useCreate(run: () => boolean) {
     latest.current = run;
   });
   useEffect(() => registerCreate(() => latest.current()), [registerCreate]);
+}
+
+export function useEdit(run: () => boolean) {
+  const { registerEdit } = useCrm();
+  const latest = useRef(run);
+  useEffect(() => {
+    latest.current = run;
+  });
+  useEffect(() => registerEdit(() => latest.current()), [registerEdit]);
+}
+
+function upsert<T extends { id: string }>(rows: T[], row: T) {
+  return rows.some((item) => item.id === row.id)
+    ? rows.map((item) => (item.id === row.id ? row : item))
+    : [...rows, row];
+}
+
+export function patchRecords(
+  snapshot: Snapshot,
+  operation: string,
+  result: unknown,
+): Snapshot {
+  if (operation === "person-update")
+    return {
+      ...snapshot,
+      people: snapshot.people.map((person) =>
+        person.id === (result as Snapshot["people"][number]).id
+          ? (result as Snapshot["people"][number])
+          : person,
+      ),
+    };
+  if (operation === "company")
+    return {
+      ...snapshot,
+      companies: upsert(
+        snapshot.companies,
+        result as Snapshot["companies"][number],
+      ),
+    };
+  if (operation === "meeting")
+    return {
+      ...snapshot,
+      meetings: upsert(
+        snapshot.meetings,
+        result as Snapshot["meetings"][number],
+      ),
+    };
+  if (operation === "opportunity" || operation === "opportunity-change")
+    return {
+      ...snapshot,
+      opportunities: upsert(
+        snapshot.opportunities,
+        result as Snapshot["opportunities"][number],
+      ),
+    };
+  return snapshot;
 }
 
 export function useWorkspaceData() {

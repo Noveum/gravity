@@ -3,8 +3,12 @@ import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
-import { useCreate, useWorkspaceData } from "../crm/crm-context";
-import { usePersonContext } from "../crm/record-context";
+import { useCreate, useEdit, useWorkspaceData } from "../crm/crm-context";
+import {
+  useArchivedPersonContext,
+  usePersonContext,
+} from "../crm/record-context";
+import { useArchive } from "../crm/use-archive";
 import { useDraft } from "../crm/use-draft";
 import { PersonDetails, RelatedWork } from "../record-details";
 import { companyPath, personPath, sectionPath } from "../routes";
@@ -16,6 +20,7 @@ import {
   PersonProfile,
   RelationshipProperties,
 } from "./person-panels";
+import { ArchivedNotice, RecordActions } from "./record-actions";
 
 export function PersonRecord({ personId }: { personId: string }) {
   const crm = useWorkspaceData();
@@ -42,11 +47,15 @@ export function PersonRecord({ personId }: { personId: string }) {
       : undefined;
   const draft = useDraft(action);
   const relationshipId = relationship?.id ?? "";
+  const archive = useArchive();
   useCreate(() => {
     if (!relationshipId) return false;
     crm.setActionDialog(true, relationshipId);
     return true;
   });
+  useEdit(() =>
+    person ? crm.openRecordDialog({ kind: "person", id: person.id }) : false,
+  );
   const actionKind = action?.kind;
   useEffect(() => {
     setTab(
@@ -55,6 +64,11 @@ export function PersonRecord({ personId }: { personId: string }) {
         : "timeline",
     );
   }, [actionKind, setTab]);
+  if (
+    !person &&
+    sourceData.archived.people.some((archived) => archived.id === personId)
+  )
+    return <ArchivedPersonRecord personId={personId} />;
   if (!person || !relationship)
     return (
       <EmptyState
@@ -89,6 +103,11 @@ export function PersonRecord({ personId }: { personId: string }) {
           company={company}
           onCompany={toCompany}
           recordHeading
+        />
+        <RecordActions
+          busy={crm.busy}
+          onEdit={() => crm.openRecordDialog({ kind: "person", id: person.id })}
+          onArchive={() => void archive.archive("person", person)}
         />
         {context ? (
           <>
@@ -125,6 +144,48 @@ export function PersonRecord({ personId }: { personId: string }) {
           <LoadingState rows={4} />
         )}
       </section>
+    </div>
+  );
+}
+
+function ArchivedPersonRecord({ personId }: { personId: string }) {
+  const crm = useWorkspaceData();
+  const archive = useArchive();
+  const { context, missing } = useArchivedPersonContext(personId);
+  const summary = crm.sourceData.archived.people.find(
+    (person) => person.id === personId,
+  );
+  const toCompany = (companyId: string) => crm.go(companyPath(companyId));
+  return (
+    <div className="record-page" data-record={personId} data-archived="">
+      <div className="record-attributes">
+        <PersonProfile
+          name={context?.person?.name ?? summary?.name ?? ""}
+          title={context?.person?.title ?? summary?.title ?? ""}
+          company={context?.company}
+          onCompany={toCompany}
+          recordHeading
+        />
+        <ArchivedNotice
+          note={t.archivedPersonNote}
+          busy={crm.busy || !context?.person}
+          onRestore={() => {
+            const person = context?.person;
+            if (person) void archive.restore("person", person);
+          }}
+        />
+        {context ? (
+          <PersonDetails
+            context={context}
+            onCompany={toCompany}
+            onPerson={() => {}}
+          />
+        ) : missing ? (
+          <EmptyState title={t.recordUnavailable} compact />
+        ) : (
+          <LoadingState rows={3} />
+        )}
+      </div>
     </div>
   );
 }

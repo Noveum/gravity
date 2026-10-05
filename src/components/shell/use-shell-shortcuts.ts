@@ -10,6 +10,7 @@ import type { RefObject } from "react";
 import { toggleTheme } from "../appearance";
 import { type RecordTab, useCrm } from "../crm/crm-context";
 import type { useActionVerbs } from "../crm/use-action-verbs";
+import { useStageMoves } from "../crm/use-stage-moves";
 import {
   type DispatchedShortcut,
   focusedRecord,
@@ -52,6 +53,10 @@ export function useShellShortcuts({
   const crm = useCrm();
   const section: Section = crm.route?.section ?? "actions";
   const recordId = crm.route?.recordId ?? "";
+  const stageMoves = useStageMoves();
+  const editable =
+    !showPeek &&
+    (!!recordId || section === "meetings" || section === "opportunities");
   const listFocusAllowed = () =>
     document.activeElement?.classList.contains("view-title") ||
     !document.activeElement?.closest(
@@ -193,6 +198,9 @@ export function useShellShortcuts({
       crm.previousRecord();
       return true;
     },
+    edit: () => crm.edit(),
+    "move-next": () => stageMoves.step("next"),
+    "move-previous": () => stageMoves.step("previous"),
   };
   useKeyboardNavigation(
     (id) => shortcutHandlers[id](),
@@ -205,6 +213,10 @@ export function useShellShortcuts({
           : []),
         ...(showPeek ? (["peek", "detail"] as const) : []),
         ...(recordId ? (["detail"] as const) : []),
+        ...(crm.data && editable ? (["record"] as const) : []),
+        ...(crm.data && !recordId && section === "opportunities"
+          ? (["board"] as const)
+          : []),
       ] satisfies ShortcutScope[],
   );
 }

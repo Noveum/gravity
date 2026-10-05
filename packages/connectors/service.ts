@@ -61,6 +61,15 @@ export const connectInput = integrationScope.extend({
   apiKey: z.string().min(10).max(2000).optional(),
   connectionId: z.uuid().optional(),
 });
+const accountActor = (principal: Principal) => {
+  if (principal.source === "session") return;
+  if (
+    principal.source !== "mcp" ||
+    principal.readOnly !== false ||
+    !principal.organizationId
+  )
+    throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
+};
 const human = (principal: Principal) => {
   if (principal.source !== "session")
     throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
@@ -151,7 +160,7 @@ export class IntegrationService {
     principal: Principal,
     input: z.infer<typeof integrationOverviewInput>,
   ): Promise<ConnectionOverview> {
-    human(principal);
+    accountActor(principal);
     const scope = integrationOverviewInput.parse(input);
     let position: z.infer<typeof reviewPosition> | undefined;
     if (scope.reviewCursor) {
@@ -261,7 +270,7 @@ export class IntegrationService {
     id: string,
     write = true,
   ) {
-    human(principal);
+    accountActor(principal);
     const [connection] = await this.db
       .select()
       .from(s.connections)
@@ -283,7 +292,7 @@ export class IntegrationService {
     return connection;
   }
   async connect(principal: Principal, input: z.infer<typeof connectInput>) {
-    human(principal);
+    accountActor(principal);
     await authorize(
       this.db,
       principal,
@@ -931,7 +940,7 @@ export class IntegrationService {
     id: string,
     relationshipId?: string,
   ) {
-    human(principal);
+    accountActor(principal);
     const [item] = await this.db
       .select()
       .from(s.integrationItems)

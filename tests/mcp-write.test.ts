@@ -7,6 +7,7 @@ import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import { mcpHandler, principalForGrant } from "../packages/mcp/server";
+import { operations } from "../packages/operations/catalog";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let service: CrmService;
@@ -24,9 +25,9 @@ beforeAll(async () => {
 afterAll(async () => {
   await local.client.close();
 });
-async function call(
-  name: string,
-  args: Record<string, unknown> = {},
+async function rpc(
+  method: string,
+  params: Record<string, unknown>,
   principal = writable,
 ) {
   const response = await mcpHandler(local.db, principal, demoId(1)).fetch(
@@ -39,8 +40,8 @@ async function call(
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: 1,
-        method: "tools/call",
-        params: { name, arguments: args },
+        method,
+        params,
       }),
     }),
   );
@@ -52,11 +53,55 @@ async function call(
       .find((line) => line.startsWith("data: "))
       ?.slice(6) ?? body,
   );
+  return envelope;
+}
+async function call(
+  name: string,
+  args: Record<string, unknown> = {},
+  principal = writable,
+) {
+  const envelope = await rpc(
+    "tools/call",
+    { name, arguments: args },
+    principal,
+  );
   if (envelope.result?.isError)
     return { error: envelope.result.content[0].text };
   if (envelope.error) return { error: envelope.error.message };
   return JSON.parse(envelope.result.content[0].text);
 }
+
+test("MCP discovery exposes every business API with valid schemas and read-only tokens cannot discover writes", async () => {
+  const { result, error } = await rpc("tools/list", {});
+  expect(error).toBeUndefined();
+  const names = result.tools.map((tool: { name: string }) => tool.name);
+  expect(new Set(names).size).toBe(names.length);
+  expect(
+    new Set(
+      operations.map((item) => `${item.api}:${item.method}:${item.operation}`),
+    ).size,
+  ).toBe(operations.length);
+  for (const operation of operations) {
+    const tool = result.tools.find(
+      (tool: { name: string }) => tool.name === operation.name,
+    );
+    expect(tool).toBeTruthy();
+    expect(tool.inputSchema.type).toBe("object");
+    expect(tool.inputSchema.properties).not.toHaveProperty("organizationId");
+    expect(tool.annotations.readOnlyHint).toBe(operation.method === "GET");
+  }
+  const readonly = await rpc("tools/list", {}, { ...writable, readOnly: true });
+  const readNames = readonly.result.tools.map(
+    (tool: { name: string }) => tool.name,
+  );
+  for (const operation of operations.filter((item) => item.method !== "GET")) {
+    expect(readNames).not.toContain(operation.name);
+  }
+  const capabilities = await call("get_capabilities");
+  expect(capabilities.operations).toHaveLength(operations.length);
+  expect(capabilities.sendMessages).toBe(false);
+  expect(capabilities.contractSigningWorkflow).toBe(false);
+});
 
 test("MCP writes create records, notify listeners, audit changes and reject stale approval versions", async () => {
   const hint = vi.fn();
@@ -308,4 +353,500 @@ test("MCP turns a held meeting commitment into a follow-up without accepting sta
   expect(
     snapshot.actions.some((a: { id: string }) => a.id === accepted.actionId),
   ).toBe(true);
+});
+
+test("MCP edits and archives complete client/company records with HTTP refinements and version checks", async () => {
+  const company = await call("save_company", {
+    name: "Fictional MCP Company",
+    domain: "https://www.fictional.example.test/path",
+  });
+  expect(company.domain).toBe("fictional.example.test");
+  expect(
+    (
+      await call("save_company", {
+        companyId: company.id,
+        name: "Missing version",
+      })
+    ).error,
+  ).toBeTruthy();
+  const created = await call("create_person", {
+    productId: demoId(11),
+    companyId: company.id,
+    name: "Fictional Editable Client",
+    review: false,
+  });
+  const original = await call("get_person", { personId: created.personId });
+  expect(original.person.companyId).toBe(company.id);
+  const args = {
+    personId: created.personId,
+    version: original.person.version,
+    name: "Fictional Updated Client",
+    email: "fictional-mcp@example.test",
+    title: "Founder",
+    phone: "+1 555 0100",
+    summary: "Fictional client history",
+    companyId: company.id,
+  };
+  const updated = await call("update_person", {
+    ...args,
+    organizationId: demoId(2),
+  });
+  expect(updated).toMatchObject({
+    name: args.name,
+    email: args.email,
+    organizationId: demoId(1),
+    version: args.version + 1,
+  });
+  expect((await call("update_person", args)).error).toContain("CONFLICT");
+  const paged = await call("list_records", {
+    entity: "people",
+    query: args.name,
+    limit: 1,
+  });
+  expect(paged.total).toBe(1);
+  expect(paged.items[0].id).toBe(created.personId);
+  const archived = await call("archive_person", {
+    personId: created.personId,
+    version: updated.version,
+    archived: true,
+  });
+  expect(archived.archivedAt).toBeTruthy();
+  expect(
+    (await call("get_person", { personId: created.personId })).person.version,
+  ).toBe(archived.version);
+  expect(
+    (await call("list_records", { entity: "people", query: args.name })).total,
+  ).toBe(0);
+  const restored = await call("archive_person", {
+    personId: created.personId,
+    version: archived.version,
+    archived: false,
+  });
+  expect(restored.archivedAt).toBeNull();
+  expect(
+    (await call("get_company_context", { companyId: company.id })).company.id,
+  ).toBe(company.id);
+});
+
+test("MCP manages sequences and outreach drafts, including approvals, stale writes, pause and stop", async () => {
+  const steps = [
+    {
+      number: 1,
+      name: "First touch",
+      delayDays: 0,
+      channel: "gmail",
+      template: "Hello {{firstName}}",
+      followUp: 0,
+    },
+    {
+      number: 2,
+      name: "Follow up",
+      delayDays: 2,
+      channel: "gmail",
+      template: "Checking in",
+      followUp: 1,
+    },
+  ];
+  expect(
+    (
+      await call("create_sequence", {
+        productId: demoId(11),
+        name: "Invalid sequence",
+        steps: [steps[0], steps[0]],
+      })
+    ).error,
+  ).toBeTruthy();
+  const sequence = await call("create_sequence", {
+    productId: demoId(11),
+    name: "Fictional MCP Sequence",
+    steps: [...steps].reverse(),
+  });
+  expect(sequence.steps.map((step: { number: number }) => step.number)).toEqual(
+    [1, 2],
+  );
+  const updated = await call("update_sequence", {
+    sequenceId: sequence.id,
+    version: sequence.version,
+    name: "Fictional Updated Sequence",
+    steps,
+  });
+  expect(updated.error).toBeUndefined();
+  expect(updated.sequence.version).toBe(sequence.version + 1);
+  expect(
+    (
+      await call("update_sequence", {
+        sequenceId: sequence.id,
+        version: sequence.version,
+        steps,
+      })
+    ).error,
+  ).toContain("CONFLICT");
+  const person = await call("create_person", {
+    productId: demoId(11),
+    name: "Fictional Sequence Client",
+    email: "sequence-mcp@example.test",
+    review: false,
+  });
+  const preview = await call("enroll_in_sequence", {
+    sequenceId: sequence.id,
+    relationshipIds: [person.relationshipId],
+    dryRun: true,
+  });
+  expect(preview.enrolled).toHaveLength(1);
+  expect(
+    (await call("get_sequence", { sequenceId: sequence.id })).enrollments,
+  ).toHaveLength(0);
+  const enrolled = await call("enroll_in_sequence", {
+    sequenceId: sequence.id,
+    relationshipIds: [person.relationshipId],
+  });
+  expect(enrolled.enrolled).toHaveLength(1);
+  const enrollmentId = enrolled.enrolled[0].enrollmentId;
+  await call("advance_sequences", { productId: demoId(11) });
+  const [touch] = await local.db
+    .select()
+    .from(s.touches)
+    .where(eq(s.touches.enrollmentId, enrollmentId));
+  expect(touch).toBeTruthy();
+  const draft = await call("edit_touch_draft", {
+    touchId: touch.id,
+    version: touch.version,
+    draft: "Fictional approved draft",
+  });
+  const approved = await call("approve_touch", {
+    touchId: touch.id,
+    version: draft.version,
+  });
+  expect(approved.approvedBy).toBe(demoUser);
+  expect(approved.approvedHash).toBe(approved.draftHash);
+  expect(
+    (await call("approve_touch", { touchId: touch.id, version: draft.version }))
+      .error,
+  ).toContain("CONFLICT");
+  const edited = await call("edit_touch_draft", {
+    touchId: touch.id,
+    version: approved.version,
+    draft: "Changed fictional draft",
+  });
+  expect(edited.approvedHash).toBeNull();
+  const skipped = await call("skip_touch", {
+    touchId: touch.id,
+    version: edited.version,
+    reason: "Fictional test",
+  });
+  expect(skipped.status).toBe("skipped");
+  const reopened = await call("reopen_touch", {
+    touchId: touch.id,
+    version: skipped.version,
+  });
+  expect(reopened.status).toBe("drafted");
+  const detail = await call("get_sequence", { sequenceId: sequence.id });
+  const enrollment = detail.enrollments[0];
+  const paused = await call("change_enrollment", {
+    enrollmentId,
+    version: enrollment.version,
+    command: "pause",
+  });
+  expect(paused.status).toBe("paused");
+  expect(
+    (
+      await call("approve_touch", {
+        touchId: touch.id,
+        version: reopened.version,
+      })
+    ).error,
+  ).toContain("ENROLLMENT_PAUSED");
+  const stopped = await call("change_enrollment", {
+    enrollmentId,
+    version: paused.version,
+    command: "stop",
+  });
+  expect(stopped.status).toBe("stopped");
+});
+
+test("MCP can upload contract PDFs and download exact bytes without crossing product permissions", async () => {
+  const folder = await call("create_material_folder", {
+    productId: demoId(11),
+    name: "Fictional contracts",
+  });
+  const dataBase64 = Buffer.from(
+    "%PDF-1.7\nFictional contract\n%%EOF",
+  ).toString("base64");
+  const input = {
+    productId: demoId(11),
+    folderId: folder.id,
+    name: "Fictional contract.pdf",
+    mimeType: "application/pdf",
+    dataBase64,
+  };
+  expect(
+    (await call("upload_material", { ...input, dataBase64: "not base64" }))
+      .error,
+  ).toContain("INVALID_INPUT");
+  const asset = await call("upload_material", input);
+  expect(asset.error).toBeUndefined();
+  const file = await call("download_material", { assetId: asset.id });
+  expect(file.mimeType).toBe("application/pdf");
+  expect(file.dataBase64).toBe(dataBase64);
+  expect(file.sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(
+    (
+      await call(
+        "download_material",
+        { assetId: asset.id },
+        { ...writable, productIds: [demoId(10)] },
+      )
+    ).error,
+  ).toContain("FORBIDDEN");
+  expect(
+    (
+      await call("upload_material", {
+        ...input,
+        mimeType: "application/pdf",
+        dataBase64: Buffer.from("not a pdf").toString("base64"),
+      })
+    ).error,
+  ).toContain("FILE_TYPE");
+});
+
+test("MCP supports atomic follow-up planning and new workspaces without silently widening its grant", async () => {
+  const person = await call("create_person", {
+    productId: demoId(11),
+    name: "Fictional Plan Client",
+    review: false,
+  });
+  const input = {
+    relationshipId: person.relationshipId,
+    ownerId: demoUser,
+    kind: "research",
+    channel: "research",
+    owedBy: "us",
+    dueAt: new Date().toISOString(),
+  };
+  const first = await call("schedule_next_action", {
+    ...input,
+    title: "Fictional first",
+  });
+  const second = await call("schedule_next_action", {
+    ...input,
+    title: "Fictional second",
+  });
+  const stale = await call("plan_actions", {
+    items: [
+      { actionId: first.actionId, version: 1, status: "completed" },
+      { actionId: second.actionId, version: 99, status: "completed" },
+    ],
+  });
+  expect(stale.error).toContain("CONFLICT");
+  const before = await service.snapshot(writable, {
+    organizationId: demoId(1),
+  });
+  expect(before.actions.find((row) => row.id === first.actionId)?.status).toBe(
+    "open",
+  );
+  expect(
+    (
+      await call("plan_actions", {
+        items: [
+          { actionId: first.actionId, version: 1, status: "completed" },
+          { actionId: second.actionId, version: 1, status: "completed" },
+        ],
+      })
+    ).error,
+  ).toBeUndefined();
+  const workspace = await call("create_workspace", {
+    name: "Fictional MCP Workspace",
+    productName: "Fictional Product",
+    timezone: "UTC",
+  });
+  expect(workspace.organizationId).toBeTruthy();
+  expect(
+    (
+      await call("create_person", {
+        productId: workspace.productId,
+        name: "Unconsented workspace",
+      })
+    ).error,
+  ).toContain("FORBIDDEN");
+  expect(
+    (await call("list_organizations")).map((row: { id: string }) => row.id),
+  ).toEqual([demoId(1)]);
+  expect(
+    (
+      await call(
+        "create_organization",
+        { name: "Forbidden" },
+        { ...writable, productIds: [demoId(11)] },
+      )
+    ).error,
+  ).toContain("FORBIDDEN");
+});
+
+test("MCP account management uses owner isolation, encrypted personal credentials and provider consent", async () => {
+  vi.stubEnv("INTEGRATION_ENCRYPTION_KEY", "ab".repeat(32));
+  vi.stubEnv("APP_URL", "https://gravity.example.test");
+  vi.stubEnv("GOOGLE_CLIENT_ID", "fictional-google-client");
+  vi.stubEnv("GOOGLE_CLIENT_SECRET", "fictional-google-secret");
+  const transport = vi.fn<typeof fetch>(async (url) =>
+    Response.json(
+      String(url).includes("/auth/link")
+        ? { link: "https://auth.unipile.com/fictional-auth" }
+        : { data: [] },
+    ),
+  );
+  vi.stubGlobal("fetch", transport);
+  try {
+    const credentials = {
+      apiKey: "fictional-private-unipile-key",
+      signingSecret: "fictional-private-signing-secret",
+    };
+    expect(
+      (
+        await call("configure_unipile", credentials, {
+          ...writable,
+          productIds: [demoId(11)],
+        })
+      ).error,
+    ).toContain("FORBIDDEN");
+    const configured = await call("configure_unipile", credentials);
+    expect(configured.webhookReady).toBe(true);
+    expect(JSON.stringify(configured)).not.toContain(credentials.apiKey);
+    expect(JSON.stringify(configured)).not.toContain(credentials.signingSecret);
+    const overview = await call("get_integrations", { productId: demoId(11) });
+    expect(JSON.stringify(overview)).not.toContain(credentials.apiKey);
+    expect(JSON.stringify(overview)).not.toContain(credentials.signingSecret);
+    const other = await call(
+      "get_integrations",
+      { productId: demoId(11) },
+      { ...writable, userId: "demo-teammate" },
+    );
+    expect(other.unipileConfiguration).toBeNull();
+    const google = await call("connect_integration", {
+      provider: "gmail",
+      productId: demoId(11),
+    });
+    const url = new URL(google.url);
+    expect(url.origin).toBe("https://accounts.google.com");
+    expect(url.searchParams.get("redirect_uri")).toBe(
+      "https://gravity.example.test/api/integrations/callback/google",
+    );
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+    const linkedin = await call("connect_integration", {
+      provider: "linkedin",
+      productId: demoId(11),
+    });
+    expect(linkedin.url).toBe("https://auth.unipile.com/fictional-auth");
+    const [owned] = await local.db
+      .insert(s.connections)
+      .values({
+        organizationId: demoId(1),
+        productId: demoId(11),
+        provider: "gmail",
+        ownerId: demoUser,
+        externalAccountId: "fictional-account",
+        status: "connected",
+      })
+      .returning();
+    expect(
+      (
+        await call(
+          "disconnect_integration",
+          { connectionId: owned.id },
+          { ...writable, userId: "demo-teammate" },
+        )
+      ).error,
+    ).toContain("NOT_FOUND");
+    const disconnected = await call("disconnect_integration", {
+      connectionId: owned.id,
+    });
+    expect(disconnected.error).toBeUndefined();
+    await call("remove_unipile", { configurationId: configured.id });
+  } finally {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  }
+});
+
+test("MCP may revoke its own assistant grant but never a teammate's or another organization's grant", async () => {
+  const [own] = await local.db
+    .insert(s.mcpGrants)
+    .values({ userId: demoUser, organizationId: demoId(1), productIds: ["*"] })
+    .returning();
+  const [foreign] = await local.db
+    .insert(s.mcpGrants)
+    .values({
+      userId: "demo-teammate",
+      organizationId: demoId(1),
+      productIds: ["*"],
+    })
+    .returning();
+  const [otherOrg] = await local.db
+    .insert(s.mcpGrants)
+    .values({ userId: demoUser, organizationId: demoId(2), productIds: ["*"] })
+    .returning();
+  expect(
+    (await call("revoke_assistant", { grantId: foreign.id })).error,
+  ).toContain("NOT_FOUND");
+  expect(
+    (await call("revoke_assistant", { grantId: otherOrg.id })).error,
+  ).toContain("FORBIDDEN");
+  expect(await call("revoke_assistant", { grantId: own.id })).toEqual({
+    revoked: true,
+  });
+  await expect(
+    principalForGrant(local.db, demoUser, own.id),
+  ).rejects.toMatchObject({ status: 403 });
+});
+
+test("MCP contact policies require current versions and organization-wide grants", async () => {
+  const before = await call("get_contact_rules");
+  const input = {
+    version: before.version,
+    cooldownDays: 3,
+    dailyCapPerSender: 25,
+    quietHoursStart: 21,
+    quietHoursEnd: 8,
+  };
+  expect(
+    (
+      await call("update_contact_rules", input, {
+        ...writable,
+        productIds: [demoId(11)],
+      })
+    ).error,
+  ).toContain("FORBIDDEN");
+  expect(
+    (
+      await call("update_contact_rules", input, {
+        ...writable,
+        userId: "demo-teammate",
+      })
+    ).error,
+  ).toContain("FORBIDDEN");
+  const updated = await call("update_contact_rules", input);
+  expect(updated.error).toBeUndefined();
+  expect((await call("get_contact_rules")).dailyCapPerSender).toBe(25);
+  expect((await call("update_contact_rules", input)).error).toContain(
+    "CONFLICT",
+  );
+  const created = await call("create_person", {
+    productId: demoId(11),
+    name: "Fictional Opt-out Client",
+    review: false,
+  });
+  const context = await call("get_person", { personId: created.personId });
+  const prefs = {
+    personId: created.personId,
+    version: context.person.version,
+    doNotContact: true,
+    timeZone: "Asia/Kolkata",
+  };
+  const optedOut = await call("set_contact_preferences", prefs);
+  expect(optedOut).toMatchObject({
+    doNotContact: true,
+    timeZone: "Asia/Kolkata",
+  });
+  expect((await call("set_contact_preferences", prefs)).error).toContain(
+    "CONFLICT",
+  );
 });

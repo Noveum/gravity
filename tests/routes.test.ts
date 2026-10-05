@@ -792,3 +792,75 @@ describe("owner-scoped Unipile webhooks", () => {
     ).toBe(401);
   });
 });
+
+test("the same new business API is usable over HTTP and discovered through MCP", async () => {
+  const { POST: outreach } = await import("../src/app/api/outreach/route");
+  const { mcpHandler } = await import("../packages/mcp/server");
+  const response = await outreach(
+    new Request("http://localhost/api/outreach", {
+      method: "POST",
+      headers: {
+        origin: "http://localhost",
+        "x-test-user": demoUser,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        operation: "create-sequence",
+        organizationId: demoId(1),
+        productId: demoId(11),
+        name: "Fictional transport parity",
+        steps: [
+          {
+            number: 1,
+            name: "First",
+            delayDays: 0,
+            channel: "gmail",
+            followUp: 0,
+            template: "Hello",
+          },
+        ],
+      }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  const sequence = await response.json();
+  const principal: Principal = {
+    userId: demoUser,
+    source: "mcp",
+    organizationId: demoId(1),
+    productIds: [demoId(11)],
+    readOnly: false,
+  };
+  const result = await mcpHandler(db, principal, demoId(1)).fetch(
+    new Request("http://localhost/mcp", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "get_sequence",
+          arguments: { sequenceId: sequence.id },
+        },
+      }),
+    }),
+  );
+  const text = await result.text();
+  const envelope = JSON.parse(
+    text
+      .split("\n")
+      .find((line) => line.startsWith("data: "))
+      ?.slice(6) ?? text,
+  );
+  expect(envelope.result.isError).toBeFalsy();
+  expect(JSON.parse(envelope.result.content[0].text).sequence).toMatchObject({
+    id: sequence.id,
+    version: sequence.version,
+    name: sequence.name,
+  });
+});

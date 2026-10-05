@@ -678,7 +678,7 @@
             "title": "Choose the products to share",
             "paragraphs": [
               "Sign into Gravity, choose one organization and select its permitted products. Review the client, products and CRM read/write permission before accepting. A new user can create a workspace without losing the assistant authorization request.",
-              "Read/write consent lets assistants create CRM records, schedule follow-ups, and save or approve drafts using your permissions. All-products grants include future permitted products; specific-product grants stay fixed. Revoke the connection from MCP access at any time."
+              "Read/write consent gives assistants every current business API: edit clients and companies, manage deals, sequences and follow-ups, approve drafts, manage your connections and imports, and upload or download documents. HTTP and MCP share one operation registry. All-products grants include future permitted products; specific-product grants stay fixed. Revoke the connection from MCP access at any time."
             ]
           },
           {
@@ -701,8 +701,8 @@
             "id": "provider-credentials",
             "title": "Keep provider credentials private",
             "paragraphs": [
-              "MCP tools never receive your API keys or connect accounts on your behalf. A signed-in user configures their own Unipile setup in Connections, verifies the API key, and adds the unique signed webhook. The setup belongs to that user in that organization.",
-              "After reviewing imported conversations into CRM relationships, assistants can read only the context allowed by their organization/product grant and current visibility rules."
+              "You can configure your own Unipile setup in Connections or through the configure_unipile tool with verified write access and an all-products grant. Provider keys stay encrypted and are never returned by tools. Supply a key only for your own private setup; never put it in a public prompt or repository.",
+              "Assistants can start a connection, sync it and link or ignore imports for your own accounts. Google and LinkedIn return a consent URL for you to approve in the browser. Your organization/product grant and private visibility rules still apply. Contract PDFs use materials; signing and outbound sending remain unimplemented."
             ]
           }
         ]

@@ -121,6 +121,11 @@ export const sequenceUpdateSchema = scopeSchema.extend({
         new Set(steps.map((step) => step.number)).size === steps.length,
     ),
 });
+export const sequenceCreateSchema = scopeSchema.extend({
+  productId: z.uuid(),
+  name: z.string().trim().min(1).max(100),
+  steps: sequenceUpdateSchema.shape.steps,
+});
 export const contactRulesSchema = z.object({
   organizationId: z.uuid(),
   version: z.number().int().min(0),
@@ -142,8 +147,8 @@ const day = 86400000;
 const isOpen = (touch: Touch) =>
   (openStatuses as readonly string[]).includes(touch.status);
 
-function requireHuman(principal: Principal) {
-  if (principal.source === "mcp")
+function requireWriteActor(principal: Principal) {
+  if (principal.source === "mcp" && principal.readOnly !== false)
     throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
 }
 
@@ -692,7 +697,7 @@ export class OutreachService {
     principal: Principal,
     input: { organizationId: string },
   ) {
-    requireHuman(principal);
+    requireWriteActor(principal);
     const permission = await authorize(
       this.db,
       principal,
@@ -1310,7 +1315,7 @@ export class OutreachService {
     principal: Principal,
     input: z.infer<typeof touchApproveSchema>,
   ) {
-    requireHuman(principal);
+    requireWriteActor(principal);
     return this.lockedTouch(
       principal,
       input,
@@ -1814,6 +1819,38 @@ export class OutreachService {
     });
   }
 
+  async createSequence(
+    principal: Principal,
+    input: z.infer<typeof sequenceCreateSchema>,
+  ) {
+    const values = sequenceCreateSchema.parse(input);
+    return this.db.transaction(async (tx) => {
+      await authorize(
+        tx,
+        principal,
+        values.organizationId,
+        values.productId,
+        true,
+      );
+      const [sequence] = await tx
+        .insert(s.sequences)
+        .values({
+          organizationId: values.organizationId,
+          productId: values.productId,
+          name: values.name,
+          steps: [...values.steps].sort((a, b) => a.number - b.number),
+        })
+        .returning();
+      await tx.insert(s.changeEvents).values({
+        organizationId: values.organizationId,
+        productId: values.productId,
+        actorId: principal.userId,
+        type: "sequence.created",
+        entityId: sequence.id,
+      });
+      return sequence;
+    });
+  }
   async updateSequence(
     principal: Principal,
     input: z.infer<typeof sequenceUpdateSchema>,
@@ -1974,7 +2011,7 @@ export class OutreachService {
     principal: Principal,
     input: z.infer<typeof contactRulesSchema>,
   ) {
-    requireHuman(principal);
+    requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
       const { membership } = await authorize(
         tx,
@@ -1983,7 +2020,11 @@ export class OutreachService {
         undefined,
         true,
       );
-      if (membership.role !== "admin") throw new DomainError("FORBIDDEN", 403);
+      if (
+        membership.role !== "admin" ||
+        (principal.source === "mcp" && principal.productIds !== undefined)
+      )
+        throw new DomainError("FORBIDDEN", 403);
       const values = {
         cooldownDays: input.cooldownDays,
         dailyCapPerSender: input.dailyCapPerSender,
@@ -2022,7 +2063,7 @@ export class OutreachService {
     principal: Principal,
     input: z.infer<typeof contactPreferencesSchema>,
   ) {
-    requireHuman(principal);
+    requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
       const permission = await authorize(
         tx,

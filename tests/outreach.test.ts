@@ -327,11 +327,14 @@ describe("touch lifecycle", () => {
     });
     expect(drafted.status).toBe("drafted");
     await expect(
-      outreach.approve(agent, {
-        organizationId: org,
-        touchId: planned.id,
-        version: drafted.version,
-      }),
+      outreach.approve(
+        { ...agent, readOnly: true },
+        {
+          organizationId: org,
+          touchId: planned.id,
+          version: drafted.version,
+        },
+      ),
     ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
     await expect(
       outreach.approve(admin, {
@@ -1462,7 +1465,10 @@ describe("tenant isolation", () => {
     await outreach.advanceEnrollments(restricted, { organizationId: org });
     expect(await touchesOf(hidden.relationshipId)).toEqual([]);
     await expect(
-      outreach.advanceEnrollments(agent, { organizationId: org }),
+      outreach.advanceEnrollments(
+        { ...agent, readOnly: true },
+        { organizationId: org },
+      ),
     ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
     await expect(
       outreach.advanceEnrollments(

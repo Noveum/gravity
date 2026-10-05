@@ -1,9 +1,9 @@
 import { assertMutationOrigin, currentPrincipal } from "@crm/auth/server";
-import { publishChange } from "@crm/core/changes";
 import { errorResponse, limitedBody } from "@crm/core/http";
 import { DomainError } from "@crm/core/policy";
 import { getDatabase } from "@crm/database/client";
-import { downloadAsset, maxFileSize, uploadAsset } from "@crm/storage/files";
+import { apiOperation } from "@crm/operations/catalog";
+import { maxFileSize } from "@crm/storage/files";
 import { z } from "zod";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,13 +32,17 @@ export async function POST(request: Request) {
         folderId: form.get("folderId"),
         stageIds: form.getAll("stageIds"),
       });
-    const result = await uploadAsset(await getDatabase(), principal, {
-      ...fields,
-      name: file.name,
-      mimeType: file.type,
-      bytes: new Uint8Array(await file.arrayBuffer()),
-    });
-    publishChange(fields.organizationId);
+    if (!file.size || file.size > maxFileSize)
+      throw new DomainError("FILE_SIZE", 413);
+    const result = await apiOperation("materials", "POST", "upload").execute(
+      { db: await getDatabase(), principal },
+      {
+        ...fields,
+        name: file.name,
+        mimeType: file.type,
+        dataBase64: Buffer.from(await file.arrayBuffer()).toString("base64"),
+      },
+    );
     return Response.json(result, { status: 201 });
   } catch (error) {
     return errorResponse(error);
@@ -50,20 +54,21 @@ export async function GET(request: Request) {
     const fields = z
       .object({ organizationId: z.uuid(), assetId: z.uuid() })
       .parse(Object.fromEntries(new URL(request.url).searchParams));
-    const { asset, bytes } = await downloadAsset(
-      await getDatabase(),
-      principal,
-      fields.organizationId,
-      fields.assetId,
-    );
-    return new Response(new Uint8Array(bytes).buffer, {
-      headers: {
-        "Content-Type": asset.mimeType,
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(asset.name)}`,
-        "Cache-Control": "private, no-store",
-        "Content-Security-Policy": "sandbox",
+    const asset = (await apiOperation("materials", "GET", "download").execute(
+      { db: await getDatabase(), principal },
+      fields,
+    )) as { name: string; mimeType: string; dataBase64: string };
+    return new Response(
+      new Uint8Array(Buffer.from(asset.dataBase64, "base64")).buffer,
+      {
+        headers: {
+          "Content-Type": asset.mimeType,
+          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(asset.name)}`,
+          "Cache-Control": "private, no-store",
+          "Content-Security-Policy": "sandbox",
+        },
       },
-    });
+    );
   } catch (error) {
     return errorResponse(error);
   }

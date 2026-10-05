@@ -863,6 +863,22 @@ describe("outreach pipeline", () => {
     expect(await screen.findByText(t.relationshipClosedMove)).toBeTruthy();
     expect(moves()).toHaveLength(4);
   });
+  test("two quick Shift arrows queue, each move uses the version the last one returned, and nothing conflicts", async () => {
+    await openBoard();
+    within(stage(t.outreachStages.contacted))
+      .getByRole("button", { name: /^Amara Stone/ })
+      .focus();
+    await press("{Shift>}{ArrowRight}{ArrowRight}{/Shift}");
+    await waitFor(() =>
+      expect(
+        within(stage(t.outreachStages.replied)).getByRole("button", {
+          name: /^Amara Stone/,
+        }),
+      ).toBeTruthy(),
+    );
+    expect(moves()).toEqual([demoId(1203), demoId(1204)]);
+    expect(screen.queryByText(t.errors.CONFLICT)).toBeNull();
+  });
   test("a drag into a closed stage asks first and Cancel leaves it, a drag between open stages moves at once, and cards show owner, next step and due date", async () => {
     await openBoard();
     const noor = card("Noor Haddad");

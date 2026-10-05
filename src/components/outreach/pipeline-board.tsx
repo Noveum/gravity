@@ -123,53 +123,78 @@ function Board({ productId }: { productId: string }) {
         .toLowerCase()
         .includes(crm.search.toLowerCase()),
   );
+  const local = useRef(new Map<string, { stageId: string; version: number }>());
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const latest = (relationship: Relationship) => {
+    const mine = local.current.get(relationship.id);
+    return mine && mine.version > relationship.version
+      ? mine
+      : { stageId: relationship.stageId ?? "", version: relationship.version };
+  };
   const stageOf = (relationship: Relationship) =>
-    pipeline.find((stage) => stage.id === relationship.stageId) ?? pipeline[0];
+    pipeline.find((stage) => stage.id === latest(relationship).stageId) ??
+    pipeline[0];
   const nameOf = (relationship: Relationship) =>
     crm.personFor(relationship.id)?.name ?? t.unknown;
-  async function move(relationship: Relationship, stage: Stage) {
-    const from = stageOf(relationship);
-    if (!from || from.id === stage.id) return false;
+  function enqueue<T>(task: () => Promise<T>) {
+    const next = queue.current.then(task, task);
+    queue.current = next.catch(() => undefined);
+    return next;
+  }
+  async function save(relationship: Relationship, stage: Stage) {
     const result = await send<Relationship>({
       operation: "relationship",
       relationshipId: relationship.id,
-      version: relationship.version,
+      version: latest(relationship).version,
       stageId: stage.id,
     });
     if (!result.ok) {
       crm.notify(result.error, "danger");
       return false;
     }
+    local.current.set(relationship.id, {
+      stageId: result.result.stageId ?? stage.id,
+      version: result.result.version,
+    });
     refocus.current = relationship.id;
     await crm.refresh();
-    const moved = result.result;
-    crm.notify(
-      t.movedToStage
-        .replace("{name}", nameOf(relationship))
-        .replace("{stage}", stage.name),
-      "success",
-      {
-        label: t.undo,
-        run: () =>
-          void send<Relationship>({
-            operation: "relationship",
-            relationshipId: moved.id,
-            version: moved.version,
-            stageId: from.id,
-          }).then(async (undone) => {
-            if (!undone.ok) return crm.notify(undone.error, "danger");
-            refocus.current = moved.id;
-            await crm.refresh();
-            crm.notify(t.verbUndone, "success");
-          }),
-      },
-    );
     return true;
+  }
+  function move(
+    relationship: Relationship,
+    pick: (from: Stage) => { stage?: Stage | undefined; reason?: string },
+  ) {
+    return enqueue(async () => {
+      const from = stageOf(relationship);
+      if (!from) return false;
+      const { stage, reason } = pick(from);
+      if (!stage) {
+        if (reason) crm.notify(reason);
+        return false;
+      }
+      if (stage.id === from.id) return false;
+      if (!(await save(relationship, stage))) return false;
+      crm.notify(
+        t.movedToStage
+          .replace("{name}", nameOf(relationship))
+          .replace("{stage}", stage.name),
+        "success",
+        {
+          label: t.undo,
+          run: () =>
+            void enqueue(async () => {
+              if (await save(relationship, from))
+                crm.notify(t.verbUndone, "success");
+            }),
+        },
+      );
+      return true;
+    });
   }
   function request(relationship: Relationship, stageId: string) {
     const stage = pipeline.find((item) => item.id === stageId);
     if (!stage || stage.id === stageOf(relationship)?.id) return;
-    if (stage.category === "open") void move(relationship, stage);
+    if (stage.category === "open") void move(relationship, () => ({ stage }));
     else setClosing({ relationship, stage });
   }
   function focused() {
@@ -179,13 +204,9 @@ function Board({ productId }: { productId: string }) {
   const step = (direction: "next" | "previous") => () => {
     const relationship = focused();
     if (!relationship) return false;
-    const { stage, reason } = adjacentOpenStage(
-      pipeline,
-      stageOf(relationship)?.id ?? "",
-      direction,
+    void move(relationship, (from) =>
+      adjacentOpenStage(pipeline, from.id, direction),
     );
-    if (stage) void move(relationship, stage);
-    else crm.notify(reason);
     return true;
   };
   useVerbs({
@@ -355,7 +376,8 @@ function Board({ productId }: { productId: string }) {
           )}
           onClose={() => setClosing(null)}
           onSubmit={async () => {
-            const moved = await move(closing.relationship, closing.stage);
+            const stage = closing.stage;
+            const moved = await move(closing.relationship, () => ({ stage }));
             return moved ? null : "";
           }}
         >

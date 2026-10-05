@@ -723,7 +723,7 @@ export class OutreachService {
           ),
         );
       if (!sequence) throw new DomainError("NOT_FOUND", 404);
-      await authorize(
+      const permission = await authorize(
         tx,
         principal,
         input.organizationId,
@@ -732,6 +732,9 @@ export class OutreachService {
       );
       if (input.productId && input.productId !== sequence.productId)
         throw new DomainError("FORBIDDEN", 403);
+      const readable = new Set(
+        permission.products.map((product) => product.id),
+      );
       const requested = [...new Set(input.relationshipIds)];
       const relationships = await tx
         .select()
@@ -788,19 +791,20 @@ export class OutreachService {
         const enrolled = active.filter(
           (row) => row.relationshipId === relationshipId,
         );
-        const reason = !relationship
-          ? "not_found"
-          : relationship.productId !== sequence.productId
-            ? "other_brand"
-            : !person || person.archivedAt
-              ? "archived"
-              : person.doNotContact
-                ? "do_not_contact"
-                : enrolled.some((row) => row.sequenceId === sequence.id)
-                  ? "already_enrolled"
-                  : enrolled.length
-                    ? "in_another_sequence"
-                    : null;
+        const reason =
+          !relationship || !readable.has(relationship.productId)
+            ? "not_found"
+            : relationship.productId !== sequence.productId
+              ? "other_brand"
+              : !person || person.archivedAt
+                ? "archived"
+                : person.doNotContact
+                  ? "do_not_contact"
+                  : enrolled.some((row) => row.sequenceId === sequence.id)
+                    ? "already_enrolled"
+                    : enrolled.length
+                      ? "in_another_sequence"
+                      : null;
         if (reason) skipped.push({ relationshipId, reason });
         else if (relationship) eligible.push(relationship);
       }

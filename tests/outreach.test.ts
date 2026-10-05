@@ -231,6 +231,23 @@ describe("enrollment", () => {
     ).toEqual([]);
   });
 
+  test("a dry run reports a relationship in a brand the caller cannot read as not found", async () => {
+    now = Date.parse("2026-10-05T06:00:00Z");
+    const target = await fixture(demoId(10));
+    const readable = await fixture(demoId(11));
+    const hidden = await fixture();
+    const result = await outreach.enroll(teammate, {
+      organizationId: org,
+      sequenceId: target.sequenceId,
+      relationshipIds: [readable.relationshipId, hidden.relationshipId],
+      dryRun: true,
+    });
+    expect(result.skipped).toEqual([
+      { relationshipId: readable.relationshipId, reason: "other_brand" },
+      { relationshipId: hidden.relationshipId, reason: "not_found" },
+    ]);
+  });
+
   test("enrolling plans the first touch at enrollment time with the step template", async () => {
     now = Date.parse("2026-10-05T06:00:00Z");
     const f = await fixture();

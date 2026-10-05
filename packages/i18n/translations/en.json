@@ -22,7 +22,7 @@
   "promises": "Promises we made",
   "waiting": "Awaiting them",
   "search": "Search records",
-  "searchPlaceholder": "Search people, companies, actions\u2026",
+  "searchPlaceholder": "Search people, companies, actions…",
   "owner": "Owner",
   "everyone": "Everyone",
   "mine": "Mine",
@@ -33,11 +33,11 @@
   "review": "Review",
   "commitment": "Commitment",
   "research": "Research",
-  "demo": "Local development \u00b7 Fictional data",
+  "demo": "Local development · Fictional data",
   "demoDetail": "Changes are saved locally. No messages are sent.",
   "updated": "Saved",
-  "saving": "Saving\u2026",
-  "loading": "Loading\u2026",
+  "saving": "Saving…",
+  "loading": "Loading…",
   "refresh": "Refresh",
   "synced": "Updated",
   "polling": "Live change feed; server checks recover missed changes.",
@@ -143,7 +143,7 @@
   "archivedAsset": "Archived",
   "download": "Download",
   "materialsEmpty": "Add a product overview, case study, or proposal to this library.",
-  "uploadHint": "PDF, Markdown, or plain text \u00b7 Up to 10 MB \u00b7 Private to this product",
+  "uploadHint": "PDF, Markdown, or plain text · Up to 10 MB · Private to this product",
   "uploadStageHint": "A document can help at more than one stage. Uploaded materials start as drafts.",
   "materialNote": "Folders and files belong to one product. Uploaded files are private downloads; public sharing and text extraction come later.",
   "productRequired": "Choose a product to organize its materials.",
@@ -232,7 +232,10 @@
     "CONNECTION_FLOW_EXPIRED": "This connection request expired. Start a new connection.",
     "ACCOUNT_ALREADY_CONNECTED": "This account is already assigned elsewhere, or the reconnect selected a different account.",
     "THREAD_ALREADY_LINKED": "This conversation is already linked to another relationship.",
-    "SYNC_IN_PROGRESS": "A sync is already running for this account. Please wait."
+    "SYNC_IN_PROGRESS": "A sync is already running for this account. Please wait.",
+    "UNIPILE_SETUP_REQUIRED": "Set up your own Unipile API key and signed webhook before connecting LinkedIn.",
+    "STALE_CONFIGURATION": "Your provider setup changed. Reload Connections and try again.",
+    "PROVIDER_CONFIGURATION_IN_USE": "This setup already has linked accounts. Remove it first to replace the credentials; this will disconnect those accounts and preserve imported history."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
   "addPerson": "Add person",
@@ -240,7 +243,7 @@
   "existingPerson": "Existing person",
   "person": "Person",
   "choosePerson": "Choose a person",
-  "personLinkNote": "Add a separate product relationship without copying or changing the person\u2019s history.",
+  "personLinkNote": "Add a separate product relationship without copying or changing the person’s history.",
   "roleTitle": "Role or title",
   "noCompany": "No company yet",
   "relationshipContext": "Context for this product",
@@ -254,7 +257,7 @@
   "dark": "Dark",
   "system": "System",
   "commands": "Commands and shortcuts",
-  "commandSearch": "Search commands\u2026",
+  "commandSearch": "Search commands…",
   "noCommands": "No matching commands.",
   "keyboardHelp": "Keyboard shortcuts",
   "searchShortcut": "Search this view",
@@ -286,10 +289,10 @@
   "reloadDraft": "Discard local edits and load latest",
   "closeInspector": "Close inspector",
   "keys": {
-    "commandHint": "\u2318 K",
-    "commands": "\u2318 / Ctrl K",
+    "commandHint": "⌘ K",
+    "commands": "⌘ / Ctrl K",
     "search": "/",
-    "movement": "J / K \u00b7 \u2193 / \u2191",
+    "movement": "J / K · ↓ / ↑",
     "schedule": "N",
     "close": "Esc",
     "actions": "G A",
@@ -339,7 +342,7 @@
   "evaluation": "Evaluation",
   "proposal": "Proposal",
   "won": "Won",
-  "commandNavigation": "\u2191 / \u2193 to choose \u00b7 Enter to open \u00b7 Esc to close",
+  "commandNavigation": "↑ / ↓ to choose · Enter to open · Esc to close",
   "keyboardNavigation": "Go to",
   "keyboardGeneral": "Work and navigation",
   "keyboardRecords": "Move between records",
@@ -349,10 +352,10 @@
   "keyboardSafety": "Single-key shortcuts pause while you type or use a modal. Arrow keys focus records; Enter opens them. No shortcut sends messages or approves drafts.",
   "keyboardListFocus": "Focus the record list",
   "keyboardDetailFocus": "Focus the detail panel",
-  "shortcutSearch": "Search shortcuts\u2026",
+  "shortcutSearch": "Search shortcuts…",
   "viewLoadError": "This view could not be loaded. Retry to reconnect.",
-  "submitHint": "\u2318 / Ctrl Enter to submit",
-  "draftSaveHint": "\u2318 / Ctrl Enter to save this draft",
+  "submitHint": "⌘ / Ctrl Enter to submit",
+  "draftSaveHint": "⌘ / Ctrl Enter to save this draft",
   "workspaceSetup": "Workspace setup",
   "workspaceSetupTitle": "Give your relationships a home.",
   "workspaceSetupDescription": "Start with one organization and its first product. Add more products and workspaces as your team grows.",
@@ -398,7 +401,7 @@
       "Review meeting outcomes before creating commitments or follow-ups."
     ],
     "linkedin": [
-      "Connect your account through a qualified messaging provider.",
+      "Verify your own Unipile API key and set up its signed webhook, then connect your LinkedIn account.",
       "Choose the product relationships to sync.",
       "Review replies and unmatched conversations before resuming outreach."
     ],
@@ -411,10 +414,10 @@
   "authFlowMissing": "Open authorization from your assistant to choose access. This page needs its OAuth request.",
   "authNoOrganizations": "Create a workspace before connecting an assistant.",
   "authNoProducts": "No products are available to share in this organization. Ask your admin for access or add a product.",
-  "authProductsLoading": "Loading products you can share\u2026",
-  "authOrgLoading": "Loading your organizations\u2026",
+  "authProductsLoading": "Loading products you can share…",
+  "authOrgLoading": "Loading your organizations…",
   "authRetry": "Retry loading access",
-  "authFlowLoading": "Loading the selected client and access\u2026",
+  "authFlowLoading": "Loading the selected client and access…",
   "workspaceReady": "Your workspace is ready.",
   "workspaceNextStep": "Add your first person and their product relationship, then schedule a next action. Review Connections to set up your tools.",
   "connectTools": "Review connections",
@@ -426,7 +429,7 @@
     "openApp": "Open workspace",
     "skip": "Skip to content",
     "navLabel": "Gravity website",
-    "footer": "Gravity by Noveum \u00b7 Open source \u00b7 Apache-2.0",
+    "footer": "Gravity by Noveum · Open source · Apache-2.0",
     "previewBadge": "Early preview",
     "eyebrow": "Open-source CRM for founders and small sales teams",
     "heroTitle": "Know who to follow up with next.",
@@ -489,10 +492,10 @@
     "mcpEyebrow": "Your assistant, with the context to help",
     "mcpTitle": "Give your assistant the relationship behind the task.",
     "mcpDescription": "Ask for a meeting brief, the history behind a follow-up, or the materials to review. Read-only MCP gives your assistant access to CRM context through the same permissions as the app. You choose the organization and products to share.",
-    "mcpPrompt": "\u201cCatch me up on Mira\u2019s evaluation. What did we promise, what changed, and which materials should I review?\u201d",
+    "mcpPrompt": "“Catch me up on Mira’s evaluation. What did we promise, what changed, and which materials should I review?”",
     "mcpBoundary": "Read-only OAuth MCP is implemented. A configured HTTPS installation and live connection testing are needed for Codex and Claude Code.",
     "mcpLink": "Connect an assistant",
-    "statusTitle": "Explore what works today. See what we\u2019re building next.",
+    "statusTitle": "Explore what works today. See what we’re building next.",
     "statusDescription": "Gravity is in active development. Explore the core workflows, then configure your own provider accounts to import conversations and meetings.",
     "readyTitle": "Available in the preview",
     "readyItems": [
@@ -599,7 +602,7 @@
             "title": "Before adding real data",
             "paragraphs": [
               "Use an isolated staging database and a stable HTTPS origin. Configure real authentication, qualify two-user membership and product permissions, and verify private object storage. Complete a backup restore rehearsal.",
-              "Invitations, record editing/imports, live inbox/calendar connections and production qualification remain unfinished. Read the deployment guide and capability matrix before migrating company data."
+              "Gmail and primary Calendar have separate read-only connection flows. In Connections, bring your own Unipile API key and webhook for LinkedIn, or your Fireflies key for meeting notes. Invitations, record editing/imports and backup restore qualification remain unfinished."
             ]
           }
         ]
@@ -657,6 +660,14 @@
               "OAuth is the current interactive connection path. No personal CRM API key is implemented. Read-only API keys for unattended jobs would need their own scoped issuance, expiration, hashing, rotation and revocation design.",
               "HMAC authenticates provider webhook deliveries. It is not a substitute for assistant consent or a user-facing OAuth mode. Never paste provider refresh tokens into an assistant configuration."
             ]
+          },
+          {
+            "id": "provider-credentials",
+            "title": "Keep provider credentials private",
+            "paragraphs": [
+              "MCP tools never receive your API keys or connect accounts on your behalf. A signed-in user configures their own Unipile setup in Connections, verifies the API key, and adds the unique signed webhook. The setup belongs to that user in that organization.",
+              "After reviewing imported conversations into CRM relationships, assistants can read only the context allowed by their organization/product grant and current visibility rules."
+            ]
           }
         ]
       },
@@ -712,14 +723,14 @@
       {
         "slug": "follow-ups-need-context",
         "title": "A follow-up is a promise with context",
-        "description": "Why the next step deserves an owner, a reason and a due time\u2014not just a deal stage.",
+        "description": "Why the next step deserves an owner, a reason and a due time—not just a deal stage.",
         "sections": [
           {
             "id": "queue",
             "title": "Start the day with a decision",
             "paragraphs": [
               "A deal board tells you where an opportunity sits. It rarely explains which person needs a reply today, what you promised last week, or whether someone answered on another channel. That decision belongs in a daily action queue.",
-              "A useful next action names the person and product relationship, the owner, the reason, the due instant and who owes the next step. \u201cFollow up\u201d alone leaves too much work for the person opening the record."
+              "A useful next action names the person and product relationship, the owner, the reason, the due instant and who owes the next step. “Follow up” alone leaves too much work for the person opening the record."
             ]
           },
           {
@@ -814,9 +825,9 @@
   "emailAddress": "Email address",
   "signInCode": "Sign-in code",
   "sendSignInCode": "Send sign-in code",
-  "sendingSignInCode": "Sending code\u2026",
+  "sendingSignInCode": "Sending code…",
   "verifySignInCode": "Verify and sign in",
-  "signingIn": "Signing in\u2026",
+  "signingIn": "Signing in…",
   "emailCodeSent": "Enter the six-digit code sent to {email}.",
   "resendCode": "Resend code",
   "resendCodeIn": "Resend in {seconds}s",
@@ -836,7 +847,7 @@
   },
   "connected": "Connected",
   "syncNow": "Sync now",
-  "syncing": "Syncing\u2026",
+  "syncing": "Syncing…",
   "reconnect": "Reconnect",
   "disconnect": "Disconnect",
   "reconnectRequired": "Reconnect required",
@@ -846,11 +857,11 @@
   "connectProvider": "Connect {provider}",
   "integrationDemo": "Connect accounts in a configured installation; this local demo does not access providers.",
   "integrationConfigRequired": "Your administrator needs to configure the integration client and encryption key.",
-  "unipileSetupRequired": "An administrator must configure the Unipile V2 API key and signed webhook endpoint before connecting LinkedIn.",
-  "linkedInSetup": "Configure a Unipile V2 endpoint at /api/webhooks/unipile with account.add, account.reconnect, account.status.disconnected, account.status.running, account.status.errored, account.remove and message.new events. Each user then connects their own LinkedIn account through hosted authentication.",
+  "unipileSetupRequired": "Connect your own Unipile application to enable LinkedIn.",
+  "linkedInSetup": "Open Set up Unipile to verify your own API key, configure the signed webhook, and connect your LinkedIn account. Your setup is private to you in this organization.",
   "webhookSetupGuide": "Unipile webhook setup guide",
   "importReview": "Imported context to review",
-  "importReviewDescription": "Choose a person and product for each conversation or meeting. Linking a conversation imports its messages privately; linking a meeting adds its notes to that product\u2019s shared CRM context. Replies on linked conversations update their existing relationship.",
+  "importReviewDescription": "Choose a person and product for each conversation or meeting. Linking a conversation imports its messages privately; linking a meeting adds its notes to that product’s shared CRM context. Replies on linked conversations update their existing relationship.",
   "previewImport": "Preview imported context",
   "noMessageText": "No text was included.",
   "linkRelationship": "Person and product",
@@ -866,10 +877,10 @@
   "linkedinConnectNote": "Continue to Unipile to connect your own LinkedIn account. Gravity does not collect your LinkedIn password. An existing Unipile application is required.",
   "googleConnectNote": "Google will ask for separate read-only access to your Gmail or primary calendar. This does not grant permission to send email or edit calendar events.",
   "defaultProduct": "Default product",
-  "defaultProductNote": "Imported context starts in this product\u2019s review queue. You can explicitly link each thread or meeting to another product you can access.",
+  "defaultProductNote": "Imported context starts in this product’s review queue. You can explicitly link each thread or meeting to another product you can access.",
   "firefliesApiKey": "Fireflies API key",
   "firefliesKeyPlaceholder": "Paste your Fireflies API key",
-  "connecting": "Connecting\u2026",
+  "connecting": "Connecting…",
   "verifyConnect": "Verify and connect",
   "continueProvider": "Continue to {provider}",
   "unipile": "Unipile",
@@ -882,12 +893,35 @@
     "CONNECTION_DISCONNECTED": "Account disconnected. Imported CRM context is retained.",
     "IMPORT_REVIEWED": "Imported context reviewed."
   },
-  "searchImports": "Search titles or participants\u2026",
+  "searchImports": "Search titles or participants…",
   "importProvider": "Import source",
   "allImportProviders": "All sources",
   "noImportsFound": "No imported items match this view.",
-  "importPage": "Page {page} \u00b7 {total} items to review",
+  "importPage": "Page {page} · {total} items to review",
   "previousImports": "Previous",
   "nextImports": "Next",
-  "integrationTimeZone": "Connection and import times use {zone}."
+  "integrationTimeZone": "Connection and import times use {zone}.",
+  "unipileSettingsTitle": "Your Unipile setup",
+  "unipileSettingsSubtitle": "Bring your LinkedIn conversations into Gravity.",
+  "unipileOwnership": "Only you can manage this setup. Credentials are encrypted on the server, scoped to this organization, and never shared with other users or AI assistants.",
+  "unipileSetupSteps": "Unipile setup steps",
+  "unipileApiStep": "Verify API key",
+  "unipileWebhookStep": "Configure webhook",
+  "unipileKeyInstructions": "Paste the V2 API key from your Unipile application. Gravity will verify access before saving it.",
+  "unipileApiKey": "Unipile API key",
+  "unipileKeyPlaceholder": "Paste your Unipile V2 API key",
+  "unipileScopedKeyNote": "Use a scoped Account API key when available. Unipile billing stays with your provider account; Gravity does not purchase a subscription.",
+  "unipileKeyGuide": "Unipile API keys and scopes",
+  "unipileVerifyKey": "Verify and save key",
+  "unipileWebhookInstructions": "Create a V2 webhook in your Unipile dashboard using the URL above. Paste that endpoint’s signing secret below to finish setup.",
+  "unipileWebhookEvents": "Subscribe to account.add, account.reconnect, account.status.running, account.status.disconnected, account.status.errored, account.remove and message.new.",
+  "unipileSecretPlaceholder": "Paste the webhook signing secret",
+  "unipileSaveWebhook": "Save webhook setup",
+  "unipileReady": "Setup saved. You can now connect LinkedIn. Signed deliveries will be verified when Unipile sends them.",
+  "unipileRemove": "Remove Unipile setup",
+  "unipileRemoveWarning": "Removing this setup disconnects its LinkedIn accounts and deletes the saved credentials. Imported CRM history stays available under its existing access rules. You can create a new setup afterward.",
+  "unipileConfirmRemove": "Remove and disconnect",
+  "unipileSetUp": "Set up Unipile",
+  "unipileManage": "Manage Unipile",
+  "disconnected": "Disconnected"
 }

@@ -169,29 +169,28 @@ export async function refreshGoogle(
     expiresAt: Date.now() + token.expires_in * 1000,
   };
 }
-export function unipileKey() {
-  const key = process.env.UNIPILE_API_KEY;
-  if (!key) throw new DomainError("CONNECTOR_NOT_CONFIGURED", 503);
-  return key;
-}
 export const unipileJson = (
+  apiKey: string,
   path: string,
   init: RequestInit = {},
   transport: ProviderFetch = fetch,
-) =>
-  providerJson(
+) => {
+  if (!apiKey) throw new DomainError("CONNECTOR_NOT_CONFIGURED", 503);
+  return providerJson(
     `https://api.unipile.com/v2${path}`,
     {
       ...init,
       headers: {
-        "X-API-KEY": unipileKey(),
-        "Content-Type": "application/json",
         ...init.headers,
+        "X-API-KEY": apiKey,
+        "Content-Type": "application/json",
       },
     },
     transport,
   );
+};
 export async function hostedLinkedIn(
+  apiKey: string,
   state: string,
   redirectUri: string,
   accountId?: string,
@@ -199,6 +198,7 @@ export async function hostedLinkedIn(
 ) {
   const result = z.object({ link: z.url() }).parse(
     await unipileJson(
+      apiKey,
       "/auth/link",
       {
         method: "POST",
@@ -610,6 +610,7 @@ export async function readProviderPage(
   if (!chats.length) {
     const page = list.parse(
       await unipileJson(
+        credentials.apiKey ?? "",
         `/${encodeURIComponent(accountId)}/chats?limit=10${typeof cursor.chatCursor === "string" ? `&cursor=${encodeURIComponent(cursor.chatCursor)}` : ""}`,
         {},
         transport,
@@ -622,6 +623,7 @@ export async function readProviderPage(
   const chat = chats[0];
   const page = list.parse(
     await unipileJson(
+      credentials.apiKey ?? "",
       `/${encodeURIComponent(accountId)}/chats/${encodeURIComponent(chat.id)}/messages?limit=50${typeof cursor.messageCursor === "string" ? `&cursor=${encodeURIComponent(cursor.messageCursor)}` : ""}`,
       {},
       transport,

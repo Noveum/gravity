@@ -1,7 +1,14 @@
 "use client";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { Check, Copy, ExternalLink } from "lucide-react";
+import {
+  Bot,
+  Check,
+  Copy,
+  ExternalLink,
+  ShieldCheck,
+  Unplug,
+} from "lucide-react";
 import { useRef, useState } from "react";
 
 import { IntegrationCards } from "./integration-cards";
@@ -44,8 +51,14 @@ export function Connections({
       />
       <article className="integration-card mcp-card">
         <div className="section-heading">
-          <h2>{t.mcp}</h2>
-          <span className="badge">OAuth 2.1</span>
+          <h2>
+            <Bot size={18} aria-hidden="true" />
+            {t.mcp}
+          </h2>
+          <span className="badge">
+            <ShieldCheck size={12} aria-hidden="true" />
+            OAuth 2.1
+          </span>
         </div>
         <p>{t.mcpDescription}</p>
         <div className="endpoint-field">
@@ -66,7 +79,11 @@ export function Connections({
                 }
               }}
             >
-              {copied ? <Check size={15} /> : <Copy size={15} />}
+              {copied ? (
+                <Check size={15} aria-hidden="true" />
+              ) : (
+                <Copy size={15} aria-hidden="true" />
+              )}
               <span>{copied ? t.copied : t.copy}</span>
             </button>
           </div>
@@ -91,7 +108,7 @@ export function Connections({
           className="text-button"
         >
           {t.integrationGuide}
-          <ExternalLink size={13} />
+          <ExternalLink size={13} aria-hidden="true" />
         </a>
         <h3 className="spaced">{t.assistantGrants}</h3>
         {data.grants.length ? (
@@ -121,6 +138,7 @@ export function Connections({
                   }
                 }}
               >
+                <Unplug size={14} aria-hidden="true" />
                 {revoking === grant.id ? t.saving : t.revoke}
               </button>
             </div>

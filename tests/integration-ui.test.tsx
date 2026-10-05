@@ -61,10 +61,8 @@ test("configured providers have working connect buttons and unavailable LinkedIn
     ).toBe(false),
   );
   expect(
-    screen
-      .getByRole("button", { name: "Connect LinkedIn" })
-      .matches(":disabled"),
-  ).toBe(true);
+    screen.getByRole("button", { name: t.unipileSetUp }).matches(":disabled"),
+  ).toBe(false);
   expect(screen.getByText(t.unipileSetupRequired)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
   expect(screen.getByRole("dialog").textContent).toContain(t.googleConnectNote);
@@ -284,4 +282,118 @@ test("connection sync and imported context use the organization's time zone", as
   expect(
     screen.getByText(t.integrationTimeZone.replace("{zone}", "Asia/Kolkata")),
   ).toBeTruthy();
+});
+
+test("personal Unipile setup verifies a masked key, advances to the unique webhook, and guards duplicate submissions", async () => {
+  const { UnipileSettings } = await import(
+    "../src/components/unipile-settings"
+  );
+  let finish: (value: unknown) => void = () => {};
+  request.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const onChanged = vi.fn(async () => {});
+  const onClose = vi.fn();
+  render(
+    <UnipileSettings
+      organizationId="org"
+      configuration={null}
+      onChanged={onChanged}
+      onClose={onClose}
+    />,
+  );
+  const input = screen.getByLabelText(t.unipileApiKey) as HTMLInputElement;
+  expect(input.type).toBe("password");
+  expect(input.placeholder).toBe(t.unipileKeyPlaceholder);
+  expect(screen.getByText(t.unipileOwnership)).toBeTruthy();
+  fireEvent.change(input, { target: { value: "fictional-user-key" } });
+  const form = input.closest("form");
+  if (!form) throw new Error("FORM_MISSING");
+  fireEvent.submit(form);
+  fireEvent.submit(form);
+  expect(request).toHaveBeenCalledTimes(1);
+  const body = JSON.parse(String(request.mock.calls[0][1]?.body));
+  expect(body).toEqual({
+    operation: "configure-unipile",
+    organizationId: "org",
+    apiKey: "fictional-user-key",
+  });
+  expect(input.disabled).toBe(true);
+  await act(async () =>
+    finish({
+      id: "setup",
+      webhookReady: false,
+      webhookUrl:
+        "https://crm.example.test/api/webhooks/unipile?configurationId=setup",
+    }),
+  );
+  expect(screen.queryByLabelText(t.unipileApiKey)).toBeNull();
+  expect(
+    (screen.getByLabelText(t.webhookUrl) as HTMLInputElement).readOnly,
+  ).toBe(true);
+  const secret = screen.getByLabelText(t.signingSecret) as HTMLInputElement;
+  expect(secret.type).toBe("password");
+  expect(document.activeElement).toBe(secret);
+  request.mockResolvedValueOnce({
+    id: "setup",
+    webhookReady: true,
+    webhookUrl:
+      "https://crm.example.test/api/webhooks/unipile?configurationId=setup",
+  });
+  fireEvent.change(secret, { target: { value: "fictional-webhook-secret" } });
+  const webhookForm = secret.closest("form");
+  if (!webhookForm) throw new Error("FORM_MISSING");
+  fireEvent.submit(webhookForm);
+  await waitFor(() => expect(screen.getByText(t.unipileReady)).toBeTruthy());
+  expect(screen.queryByLabelText(t.signingSecret)).toBeNull();
+  expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toEqual({
+    operation: "configure-unipile",
+    organizationId: "org",
+    configurationId: "setup",
+    signingSecret: "fictional-webhook-secret",
+  });
+  expect(onChanged).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole("button", { name: t.done }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test("Unipile setup removal requires explicit confirmation and reports provider errors", async () => {
+  const { UnipileSettings } = await import(
+    "../src/components/unipile-settings"
+  );
+  const onClose = vi.fn();
+  request.mockRejectedValueOnce(new Error("PROVIDER_UNAVAILABLE"));
+  render(
+    <UnipileSettings
+      organizationId="org"
+      configuration={{
+        id: "owned",
+        webhookReady: true,
+        webhookUrl: "https://crm.example.test/hook",
+      }}
+      onChanged={async () => {}}
+      onClose={onClose}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: t.unipileRemove }));
+  expect(request).not.toHaveBeenCalled();
+  expect(screen.getByText(t.unipileRemoveWarning)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: t.unipileConfirmRemove }));
+  await waitFor(() =>
+    expect(screen.getByRole("alert").textContent).toBe(
+      t.errors.PROVIDER_UNAVAILABLE,
+    ),
+  );
+  expect(onClose).not.toHaveBeenCalled();
+  request.mockResolvedValueOnce({ ok: true });
+  fireEvent.click(screen.getByRole("button", { name: t.unipileConfirmRemove }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(String(request.mock.calls.at(-1)?.[1]?.body))).toEqual({
+    operation: "remove-unipile",
+    organizationId: "org",
+    configurationId: "owned",
+  });
 });

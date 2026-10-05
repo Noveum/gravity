@@ -18,6 +18,11 @@ import { authorize, DomainError, type Principal } from "../core/policy";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import {
+  ProviderConfigurationService,
+  publicUnipileConfiguration,
+  unipileCredentials,
+} from "./configuration";
+import {
   exchangeGoogle,
   firefliesIdentity,
   googleConfig,
@@ -79,10 +84,7 @@ export function integrationAvailability() {
         process.env.GOOGLE_INTEGRATION_CLIENT_SECRET ||
         process.env.GOOGLE_CLIENT_SECRET
       ),
-    linkedin:
-      key &&
-      !!process.env.UNIPILE_API_KEY &&
-      !!process.env.UNIPILE_WEBHOOK_SECRET,
+    linkedin: key,
     fireflies: key,
   };
 }
@@ -109,6 +111,7 @@ export function publicConnection(
       connection.selfEmail ||
       connection.externalAccountId,
     productId: connection.productId,
+    providerConfigurationId: connection.providerConfigurationId,
     lastSyncedAt: connection.lastSyncedAt?.toISOString() ?? null,
     errorCode: connection.errorCode,
     more: !!connection.syncCursor.more,
@@ -117,6 +120,7 @@ export function publicConnection(
 export type PublicConnection = ReturnType<typeof publicConnection>;
 export interface ConnectionOverview {
   configured: ReturnType<typeof integrationAvailability>;
+  unipileConfiguration: ReturnType<typeof publicUnipileConfiguration> | null;
   connections: PublicConnection[];
   items: {
     id: string;
@@ -217,8 +221,18 @@ export class IntegrationService {
       .where(filter);
     const items = page.slice(0, reviewPageSize);
     const last = items.at(-1);
+    const configuration = await new ProviderConfigurationService(this.db).own(
+      principal,
+      scope.organizationId,
+    );
     return {
-      configured: integrationAvailability(),
+      configured: {
+        ...integrationAvailability(),
+        linkedin: encryptionConfigured() && !!configuration?.webhookReady,
+      },
+      unipileConfiguration: configuration
+        ? publicUnipileConfiguration(configuration)
+        : null,
       connections: rows.map(publicConnection),
       items: items.map(({ createdAt: _createdAt, ...item }) => item),
       reviewTotal: total.value,
@@ -301,6 +315,21 @@ export class IntegrationService {
         signingSecret,
       };
     }
+    const configuration =
+      input.provider === "linkedin"
+        ? await new ProviderConfigurationService(this.db).own(
+            principal,
+            input.organizationId,
+          )
+        : null;
+    if (input.provider === "linkedin" && !configuration?.webhookReady)
+      throw new DomainError("UNIPILE_SETUP_REQUIRED", 422);
+    if (
+      existing &&
+      input.provider === "linkedin" &&
+      existing.providerConfigurationId !== configuration?.id
+    )
+      throw new DomainError("STALE_CONFIGURATION", 409);
     const state = randomBytes(32).toString("base64url"),
       verifier = randomBytes(32).toString("base64url"),
       id = randomUUID();
@@ -311,20 +340,34 @@ export class IntegrationService {
       productId: input.productId,
       ownerId: principal.userId,
       provider: input.provider,
-      encryptedVerifier: seal({ verifier }, id),
+      encryptedVerifier: seal(
+        {
+          verifier,
+          ...(configuration
+            ? {
+                configurationId: configuration.id,
+                configurationVersion: configuration.version,
+              }
+            : {}),
+        },
+        id,
+      ),
       connectionId: existing?.id,
       expiresAt: new Date(Date.now() + 600000),
     });
     const callback = `${appUrl()}/api/integrations/callback/${input.provider === "linkedin" ? "linkedin" : "google"}`;
-    if (input.provider === "linkedin")
+    if (input.provider === "linkedin") {
+      if (!configuration) throw new DomainError("UNIPILE_SETUP_REQUIRED", 422);
       return {
         url: await hostedLinkedIn(
+          unipileCredentials(configuration).apiKey,
           state,
           callback,
           existing?.externalAccountId,
           this.transport,
         ),
       };
+    }
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.search = new URLSearchParams({
       client_id: googleConfig().clientId,
@@ -414,10 +457,11 @@ export class IntegrationService {
     scopes: string[],
     expectedId?: string,
     transaction?: Database,
+    providerConfigurationId?: string,
   ) {
     const save = async (tx: Database) => {
       await authorize(tx, principal, organizationId, productId, true);
-      // Serialize callbacks within the organization; the global unique key also prevents cross-tenant claims.
+      // Serialize callbacks within the organization; provider settings namespace account identifiers.
       await tx
         .select({ id: s.organizations.id })
         .from(s.organizations)
@@ -430,6 +474,12 @@ export class IntegrationService {
           and(
             eq(s.connections.provider, dbProvider(provider)),
             eq(s.connections.externalAccountId, accountId),
+            providerConfigurationId
+              ? eq(
+                  s.connections.providerConfigurationId,
+                  providerConfigurationId,
+                )
+              : isNull(s.connections.providerConfigurationId),
           ),
         );
       if (
@@ -448,6 +498,7 @@ export class IntegrationService {
         ownerId: principal.userId,
         provider: dbProvider(provider),
         externalAccountId: accountId,
+        providerConfigurationId: providerConfigurationId ?? null,
         status: "connected",
         displayName: name,
         selfEmail: provider === "linkedin" ? null : name,
@@ -484,7 +535,11 @@ export class IntegrationService {
     };
     return transaction ? save(transaction) : this.db.transaction(save);
   }
-  async linkedInAccount(state: string, account: unknown) {
+  async linkedInAccount(
+    state: string,
+    account: unknown,
+    configurationId: string,
+  ) {
     if (!/^[A-Za-z0-9_-]{43}$/.test(state))
       throw new DomainError("INVALID_INPUT", 400);
     const value = z
@@ -498,12 +553,36 @@ export class IntegrationService {
     if (value.status !== "running")
       throw new DomainError("RECONNECT_REQUIRED", 422);
     return this.db.transaction(async (tx) => {
+      // Match the verified webhook application before touching its pending flow.
+      const [configuration] = await tx
+        .select()
+        .from(s.providerConfigurations)
+        .where(
+          and(
+            eq(s.providerConfigurations.id, configurationId),
+            eq(s.providerConfigurations.active, true),
+          ),
+        )
+        .for("update");
+      if (!configuration?.webhookReady)
+        throw new DomainError("CONNECTION_FLOW_EXPIRED", 400);
       const [flow] = await tx
         .select()
         .from(s.integrationFlows)
         .where(eq(s.integrationFlows.stateHash, stateHash(state)))
         .for("update");
       if (flow?.provider !== "linkedin" || flow.expiresAt < new Date())
+        throw new DomainError("CONNECTION_FLOW_EXPIRED", 400);
+      const binding = unseal<{
+        configurationId: string;
+        configurationVersion: number;
+      }>(flow.encryptedVerifier, flow.id);
+      if (
+        binding.configurationId !== configuration.id ||
+        binding.configurationVersion !== configuration.version ||
+        configuration.organizationId !== flow.organizationId ||
+        configuration.ownerId !== flow.ownerId
+      )
         throw new DomainError("CONNECTION_FLOW_EXPIRED", 400);
       if (flow.consumedAt) {
         const [existing] = flow.connectionId
@@ -517,7 +596,8 @@ export class IntegrationService {
           existing.externalAccountId === value.id &&
           existing.ownerId === flow.ownerId &&
           existing.organizationId === flow.organizationId &&
-          existing.productId === flow.productId
+          existing.productId === flow.productId &&
+          existing.providerConfigurationId === configuration.id
         )
           return existing;
         throw new DomainError("CONNECTION_FLOW_EXPIRED", 400);
@@ -529,10 +609,11 @@ export class IntegrationService {
         "linkedin",
         value.id,
         value.name,
-        {},
+        { apiKey: unipileCredentials(configuration).apiKey },
         [],
         flow.connectionId ?? undefined,
         tx,
+        configuration.id,
       );
       await tx
         .update(s.integrationFlows)
@@ -703,6 +784,7 @@ export class IntegrationService {
       await ingestReply(this.db, {
         provider: connection.provider === "unipile" ? "unipile" : "gmail",
         accountId: connection.externalAccountId,
+        connectionId: connection.id,
         messageId: item.record.externalId,
         threadId: item.record.threadId,
         direction: item.record.direction,

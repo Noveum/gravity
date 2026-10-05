@@ -713,7 +713,7 @@ describe("opportunities", () => {
 });
 
 describe("the record editing migration", () => {
-  test("existing pipelines gain a won category and a lost stage", async () => {
+  test("existing pipelines gain won and lost categories, and a lost stage only where none exists", async () => {
     const folder = await mkdtemp(join(tmpdir(), "gravity-migration-"));
     const client = new PGlite();
     try {
@@ -734,22 +734,42 @@ describe("the record editing migration", () => {
       await client.exec(`
         INSERT INTO organizations (id, name, slug) VALUES ('${org}', 'Fixture', 'fixture');
         INSERT INTO products (id, organization_id, name) VALUES ('${demoId(10)}', '${org}', 'Fixture product');
+        INSERT INTO products (id, organization_id, name) VALUES ('${demoId(11)}', '${org}', 'Second product');
         INSERT INTO stages (organization_id, product_id, name, position) VALUES
           ('${org}', '${demoId(10)}', 'Discovery', 0),
-          ('${org}', '${demoId(10)}', 'Won', 1);
+          ('${org}', '${demoId(10)}', 'Won', 1),
+          ('${org}', '${demoId(11)}', 'Open', 0),
+          ('${org}', '${demoId(11)}', 'Closed Lost', 1),
+          ('${org}', '${demoId(11)}', 'won', 2);
         INSERT INTO companies (organization_id, name) VALUES ('${org}', 'Fixture company');
       `);
       await writeFile(journalPath, JSON.stringify(journal));
       await migrate(db, { migrationsFolder: folder });
       const stages = await client.query<{
+        product_id: string;
         name: string;
         position: number;
         category: string;
-      }>("SELECT name, position, category FROM stages ORDER BY position");
+      }>(
+        "SELECT product_id, name, position, category FROM stages ORDER BY product_id, position",
+      );
       expect(stages.rows).toEqual([
-        { name: "Discovery", position: 0, category: "open" },
-        { name: "Won", position: 1, category: "won" },
-        { name: "Lost", position: 2, category: "lost" },
+        {
+          product_id: demoId(10),
+          name: "Discovery",
+          position: 0,
+          category: "open",
+        },
+        { product_id: demoId(10), name: "Won", position: 1, category: "won" },
+        { product_id: demoId(10), name: "Lost", position: 2, category: "lost" },
+        { product_id: demoId(11), name: "Open", position: 0, category: "open" },
+        {
+          product_id: demoId(11),
+          name: "Closed Lost",
+          position: 1,
+          category: "lost",
+        },
+        { product_id: demoId(11), name: "won", position: 2, category: "won" },
       ]);
       const companies = await client.query<{
         version: number;

@@ -1,10 +1,18 @@
-import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { scopeSchema } from "./crm";
 import { authorize, DomainError, type Principal } from "./policy";
-import { activeCompany, companyVisible, personVisible } from "./visibility";
+import {
+  activeCompany,
+  assertActiveRelationships,
+  clearApprovals,
+  companyVisible,
+  emailTaken,
+  lockOrganization,
+  personVisible,
+} from "./visibility";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -57,7 +65,7 @@ export const personUpdateSchema = scopeSchema.extend({
     .regex(/^[+\d\s().-]*$/)
     .default(""),
   linkedinUrl: linkedinUrl.default(""),
-  companyId: z.uuid().nullable().default(null),
+  companyId: z.uuid().nullable().optional(),
   summary: z.string().trim().max(10000).default(""),
 });
 export const personArchiveSchema = scopeSchema.extend({
@@ -202,6 +210,7 @@ export class RecordService {
         true,
       );
       const productIds = permission.products.map((product) => product.id);
+      await lockOrganization(tx, input.organizationId);
       const [person] = await tx
         .select()
         .from(s.people)
@@ -220,19 +229,15 @@ export class RecordService {
       if (person.version !== input.version)
         throw new DomainError("CONFLICT", 409);
       if (person.archivedAt) throw new DomainError("RECORD_ARCHIVED", 409);
-      if (input.email) {
-        const [duplicate] = await tx
-          .select({ id: s.people.id })
-          .from(s.people)
-          .where(
-            and(
-              eq(s.people.organizationId, input.organizationId),
-              ne(s.people.id, person.id),
-              sql`lower(${s.people.email}) = ${input.email}`,
-            ),
-          );
-        if (duplicate) throw new DomainError("PERSON_EXISTS", 409);
-      }
+      if (
+        await emailTaken(
+          tx,
+          input.organizationId,
+          [...(input.email ? [input.email] : []), ...input.otherEmails],
+          person.id,
+        )
+      )
+        throw new DomainError("PERSON_EXISTS", 409);
       if (input.companyId && input.companyId !== person.companyId)
         await activeCompany(
           tx,
@@ -252,7 +257,9 @@ export class RecordService {
           otherEmails,
           phone: input.phone,
           linkedinUrl: input.linkedinUrl,
-          companyId: input.companyId,
+          ...(input.companyId !== undefined
+            ? { companyId: input.companyId }
+            : {}),
           summary: input.summary,
           version: person.version + 1,
         })
@@ -267,49 +274,8 @@ export class RecordService {
         type: "person.updated",
         entityId: person.id,
       });
-      if ((person.email ?? null) !== (input.email ?? null)) {
-        const relationships = await tx
-          .select({ id: s.relationships.id })
-          .from(s.relationships)
-          .where(
-            and(
-              eq(s.relationships.organizationId, input.organizationId),
-              eq(s.relationships.personId, person.id),
-            ),
-          );
-        const invalidated = relationships.length
-          ? await tx
-              .update(s.actions)
-              .set({
-                approvedHash: null,
-                approvedBy: null,
-                version: sql`${s.actions.version} + 1`,
-              })
-              .where(
-                and(
-                  eq(s.actions.organizationId, input.organizationId),
-                  inArray(
-                    s.actions.relationshipId,
-                    relationships.map((relationship) => relationship.id),
-                  ),
-                  inArray(s.actions.status, ["open", "blocked"]),
-                  isNotNull(s.actions.approvedHash),
-                ),
-              )
-              .returning()
-          : [];
-        if (invalidated.length)
-          await tx.insert(s.changeEvents).values(
-            invalidated.map((action) => ({
-              organizationId: action.organizationId,
-              productId: action.productId,
-              sourceConversationId: action.sourceConversationId,
-              actorId: principal.userId,
-              type: "action.approval_invalidated",
-              entityId: action.id,
-            })),
-          );
-      }
+      if ((person.email ?? null) !== (input.email ?? null))
+        await clearApprovals(tx, principal, input.organizationId, person.id);
       return updated;
     });
   }
@@ -337,11 +303,14 @@ export class RecordService {
           ),
         )
         .for("update");
+      const writable = new Set(
+        permission.products.map((product) => product.id),
+      );
       if (
         !person ||
         !(await personVisible(
           tx,
-          permission.products.map((product) => product.id),
+          [...writable],
           input.organizationId,
           person.id,
         ))
@@ -349,10 +318,63 @@ export class RecordService {
         throw new DomainError("NOT_FOUND", 404);
       if (person.version !== input.version)
         throw new DomainError("CONFLICT", 409);
+      const relationships = await tx
+        .select({
+          id: s.relationships.id,
+          productId: s.relationships.productId,
+        })
+        .from(s.relationships)
+        .where(
+          and(
+            eq(s.relationships.organizationId, input.organizationId),
+            eq(s.relationships.personId, person.id),
+          ),
+        );
+      const blocked = new Set(
+        relationships
+          .map((relationship) => relationship.productId)
+          .filter((productId) => !writable.has(productId)),
+      );
+      if (blocked.size)
+        throw new DomainError("ARCHIVE_NEEDS_EVERY_BRAND", 403, {
+          count: blocked.size,
+        });
+      if (input.archived && !person.archivedAt) {
+        await clearApprovals(tx, principal, input.organizationId, person.id);
+        const paused = relationships.length
+          ? await tx
+              .update(s.enrollments)
+              .set({
+                status: "paused_archived",
+                version: sql`${s.enrollments.version} + 1`,
+              })
+              .where(
+                and(
+                  eq(s.enrollments.organizationId, input.organizationId),
+                  inArray(
+                    s.enrollments.relationshipId,
+                    relationships.map((relationship) => relationship.id),
+                  ),
+                  eq(s.enrollments.status, "running"),
+                ),
+              )
+              .returning()
+          : [];
+        if (paused.length)
+          await tx.insert(s.changeEvents).values(
+            paused.map((enrollment) => ({
+              organizationId: enrollment.organizationId,
+              productId: enrollment.productId,
+              actorId: principal.userId,
+              type: "enrollment.paused",
+              entityId: enrollment.id,
+            })),
+          );
+      }
       const [updated] = await tx
         .update(s.people)
         .set({
-          archivedAt: input.archived ? new Date() : null,
+          archivedAt: input.archived ? (person.archivedAt ?? new Date()) : null,
           version: person.version + 1,
         })
         .where(
@@ -385,6 +407,7 @@ export class RecordService {
       );
       const productIds = permission.products.map((product) => product.id);
       const domain = input.domain || null;
+      await lockOrganization(tx, input.organizationId);
       let existing: typeof s.companies.$inferSelect | undefined;
       if (input.companyId) {
         [existing] = await tx
@@ -410,12 +433,7 @@ export class RecordService {
         if (existing.version !== input.version)
           throw new DomainError("CONFLICT", 409);
         if (existing.archivedAt) throw new DomainError("RECORD_ARCHIVED", 409);
-      } else
-        await tx
-          .select({ id: s.organizations.id })
-          .from(s.organizations)
-          .where(eq(s.organizations.id, input.organizationId))
-          .for("update");
+      }
       if (domain) {
         const [duplicate] = await tx
           .select({ id: s.companies.id })
@@ -594,6 +612,9 @@ export class RecordService {
         throw new DomainError("FORBIDDEN", 403);
       if (meeting.version !== input.version)
         throw new DomainError("CONFLICT", 409);
+      await assertActiveRelationships(tx, input.organizationId, [
+        meeting.relationshipId,
+      ]);
       const [updated] = await tx
         .update(s.meetings)
         .set({ ...values, version: meeting.version + 1 })
@@ -686,6 +707,15 @@ export class RecordService {
         throw new DomainError("FORBIDDEN", 403);
       if (opportunity.version !== input.version)
         throw new DomainError("CONFLICT", 409);
+      await assertActiveRelationships(tx, input.organizationId, [
+        opportunity.relationshipId,
+      ]);
+      const edited =
+        (input.name !== undefined && input.name !== opportunity.name) ||
+        (input.amountMinor !== undefined &&
+          input.amountMinor !== opportunity.amountMinor) ||
+        (input.currency !== undefined &&
+          input.currency !== opportunity.currency);
       const moved =
         input.stageId !== undefined && input.stageId !== opportunity.stageId
           ? await stageFor(
@@ -695,6 +725,7 @@ export class RecordService {
               input.stageId,
             )
           : undefined;
+      if (!edited && !moved) return opportunity;
       const [updated] = await tx
         .update(s.opportunities)
         .set({
@@ -714,12 +745,6 @@ export class RecordService {
         )
         .returning();
       if (!updated) throw new DomainError("CONFLICT", 409);
-      const edited =
-        (input.name !== undefined && input.name !== opportunity.name) ||
-        (input.amountMinor !== undefined &&
-          input.amountMinor !== opportunity.amountMinor) ||
-        (input.currency !== undefined &&
-          input.currency !== opportunity.currency);
       const types = [
         ...(edited ? ["opportunity.updated"] : []),
         ...(moved ? [stageEvent(moved.category)] : []),

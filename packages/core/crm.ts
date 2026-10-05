@@ -16,7 +16,13 @@ import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import t from "../i18n/translations/en.json";
 import { authorize, DomainError, type Principal } from "./policy";
-import { activeCompany, companyVisible, personVisible } from "./visibility";
+import {
+  activeCompany,
+  assertActiveRelationships,
+  companyVisible,
+  emailTaken,
+  personVisible,
+} from "./visibility";
 
 export const scopeSchema = z.object({
   organizationId: z.uuid(),
@@ -178,6 +184,9 @@ export class CrmService {
       );
       if (input.productId && input.productId !== relationship.productId)
         throw new DomainError("FORBIDDEN", 403);
+      await assertActiveRelationships(tx, input.organizationId, [
+        relationship.id,
+      ]);
       // Assignees must currently be able to see the task's product, even if the creator is an admin.
       try {
         await authorize(
@@ -277,18 +286,11 @@ export class CrmService {
           input.companyId,
         );
       if (!personId) {
-        if (input.email) {
-          const [existing] = await tx
-            .select({ id: s.people.id })
-            .from(s.people)
-            .where(
-              and(
-                eq(s.people.organizationId, input.organizationId),
-                sql`lower(${s.people.email}) = ${input.email.toLowerCase()}`,
-              ),
-            );
-          if (existing) throw new DomainError("PERSON_EXISTS", 409);
-        }
+        if (
+          input.email &&
+          (await emailTaken(tx, input.organizationId, [input.email]))
+        )
+          throw new DomainError("PERSON_EXISTS", 409);
         const [person] = await tx
           .insert(s.people)
           .values({
@@ -515,6 +517,19 @@ export class CrmService {
     );
     const active = <T extends { relationshipId: string }>(rows: T[]) =>
       rows.filter((row) => activeRelationshipIds.has(row.relationshipId));
+    const archivedPeople = everyone.filter((person) => person.archivedAt);
+    const companyIds = (rows: typeof everyone) =>
+      rows.flatMap((person) => (person.companyId ? [person.companyId] : []));
+    const peopleAt = (archived: "active" | "any") =>
+      this.db
+        .select({ id: s.people.id })
+        .from(s.people)
+        .where(
+          and(
+            eq(s.people.companyId, s.companies.id),
+            archived === "active" ? isNull(s.people.archivedAt) : undefined,
+          ),
+        );
     const allCompanies = await this.db
       .select()
       .from(s.companies)
@@ -522,39 +537,48 @@ export class CrmService {
         and(
           eq(s.companies.organizationId, scope.organizationId),
           or(
-            inArray(
-              s.companies.id,
-              people.flatMap((p) => (p.companyId ? [p.companyId] : [])),
-            ),
-            notExists(
-              this.db
-                .select({ id: s.people.id })
-                .from(s.people)
-                .where(
-                  and(
-                    eq(s.people.companyId, s.companies.id),
-                    isNull(s.people.archivedAt),
-                  ),
-                ),
+            inArray(s.companies.id, companyIds(people)),
+            and(
+              notExists(peopleAt("active")),
+              or(
+                notExists(peopleAt("any")),
+                inArray(s.companies.id, companyIds(archivedPeople)),
+              ),
             ),
           ),
         ),
       )
       .orderBy(asc(s.companies.name));
+    const productsOf = (rows: typeof everyone) => [
+      ...new Set(
+        relationships
+          .filter((relationship) =>
+            rows.some((person) => person.id === relationship.personId),
+          )
+          .map((relationship) => relationship.productId),
+      ),
+    ];
+    const companyProducts = (companyId: string) => {
+      const current = people.filter((person) => person.companyId === companyId);
+      return productsOf(
+        current.length
+          ? current
+          : archivedPeople.filter((person) => person.companyId === companyId),
+      );
+    };
     return {
       products: permission.products,
       people,
       companies: allCompanies.filter((company) => !company.archivedAt),
       archived: {
-        people: everyone
-          .filter((person) => person.archivedAt)
-          .map((person) => ({
-            id: person.id,
-            name: person.name,
-            title: person.title,
-            companyId: person.companyId,
-            archivedAt: person.archivedAt,
-          })),
+        people: archivedPeople.map((person) => ({
+          id: person.id,
+          name: person.name,
+          title: person.title,
+          companyId: person.companyId,
+          archivedAt: person.archivedAt,
+          productIds: productsOf([person]),
+        })),
         companies: allCompanies
           .filter((company) => company.archivedAt)
           .map((company) => ({
@@ -562,6 +586,7 @@ export class CrmService {
             name: company.name,
             domain: company.domain,
             archivedAt: company.archivedAt,
+            productIds: companyProducts(company.id),
           })),
       },
       relationships: activeRelationships,
@@ -845,6 +870,9 @@ export class CrmService {
         .for("update");
       if (!action) throw new DomainError("NOT_FOUND", 404);
       await authorizeAction(tx, principal, action);
+      await assertActiveRelationships(tx, input.organizationId, [
+        action.relationshipId,
+      ]);
       if (action.version !== input.version)
         throw new DomainError("CONFLICT", 409);
       if (action.status === "completed")
@@ -942,6 +970,11 @@ export class CrmService {
         .for("update");
       if (rows.length !== items.length) throw new DomainError("NOT_FOUND", 404);
       const products = new Set(rows.map((row) => row.productId));
+      await assertActiveRelationships(
+        tx,
+        input.organizationId,
+        rows.map((row) => row.relationshipId),
+      );
       if (input.productId && [...products].some((id) => id !== input.productId))
         throw new DomainError("FORBIDDEN", 403);
       for (const productId of products)
@@ -1106,6 +1139,9 @@ export class CrmService {
       );
       if (meeting.version !== input.version)
         throw new DomainError("CONFLICT", 409);
+      await assertActiveRelationships(tx, input.organizationId, [
+        meeting.relationshipId,
+      ]);
       if (meeting.commitmentActionId)
         return { actionId: meeting.commitmentActionId };
       if (meeting.status !== "held" || !meeting.proposedCommitment)

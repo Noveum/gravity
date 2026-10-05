@@ -105,6 +105,7 @@
   "enrollments": "Enrollments",
   "running": "Running",
   "paused_reply": "Paused after reply",
+  "paused_archived": "Paused while archived",
   "stopped": "Stopped",
   "delay": "days after verified completion",
   "firstStep": "First message",
@@ -214,6 +215,7 @@
     "NO_COMMITMENT": "This meeting has no commitment ready to accept.",
     "CONNECTOR_NOT_CONFIGURED": "This connector has not been configured.",
     "NETWORK_ERROR": "Could not reach the server. Try again.",
+    "ARCHIVE_NEEDS_EVERY_BRAND": "Archiving or restoring this person needs write access to every brand they belong to. Brands you cannot change: {count}. Ask an admin to do it.",
     "PERSON_EXISTS": "This email already exists in this organization. Use Existing person to add a product relationship, or ask a teammate to review the duplicate.",
     "OWNER_NOT_ALLOWED": "Choose an active teammate with access to this product.",
     "ASSIGNEE_PRIVATE_SOURCE": "This action comes from a private conversation. Only its owner can be assigned.",
@@ -1051,5 +1053,8 @@
   "account": "Account",
   "signingOut": "Signing out…",
   "noRelationships": "Add a person first.",
-  "save": "Save"
+  "save": "Save",
+  "archivedSuffix": "(archived)",
+  "linkedinPlaceholder": "https://www.linkedin.com/in/",
+  "stillSaving": "Still saving, try again in a moment."
 }

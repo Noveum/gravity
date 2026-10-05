@@ -6,6 +6,7 @@ ALTER TABLE "people" ADD COLUMN "linkedin_url" text DEFAULT '' NOT NULL;--> stat
 ALTER TABLE "people" ADD COLUMN "archived_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "stages" ADD COLUMN "category" text DEFAULT 'open' NOT NULL;--> statement-breakpoint
 UPDATE "stages" SET "category" = 'won' WHERE lower("name") = 'won';--> statement-breakpoint
+UPDATE "stages" SET "category" = 'lost' WHERE lower(trim("name")) IN ('lost', 'closed lost');--> statement-breakpoint
 INSERT INTO "stages" ("organization_id", "product_id", "name", "position", "category")
 SELECT "organization_id", "product_id", 'Lost', max("position") + 1, 'lost'
 FROM "stages"

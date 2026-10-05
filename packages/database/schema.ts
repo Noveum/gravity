@@ -201,7 +201,13 @@ export const enrollments = pgTable(
     relationshipId: uuid("relationship_id").notNull(),
     sequenceId: uuid("sequence_id").notNull(),
     status: text("status", {
-      enum: ["running", "paused_reply", "completed", "stopped"],
+      enum: [
+        "running",
+        "paused_reply",
+        "paused_archived",
+        "completed",
+        "stopped",
+      ],
     }).notNull(),
     step: integer("step").notNull().default(1),
     version: version(),

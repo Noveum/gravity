@@ -223,7 +223,16 @@
     "INVALID_OTP": "That code is not valid. Check the email and try again.",
     "OTP_EXPIRED": "Your code expired. Request a new code.",
     "TOO_MANY_ATTEMPTS": "Too many incorrect attempts. Request a new code.",
-    "INVALID_EMAIL": "Enter a valid email address."
+    "INVALID_EMAIL": "Enter a valid email address.",
+    "PROVIDER_UNAVAILABLE": "The provider could not be reached. Try again shortly.",
+    "PROVIDER_PERMISSION": "The provider denied access. Check API access and consent, then reconnect.",
+    "PROVIDER_RATE_LIMITED": "The provider rate limit was reached. Wait before syncing again.",
+    "PROVIDER_RESPONSE_INVALID": "The provider returned an unexpected response. Try again or contact your administrator.",
+    "RECONNECT_REQUIRED": "This account needs fresh authorization. Reconnect to continue.",
+    "CONNECTION_FLOW_EXPIRED": "This connection request expired. Start a new connection.",
+    "ACCOUNT_ALREADY_CONNECTED": "This account is already assigned elsewhere, or the reconnect selected a different account.",
+    "THREAD_ALREADY_LINKED": "This conversation is already linked to another relationship.",
+    "SYNC_IN_PROGRESS": "A sync is already running for this account. Please wait."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
   "addPerson": "Add person",
@@ -256,7 +265,7 @@
   "themeShortcut": "Appearance follows your preference across tabs.",
   "scheduleAction": "Schedule next action",
   "scheduleNote": "Creates a shared task for this product. This does not send a message or advance a sequence. Keep private mailbox details out of shared tasks.",
-  "chooseRelationship": "Choose a product relationship",
+  "chooseRelationship": "Choose a person and product",
   "dueDate": "Due date (your device time zone)",
   "actionTitle": "Action title",
   "reason": "Context and reason",
@@ -484,7 +493,7 @@
     "mcpBoundary": "Read-only OAuth MCP is implemented. A configured HTTPS installation and live connection testing are needed for Codex and Claude Code.",
     "mcpLink": "Connect an assistant",
     "statusTitle": "Explore what works today. See what we\u2019re building next.",
-    "statusDescription": "Gravity is in active development. The preview lets you explore the core workflows; live account connections and production setup are the next steps.",
+    "statusDescription": "Gravity is in active development. Explore the core workflows, then configure your own provider accounts to import conversations and meetings.",
     "readyTitle": "Available in the preview",
     "readyItems": [
       "Organizations and products",
@@ -492,15 +501,16 @@
       "Reviewed meeting commitments",
       "Private materials and stage folders",
       "Read-only OAuth MCP",
-      "Keyboard navigation, themes and live updates"
+      "Keyboard navigation, themes and live updates",
+      "Gmail and primary-calendar import with separate consent",
+      "Fireflies summaries and a Unipile V2 LinkedIn adapter"
     ],
     "nextTitle": "On the roadmap",
     "nextItems": [
-      "Live Gmail and LinkedIn replies",
-      "Google Calendar and Fireflies import",
-      "Invitations, editing and reviewed imports",
-      "Durable synchronization and recovery",
-      "Production deployment and backups"
+      "Invitations, record editing and reviewed CSV imports",
+      "Google push notifications and larger sync workers",
+      "Integration health and retention controls",
+      "Reviewed outbound sending and suppression rules"
     ],
     "journalTitle": "A closer look at the sales workflow",
     "journalDescription": "Ideas for keeping follow-ups clear, product relationships separate and your assistant informed.",
@@ -522,7 +532,7 @@
       },
       {
         "question": "Are Gmail, LinkedIn and Calendar connected?",
-        "answer": "Live mailbox, LinkedIn and Calendar connections are on the roadmap. The preview includes fictional conversations and a tested incoming-reply adapter; it does not sync your accounts."
+        "answer": "Gravity includes separate read-only Gmail and primary-calendar consent, Fireflies API-key import, and a LinkedIn adapter through Unipile V2. Each account still needs provider setup, owner authorization and live qualification. The local demo uses fictional data and connects no accounts."
       },
       {
         "question": "Does Gravity send outreach for me?",
@@ -637,7 +647,7 @@
             "title": "Verify useful reads and the boundary",
             "paragraphs": [
               "Ask the assistant to call get_me, get_capabilities and list_products. Confirm its organization and products. Then ask for a permitted person or company context and a relevant material.",
-              "Check that an ungranted product and a revoked connection are rejected. The current capabilities report live Gmail, LinkedIn, Calendar and Fireflies sync as unavailable. Seeing tool definitions is not proof that a mailbox is connected."
+              "Check that an ungranted product and a revoked connection are rejected. The capabilities report server connector configuration; each provider still needs account authorization and a successful sync. Seeing tool definitions is not proof that a mailbox is connected."
             ]
           },
           {
@@ -772,7 +782,7 @@
             "title": "What Gravity does today",
             "paragraphs": [
               "The preview links readable people to explicit product relationships, exposes company context and keeps grants bounded. Its local tests exercise cross-product and cross-organization rejection.",
-              "Editing/imports, collision detection and live conversation classification remain planned. Until those are qualified, use the preview to evaluate the model with fictional records."
+              "Record editing, CSV imports and collision detection remain planned. Provider imports require explicit conversation classification. Until those are qualified, use the preview to evaluate the model with fictional records."
             ]
           }
         ]
@@ -804,14 +814,80 @@
   "emailAddress": "Email address",
   "signInCode": "Sign-in code",
   "sendSignInCode": "Send sign-in code",
-  "sendingSignInCode": "Sending code…",
+  "sendingSignInCode": "Sending code\u2026",
   "verifySignInCode": "Verify and sign in",
-  "signingIn": "Signing in…",
+  "signingIn": "Signing in\u2026",
   "emailCodeSent": "Enter the six-digit code sent to {email}.",
   "resendCode": "Resend code",
   "resendCodeIn": "Resend in {seconds}s",
   "changeEmail": "Use a different email",
   "emailCodeNote": "No password needed. Codes expire after five minutes.",
   "emailOtpSubject": "Your Gravity sign-in code",
-  "emailOtpBody": "Your Gravity sign-in code is:\n\n{code}\n\nThis code expires in five minutes and can be used once. If you did not request it, you can ignore this email."
+  "emailOtpBody": "Your Gravity sign-in code is:\n\n{code}\n\nThis code expires in five minutes and can be used once. If you did not request it, you can ignore this email.",
+  "importCalendarTitle": "Calendar event",
+  "importMeetingTitle": "Meeting notes",
+  "importLinkedInTitle": "LinkedIn conversation",
+  "integrationIntro": "Connect your accounts, import history, and assign conversations to the right product. Your provider accounts belong to you within this organization. Background sync runs in small batches every five minutes; Sync now checks immediately.",
+  "integrationDescriptions": {
+    "gmail": "Import Gmail conversations and incoming replies with read-only Google access.",
+    "calendar": "Import events from your primary Google calendar, including changes and cancellations.",
+    "linkedin": "Connect your LinkedIn account through Unipile and receive messages through signed webhooks.",
+    "fireflies": "Connect your Fireflies API key to import meeting summaries and proposed follow-ups."
+  },
+  "connected": "Connected",
+  "syncNow": "Sync now",
+  "syncing": "Syncing\u2026",
+  "reconnect": "Reconnect",
+  "disconnect": "Disconnect",
+  "reconnectRequired": "Reconnect required",
+  "lastSynced": "Last synced {time}",
+  "notSynced": "Not synced yet",
+  "moreHistory": "More history is available. Sync again to continue.",
+  "connectProvider": "Connect {provider}",
+  "integrationDemo": "Connect accounts in a configured installation; this local demo does not access providers.",
+  "integrationConfigRequired": "Your administrator needs to configure the integration client and encryption key.",
+  "unipileSetupRequired": "An administrator must configure the Unipile V2 API key and signed webhook endpoint before connecting LinkedIn.",
+  "linkedInSetup": "Configure a Unipile V2 endpoint at /api/webhooks/unipile with account.add, account.reconnect, account.status.disconnected, account.status.running, account.status.errored, account.remove and message.new events. Each user then connects their own LinkedIn account through hosted authentication.",
+  "webhookSetupGuide": "Unipile webhook setup guide",
+  "importReview": "Imported context to review",
+  "importReviewDescription": "Choose a person and product for each conversation or meeting. Linking a conversation imports its messages privately; linking a meeting adds its notes to that product\u2019s shared CRM context. Replies on linked conversations update their existing relationship.",
+  "previewImport": "Preview imported context",
+  "noMessageText": "No text was included.",
+  "linkRelationship": "Person and product",
+  "linkImport": "Link context",
+  "ignoreImport": "Ignore",
+  "firefliesWebhookInstructions": "For live meeting updates, add this webhook URL and signing secret in Fireflies Webhooks V2 settings. Keep the signing secret private; this screen is cleared when you close it.",
+  "webhookUrl": "Webhook URL",
+  "signingSecret": "Signing secret",
+  "copyValue": "Copy {label}",
+  "firefliesWebhookEvents": "Subscribe to meeting.transcribed and meeting.summarized. You can also use Sync now to import existing notes.",
+  "done": "Done",
+  "firefliesConnectNote": "Paste your Fireflies API key. Gravity verifies your account, encrypts the key, and imports only transcripts owned by that account.",
+  "linkedinConnectNote": "Continue to Unipile to connect your own LinkedIn account. Gravity does not collect your LinkedIn password. An existing Unipile application is required.",
+  "googleConnectNote": "Google will ask for separate read-only access to your Gmail or primary calendar. This does not grant permission to send email or edit calendar events.",
+  "defaultProduct": "Default product",
+  "defaultProductNote": "Imported context starts in this product\u2019s review queue. You can explicitly link each thread or meeting to another product you can access.",
+  "firefliesApiKey": "Fireflies API key",
+  "firefliesKeyPlaceholder": "Paste your Fireflies API key",
+  "connecting": "Connecting\u2026",
+  "verifyConnect": "Verify and connect",
+  "continueProvider": "Continue to {provider}",
+  "unipile": "Unipile",
+  "google": "Google",
+  "integrationMessages": {
+    "CONNECTION_CONNECTED": "Account connected. Use Sync now to import history.",
+    "CONNECTION_PENDING": "Account authentication finished. Waiting for the signed Unipile account confirmation.",
+    "SYNC_MORE": "Imported this page. More history is available; sync again to continue.",
+    "SYNC_COMPLETE": "Sync complete. Review imported context below.",
+    "CONNECTION_DISCONNECTED": "Account disconnected. Imported CRM context is retained.",
+    "IMPORT_REVIEWED": "Imported context reviewed."
+  },
+  "searchImports": "Search titles or participants\u2026",
+  "importProvider": "Import source",
+  "allImportProviders": "All sources",
+  "noImportsFound": "No imported items match this view.",
+  "importPage": "Page {page} \u00b7 {total} items to review",
+  "previousImports": "Previous",
+  "nextImports": "Next",
+  "integrationTimeZone": "Connection and import times use {zone}."
 }

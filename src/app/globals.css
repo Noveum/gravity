@@ -2573,3 +2573,108 @@ body:has(.resize-handle[data-dragging]) {
 .auth-header .preferences {
   margin: 0;
 }
+.integration-intro,
+.import-review {
+  grid-column: 1 / -1;
+}
+.integration-intro {
+  color: var(--muted);
+  font-size: 12px;
+}
+.integration-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.integration-card > button,
+.connection-buttons button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 36px;
+}
+.connection-account {
+  border-top: 1px solid var(--line);
+  padding: 16px 0;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.connection-meta {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.connection-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.import-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px) auto auto;
+  gap: 12px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding: 18px 0;
+}
+.import-review-toolbar,
+.import-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 18px;
+}
+.import-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: min(240px, 100%);
+  color: var(--muted);
+}
+.import-search-input {
+  width: 100%;
+  min-width: 0;
+}
+.import-page-status {
+  font-size: 12px;
+  color: var(--muted);
+}
+.import-row .import-match {
+  width: 100%;
+  min-width: 0;
+}
+.import-row details {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.import-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+}
+.dialog .endpoint-copy {
+  display: flex;
+  gap: 6px;
+}
+.dialog .endpoint-copy input {
+  min-width: 0;
+  flex: 1;
+}
+@media (max-width: 760px) {
+  .import-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .import-row > div,
+  .import-row .import-match {
+    grid-column: 1 / -1;
+  }
+}

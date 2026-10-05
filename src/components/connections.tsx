@@ -4,17 +4,27 @@ import t from "@crm/i18n/translations/en.json";
 import { Check, Copy, ExternalLink } from "lucide-react";
 import { useRef, useState } from "react";
 
-const providers = ["gmail", "calendar", "linkedin", "fireflies"] as const;
+import { IntegrationCards } from "./integration-cards";
 export function Connections({
   data,
   endpoint,
   demo,
   onRevoke,
+  organizationId,
+  productId,
+  initialNotice,
+  onChanged,
+  timeZone = "UTC",
 }: {
   data: ClientSnapshot;
   endpoint: string;
   demo: boolean;
   onRevoke: (id: string) => Promise<boolean>;
+  organizationId: string;
+  productId: string;
+  initialNotice: string;
+  onChanged: () => Promise<void>;
+  timeZone?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
@@ -22,27 +32,16 @@ export function Connections({
   const pending = useRef(false);
   return (
     <div className="page-content integration-grid">
-      {providers.map((provider) => (
-        <article key={provider} className="integration-card">
-          <div className="section-heading">
-            <h2>{t[provider]}</h2>
-            <span className="badge">{t.notConnected}</span>
-          </div>
-          <p>{t[`${provider}Description`]}</p>
-          <details className="connection-guide">
-            <summary>{t.connectionSetup}</summary>
-            <p>{t.providerConnectionPending}</p>
-            <ol>
-              {t.connectionSteps[provider].map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-          </details>
-          {provider === "gmail" && (
-            <p className="connection-note">{t.mailboxSeparateLogin}</p>
-          )}
-        </article>
-      ))}
+      <IntegrationCards
+        key={`${organizationId}:${productId}`}
+        data={data}
+        organizationId={organizationId}
+        productId={productId}
+        demo={demo}
+        initialNotice={initialNotice}
+        onChanged={onChanged}
+        timeZone={timeZone}
+      />
       <article className="integration-card mcp-card">
         <div className="section-heading">
           <h2>{t.mcp}</h2>
@@ -86,7 +85,7 @@ export function Connections({
         </ol>
         <p className="muted">{t.noKey}</p>
         <a
-          href="https://github.com/Noveum/gravity/blob/main/docs/setup-and-mcp.md"
+          href="/docs/connect-an-assistant"
           target="_blank"
           rel="noreferrer"
           className="text-button"

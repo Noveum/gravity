@@ -120,6 +120,8 @@ export const people = pgTable(
     phone: text("phone").notNull().default(""),
     linkedinUrl: text("linkedin_url").notNull().default(""),
     summary: text("summary").notNull().default(""),
+    doNotContact: boolean("do_not_contact").notNull().default(false),
+    timeZone: text("time_zone"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: createdAt(),
     version: version(),
@@ -144,12 +146,36 @@ export const relationships = pgTable(
     purpose: text("purpose").notNull().default("buyer"),
     qualification: text("qualification").notNull().default("unverified"),
     context: text("context").notNull().default(""),
+    stageId: uuid("stage_id"),
+    stagePipeline: text("stage_pipeline", { enum: ["outreach"] })
+      .notNull()
+      .default("outreach"),
+    priority: text("priority", { enum: ["low", "normal", "high"] })
+      .notNull()
+      .default("normal"),
+    nextStep: text("next_step").notNull().default(""),
+    nextStepDueAt: timestamp("next_step_due_at", { withTimezone: true }),
+    lastOutboundAt: timestamp("last_outbound_at", { withTimezone: true }),
+    lastInboundAt: timestamp("last_inbound_at", { withTimezone: true }),
+    touchCount: integer("touch_count").notNull().default(0),
+    version: version(),
   },
   (t) => [
     serverAccessPolicy(),
     unique().on(t.organizationId, t.id),
     unique().on(t.organizationId, t.productId, t.id),
     unique().on(t.organizationId, t.productId, t.personId, t.purpose),
+    check("relationship_stage_outreach", sql`${t.stagePipeline} = 'outreach'`),
+    check("relationship_touch_count", sql`${t.touchCount} >= 0`),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.stageId, t.stagePipeline],
+      foreignColumns: [
+        stages.organizationId,
+        stages.productId,
+        stages.id,
+        stages.pipeline,
+      ],
+    }),
     foreignKey({
       columns: [t.organizationId, t.productId],
       foreignColumns: [products.organizationId, products.id],
@@ -179,6 +205,8 @@ export const sequences = pgTable(
           name: string;
           delayDays: number;
           channel: "gmail" | "linkedin";
+          template: string;
+          followUp: number;
         }[]
       >()
       .notNull(),
@@ -201,20 +229,28 @@ export const enrollments = pgTable(
     relationshipId: uuid("relationship_id").notNull(),
     sequenceId: uuid("sequence_id").notNull(),
     status: text("status", {
-      enum: [
-        "running",
-        "paused_reply",
-        "paused_archived",
-        "completed",
-        "stopped",
-      ],
+      enum: ["running", "paused", "completed", "stopped"],
     }).notNull(),
+    pauseReason: text("pause_reason", {
+      enum: ["reply", "archived", "manual", "do_not_contact"],
+    }),
     step: integer("step").notNull().default(1),
+    enrolledAt: timestamp("enrolled_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     version: version(),
   },
   (t) => [
     serverAccessPolicy(),
     unique().on(t.organizationId, t.productId, t.id),
+    unique().on(t.organizationId, t.productId, t.relationshipId, t.id),
+    uniqueIndex("enrollments_active_relationship_sequence")
+      .on(t.organizationId, t.relationshipId, t.sequenceId)
+      .where(sql`${t.status} IN ('running', 'paused')`),
+    check(
+      "enrollment_pause_reason",
+      sql`(${t.status} = 'paused') = (${t.pauseReason} IS NOT NULL)`,
+    ),
     foreignKey({
       columns: [t.organizationId, t.productId, t.relationshipId],
       foreignColumns: [
@@ -231,6 +267,123 @@ export const enrollments = pgTable(
         sequences.id,
       ],
     }),
+  ],
+).enableRLS();
+export const touches = pgTable(
+  "touches",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    relationshipId: uuid("relationship_id").notNull(),
+    enrollmentId: uuid("enrollment_id").notNull(),
+    stepNumber: integer("step_number").notNull(),
+    followUp: integer("follow_up").notNull(),
+    channel: text("channel", { enum: ["gmail", "linkedin"] }).notNull(),
+    senderId: text("sender_id").notNull(),
+    dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+    status: text("status", {
+      enum: ["planned", "drafted", "approved", "sent", "skipped", "expired"],
+    })
+      .notNull()
+      .default("planned"),
+    draft: text("draft").notNull().default(""),
+    draftHash: text("draft_hash"),
+    approvedHash: text("approved_hash"),
+    approvedBy: text("approved_by"),
+    sentBy: text("sent_by"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    externalMessageId: text("external_message_id"),
+    sentWarnings: jsonb("sent_warnings")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    skipReason: text("skip_reason"),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    version: version(),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.organizationId, t.productId, t.id),
+    uniqueIndex("touches_enrollment_step").on(
+      t.organizationId,
+      t.relationshipId,
+      t.enrollmentId,
+      t.stepNumber,
+    ),
+    uniqueIndex("touches_external_message")
+      .on(t.organizationId, t.channel, t.externalMessageId)
+      .where(sql`${t.externalMessageId} IS NOT NULL`),
+    index().on(t.organizationId, t.productId, t.status, t.dueAt),
+    check("touch_follow_up", sql`${t.followUp} BETWEEN 0 AND 3`),
+    check(
+      "touch_sent_report",
+      sql`(${t.status} = 'sent') = (${t.sentAt} IS NOT NULL AND ${t.sentBy} IS NOT NULL)`,
+    ),
+    check(
+      "touch_approval",
+      sql`${t.status} <> 'approved' OR (${t.approvedHash} IS NOT NULL AND ${t.approvedHash} = ${t.draftHash})`,
+    ),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.relationshipId],
+      foreignColumns: [
+        relationships.organizationId,
+        relationships.productId,
+        relationships.id,
+      ],
+    }),
+    foreignKey({
+      columns: [
+        t.organizationId,
+        t.productId,
+        t.relationshipId,
+        t.enrollmentId,
+      ],
+      foreignColumns: [
+        enrollments.organizationId,
+        enrollments.productId,
+        enrollments.relationshipId,
+        enrollments.id,
+      ],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.senderId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.approvedBy],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.sentBy],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+  ],
+).enableRLS();
+export const contactRules = pgTable(
+  "contact_rules",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => organizations.id),
+    cooldownDays: integer("cooldown_days").notNull(),
+    dailyCapPerSender: integer("daily_cap_per_sender").notNull(),
+    quietHoursStart: integer("quiet_hours_start").notNull(),
+    quietHoursEnd: integer("quiet_hours_end").notNull(),
+    version: version(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    check("contact_rules_cooldown", sql`${t.cooldownDays} BETWEEN 0 AND 365`),
+    check("contact_rules_cap", sql`${t.dailyCapPerSender} BETWEEN 1 AND 10000`),
+    check(
+      "contact_rules_quiet_hours",
+      sql`${t.quietHoursStart} BETWEEN 0 AND 23 AND ${t.quietHoursEnd} BETWEEN 0 AND 23`,
+    ),
   ],
 ).enableRLS();
 export const actions = pgTable(
@@ -458,13 +611,18 @@ export const stages = pgTable(
     productId: productId(),
     name: text("name").notNull(),
     position: integer("position").notNull(),
-    category: text("category", { enum: ["open", "won", "lost"] })
+    pipeline: text("pipeline", { enum: ["deal", "outreach"] })
+      .notNull()
+      .default("deal"),
+    category: text("category", { enum: ["open", "won", "lost", "hold"] })
       .notNull()
       .default("open"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => [
     serverAccessPolicy(),
     unique().on(t.organizationId, t.productId, t.id),
+    unique().on(t.organizationId, t.productId, t.id, t.pipeline),
     foreignKey({
       columns: [t.organizationId, t.productId],
       foreignColumns: [products.organizationId, products.id],

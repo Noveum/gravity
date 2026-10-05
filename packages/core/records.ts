@@ -178,13 +178,14 @@ async function stageFor(
         eq(s.stages.id, stageId),
         eq(s.stages.organizationId, organizationId),
         eq(s.stages.productId, productId),
+        eq(s.stages.pipeline, "deal"),
       ),
     );
   if (!stage) throw new DomainError("NOT_FOUND", 404);
   return stage;
 }
 
-const stageEvent = (category: "open" | "won" | "lost") =>
+const stageEvent = (category: "open" | "won" | "lost" | "hold") =>
   category === "won"
     ? "opportunity.won"
     : category === "lost"
@@ -343,7 +344,8 @@ export class RecordService {
           ? await tx
               .update(s.enrollments)
               .set({
-                status: "paused_archived",
+                status: "paused",
+                pauseReason: "archived",
                 version: sql`${s.enrollments.version} + 1`,
               })
               .where(

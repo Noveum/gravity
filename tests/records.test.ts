@@ -687,7 +687,7 @@ describe("opportunities", () => {
     ).toThrow();
   });
 
-  test("a new product gets open, won and lost stages", async () => {
+  test("a new product gets open, won and lost deal stages and the outreach pipeline", async () => {
     const product = await crm.createProduct(admin, org, "Fictional Pipeline");
     const stages = await local.db
       .select()
@@ -698,11 +698,23 @@ describe("opportunities", () => {
           eq(s.stages.productId, product.id),
         ),
       );
-    expect(
+    const pipeline = (name: "deal" | "outreach") =>
       stages
+        .filter((row) => row.pipeline === name)
         .sort((a, b) => a.position - b.position)
-        .map((row) => [row.name, row.category]),
-    ).toEqual([
+        .map((row) => [row.name, row.category]);
+    expect(pipeline("outreach")).toEqual([
+      ["New", "open"],
+      ["Researching", "open"],
+      ["Contacted", "open"],
+      ["Follow-up", "open"],
+      ["Replied", "open"],
+      ["Meeting", "open"],
+      ["Won", "won"],
+      ["Lost", "lost"],
+      ["Not now", "hold"],
+    ]);
+    expect(pipeline("deal")).toEqual([
       ["Discovery", "open"],
       ["Evaluation", "open"],
       ["Proposal", "open"],
@@ -724,9 +736,11 @@ describe("the record editing migration", () => {
       };
       const before = {
         ...journal,
-        entries: journal.entries.filter(
-          (entry) => entry.tag !== "0009_record_editing",
-        ),
+        entries: journal.entries.filter((entry) => entry.tag < "0009"),
+      };
+      const through0009 = {
+        ...journal,
+        entries: journal.entries.filter((entry) => entry.tag < "0010"),
       };
       await writeFile(journalPath, JSON.stringify(before));
       const db = drizzle(client);
@@ -743,7 +757,7 @@ describe("the record editing migration", () => {
           ('${org}', '${demoId(11)}', 'won', 2);
         INSERT INTO companies (organization_id, name) VALUES ('${org}', 'Fixture company');
       `);
-      await writeFile(journalPath, JSON.stringify(journal));
+      await writeFile(journalPath, JSON.stringify(through0009));
       await migrate(db, { migrationsFolder: folder });
       const stages = await client.query<{
         product_id: string;

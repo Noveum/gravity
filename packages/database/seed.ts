@@ -183,6 +183,8 @@ export async function seedDemo(db: Database) {
       name,
       delayDays: i === 0 ? 0 : i === 1 ? 3 : 5,
       channel: "gmail" as const,
+      template: "",
+      followUp: i,
     }));
     await tx.insert(s.sequences).values(
       [10, 11, 12, 13].map((p, i) => ({
@@ -200,7 +202,8 @@ export async function seedDemo(db: Database) {
         productId: demoId(10),
         relationshipId: demoId(300),
         sequenceId: demoId(400),
-        status: "paused_reply",
+        status: "paused",
+        pauseReason: "reply",
         step: 3,
       },
       {

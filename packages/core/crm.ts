@@ -127,6 +127,26 @@ export function defaultStages(organizationId: string, productId: string) {
     ...stage,
   }));
 }
+export function outreachStages(organizationId: string, productId: string) {
+  const names = t.outreachStages;
+  return [
+    { name: names.new, category: "open" as const },
+    { name: names.researching, category: "open" as const },
+    { name: names.contacted, category: "open" as const },
+    { name: names.followUp, category: "open" as const },
+    { name: names.replied, category: "open" as const },
+    { name: names.meeting, category: "open" as const },
+    { name: names.won, category: "won" as const },
+    { name: names.lost, category: "lost" as const },
+    { name: names.notNow, category: "hold" as const },
+  ].map((stage, position) => ({
+    organizationId,
+    productId,
+    position,
+    pipeline: "outreach" as const,
+    ...stage,
+  }));
+}
 async function insertProduct(
   tx: Transaction,
   organizationId: string,
@@ -144,7 +164,12 @@ async function insertProduct(
   await tx
     .insert(s.folders)
     .values({ organizationId, productId: product.id, name: t.defaultFolder });
-  await tx.insert(s.stages).values(defaultStages(organizationId, product.id));
+  await tx
+    .insert(s.stages)
+    .values([
+      ...defaultStages(organizationId, product.id),
+      ...outreachStages(organizationId, product.id),
+    ]);
   await tx.insert(s.changeEvents).values({
     organizationId,
     productId: product.id,
@@ -207,7 +232,8 @@ export class CrmService {
           and(
             eq(s.enrollments.organizationId, input.organizationId),
             eq(s.enrollments.relationshipId, relationship.id),
-            eq(s.enrollments.status, "paused_reply"),
+            eq(s.enrollments.status, "paused"),
+            eq(s.enrollments.pauseReason, "reply"),
           ),
         );
       const [action] = await tx
@@ -449,7 +475,11 @@ export class CrmService {
         .select()
         .from(s.stages)
         .where(scoped(s.stages))
-        .orderBy(asc(s.stages.position), asc(s.stages.id)),
+        .orderBy(
+          asc(s.stages.pipeline),
+          asc(s.stages.position),
+          asc(s.stages.id),
+        ),
       this.db.select().from(s.meetings).where(scoped(s.meetings)),
       this.db.select().from(s.opportunities).where(scoped(s.opportunities)),
       this.db
@@ -596,7 +626,8 @@ export class CrmService {
       folders,
       assets,
       assetStages,
-      stages,
+      stages: stages.filter((stage) => stage.pipeline === "deal"),
+      outreachStages: stages.filter((stage) => stage.pipeline === "outreach"),
       meetings: active(meetings),
       opportunities: active(opportunities),
       members: members.map((member) => ({

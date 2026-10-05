@@ -234,7 +234,8 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
       await tx
         .update(s.enrollments)
         .set({
-          status: "paused_reply",
+          status: "paused",
+          pauseReason: "reply",
           version: sqIncrement(s.enrollments.version),
         })
         .where(

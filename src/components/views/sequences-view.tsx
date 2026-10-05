@@ -53,11 +53,15 @@ export function SequencesView() {
                   type="button"
                   data-nav-record={enrollment.id}
                   onClick={() => crm.openPerson(enrollment.relationshipId)}
-                  className={`badge ${enrollment.status.startsWith("paused") ? "warning" : ""}`}
+                  className={`badge ${enrollment.status === "paused" ? "warning" : ""}`}
                   key={enrollment.id}
                 >
                   {personFor(enrollment.relationshipId)?.name} ·{" "}
-                  {label(enrollment.status)}
+                  {label(
+                    enrollment.pauseReason
+                      ? `paused_${enrollment.pauseReason}`
+                      : enrollment.status,
+                  )}
                 </button>
               ))}
           </div>

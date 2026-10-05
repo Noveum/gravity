@@ -192,7 +192,7 @@ describe("CRM HTTP contracts", () => {
         .select()
         .from(s.stages)
         .where(eq(s.stages.productId, product.id)),
-    ).toHaveLength(5);
+    ).toHaveLength(14);
     expect(
       await db
         .select()

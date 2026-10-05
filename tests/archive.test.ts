@@ -124,14 +124,18 @@ describe("archiving a person stops their work", () => {
       .select()
       .from(s.enrollments)
       .where(eq(s.enrollments.id, demoId(501)));
-    expect(paused).toMatchObject({ status: "paused_archived", version: 2 });
+    expect(paused).toMatchObject({
+      status: "paused",
+      pauseReason: "archived",
+      version: 2,
+    });
     expect(await events(demoId(501))).toContain("enrollment.paused");
     await archive(204, false);
     const [still] = await local.db
       .select()
       .from(s.enrollments)
       .where(eq(s.enrollments.id, demoId(501)));
-    expect(still?.status).toBe("paused_archived");
+    expect(still).toMatchObject({ status: "paused", pauseReason: "archived" });
     expect((await action(demoId(604))).approvedHash).toBeNull();
   });
 

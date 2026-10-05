@@ -124,7 +124,10 @@ describe("intentional action handling", () => {
       .select()
       .from(s.enrollments)
       .where(eq(s.enrollments.id, demoId(500)));
-    expect(enrollment.status).toBe("paused_reply");
+    expect(enrollment).toMatchObject({
+      status: "paused",
+      pauseReason: "reply",
+    });
     expect(enrollment.step).toBe(3);
   });
   test("edits invalidate approval and stale writers cannot overwrite a new draft", async () => {
@@ -397,7 +400,10 @@ describe("reply ingestion", () => {
       .select()
       .from(s.enrollments)
       .where(eq(s.enrollments.id, demoId(501)));
-    expect(enrollment.status).toBe("paused_reply");
+    expect(enrollment).toMatchObject({
+      status: "paused",
+      pauseReason: "reply",
+    });
     expect(enrollment.version).toBe(2);
     const [blocked] = await local.db
       .select()
@@ -745,7 +751,10 @@ describe("explicit next-action scheduling", () => {
       .select()
       .from(s.enrollments)
       .where(eq(s.enrollments.id, demoId(500)));
-    expect(enrollment.status).toBe("paused_reply");
+    expect(enrollment).toMatchObject({
+      status: "paused",
+      pauseReason: "reply",
+    });
     const blocked = await service.scheduleAction(
       admin,
       input({ kind: "approval" }),

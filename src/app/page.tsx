@@ -38,6 +38,16 @@ export default async function Page({
   return (
     <CrmApp
       initial={snapshot ? serialize(snapshot) : null}
+      initialView={query.view === "connections" ? "integrations" : "actions"}
+      integrationNotice={
+        typeof query.integrationError === "string"
+          ? query.integrationError
+          : query.integration === "pending"
+            ? "CONNECTION_PENDING"
+            : query.integration === "connected"
+              ? "CONNECTION_CONNECTED"
+              : ""
+      }
       organizations={organizations}
       mcpEndpoint={resourceUrl()}
       initialOrganizationId={organization?.id ?? ""}

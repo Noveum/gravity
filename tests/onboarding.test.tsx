@@ -336,6 +336,10 @@ test("connections render a canonical endpoint on the server, disclose offline pr
   const endpoint = "https://gravity.example.test/mcp";
   const props = {
     data: connectionData,
+    organizationId: "11111111-1111-4111-8111-111111111111",
+    productId: "",
+    initialNotice: "",
+    onChanged: vi.fn(async () => {}),
     endpoint,
     demo: true,
     onRevoke: vi.fn(async () => true),
@@ -374,6 +378,10 @@ test("assistant grant revocation is single-flight and releases its control after
   render(
     <Connections
       data={connectionData}
+      organizationId="11111111-1111-4111-8111-111111111111"
+      productId=""
+      initialNotice=""
+      onChanged={async () => {}}
       endpoint="https://gravity.example.test/mcp"
       demo={false}
       onRevoke={onRevoke}

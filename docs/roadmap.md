@@ -6,6 +6,10 @@ Independent local Git repository, pinned runtime/dependencies, reviewed SQL migr
 
 The current app can be reviewed with fictional records. It cannot yet replace the company's live CRM or daily outreach tools. Existing Twenty/RepoCloud/domain/MCP infrastructure has not been changed by this implementation.
 
+## Provider connection slice, 5 October 2026
+
+Gmail/primary-calendar OAuth, Fireflies owner API-key import, Unipile V2 hosted LinkedIn binding, encrypted credentials, durable signed webhook receipts, bounded historical/incremental polling and explicit unmatched review are implemented. The five-minute Vercel schedule requires a compatible plan. See [connectors](connectors.md) for setup and remaining qualifications. This changes the implementation status of slices 4 and 5 below; live account evidence is recorded separately.
+
 ## Next slices, in order
 
 | Slice | Deliverable | Acceptance |

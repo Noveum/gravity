@@ -77,6 +77,8 @@ export function CrmApp({
   organizations: initialOrganizations,
   initialOrganizationId,
   initialProductId = "",
+  initialView = "actions",
+  integrationNotice = "",
   mcpEndpoint = "",
   userId,
   demo,
@@ -85,6 +87,8 @@ export function CrmApp({
   organizations: Organization[];
   initialOrganizationId: string;
   initialProductId?: string;
+  initialView?: View;
+  integrationNotice?: string;
   mcpEndpoint?: string;
   userId: string;
   demo: boolean;
@@ -100,7 +104,7 @@ export function CrmApp({
   const [organizations, setOrganizations] = useState(initialOrganizations);
   const [organizationId, setOrganizationId] = useState(initialOrganizationId);
   const [productId, setProductId] = useState(initialProductId);
-  const [view, setView] = useState<View>("actions");
+  const [view, setView] = useState<View>(initialView);
   const [loadFailed, setLoadFailed] = useState(false);
   const [sourceData, setData] = useState(initial);
   const data = useMemo(
@@ -1564,7 +1568,12 @@ export function CrmApp({
               )}
               {view === "integrations" && (
                 <Connections
-                  data={data}
+                  key={organizationId}
+                  organizationId={organizationId}
+                  productId={productId}
+                  initialNotice={integrationNotice}
+                  onChanged={refresh}
+                  data={sourceData ?? data}
                   endpoint={mcpEndpoint}
                   demo={demo}
                   onRevoke={revokeGrant}

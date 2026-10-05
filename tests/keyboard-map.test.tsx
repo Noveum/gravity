@@ -23,7 +23,11 @@ import t from "../packages/i18n/translations/en.json";
 import { dateLabel, requestJson } from "../src/components/client-api";
 import { outreachPath, sectionPath } from "../src/components/routes";
 import { Shortcuts } from "../src/components/shortcuts";
-import { installCrmHarness, mountCrm } from "./support/crm-harness";
+import {
+  installCrmHarness,
+  mountCrm,
+  organizations,
+} from "./support/crm-harness";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
 vi.mock("next/link", () => import("./support/memory-router"));
@@ -293,7 +297,7 @@ describe("palette, search, guide and create", () => {
     );
     fireEvent(dialog, new Event("cancel"));
     fireEvent.click(screen.getByRole("link", { name: t.sequences }));
-    await waitFor(() => expect(pathname()).toBe("/sequences"));
+    await waitFor(() => expect(pathname()).toBe("/outreach/sequences"));
     (document.activeElement as HTMLElement | null)?.blur();
     await press("c");
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -656,59 +660,81 @@ describe("outreach verbs", () => {
     expect(await touch(1307)).toMatchObject({ status: "drafted" });
     expect((await touch(1307)).draft).toMatch(/Updated\.$/);
   });
-  test("D records a send with an optional link, and a second report shows the first report's details", async () => {
-    binding("touch-sent");
+  test("A on an already approved touch says so and sends nothing", async () => {
     await mountCrm(harness, "/outreach/today");
     (await touchRow("Amara Stone")).focus();
-    await press("d");
-    const dialog = await screen.findByRole("dialog", {
-      name: t.markSentTitle,
-    });
-    await userEvent
-      .setup()
-      .type(
-        within(dialog).getByLabelText(t.markSentLink),
-        "https://mail.example.test/m/1",
+    await press("a");
+    expect(await screen.findByText(t.touchAlreadyApproved)).toBeTruthy();
+    expect(harness.posts).toEqual([]);
+  });
+  test("D records a send with an optional link, and a second report shows the first report's details", async () => {
+    binding("touch-sent");
+    const zone = organizations[0]?.timezone ?? "UTC";
+    if (organizations[0]) organizations[0].timezone = "Asia/Tokyo";
+    try {
+      await mountCrm(harness, "/outreach/today");
+      (await touchRow("Amara Stone")).focus();
+      await press("d");
+      const dialog = await screen.findByRole("dialog", {
+        name: t.markSentTitle,
+      });
+      await userEvent
+        .setup()
+        .type(
+          within(dialog).getByLabelText(t.markSentLink),
+          "https://mail.example.test/m/1",
+        );
+      await press("{Meta>}{Enter}{/Meta}");
+      const recorded = await screen.findByText(
+        new RegExp(`^${t.touchMarkedSent.replace("{name}", "Amara Stone")}`),
       );
-    await press("{Meta>}{Enter}{/Meta}");
-    await screen.findByText(
-      new RegExp(`^${t.touchMarkedSent.replace("{name}", "Amara Stone")}`),
-    );
-    expect(await touch(1304)).toMatchObject({
-      status: "sent",
-      externalMessageId: "https://mail.example.test/m/1",
-    });
-    await waitFor(() =>
       expect(
-        screen.queryByRole("button", { name: /^Amara Stone, / }),
-      ).toBeNull(),
-    );
-    const sent = await new OutreachService(harness.local.db).markSent(
-      { userId: demoUser, source: "demo" },
-      {
-        organizationId: demoId(1),
-        touchId: demoId(1307),
-        externalMessageId: "first-report-1",
-      },
-    );
-    (await touchRow("Noor Haddad")).focus();
-    await press("d");
-    const again = await screen.findByRole("dialog", {
-      name: t.markSentTitle,
-    });
-    await press("{Meta>}{Enter}{/Meta}");
-    await waitFor(() =>
-      expect(within(again).getByText(/Alex Morgan/)).toBeTruthy(),
-    );
-    const alert = within(again).getByText(/Alex Morgan/);
-    expect(alert.getAttribute("role")).toBe("alert");
-    expect(alert.textContent).toContain(
-      dateLabel(sent.touch.sentAt?.toISOString() ?? "", "UTC"),
-    );
-    expect(alert.textContent).toContain(
-      t.firstReportLink.replace("{link}", "first-report-1"),
-    );
-    expect(alert.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+        within(recorded.parentElement as HTMLElement).queryByRole("button", {
+          name: t.undo,
+        }),
+      ).toBeNull();
+      const posted = harness.posts.length;
+      await press("{Meta>}z{/Meta}");
+      expect(harness.posts).toHaveLength(posted);
+      expect((await touch(1304)).status).toBe("sent");
+      expect(await touch(1304)).toMatchObject({
+        status: "sent",
+        externalMessageId: "https://mail.example.test/m/1",
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("button", { name: /^Amara Stone, / }),
+        ).toBeNull(),
+      );
+      const sent = await new OutreachService(harness.local.db).markSent(
+        { userId: demoUser, source: "demo" },
+        {
+          organizationId: demoId(1),
+          touchId: demoId(1307),
+          externalMessageId: "first-report-1",
+        },
+      );
+      (await touchRow("Noor Haddad")).focus();
+      await press("d");
+      const again = await screen.findByRole("dialog", {
+        name: t.markSentTitle,
+      });
+      await press("{Meta>}{Enter}{/Meta}");
+      await waitFor(() =>
+        expect(within(again).getByText(/Alex Morgan/)).toBeTruthy(),
+      );
+      const alert = within(again).getByText(/Alex Morgan/);
+      expect(alert.getAttribute("role")).toBe("alert");
+      expect(alert.textContent).toContain(
+        dateLabel(sent.touch.sentAt?.toISOString() ?? "", "Asia/Tokyo"),
+      );
+      expect(alert.textContent).toContain(
+        t.firstReportLink.replace("{link}", "first-report-1"),
+      );
+      expect(alert.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+    } finally {
+      if (organizations[0]) organizations[0].timezone = zone;
+    }
   });
   test("Shift S skips with a reason and Undo reopens it; S snoozes to the next working morning and Cmd Z undoes it", async () => {
     binding("touch-skip");

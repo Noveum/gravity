@@ -3695,6 +3695,17 @@ tbody tr[data-selected] td:first-child::before {
   border-bottom: 1px solid var(--gravity-border-hairline);
 }
 @media (max-width: 760px) {
+  .sequence-enrollments {
+    table-layout: fixed;
+  }
+  .sequence-enrollments :where(th, td) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sequence-enrollments :where(th, td):nth-child(3) {
+    display: none;
+  }
   .sequence-editor-fields {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
@@ -3737,4 +3748,17 @@ tbody tr[data-selected] td:first-child::before {
 .menu-item-hint {
   font-size: var(--text-2xs);
   color: var(--gravity-faint);
+}
+.merge-preview {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--gravity-radius);
+  background: var(--gravity-surface-2);
+}
+.merge-missing {
+  background: var(--gravity-danger-soft);
+  color: var(--gravity-danger);
+  border-radius: 3px;
+  padding: 0 2px;
 }

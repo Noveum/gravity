@@ -18,6 +18,9 @@ export function SentRow({ touch }: { touch: QueueTouch }) {
     crm.go(
       personPath(touch.person.id, { relationshipId: touch.relationshipId }),
     );
+  const peek = () => {
+    if (!touch.person.archived) crm.openPerson(touch.relationshipId);
+  };
   const warnings = touch.sentWarnings
     .map(
       (warning) =>
@@ -37,9 +40,9 @@ export function SentRow({ touch }: { touch: QueueTouch }) {
           step,
           ...(touch.person.archived ? [t.archivedFlag] : []),
         ].join(", ")}
-        aria-keyshortcuts="Enter"
-        onClick={open}
-        onKeyDown={rowKeys({ open })}
+        aria-keyshortcuts="Space Enter"
+        onClick={peek}
+        onKeyDown={rowKeys({ peek, open })}
       >
         <span className="row-avatar" aria-hidden>
           {initials(touch.person.name)}

@@ -493,3 +493,90 @@ describe("the guide", () => {
     ).toContain(t.shortcutLabels.moveTo);
   });
 });
+
+describe("fix round 1", () => {
+  const press = (keys: string) => userEvent.setup().keyboard(keys);
+  const verbButton = (name: keyof typeof t.touchVerbs, person: string) =>
+    screen.findByRole("button", { name: `${t.touchVerbs[name]}: ${person}` });
+
+  test("the Edit draft, Mark sent and Skip row buttons open the drawer and their dialogs", async () => {
+    await mountCrm(harness, "/outreach/today");
+    fireEvent.click(await verbButton("edit", "Noor Haddad"));
+    const drawer = await screen.findByRole("dialog", {
+      name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
+    });
+    expect(document.activeElement).toBe(
+      within(drawer).getByLabelText(t.draftLabel),
+    );
+    fireEvent(drawer, new Event("cancel"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(await verbButton("sent", "Noor Haddad"));
+    const sent = await screen.findByRole("dialog", { name: t.markSentTitle });
+    fireEvent.click(within(sent).getByRole("button", { name: t.cancel }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(await verbButton("skip", "Noor Haddad"));
+    expect(
+      await screen.findByRole("dialog", { name: t.skipTitle }),
+    ).toBeTruthy();
+    expect(harness.posts).toEqual([]);
+  });
+
+  test("Sent rows flag archived people and peek on Space like paused rows", async () => {
+    await harness.local.db
+      .update(s.people)
+      .set({ archivedAt: new Date() })
+      .where(eq(s.people.id, demoId(200)));
+    await mountCrm(harness, "/outreach/sent");
+    expect(
+      await screen.findByRole("button", {
+        name: `Mira Chen, ${t.followUpGroups[1]}, ${t.archivedFlag}`,
+      }),
+    ).toBeTruthy();
+    const amara = screen.getByRole("button", {
+      name: `Amara Stone, ${t.followUpGroups[0]}`,
+    });
+    expect(amara.getAttribute("aria-keyshortcuts")).toBe("Space Enter");
+    amara.focus();
+    await press(" ");
+    expect(
+      await screen.findByRole("complementary", { name: t.recordDetails }),
+    ).toBeTruthy();
+    expect(window.location.pathname).toBe("/outreach/sent");
+  });
+
+  test("planned touches preview their template with merge fields filled, and the stored draft stays raw", async () => {
+    await mountCrm(harness, "/outreach/drafts");
+    const row = await screen.findByRole("button", { name: /^Noor Haddad, / });
+    expect(row.textContent).toContain(
+      "Hi Noor, one more idea: a fictional case study from a similar team.",
+    );
+    expect(row.textContent).not.toContain("{first name}");
+    fireEvent.click(row);
+    const drawer = await screen.findByRole("dialog", {
+      name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
+    });
+    expect(
+      (within(drawer).getByLabelText(t.draftLabel) as HTMLTextAreaElement)
+        .value,
+    ).toMatch(/^Hi \{first name\}, one more idea/);
+    const preview = within(drawer).getByRole("region", {
+      name: t.mergePreview,
+    });
+    expect(preview.querySelector("p")?.textContent).toMatch(
+      /^Hi Noor, one more idea/,
+    );
+  });
+
+  test("/sequences moves to the Sequences tab and the sidebar Sequences item points and lights there", async () => {
+    const { default: Page } = await import("../src/app/(crm)/sequences/page");
+    expect(() => Page()).toThrow("NEXT_REDIRECT");
+    await mountCrm(harness, "/outreach/sequences");
+    const current = document.querySelectorAll<HTMLElement>(
+      '.sidebar [aria-current="page"]',
+    );
+    expect([...current].map((link) => link.dataset.navItem)).toEqual([
+      "sequences",
+    ]);
+    expect(current[0]?.getAttribute("href")).toBe("/outreach/sequences");
+  });
+});

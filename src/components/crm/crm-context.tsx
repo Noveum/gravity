@@ -2,7 +2,7 @@
 import { productSnapshot } from "@crm/core/client-state";
 import type { ClientContext, ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   createContext,
   type ReactNode,
@@ -52,6 +52,7 @@ function useCrmState({
 }: CrmProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const unfiltered = !useSearchParams().toString();
   const route = routeFor(pathname);
   const { toasts, notify, dismiss } = useToasts();
   const [organizations, setOrganizations] = useState(initialOrganizations);
@@ -59,7 +60,7 @@ function useCrmState({
   const [productId, setProductId] = useState(initialProductId);
   const [peekState, setPeekState] = useState(() => {
     const blocked =
-      pathname === homePath
+      pathname === homePath && unfiltered
         ? initial?.actions.find(
             (action) =>
               action.status === "blocked" &&
@@ -209,7 +210,7 @@ function useCrmState({
   function reveal(section: "meetings" | "opportunities", id: string) {
     const path = sectionPath(section);
     setFocusedRecord({ path, id });
-    go(path);
+    router.push(path);
   }
   async function mutate(body: object) {
     if (mutating.current) return false;

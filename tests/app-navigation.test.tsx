@@ -604,6 +604,11 @@ test("deep links render the view or record they name", async () => {
     ["/connections", "integrations", t.integrations],
     ["/settings", "settings", t.settings],
   ];
+  mount("/actions");
+  expect(
+    screen.getByRole("complementary", { name: t.recordDetails }),
+  ).toBeTruthy();
+  cleanup();
   for (const [path, section, name] of views) {
     mount(path);
     expect(heading(name).textContent).toBe(name);
@@ -754,6 +759,9 @@ test("saved views are links whose filter lives in the URL", async () => {
     (screen.getByRole("combobox", { name: t.actionType }) as HTMLSelectElement)
       .value,
   ).toBe("reply");
+  expect(
+    screen.queryByRole("complementary", { name: t.recordDetails }),
+  ).toBeNull();
   fireEvent.change(screen.getByRole("combobox", { name: t.actionType }), {
     target: { value: "" },
   });
@@ -784,4 +792,21 @@ test("switching workspace remembers its slug and leaves a record of the old work
     target: { value: demoId(13) },
   });
   expect(document.cookie).toContain(`gravity-brand=${demoId(13)}`);
+});
+
+test("related work on a record page reveals the meeting in its own view", async () => {
+  mount(`/people/${demoId(200)}`);
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Evaluation review/ }),
+  );
+  expect(window.location.pathname).toBe("/meetings");
+  const meeting = screen
+    .getByRole("heading", { name: "Evaluation review" })
+    .closest("article");
+  expect(meeting?.classList.contains("record-highlight")).toBe(true);
+  await waitFor(() => expect(document.activeElement).toBe(meeting));
+  act(() => window.history.back());
+  await waitFor(() =>
+    expect(window.location.pathname).toBe(`/people/${demoId(200)}`),
+  );
 });

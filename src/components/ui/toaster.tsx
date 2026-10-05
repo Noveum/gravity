@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 
 export type ToastTone = "neutral" | "success" | "danger";
 export interface Toast {
@@ -94,11 +95,40 @@ export function useToasts() {
 
 const icons = { neutral: Info, success: CircleCheck, danger: CircleAlert };
 
+function pointerInside(element: HTMLElement) {
+  try {
+    return element.matches(":hover");
+  } catch {
+    return false;
+  }
+}
+
 function raise(element: HTMLElement) {
   if (typeof element.showPopover !== "function") return;
-  if (element.getAttribute("popover") === "manual") element.hidePopover();
-  else element.setAttribute("popover", "manual");
+  element.setAttribute("popover", "manual");
   element.showPopover();
+}
+
+function useOpenDialog() {
+  const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
+  useEffect(() => {
+    const sync = () =>
+      setDialog(
+        [...document.querySelectorAll<HTMLDialogElement>("dialog[open]")].at(
+          -1,
+        ) ?? null,
+      );
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["open"],
+    });
+    return () => observer.disconnect();
+  }, []);
+  return dialog;
 }
 
 function ToastItem({
@@ -139,23 +169,23 @@ export function Toaster({
   const host = useRef<HTMLElement>(null);
   const hovering = useRef(false);
   const focused = useRef(false);
-  const latest = toasts.at(-1)?.id;
+  const modal = useOpenDialog();
   const settle = () => {
     if (hovering.current || focused.current) onPause();
     else onResume();
   };
   useLayoutEffect(() => {
-    if (host.current) raise(host.current);
-  }, []);
+    const element = host.current;
+    if (!element) return;
+    focused.current = element.contains(document.activeElement);
+    hovering.current = hovering.current && pointerInside(element);
+    if (hovering.current || focused.current) onPause();
+    else onResume();
+  });
   useLayoutEffect(() => {
-    if (
-      latest !== undefined &&
-      host.current &&
-      document.querySelector("dialog[open]")
-    )
-      raise(host.current);
-  }, [latest]);
-  return (
+    if (host.current && !modal) raise(host.current);
+  }, [modal]);
+  const region = (
     <section
       ref={host}
       className="toaster"
@@ -205,4 +235,5 @@ export function Toaster({
       </div>
     </section>
   );
+  return modal ? createPortal(region, modal) : region;
 }

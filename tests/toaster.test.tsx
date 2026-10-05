@@ -7,6 +7,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import t from "../packages/i18n/translations/en.json";
 import {
@@ -140,18 +141,11 @@ test("hovering or focusing the toasts holds them until the pointer and focus lea
   expect(shown()).toHaveLength(0);
 });
 
-test("a toast raised while a modal dialog is open is lifted above it", () => {
+test("the host joins the top layer on mount where the Popover API exists", () => {
   const shownPopovers: Element[] = [];
-  const hiddenPopovers: Element[] = [];
-  const original = {
-    show: HTMLElement.prototype.showPopover,
-    hide: HTMLElement.prototype.hidePopover,
-  };
+  const original = HTMLElement.prototype.showPopover;
   HTMLElement.prototype.showPopover = function () {
     shownPopovers.push(this);
-  };
-  HTMLElement.prototype.hidePopover = function () {
-    hiddenPopovers.push(this);
   };
   try {
     render(<Harness />);
@@ -160,17 +154,65 @@ test("a toast raised while a modal dialog is open is lifted above it", () => {
     );
     expect(host?.getAttribute("popover")).toBe("manual");
     expect(shownPopovers).toEqual([host]);
-    fireEvent.click(screen.getByRole("button", { name: "success" }));
-    expect(shownPopovers).toHaveLength(1);
-    const dialog = document.createElement("dialog");
-    dialog.open = true;
-    document.body.append(dialog);
-    fireEvent.click(screen.getByRole("button", { name: "danger" }));
-    expect(hiddenPopovers).toEqual([host]);
-    expect(shownPopovers).toEqual([host, host]);
-    dialog.remove();
   } finally {
-    HTMLElement.prototype.showPopover = original.show;
-    HTMLElement.prototype.hidePopover = original.hide;
+    HTMLElement.prototype.showPopover = original;
   }
+});
+
+test("while a modal dialog is open the toasts live inside it, stay usable, and return when it closes", async () => {
+  render(<Harness />);
+  const dialog = document.createElement("dialog");
+  document.body.append(dialog);
+  await act(async () => {
+    dialog.setAttribute("open", "");
+  });
+  fireEvent.click(screen.getByRole("button", { name: "danger" }));
+  const toast = document.querySelector(".toast");
+  expect(dialog.contains(toast)).toBe(true);
+  expect(
+    within(dialog).getByRole("region", { name: t.notifications }),
+  ).toBeTruthy();
+  fireEvent.pointerEnter(region());
+  act(() => {
+    vi.advanceTimersByTime(toastDuration.danger * 2);
+  });
+  expect(shown()).toHaveLength(1);
+  fireEvent.click(within(dialog).getByRole("button", { name: t.dismiss }));
+  expect(shown()).toHaveLength(0);
+  await act(async () => {
+    dialog.removeAttribute("open");
+  });
+  expect(dialog.contains(region())).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "success" }));
+  expect(dialog.contains(document.querySelector(".toast"))).toBe(false);
+  dialog.remove();
+});
+
+test("dismissing a focused toast with the keyboard does not hold later toasts", async () => {
+  vi.useRealTimers();
+  const user = userEvent.setup();
+  render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "danger" }));
+  act(() => screen.getByRole("button", { name: t.dismiss }).focus());
+  await user.keyboard("{Enter}");
+  vi.useFakeTimers();
+  expect(shown()).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "success" }));
+  act(() => {
+    vi.advanceTimersByTime(toastDuration.success);
+  });
+  expect(shown()).toHaveLength(0);
+});
+
+test("dismissing the toast under the pointer does not hold later toasts", () => {
+  render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "danger" }));
+  fireEvent.pointerEnter(region());
+  fireEvent.click(screen.getByRole("button", { name: t.dismiss }));
+  expect(shown()).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "success" }));
+  act(() => {
+    vi.advanceTimersByTime(toastDuration.success);
+  });
+  expect(shown()).toHaveLength(0);
 });

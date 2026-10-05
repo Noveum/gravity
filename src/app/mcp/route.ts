@@ -28,7 +28,10 @@ export async function POST(request: Request) {
           }),
         );
       },
-      { resource: resourceUrl(), requiredScopes: ["crm:read", "crm:write"] },
+      {
+        resource: resourceUrl(),
+        requiredScopes: ["crm:read", "crm:write", "crm:send"],
+      },
     )(request);
   } catch (error) {
     return errorResponse(error);

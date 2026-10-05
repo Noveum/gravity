@@ -1,6 +1,6 @@
 # MCP client qualification
 
-Gravity exposes CRM read/write Streamable HTTP at `<APP_URL>/mcp`. OAuth is the supported authentication path; no CRM API-key flow is implemented. Webhook HMAC is separate from user/assistant authorization.
+Gravity exposes CRM read/write/send Streamable HTTP at `<APP_URL>/mcp`. OAuth is the supported authentication path; no CRM API-key flow is implemented. Webhook HMAC is separate from user/assistant authorization.
 
 ## Evidence
 
@@ -32,7 +32,7 @@ claude mcp login gravity
 
 If prompted in a Claude session, `/mcp` also opens connection management. The uppercase hostname is a placeholder, not a functioning server. The old Twenty Cloud Run bridge is a separate installation.
 
-Sign in, select one organization and allowed products, and accept CRM read/write consent. Run `get_me`, `get_capabilities`, and `list_products`. Confirm the granted organization/product IDs; request an ungranted product and verify denial. Revoke the grant in Connections and verify that an existing token no longer reads records. All-products grants include future permitted products; specific-product grants stay fixed. Reconnect existing read-only clients to authorize `crm:write`. Ask the assistant to list capabilities before expecting Gmail synchronization or sending.
+Sign in, select one organization and allowed products, and accept CRM read/write/send consent. Run `get_me`, `get_capabilities`, and `list_products`. Confirm the granted organization/product IDs; request an ungranted product and verify denial. Revoke the grant in Connections and verify that an existing token no longer reads records. All-products grants include future permitted products; specific-product grants stay fixed. Reconnect existing read-only clients to authorize `crm:write crm:send`. Ask the assistant to list capabilities before expecting Gmail synchronization or sending.
 
 ## Authentication direction
 

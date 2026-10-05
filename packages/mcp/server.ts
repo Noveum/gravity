@@ -3,6 +3,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { z } from "zod";
 import { integrationAvailability } from "../connectors/service";
 import { CrmService } from "../core/crm";
+import { errorResponse } from "../core/http";
 import {
   authorize,
   DomainError,
@@ -11,10 +12,14 @@ import {
 } from "../core/policy";
 import type { Database } from "../database/client";
 import { mcpGrants, oauthClient, session } from "../database/schema";
+import t from "../i18n/translations/en.json";
 import {
   executeMcpOperation,
+  operationAvailable,
   operationInput,
+  operationRequirements,
   operations,
+  permissionAudit,
 } from "../operations/catalog";
 import { downloadAsset } from "../storage/files";
 // Call only after the OAuth library has verified signature, issuer, audience and scope.
@@ -54,6 +59,9 @@ export async function principalForVerifiedToken(db: Database, claims: unknown) {
   return {
     ...principal,
     readOnly: !identity.data.scope.split(" ").includes("crm:write"),
+    canSend:
+      identity.data.scope.split(" ").includes("crm:send") &&
+      identity.data.scope.split(" ").includes("crm:write"),
   };
 }
 
@@ -94,11 +102,77 @@ export function mcpHandler(
   });
   return createMcpHandler(
     () => {
-      const server = new McpServer({
-        name: "gravity-by-noveum",
-        version: "0.2.0",
-      });
+      const server = new McpServer(
+        {
+          name: "gravity-by-noveum",
+          version: "0.3.0",
+        },
+        { instructions: t.mcpInstructions },
+      );
       const writable = principal.readOnly === false;
+      const canSend = writable && principal.canSend === true;
+      server.registerResource(
+        "agent-guide",
+        "gravity://agent-guide",
+        { mimeType: "text/plain", description: t.mcpInstructions },
+        async (uri) => {
+          await authorize(db, principal, organizationId);
+          return {
+            contents: [
+              {
+                uri: uri.href,
+                mimeType: "text/plain",
+                text: t.mcpInstructions,
+              },
+            ],
+          };
+        },
+      );
+      server.registerResource(
+        "permissions",
+        "gravity://permissions",
+        {
+          mimeType: "application/json",
+          description:
+            "Effective permissions and the complete business-operation catalog.",
+        },
+        async (uri) => ({
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify(
+                await permissionAudit({ db, principal }, organizationId),
+              ),
+            },
+          ],
+        }),
+      );
+      for (const [name, key] of [
+        ["daily-triage", "triage"],
+        ["manage-sequence", "sequence"],
+        ["configure-connections", "connections"],
+        ["send-approved-message", "send"],
+      ] as const) {
+        server.registerPrompt(
+          name,
+          { description: t.mcpPromptDescriptions[key] },
+          async () => {
+            await authorize(db, principal, organizationId);
+            return {
+              messages: [
+                {
+                  role: "user" as const,
+                  content: {
+                    type: "text" as const,
+                    text: `${t.mcpInstructions}\n\n${t.mcpPrompts[key]}`,
+                  },
+                },
+              ],
+            };
+          },
+        );
+      }
       for (const operation of operations) {
         if (operation.method !== "GET" && !writable) continue;
         server.registerTool(
@@ -112,15 +186,23 @@ export function mcpHandler(
               idempotentHint: operation.idempotent,
             },
           },
-          async (input) =>
-            result(
-              await executeMcpOperation(
-                operation,
-                { db, principal },
-                organizationId,
-                input,
-              ),
-            ),
+          async (input) => {
+            try {
+              return result(
+                await executeMcpOperation(
+                  operation,
+                  { db, principal },
+                  organizationId,
+                  input,
+                ),
+              );
+            } catch (error) {
+              return {
+                ...result(await errorResponse(error).json()),
+                isError: true,
+              };
+            }
+          },
         );
       }
       server.registerTool(
@@ -137,7 +219,11 @@ export function mcpHandler(
             userId: principal.userId,
             organizationId,
             productIds: principal.productIds,
-            permissions: writable ? ["crm:read", "crm:write"] : ["crm:read"],
+            permissions: [
+              "crm:read",
+              ...(writable ? ["crm:write"] : []),
+              ...(canSend ? ["crm:send"] : []),
+            ],
             allProducts: principal.productIds === undefined,
           });
         },
@@ -170,7 +256,19 @@ export function mcpHandler(
             materialPdfExtraction: false,
             contractDocuments: true,
             contractSigningWorkflow: false,
-            sendMessages: false,
+            sendMessages: canSend,
+            sendChannels: ["gmail", "linkedin"],
+            explicitSendRequired: true,
+            calendarEventWrites: false,
+            messageAttachments: false,
+            serverInstructions: true,
+            prompts: [
+              "daily-triage",
+              "manage-sequence",
+              "configure-connections",
+              "send-approved-message",
+            ],
+            resources: ["gravity://agent-guide", "gravity://permissions"],
             gmailSync: integrationAvailability().gmail,
             linkedinSync: integrationAvailability().linkedin,
             calendarSync: integrationAvailability().calendar,
@@ -185,7 +283,12 @@ export function mcpHandler(
               api: `/api/${operation.api}`,
               method: operation.method,
               operation: operation.operation,
-              available: operation.method === "GET" || writable,
+              available: operationAvailable(
+                operation,
+                principal,
+                membership.role,
+              ),
+              requirements: operationRequirements(operation),
               description: operation.description,
             })),
             protocolEndpoints: [

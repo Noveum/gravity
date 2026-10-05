@@ -67,6 +67,12 @@ test("configured providers have working connect buttons and unavailable LinkedIn
   fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
   expect(screen.getByRole("dialog").textContent).toContain(t.googleConnectNote);
   expect(screen.getByLabelText(t.defaultProduct)).toBeTruthy();
+  const allowSending = screen.getByLabelText(
+    t.gmailSendingConsent,
+  ) as HTMLInputElement;
+  expect(allowSending.checked).toBe(true);
+  fireEvent.click(allowSending);
+  expect(allowSending.checked).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: t.cancel }));
   expect(screen.queryByRole("dialog")).toBeNull();
 });

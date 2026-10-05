@@ -24,6 +24,7 @@ import {
   publicUnipileConfiguration,
   unipileCredentials,
 } from "./configuration";
+import { gmailSendScope } from "./outbound-provider";
 import {
   exchangeGoogle,
   firefliesIdentity,
@@ -60,14 +61,11 @@ export const connectInput = integrationScope.extend({
   provider: integrationProvider,
   apiKey: z.string().min(10).max(2000).optional(),
   connectionId: z.uuid().optional(),
+  allowSending: z.boolean().default(true),
 });
 const accountActor = (principal: Principal) => {
   if (principal.source === "session") return;
-  if (
-    principal.source !== "mcp" ||
-    principal.readOnly !== false ||
-    !principal.organizationId
-  )
+  if (principal.source !== "mcp" || !principal.organizationId)
     throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
 };
 const human = (principal: Principal) => {
@@ -135,6 +133,11 @@ export function publicConnection(
     lastSyncedAt: connection.lastSyncedAt?.toISOString() ?? null,
     errorCode: connection.errorCode,
     more: !!connection.syncCursor.more,
+    canSend:
+      connection.status === "connected" &&
+      (connection.provider === "unipile" ||
+        (connection.provider === "gmail" &&
+          connection.scopes.includes(gmailSendScope))),
   };
 }
 export type PublicConnection = ReturnType<typeof publicConnection>;
@@ -291,7 +294,8 @@ export class IntegrationService {
     );
     return connection;
   }
-  async connect(principal: Principal, input: z.infer<typeof connectInput>) {
+  async connect(principal: Principal, input: z.input<typeof connectInput>) {
+    input = connectInput.parse(input);
     accountActor(principal);
     await authorize(
       this.db,
@@ -363,6 +367,7 @@ export class IntegrationService {
       encryptedVerifier: seal(
         {
           verifier,
+          allowSending: input.provider === "gmail" && input.allowSending,
           ...(configuration
             ? {
                 configurationId: configuration.id,
@@ -396,7 +401,7 @@ export class IntegrationService {
       access_type: "offline",
       prompt: "consent",
       include_granted_scopes: "false",
-      scope: `openid email ${googleScopes[input.provider]}`,
+      scope: `openid email ${googleScopes[input.provider]}${input.provider === "gmail" && input.allowSending ? ` ${gmailSendScope}` : ""}`,
       state,
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
       code_challenge_method: "S256",
@@ -440,10 +445,10 @@ export class IntegrationService {
       )
       .returning();
     if (!claimed) throw new DomainError("CONNECTION_FLOW_EXPIRED", 400);
-    const { verifier } = unseal<{ verifier: string }>(
-      flow.encryptedVerifier,
-      flow.id,
-    );
+    const { verifier, allowSending } = unseal<{
+      verifier: string;
+      allowSending?: boolean;
+    }>(flow.encryptedVerifier, flow.id);
     const result = await exchangeGoogle(
       code,
       verifier,
@@ -452,6 +457,8 @@ export class IntegrationService {
     );
     const provider = z.enum(["gmail", "calendar"]).parse(flow.provider);
     if (!result.scopes.includes(googleScopes[provider]))
+      throw new DomainError("PROVIDER_PERMISSION", 422);
+    if (allowSending && !result.scopes.includes(gmailSendScope))
       throw new DomainError("PROVIDER_PERMISSION", 422);
     await this.saveConnected(
       principal,

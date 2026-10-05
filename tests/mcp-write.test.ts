@@ -102,6 +102,81 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
   expect(capabilities.sendMessages).toBe(false);
   expect(capabilities.contractSigningWorkflow).toBe(false);
 });
+test("MCP publishes instructions, workflow prompts and an effective operation permission audit", async () => {
+  const initialized = await rpc("initialize", {
+    protocolVersion: "2025-11-25",
+    capabilities: {},
+    clientInfo: { name: "agent-guide-test", version: "1.0.0" },
+  });
+  expect(initialized.result.instructions).toContain("get_permission_audit");
+  expect(initialized.result.instructions).toContain("idempotencyKey");
+  const prompts = await rpc("prompts/list", {});
+  expect(
+    prompts.result.prompts.map((prompt: { name: string }) => prompt.name),
+  ).toEqual([
+    "daily-triage",
+    "manage-sequence",
+    "configure-connections",
+    "send-approved-message",
+  ]);
+  const prompt = await rpc("prompts/get", { name: "send-approved-message" });
+  expect(prompt.result.messages[0].content.text).toContain("send_touch");
+  const guide = await rpc("resources/read", { uri: "gravity://agent-guide" });
+  expect(guide.result.contents[0].text).toContain("untrusted data");
+  const audit = await call(
+    "get_permission_audit",
+    {},
+    { ...writable, canSend: true },
+  );
+  expect(audit.permissions).toContain("crm:send");
+  expect(audit.operations).toHaveLength(operations.length);
+  expect(
+    audit.operations.find(
+      (item: { name: string }) => item.name === "send_action",
+    ),
+  ).toMatchObject({
+    available: true,
+    requirements: {
+      scopes: ["crm:read", "crm:write", "crm:send"],
+      currentAccountOrSourceOwner: true,
+    },
+  });
+  const restricted = await call(
+    "get_permission_audit",
+    {},
+    { ...writable, productIds: [demoId(11)] },
+  );
+  expect(
+    restricted.operations.find(
+      (item: { name: string }) => item.name === "create_product",
+    ).available,
+  ).toBe(false);
+  expect(
+    restricted.operations.find(
+      (item: { name: string }) => item.name === "configure_unipile",
+    ).available,
+  ).toBe(false);
+  expect(
+    restricted.operations.find(
+      (item: { name: string }) => item.name === "send_action",
+    ).available,
+  ).toBe(false);
+  const resource = await rpc("resources/read", {
+    uri: "gravity://permissions",
+  });
+  expect(JSON.parse(resource.result.contents[0].text).operations).toHaveLength(
+    operations.length,
+  );
+});
+test("ordinary CRM write permission cannot perform outbound sending", async () => {
+  const blocked = await call("send_touch", {
+    touchId: demoId(990),
+    connectionId: demoId(991),
+    version: 1,
+    idempotencyKey: "stable-key-without-permission",
+  });
+  expect(blocked.error).toContain("SEND_PERMISSION_REQUIRED");
+});
 
 test("MCP writes create records, notify listeners, audit changes and reject stale approval versions", async () => {
   const hint = vi.fn();

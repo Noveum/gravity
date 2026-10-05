@@ -88,7 +88,10 @@ if (
   protectedResource.status !== 401 ||
   !protectedResource.headers
     .get("www-authenticate")
-    ?.includes(`${origin.origin}/.well-known/oauth-protected-resource/mcp`)
+    ?.includes(`${origin.origin}/.well-known/oauth-protected-resource/mcp`) ||
+  !["crm:read", "crm:write", "crm:send"].every((scope) =>
+    protectedResource.headers.get("www-authenticate")?.includes(scope),
+  )
 )
   throw new Error("DEPLOYMENT_OAUTH_CHALLENGE_FAILED");
 console.log(

@@ -66,7 +66,7 @@ const server = createServer(async (incoming, outgoing) => {
         },
         {
           resource: `${origin}/mcp`,
-          requiredScopes: ["crm:read", "crm:write"],
+          requiredScopes: ["crm:read", "crm:write", "crm:send"],
         },
       )(request);
     else
@@ -172,7 +172,7 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      scope: "openid offline_access crm:read crm:write",
+      scope: "openid offline_access crm:read crm:write crm:send",
     },
     false,
   );
@@ -191,7 +191,7 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
       client_id: clientId,
       response_type: "code",
       redirect_uri: `${origin}/callback`,
-      scope: "openid offline_access crm:read crm:write",
+      scope: "openid offline_access crm:read crm:write crm:send",
       resource: `${origin}/mcp`,
       state,
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
@@ -256,6 +256,17 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
   expect((await principalForVerifiedToken(local.db, claims)).readOnly).toBe(
     false,
   );
+  expect((await principalForVerifiedToken(local.db, claims)).canSend).toBe(
+    true,
+  );
+  expect(
+    (
+      await principalForVerifiedToken(local.db, {
+        ...claims,
+        scope: "crm:read crm:write",
+      })
+    ).canSend,
+  ).toBe(false);
   expect(
     (
       await principalForVerifiedToken(local.db, {
@@ -430,7 +441,7 @@ test("official MCP client discovers OAuth, registers, completes PKCE and reads a
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      scope: "crm:read crm:write offline_access",
+      scope: "crm:read crm:write crm:send offline_access",
     },
     state: () => "sdk-state",
     clientInformation: () => clientInformation,

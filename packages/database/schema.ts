@@ -610,6 +610,78 @@ export const messages = pgTable(
     }),
   ],
 ).enableRLS();
+// A durable claim is committed before calling a provider. Unknown outcomes never retry a send.
+export const deliveries = pgTable(
+  "deliveries",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    relationshipId: uuid("relationship_id").notNull(),
+    ownerId: text("owner_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    touchId: uuid("touch_id"),
+    actionId: uuid("action_id"),
+    sourceVersion: integer("source_version").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    channel: text("channel", { enum: ["gmail", "linkedin"] }).notNull(),
+    recipient: text("recipient").notNull(),
+    draft: text("draft").notNull(),
+    subject: text("subject").notNull().default(""),
+    externalThreadId: text("external_thread_id"),
+    externalMessageId: text("external_message_id"),
+    status: text("status", {
+      enum: ["sending", "unknown", "accepted", "sent", "failed"],
+    }).notNull(),
+    errorCode: text("error_code"),
+    createdAt: createdAt(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.organizationId, t.ownerId, t.idempotencyKey),
+    uniqueIndex("deliveries_touch_claim")
+      .on(t.touchId)
+      .where(sql`${t.status} <> 'failed'`),
+    uniqueIndex("deliveries_action_claim")
+      .on(t.actionId)
+      .where(sql`${t.status} <> 'failed'`),
+    index("deliveries_sender_day").on(t.organizationId, t.ownerId, t.createdAt),
+    check(
+      "delivery_source",
+      sql`(${t.touchId} IS NOT NULL) <> (${t.actionId} IS NOT NULL)`,
+    ),
+    check(
+      "delivery_status",
+      sql`${t.status} IN ('sending', 'unknown', 'accepted', 'sent', 'failed')`,
+    ),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.relationshipId],
+      foreignColumns: [
+        relationships.organizationId,
+        relationships.productId,
+        relationships.id,
+      ],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.touchId],
+      foreignColumns: [touches.organizationId, touches.productId, touches.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.actionId],
+      foreignColumns: [actions.organizationId, actions.productId, actions.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.connectionId],
+      foreignColumns: [connections.organizationId, connections.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.ownerId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+  ],
+).enableRLS();
 export const pipelines = pgTable(
   "pipelines",
   {

@@ -14,10 +14,12 @@ Contracts are currently material documents. There is no dedicated contract lifec
 
 ## Verification
 
-- 506 tests pass; two platform-specific tests remain skipped, across 46 test files.
+- 506 tests pass; two optional local postgres-js driver tests remain skipped (GRAVITY_POSTGRES_TEST_URL was not supplied), across 46 test files.
 - Real stateless MCP transport tests exercise complete tool discovery/schema generation, record edits/archive/restore, sequence creation/update/enrollment/dry-run, touch edits/approval/invalidation/skip/reopen/pause/stop, atomic follow-up planning, contact policies/preferences, workspace creation without grant widening, PDF byte/hash round trips, provider-setup redaction, connection ownership, provider OAuth initiation and grant revocation.
 - HTTP-created sequences are read through MCP against the same SQL database; the existing official SDK OAuth/PKCE/write/isolation/refresh/revocation tests still pass.
 - TypeScript, Biome, production build, built public-site checks, dependency audit and installed-license inventory pass.
 - No new dependency, database schema/migration, paid service, runtime size increase or outbound message was introduced.
 
 These results verify code and the local protocol/SQL flows. Newly added write operations still require a fresh authenticated production/client qualification; anonymous challenge/readiness checks alone do not prove a live write. Reconnect a cached or read-only client at `https://gravity.noveum.ai/mcp`, consent to `crm:read crm:write`, then inspect `get_me`, `get_capabilities` and `tools/list`.
+
+This records PR #19. The subsequent [permissions and sending implementation](mcp-permissions-2026-10-06.md) adds explicit outbound dispatch, a send scope, agent instructions, resources and prompts; its verification supersedes the earlier tool count and outbound status.

@@ -11,6 +11,7 @@ export interface DraftSubject {
   title: string;
   email: string | null;
   companyName: string | null;
+  linkedinUrl?: string;
 }
 
 export async function draftSubject(
@@ -18,7 +19,7 @@ export async function draftSubject(
   person: Pick<
     typeof s.people.$inferSelect,
     "id" | "organizationId" | "name" | "title" | "email" | "companyId"
-  >,
+  > & { linkedinUrl?: string },
 ): Promise<DraftSubject> {
   const [company] = person.companyId
     ? await db
@@ -37,6 +38,7 @@ export async function draftSubject(
     title: person.title,
     email: person.email,
     companyName: company?.name ?? null,
+    linkedinUrl: person.linkedinUrl ?? "",
   };
 }
 
@@ -56,6 +58,7 @@ export function draftHash(
         title: input.title,
         email: input.email,
         companyName: input.companyName,
+        linkedinUrl: input.linkedinUrl ?? "",
         channel: input.channel,
         productId: input.productId,
       }),

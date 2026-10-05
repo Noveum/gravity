@@ -18,6 +18,9 @@ export async function GET() {
     await db.execute(sql`SELECT id FROM public.session LIMIT 0`);
     await db.execute(sql`SELECT id FROM public.pipelines LIMIT 0`);
     await db.execute(
+      sql`SELECT id, status, request_hash FROM public.deliveries LIMIT 0`,
+    );
+    await db.execute(
       sql`SELECT owner_id, probability, expected_close_date, closed_at FROM public.opportunities LIMIT 0`,
     );
     isReady = true;

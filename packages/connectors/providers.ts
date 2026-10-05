@@ -278,6 +278,35 @@ const gmailText = (part: GmailPart): string =>
   part.mimeType === "text/plain" && part.body?.data
     ? Buffer.from(part.body.data, "base64url").toString("utf8")
     : (part.parts ?? []).map(gmailText).filter(Boolean).join("\n");
+// Decode RFC 2047 words before comparing or displaying subjects. Adjacent encoded
+// words may be folded; their intervening whitespace is not part of the subject.
+export function decodeMailHeader(value: string) {
+  return value
+    .replace(/(\?=)[\t \r\n]+(?==\?)/g, "$1")
+    .replace(
+      /=\?([^?]+)\?([bq])\?([^?]*)\?=/gi,
+      (word, charset, encoding, content) => {
+        try {
+          const bytes =
+            encoding.toLowerCase() === "b"
+              ? Buffer.from(content, "base64")
+              : Buffer.from(
+                  content
+                    .replace(/_/g, " ")
+                    .replace(
+                      /=([a-f0-9]{2})/gi,
+                      (_match: string, hex: string) =>
+                        String.fromCharCode(Number.parseInt(hex, 16)),
+                    ),
+                  "latin1",
+                );
+          return new TextDecoder(charset, { fatal: true }).decode(bytes);
+        } catch {
+          return word;
+        }
+      },
+    );
+}
 export function normalizeGmail(
   value: unknown,
   selfEmail: string,
@@ -306,7 +335,7 @@ export function normalizeGmail(
     externalId: mail.id,
     threadId: mail.threadId,
     kind: "message",
-    title: clip(header("subject"), 1000),
+    title: clip(decodeMailHeader(header("subject")), 1000),
     body: clip(gmailText(mail.payload) || mail.snippet),
     occurredAt: new Date(Number(mail.internalDate)).toISOString(),
     direction: outgoing ? "outbound" : "inbound",

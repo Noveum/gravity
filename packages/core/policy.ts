@@ -8,6 +8,8 @@ export interface Principal {
   organizationId?: string;
   productIds?: string[];
   readOnly?: boolean;
+  // Set only from a verified OAuth scope. A historical read/write grant never authorizes dispatch.
+  canSend?: boolean;
 }
 // A deliberate organization-wide grant. Empty and historical UUID lists stay restricted.
 export const allProductsGrant = ["*"];

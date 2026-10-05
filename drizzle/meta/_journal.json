@@ -43,6 +43,13 @@
       "when": 1791033580433,
       "tag": "0005_peaceful_ink",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791120722715,
+      "tag": "0006_server_database_access",
+      "breakpoints": true
     }
   ]
 }

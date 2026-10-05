@@ -20,7 +20,7 @@ No Unipile API key or Gmail mailbox refresh token is consumed by the foundation 
 
 The social-login callback paths are `/api/auth/callback/google` and `/api/auth/callback/github`, under the exact configured origin. Register a distinct CRM client or explicitly review an additional callback in an existing app. Do not copy credentials from another project into code. Gmail connection scopes/callbacks will be separate from login, and require the Google verification/security requirements relevant to the chosen scope.
 
-Review `drizzle/` before applying `bun run db:migrate` to the supplied database. Confirm database/project/region, backups, restore procedure, pooling and least-privileged access first. Never use `db:seed` on a real database. Build with `bun run build`, then run on Node with production environment variables. Vercel production verification is still a roadmap gate.
+Review `drizzle/` before applying `bun run db:migrate` to the supplied database. Confirm database/project/region, backups, restore procedure, pooling and least-privileged access first. Never use `db:seed` on a real database. Build with `bun run build`, then run on Node with production environment variables. See [Supabase PostgreSQL](supabase.md) for separate migration/runtime credentials, verified TLS, RLS, recovery and the production health check. Provider sign-in and client consent still require qualification on the actual production origin.
 
 ## Workspace onboarding
 

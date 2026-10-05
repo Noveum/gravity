@@ -174,7 +174,7 @@
   "signInSubtitle": "Your relationships, with the context for the next step.",
   "googleSignIn": "Continue with Google",
   "githubSignIn": "Continue with GitHub",
-  "authUnavailable": "Configure the production database and authentication credentials to enable sign-in.",
+  "authUnavailable": "Sign-in is not configured yet. Your administrator needs to enable Google or GitHub login.",
   "openDemo": "Open local demo",
   "authorize": "Choose assistant access",
   "authorizeDescription": "Choose the organization and products this assistant can read. It cannot approve drafts or send messages.",

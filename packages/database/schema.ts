@@ -13,6 +13,7 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import { serverAccessPolicy } from "./access-policy";
 
 export * from "./auth-schema";
 
@@ -28,13 +29,17 @@ const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const version = () => integer("version").notNull().default(1);
 
-export const organizations = pgTable("organizations", {
-  id: id(),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  timezone: text("timezone").notNull().default("UTC"),
-  createdAt: createdAt(),
-});
+export const organizations = pgTable(
+  "organizations",
+  {
+    id: id(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull().unique(),
+    timezone: text("timezone").notNull().default("UTC"),
+    createdAt: createdAt(),
+  },
+  () => [serverAccessPolicy()],
+).enableRLS();
 export const memberships = pgTable(
   "memberships",
   {
@@ -48,8 +53,8 @@ export const memberships = pgTable(
       .default("member"),
     active: boolean("active").notNull().default(true),
   },
-  (t) => [unique().on(t.organizationId, t.userId)],
-);
+  (t) => [serverAccessPolicy(), unique().on(t.organizationId, t.userId)],
+).enableRLS();
 export const products = pgTable(
   "products",
   {
@@ -60,10 +65,11 @@ export const products = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.id),
     unique().on(t.organizationId, t.name),
   ],
-);
+).enableRLS();
 export const productMemberships = pgTable(
   "product_memberships",
   {
@@ -74,6 +80,7 @@ export const productMemberships = pgTable(
       .references(() => user.id),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.productId, t.userId),
     foreignKey({
       columns: [t.organizationId, t.productId],
@@ -84,7 +91,7 @@ export const productMemberships = pgTable(
       foreignColumns: [memberships.organizationId, memberships.userId],
     }),
   ],
-);
+).enableRLS();
 export const companies = pgTable(
   "companies",
   {
@@ -95,8 +102,8 @@ export const companies = pgTable(
     description: text("description").notNull().default(""),
     createdAt: createdAt(),
   },
-  (t) => [unique().on(t.organizationId, t.id)],
-);
+  (t) => [serverAccessPolicy(), unique().on(t.organizationId, t.id)],
+).enableRLS();
 export const people = pgTable(
   "people",
   {
@@ -111,13 +118,14 @@ export const people = pgTable(
     version: version(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.id),
     foreignKey({
       columns: [t.organizationId, t.companyId],
       foreignColumns: [companies.organizationId, companies.id],
     }),
   ],
-);
+).enableRLS();
 export const relationships = pgTable(
   "relationships",
   {
@@ -131,6 +139,7 @@ export const relationships = pgTable(
     context: text("context").notNull().default(""),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.id),
     unique().on(t.organizationId, t.productId, t.id),
     unique().on(t.organizationId, t.productId, t.personId, t.purpose),
@@ -147,7 +156,7 @@ export const relationships = pgTable(
       foreignColumns: [memberships.organizationId, memberships.userId],
     }),
   ],
-);
+).enableRLS();
 export const sequences = pgTable(
   "sequences",
   {
@@ -168,13 +177,14 @@ export const sequences = pgTable(
       .notNull(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.productId, t.id),
     foreignKey({
       columns: [t.organizationId, t.productId],
       foreignColumns: [products.organizationId, products.id],
     }),
   ],
-);
+).enableRLS();
 export const enrollments = pgTable(
   "enrollments",
   {
@@ -190,6 +200,7 @@ export const enrollments = pgTable(
     version: version(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.productId, t.id),
     foreignKey({
       columns: [t.organizationId, t.productId, t.relationshipId],
@@ -208,7 +219,7 @@ export const enrollments = pgTable(
       ],
     }),
   ],
-);
+).enableRLS();
 export const actions = pgTable(
   "actions",
   {
@@ -240,6 +251,7 @@ export const actions = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.productId, t.id),
     index().on(t.organizationId, t.productId, t.status, t.dueAt),
     foreignKey({
@@ -271,7 +283,7 @@ export const actions = pgTable(
       foreignColumns: [memberships.organizationId, memberships.userId],
     }),
   ],
-);
+).enableRLS();
 export const connections = pgTable(
   "connections",
   {
@@ -292,6 +304,7 @@ export const connections = pgTable(
       .default([]),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.id),
     unique().on(t.provider, t.externalAccountId),
     foreignKey({
@@ -299,7 +312,7 @@ export const connections = pgTable(
       foreignColumns: [memberships.organizationId, memberships.userId],
     }),
   ],
-);
+).enableRLS();
 export const conversations = pgTable(
   "conversations",
   {
@@ -316,6 +329,7 @@ export const conversations = pgTable(
     channel: text("channel", { enum: ["gmail", "linkedin"] }).notNull(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.productId, t.id),
     unique().on(t.connectionId, t.externalThreadId),
     foreignKey({
@@ -335,7 +349,7 @@ export const conversations = pgTable(
       foreignColumns: [memberships.organizationId, memberships.userId],
     }),
   ],
-);
+).enableRLS();
 export const messages = pgTable(
   "messages",
   {
@@ -351,6 +365,7 @@ export const messages = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.connectionId, t.providerMessageId),
     foreignKey({
       columns: [t.organizationId, t.productId, t.conversationId],
@@ -365,7 +380,7 @@ export const messages = pgTable(
       foreignColumns: [connections.organizationId, connections.id],
     }),
   ],
-);
+).enableRLS();
 export const stages = pgTable(
   "stages",
   {
@@ -376,13 +391,14 @@ export const stages = pgTable(
     position: integer("position").notNull(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.productId, t.id),
     foreignKey({
       columns: [t.organizationId, t.productId],
       foreignColumns: [products.organizationId, products.id],
     }),
   ],
-);
+).enableRLS();
 export const folders = pgTable(
   "folders",
   {
@@ -394,6 +410,7 @@ export const folders = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.productId, t.id),
     foreignKey({
       columns: [t.organizationId, t.productId],
@@ -408,7 +425,7 @@ export const folders = pgTable(
       sql`${t.parentId} IS NULL OR ${t.parentId} <> ${t.id}`,
     ),
   ],
-);
+).enableRLS();
 export const assets = pgTable(
   "assets",
   {
@@ -429,6 +446,7 @@ export const assets = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.organizationId, t.productId, t.id),
     foreignKey({
       columns: [t.organizationId, t.productId, t.folderId],
@@ -440,7 +458,7 @@ export const assets = pgTable(
     }),
     check("asset_size_valid", sql`${t.size} > 0 AND ${t.size} <= 10485760`),
   ],
-);
+).enableRLS();
 export const assetStages = pgTable(
   "asset_stages",
   {
@@ -450,6 +468,7 @@ export const assetStages = pgTable(
     stageId: uuid("stage_id").notNull(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.assetId, t.stageId),
     foreignKey({
       columns: [t.organizationId, t.productId, t.assetId],
@@ -460,7 +479,7 @@ export const assetStages = pgTable(
       foreignColumns: [stages.organizationId, stages.productId, stages.id],
     }),
   ],
-);
+).enableRLS();
 export const evidence = pgTable(
   "evidence",
   {
@@ -477,6 +496,7 @@ export const evidence = pgTable(
     observedAt: createdAt(),
   },
   (t) => [
+    serverAccessPolicy(),
     foreignKey({
       columns: [t.organizationId, t.productId, t.relationshipId],
       foreignColumns: [
@@ -486,7 +506,7 @@ export const evidence = pgTable(
       ],
     }),
   ],
-);
+).enableRLS();
 export const meetings = pgTable(
   "meetings",
   {
@@ -505,6 +525,7 @@ export const meetings = pgTable(
     version: version(),
   },
   (t) => [
+    serverAccessPolicy(),
     foreignKey({
       columns: [t.organizationId, t.productId, t.relationshipId],
       foreignColumns: [
@@ -518,7 +539,7 @@ export const meetings = pgTable(
       foreignColumns: [actions.organizationId, actions.productId, actions.id],
     }),
   ],
-);
+).enableRLS();
 export const opportunities = pgTable(
   "opportunities",
   {
@@ -533,6 +554,7 @@ export const opportunities = pgTable(
     version: version(),
   },
   (t) => [
+    serverAccessPolicy(),
     foreignKey({
       columns: [t.organizationId, t.productId, t.relationshipId],
       foreignColumns: [
@@ -546,7 +568,7 @@ export const opportunities = pgTable(
       foreignColumns: [stages.organizationId, stages.productId, stages.id],
     }),
   ],
-);
+).enableRLS();
 export const changeEvents = pgTable(
   "change_events",
   {
@@ -560,6 +582,7 @@ export const changeEvents = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    serverAccessPolicy(),
     index().on(t.organizationId, t.createdAt),
     foreignKey({
       columns: [t.organizationId, t.productId, t.sourceConversationId],
@@ -574,7 +597,7 @@ export const changeEvents = pgTable(
       foreignColumns: [products.organizationId, products.id],
     }),
   ],
-);
+).enableRLS();
 
 export const mcpGrants = pgTable(
   "mcp_grants",
@@ -589,12 +612,13 @@ export const mcpGrants = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    serverAccessPolicy(),
     foreignKey({
       columns: [t.organizationId, t.userId],
       foreignColumns: [memberships.organizationId, memberships.userId],
     }),
   ],
-);
+).enableRLS();
 export const oauthSelections = pgTable(
   "oauth_selections",
   {
@@ -604,8 +628,11 @@ export const oauthSelections = pgTable(
       .notNull()
       .references(() => mcpGrants.id),
   },
-  (t) => [primaryKey({ columns: [t.sessionId, t.flowKey] })],
-);
+  (t) => [
+    serverAccessPolicy(),
+    primaryKey({ columns: [t.sessionId, t.flowKey] }),
+  ],
+).enableRLS();
 export const connectorEvents = pgTable(
   "connector_events",
   {
@@ -620,10 +647,11 @@ export const connectorEvents = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    serverAccessPolicy(),
     unique().on(t.connectionId, t.providerEventId),
     foreignKey({
       columns: [t.organizationId, t.connectionId],
       foreignColumns: [connections.organizationId, connections.id],
     }),
   ],
-);
+).enableRLS();

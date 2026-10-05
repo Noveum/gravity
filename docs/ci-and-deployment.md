@@ -18,4 +18,8 @@ To activate after reviewing the production gates:
 
 Do not independently enable automatic Git production deployments while assuming they wait for this GitHub CI; that needs an explicit deployment gate. [Vercel Git behavior](https://vercel.com/docs/git/vercel-for-github).
 
-Direct authenticated object uploads/downloads must replace function-proxied large transfers before files are enabled on Vercel. Provider connection UX, encrypted credentials, durable ingestion, historical-event handling, invites and production backups remain unfinished. No production project, credentials, database, domain transfer or paid service was created by this release preparation.
+## Managed PostgreSQL deployment
+
+The database setup adds Supabase migrations, a non-owner runtime role, certificate verification, table RLS and a sanitized `/api/health` endpoint. A separate Vercel project can run this foundation against managed PostgreSQL. The deployment configuration disables automatic Git deployments; a push must not bypass the repository checks or silently apply external migrations. Production application environments receive only runtime credentials; schema migrations are reviewed and applied separately. Preview environments still require an isolated database and callback origin. See [Supabase setup](supabase.md).
+
+Direct authenticated object uploads/downloads must replace function-proxied large transfers before files are enabled on Vercel. Provider connection UX, encrypted credentials, durable ingestion, historical-event handling and invites remain unfinished. Provider login, two-user permissions and actual assistant consent need live qualification before relying on the installation for real sales work. Daily database backups do not cover uploaded file contents. This setup does not upgrade compute, enable paid backup/IPv4 add-ons, or transfer the existing Twenty domain.

@@ -45,11 +45,7 @@ export class ProviderConfigurationService {
   async own(principal: Principal, organizationId: string) {
     if (
       principal.source !== "session" &&
-      !(
-        principal.source === "mcp" &&
-        principal.readOnly === false &&
-        principal.organizationId
-      )
+      !(principal.source === "mcp" && principal.organizationId)
     )
       throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
     await authorize(this.db, principal, organizationId);

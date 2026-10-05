@@ -196,6 +196,16 @@ export function externalMessageConflict(error: unknown): boolean {
 async function assertTouchOpen(db: Reader, touch: Touch) {
   if (touch.status === "sent") throw await sentReport(db, touch);
   if (!isOpen(touch)) throw new DomainError("TOUCH_CLOSED", 409);
+  const [delivery] = await db
+    .select({ id: s.deliveries.id })
+    .from(s.deliveries)
+    .where(
+      and(
+        eq(s.deliveries.touchId, touch.id),
+        inArray(s.deliveries.status, ["sending", "unknown", "accepted"]),
+      ),
+    );
+  if (delivery) throw new DomainError("DELIVERY_IN_PROGRESS", 409);
 }
 
 export async function readContactRules(db: Reader, organizationId: string) {
@@ -268,7 +278,22 @@ async function sentOnDay(
         lt(s.touches.sentAt, new Date(end)),
       ),
     );
-  return row?.count ?? 0;
+  const [reservations] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(s.deliveries)
+    .where(
+      and(
+        eq(s.deliveries.organizationId, organizationId),
+        eq(s.deliveries.ownerId, senderId),
+        or(
+          inArray(s.deliveries.status, ["sending", "unknown", "accepted"]),
+          and(eq(s.deliveries.status, "sent"), isNull(s.deliveries.touchId)),
+        ),
+        gte(s.deliveries.createdAt, new Date(start)),
+        lt(s.deliveries.createdAt, new Date(end)),
+      ),
+    );
+  return (row?.count ?? 0) + (reservations?.count ?? 0);
 }
 
 async function expireOpenTouches(
@@ -589,6 +614,22 @@ export async function sendGate(db: Reader, touch: Touch, now: number) {
     now,
   );
   return gate(touch, row.person);
+}
+
+export async function outboundGate(
+  db: Reader,
+  organizationId: string,
+  senderId: string,
+  person: Pick<
+    typeof s.people.$inferSelect,
+    "id" | "doNotContact" | "timeZone"
+  >,
+  now: number,
+) {
+  return (await gateContext(db, organizationId, [person.id], now))(
+    { senderId },
+    person,
+  );
 }
 
 export async function pauseForReply(
@@ -1368,8 +1409,7 @@ export class OutreachService {
       principal,
       input,
       async ({ tx, touch, enrollment, relationship, person }) => {
-        if (touch.status === "sent") throw await sentReport(tx, touch);
-        if (!isOpen(touch)) throw new DomainError("TOUCH_CLOSED", 409);
+        await assertTouchOpen(tx, touch);
         if (input.version !== undefined && touch.version !== input.version)
           throw new DomainError("CONFLICT", 409);
         if (person.doNotContact) throw new DomainError("DO_NOT_CONTACT", 409);

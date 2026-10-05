@@ -5,6 +5,14 @@ import {
   unipileSettingsInput,
 } from "../connectors/configuration";
 import {
+  deliverySchema,
+  OutboundService,
+  reconcileDeliverySchema,
+  sendActionSchema,
+  sendReadinessSchema,
+  sendTouchSchema,
+} from "../connectors/outbound";
+import {
   connectInput,
   IntegrationService,
   integrationOverviewInput,
@@ -70,6 +78,7 @@ export interface Operation {
   schema: z.ZodObject;
   idempotent: boolean;
   destructive: boolean;
+  permission?: "crm:send";
   execute: (context: OperationContext, input: unknown) => Promise<unknown>;
 }
 
@@ -145,6 +154,72 @@ export function materialBytes(value: string) {
 }
 
 export const operations: Operation[] = [
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "permissions",
+    name: "get_permission_audit",
+    description:
+      "Audit effective OAuth permissions, administrator role, product grant and per-operation requirements. Use before configuring products, policies, provider connections, sequences or sending. Owner/product checks are evaluated again on each specific record.",
+    schema: scopeSchema,
+    run: (c, input) => permissionAudit(c, input.organizationId),
+  }),
+  operation({
+    api: "outreach",
+    method: "GET",
+    operation: "send-readiness",
+    name: "get_send_readiness",
+    description:
+      "Preview an owned touch or follow-up send: current version, approved draft, recipient, connection and blocking policies. Does not send. Supply exactly one touchId/actionId, current version and your connectionId. Gmail drafts must begin with Subject: followed by a blank line and the body.",
+    schema: sendReadinessSchema,
+    run: (c, input) => new OutboundService(c.db).readiness(c.principal, input),
+  }),
+  operation({
+    api: "outreach",
+    method: "GET",
+    operation: "delivery",
+    name: "get_delivery",
+    description:
+      "Read your durable delivery receipt/status. Unknown means the provider may have sent it; do not retry with a different idempotency key.",
+    schema: deliverySchema,
+    run: (c, input) => new OutboundService(c.db).get(c.principal, input),
+  }),
+  operation({
+    api: "outreach",
+    method: "POST",
+    operation: "send-touch",
+    name: "send_touch",
+    permission: "crm:send",
+    idempotent: true,
+    description:
+      "Actually send the exact approved sequence touch through your Gmail or LinkedIn account. Requires crm:send, current version, due time and contact-policy eligibility. Gmail needs separate gmail.send consent. Reuse the same idempotencyKey for retries; inspect get_delivery after unknown outcomes. Approval/enrollment alone never sends.",
+    schema: sendTouchSchema,
+    run: (c, input) => new OutboundService(c.db).send(c.principal, input),
+  }),
+  operation({
+    api: "outreach",
+    method: "POST",
+    operation: "send-action",
+    name: "send_action",
+    permission: "crm:send",
+    idempotent: true,
+    description:
+      "Actually send an owned, approved follow-up/reply using your connected Gmail or LinkedIn account. Requires crm:send and current version; supply the same idempotencyKey on retry. Source conversation ownership, opt-outs and contact policies apply. Gmail draft format: Subject: title, blank line, body.",
+    schema: sendActionSchema,
+    run: (c, input) => new OutboundService(c.db).send(c.principal, input),
+  }),
+  operation({
+    api: "outreach",
+    method: "POST",
+    operation: "reconcile-delivery",
+    name: "reconcile_delivery",
+    permission: "crm:send",
+    idempotent: true,
+    description:
+      "Verify a provider receipt for an ambiguous delivery without resending. Gmail searches its unique Message-ID. LinkedIn requires an externalMessageId in the original chat; a missing receipt leaves the outcome unknown, never authorizes a retry.",
+    schema: reconcileDeliverySchema,
+    run: (c, input) => new OutboundService(c.db).reconcile(c.principal, input),
+  }),
   operation({
     api: "crm",
     method: "GET",
@@ -887,12 +962,118 @@ export function operationInput(item: Operation) {
   const { organizationId: _organizationId, ...shape } = item.schema.shape;
   return z.object(shape);
 }
+const adminOperations = new Set([
+  "create_workspace",
+  "create_organization",
+  "create_product",
+  "create_pipeline",
+  "update_contact_rules",
+]);
+const allProductOperations = new Set([
+  "create_workspace",
+  "create_organization",
+  "create_product",
+  "update_contact_rules",
+  "configure_unipile",
+  "remove_unipile",
+]);
+const ownerOperations = new Set([
+  "get_integrations",
+  "connect_integration",
+  "sync_integration",
+  "disconnect_integration",
+  "link_import",
+  "ignore_import",
+  "configure_unipile",
+  "remove_unipile",
+  "revoke_assistant",
+  "get_delivery",
+  "get_send_readiness",
+  "send_touch",
+  "send_action",
+  "reconcile_delivery",
+]);
+export function operationRequirements(item: Operation) {
+  return {
+    scopes:
+      item.method === "GET"
+        ? ["crm:read"]
+        : [
+            "crm:read",
+            "crm:write",
+            ...(item.permission ? [item.permission] : []),
+          ],
+    administrator: adminOperations.has(item.name),
+    allProducts: allProductOperations.has(item.name),
+    currentAccountOrSourceOwner: ownerOperations.has(item.name),
+    productAuthorization: true,
+  };
+}
+export function operationAvailable(
+  item: Operation,
+  principal: Principal,
+  role: string,
+) {
+  const requirements = operationRequirements(item);
+  return (
+    (item.method === "GET" ||
+      principal.source === "session" ||
+      principal.readOnly === false) &&
+    (!item.permission ||
+      principal.source === "session" ||
+      principal.canSend === true) &&
+    (!requirements.administrator || role === "admin") &&
+    (!requirements.allProducts || principal.productIds === undefined)
+  );
+}
+export async function permissionAudit(
+  context: OperationContext,
+  organizationId: string,
+) {
+  const { membership, products } = await authorize(
+    context.db,
+    context.principal,
+    organizationId,
+  );
+  const writable =
+    context.principal.source === "session" ||
+    context.principal.readOnly === false;
+  const canSend =
+    context.principal.source === "session" ||
+    (writable && context.principal.canSend === true);
+  return {
+    organizationId,
+    userId: context.principal.userId,
+    role: membership.role,
+    allProducts: context.principal.productIds === undefined,
+    productIds: products.map((product) => product.id),
+    permissions: [
+      "crm:read",
+      ...(writable ? ["crm:write"] : []),
+      ...(canSend ? ["crm:send"] : []),
+    ],
+    providerConsentSeparate: true,
+    currentMembershipRequired: true,
+    deploymentSecretsExposed: false,
+    operations: operations.map((item) => ({
+      name: item.name,
+      api: `/api/${item.api}`,
+      method: item.method,
+      operation: item.operation,
+      available: operationAvailable(item, context.principal, membership.role),
+      requirements: operationRequirements(item),
+      description: item.description,
+    })),
+  };
+}
 export async function executeMcpOperation(
   item: Operation,
   context: OperationContext,
   organizationId: string,
   input: unknown,
 ) {
+  if (item.permission === "crm:send" && context.principal.canSend !== true)
+    throw new DomainError("SEND_PERMISSION_REQUIRED", 403);
   await authorize(
     context.db,
     context.principal,

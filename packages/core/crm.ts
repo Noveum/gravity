@@ -1079,6 +1079,16 @@ export class CrmService {
       if (!action) throw new DomainError("NOT_FOUND", 404);
       if (action.version !== input.version)
         throw new DomainError("CONFLICT", 409);
+      const [dispatch] = await tx
+        .select({ id: s.deliveries.id })
+        .from(s.deliveries)
+        .where(
+          and(
+            eq(s.deliveries.actionId, action.id),
+            inArray(s.deliveries.status, ["sending", "unknown", "accepted"]),
+          ),
+        );
+      if (dispatch) throw new DomainError("DELIVERY_IN_PROGRESS", 409);
       if (action.status === "completed")
         throw new DomainError("ACTION_COMPLETED", 409);
       if (action.status === "blocked" && input.command !== "rework")

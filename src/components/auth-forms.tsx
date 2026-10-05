@@ -724,9 +724,11 @@ export function Consent() {
               : selectedGrant.products.join(", ")}
           </p>
           <p>
-            {query.get("scope")?.split(" ").includes("crm:write")
-              ? t.consentReadWrite
-              : t.consentReadOnly}
+            {query.get("scope")?.split(" ").includes("crm:send")
+              ? t.consentReadWriteSend
+              : query.get("scope")?.split(" ").includes("crm:write")
+                ? t.consentReadWrite
+                : t.consentReadOnly}
           </p>
         </div>
       ) : (

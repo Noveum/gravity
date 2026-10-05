@@ -342,6 +342,10 @@ export function IntegrationCards({
             {provider === "gmail" && (
               <p className="connection-note">{t.mailboxSeparateLogin}</p>
             )}
+            {provider === "gmail" &&
+              rows.some(
+                (row) => row.status === "connected" && row.canSend === false,
+              ) && <p className="connection-note">{t.mailboxSendUpgrade}</p>}
             {provider === "linkedin" && (
               <details className="connection-guide">
                 <summary>{t.connectionSetup}</summary>
@@ -581,6 +585,7 @@ function ConnectDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [key, setKey] = useState("");
+  const [allowSending, setAllowSending] = useState(true);
   const [webhook, setWebhook] = useState<{
     webhookUrl: string;
     signingSecret: string;
@@ -673,6 +678,7 @@ function ConnectDialog({
                   productId: selected,
                   provider,
                   connectionId,
+                  ...(provider === "gmail" ? { allowSending } : {}),
                   ...(provider === "fireflies" ? { apiKey: key } : {}),
                 }),
               });
@@ -729,6 +735,20 @@ function ConnectDialog({
             </select>
           </label>
           <p className="muted">{t.defaultProductNote}</p>
+          {provider === "gmail" && (
+            <>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={allowSending}
+                  disabled={busy}
+                  onChange={(event) => setAllowSending(event.target.checked)}
+                />
+                {t.gmailSendingConsent}
+              </label>
+              <p className="muted">{t.gmailSendingConsentNote}</p>
+            </>
+          )}
           {provider === "fireflies" && (
             <label>
               {t.firefliesApiKey}

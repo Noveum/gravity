@@ -3,6 +3,7 @@ import { errorResponse, limitedBody } from "@crm/core/http";
 import { getDatabase } from "@crm/database/client";
 import { apiOperation } from "@crm/operations/catalog";
 export const runtime = "nodejs";
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
 export async function GET(request: Request) {

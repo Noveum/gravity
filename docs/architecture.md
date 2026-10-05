@@ -12,6 +12,8 @@ erDiagram
   PERSON ||--o{ RELATIONSHIP : participates
   PRODUCT ||--o{ RELATIONSHIP : contextualizes
   RELATIONSHIP ||--o{ ACTION : requires
+  RELATIONSHIP ||--o{ DELIVERY : dispatches
+  CONNECTION ||--o{ DELIVERY : owns
   RELATIONSHIP ||--o{ ENROLLMENT : progresses
   RELATIONSHIP ||--o{ OPPORTUNITY : qualifies
   RELATIONSHIP ||--o{ CONVERSATION : records
@@ -66,3 +68,7 @@ A queue row must explain person, company, product, owner, action, due time, owed
 For materials, use product folders with optional subfolders plus many-to-many stage relevance. A case study can apply to discovery and evaluation without duplicate copies. Product-global knowledge, persona tags, approved revision pointers, validity dates, and stage kits will let agents retrieve the right evidence while preserving provenance and release status. PDFs require extraction before their contents can be supplied to MCP.
 
 Live delivery and conflict semantics are detailed in [the requirements checklist](requirements.md#live-delivery-contract). The in-process bus only wakes an authorized SQL revision check; it is not a distributed message broker.
+
+## Shared business operations and explicit dispatch
+
+The HTTP business APIs and MCP execute the same operation registry. MCP initialization supplies instructions, permission resources and workflow prompts. Verified read/write/send scopes remain bound to the selected organization and products, current membership and account ownership. Approval, enrollment and sync never dispatch a message. An explicit send creates a durable delivery claim before the provider call; an accepted receipt survives interrupted CRM bookkeeping, while unknown outcomes cannot be automatically retried. See [the permission and recovery audit](mcp-permissions-2026-10-06.md).

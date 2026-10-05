@@ -106,7 +106,11 @@ test("credentials are authenticated, encrypted and bound to the organization, ow
 
 test("Google connects with scoped read-only consent, session binding, PKCE and one-time state", async () => {
   const service = new IntegrationService(local.db, authTransport);
-  const result = await service.connect(admin, { ...scope, provider: "gmail" });
+  const result = await service.connect(admin, {
+    ...scope,
+    provider: "gmail",
+    allowSending: false,
+  });
   const url = new URL(result.url ?? "");
   const state = url.searchParams.get("state") ?? "";
   expect(url.hostname).toBe("accounts.google.com");

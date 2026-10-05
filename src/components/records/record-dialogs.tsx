@@ -6,7 +6,7 @@ import { useState } from "react";
 import { label } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { pipelineStages } from "../crm/use-stage-moves";
-import { fromMinor, toMinor } from "../money";
+import { fromMinor, minorStep, toMinor } from "../money";
 import { RecordDialog, text } from "./record-dialog";
 
 type Snapshot = ClientSnapshot;
@@ -17,8 +17,6 @@ type Opportunity = Snapshot["opportunities"][number];
 
 const failure = ({ ok, error }: { ok: boolean; error?: string }) =>
   ok ? null : (error ?? "");
-
-export const localInputValue = zonedInputValue;
 
 export function PersonEditDialog({
   person,
@@ -362,6 +360,7 @@ export function OpportunityDialog({
 }) {
   const crm = useCrm();
   const snapshot = crm.data;
+  const [currency, setCurrency] = useState(opportunity?.currency ?? "USD");
   const [relationshipId, setRelationshipId] = useState(
     opportunity?.relationshipId ?? "",
   );
@@ -444,7 +443,7 @@ export function OpportunityDialog({
           name="amount"
           type="number"
           min={0}
-          step="0.01"
+          step={minorStep(currency)}
           inputMode="decimal"
           aria-describedby="amount-hint"
           defaultValue={
@@ -463,7 +462,8 @@ export function OpportunityDialog({
           name="currency"
           maxLength={3}
           pattern="[A-Za-z]{3}"
-          defaultValue={opportunity?.currency ?? "USD"}
+          value={currency}
+          onChange={(event) => setCurrency(event.target.value.toUpperCase())}
         />
       </label>
     </RecordDialog>

@@ -13,6 +13,11 @@ export function minorDigits(currency: string) {
   }
 }
 
+export function minorStep(currency: string) {
+  const digits = /^[A-Za-z]{3}$/.test(currency) ? minorDigits(currency) : 2;
+  return digits ? (10 ** -digits).toFixed(digits) : "1";
+}
+
 export function toMinor(value: string, currency: string) {
   if (!value.trim()) return null;
   const amount = Number(value);

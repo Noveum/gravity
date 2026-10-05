@@ -3,12 +3,12 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { eq } from "drizzle-orm";
 import { describe, expect, test, vi } from "vitest";
+import { zonedInputValue as localInputValue } from "../packages/core/calendar";
 import { RecordService } from "../packages/core/records";
 import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { requestJson } from "../src/components/client-api";
-import { localInputValue } from "../src/components/records/record-dialogs";
 import { browserNavigation } from "../src/components/shell/user-menu";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 
@@ -197,10 +197,13 @@ describe("fix round 1", () => {
       "Jonah Reed · API Marketplace",
     );
     await user.type(within(deal).getByLabelText(t.name), "Fictional yen deal");
-    await user.type(within(deal).getByLabelText(t.amount), "1250");
+    const amount = within(deal).getByLabelText(t.amount);
+    expect(amount.getAttribute("step")).toBe("0.01");
     const currency = within(deal).getByLabelText(t.currency);
     await user.clear(currency);
     await user.type(currency, "JPY");
+    expect(amount.getAttribute("step")).toBe("1");
+    await user.type(amount, "1250");
     fireEvent.click(within(deal).getByRole("button", { name: t.create }));
     expect(
       await screen.findByRole("button", { name: "Fictional yen deal" }),

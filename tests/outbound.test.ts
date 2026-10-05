@@ -826,3 +826,54 @@ test("mail subjects decode folded Unicode and quoted-printable words for replies
     "=?invalid-charset?B?YWJj?=",
   );
 });
+
+test("an owned sender can serve another granted product, while either missing product grant denies dispatch", async () => {
+  const account = await fixture();
+  const target = await fixture();
+  const input = { ...target.input, connectionId: account.connectionId };
+  for (const productIds of [[target.productId], [account.productId]]) {
+    await expect(
+      target.service.send({ ...principal, productIds }, input),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  }
+  expect(target.transport).not.toHaveBeenCalled();
+  const granted = {
+    ...principal,
+    productIds: [account.productId, target.productId],
+  };
+  expect((await target.service.readiness(granted, input)).ready).toBe(true);
+  expect((await target.service.send(granted, input)).status).toBe("sent");
+  const [history] = await local.db
+    .select()
+    .from(s.conversations)
+    .where(eq(s.conversations.connectionId, account.connectionId));
+  expect(history.productId).toBe(target.productId);
+  expect(history.relationshipId).toBe(target.relationshipId);
+  expect(history.ownerId).toBe(demoUser);
+});
+test("cross-product receipt verification also requires the sender account's default product grant", async () => {
+  const account = await fixture();
+  const target = await fixture();
+  const input = { ...target.input, connectionId: account.connectionId };
+  const transport = vi.fn<typeof fetch>(async (_url, init) =>
+    init?.method === "POST" ? json({}, 503) : json({ messages: [] }),
+  );
+  const service = new OutboundService(local.db, transport, clock);
+  const granted = {
+    ...principal,
+    productIds: [account.productId, target.productId],
+  };
+  const unknown = await service.send(granted, input);
+  expect(unknown.status).toBe("unknown");
+  await expect(
+    service.reconcile(
+      { ...principal, productIds: [target.productId] },
+      { organizationId: org, deliveryId: unknown.id },
+    ),
+  ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  expect(transport).toHaveBeenCalledTimes(1);
+  await expect(
+    service.reconcile(granted, { organizationId: org, deliveryId: unknown.id }),
+  ).rejects.toMatchObject({ code: "DELIVERY_OUTCOME_UNKNOWN" });
+  expect(transport).toHaveBeenCalledTimes(2);
+});

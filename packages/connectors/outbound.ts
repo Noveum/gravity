@@ -219,10 +219,18 @@ export class OutboundService {
           eq(s.connections.id, input.connectionId),
           eq(s.connections.organizationId, input.organizationId),
           eq(s.connections.ownerId, principal.userId),
-          eq(s.connections.productId, record.productId),
         ),
       );
-    if (!connection) throw new DomainError("NOT_FOUND", 404);
+    if (!connection?.productId) throw new DomainError("NOT_FOUND", 404);
+    // The default product scopes account access; explicitly linked context may
+    // belong to another product. Both authorizations are required.
+    await authorize(
+      db,
+      principal,
+      input.organizationId,
+      connection.productId,
+      lock,
+    );
     if (
       !["gmail", "linkedin"].includes(record.channel) ||
       connection.provider !==
@@ -874,7 +882,15 @@ export class OutboundService {
           eq(s.connections.status, "connected"),
         ),
       );
-    if (!connection) throw new DomainError("RECONNECT_REQUIRED", 422);
+    if (!connection?.productId)
+      throw new DomainError("RECONNECT_REQUIRED", 422);
+    await authorize(
+      this.db,
+      principal,
+      input.organizationId,
+      connection.productId,
+      true,
+    );
     const credentials = await this.credentials(connection);
     let receipt: {
       externalMessageId: string;

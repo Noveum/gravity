@@ -55,7 +55,7 @@ function useCrmState({
   const pathname = usePathname();
   const unfiltered = !useSearchParams().toString();
   const route = routeFor(pathname);
-  const { toasts, notify, dismiss } = useToasts();
+  const { toasts, notify, dismiss, pause, resume } = useToasts();
   const [organizations, setOrganizations] = useState(initialOrganizations);
   const [organizationId, setOrganizationId] = useState(initialOrganizationId);
   const [productId, setProductId] = useState(initialProductId);
@@ -311,6 +311,8 @@ function useCrmState({
     toasts,
     notify,
     dismiss,
+    pauseToasts: pause,
+    resumeToasts: resume,
     organizations,
     organizationId,
     currentOrg,

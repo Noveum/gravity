@@ -688,7 +688,7 @@
     },
     {
       "name": "@types/react-dom",
-      "version": "19.2.7",
+      "version": "19.3.0",
       "license": "MIT",
       "direct": true,
       "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"

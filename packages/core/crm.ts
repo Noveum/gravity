@@ -17,6 +17,31 @@ export const actionChangeSchema = scopeSchema.extend({
   command: z.enum(["save", "approve", "complete", "rework"]),
   draft: z.string().max(20000).optional(),
 });
+export const actionPlanSchema = scopeSchema.extend({
+  items: z
+    .array(
+      z
+        .object({
+          actionId: z.uuid(),
+          version: z.number().int().positive(),
+          status: z.enum(["open", "completed"]).optional(),
+          dueAt: z.iso.datetime().optional(),
+          ownerId: z.string().min(1).optional(),
+        })
+        .refine(
+          (item) =>
+            item.status !== undefined ||
+            item.dueAt !== undefined ||
+            item.ownerId !== undefined,
+        ),
+    )
+    .min(1)
+    .max(100)
+    .refine(
+      (items) =>
+        new Set(items.map((item) => item.actionId)).size === items.length,
+    ),
+});
 export const scheduleActionSchema = scopeSchema.extend({
   relationshipId: z.uuid(),
   ownerId: z.string().min(1),
@@ -705,24 +730,7 @@ export class CrmService {
         )
         .for("update");
       if (!action) throw new DomainError("NOT_FOUND", 404);
-      await authorize(
-        tx,
-        principal,
-        input.organizationId,
-        action.productId,
-        true,
-      );
-      if (action.sourceConversationId) {
-        const [source] = await tx
-          .select()
-          .from(s.conversations)
-          .where(eq(s.conversations.id, action.sourceConversationId));
-        if (
-          source.visibility === "private" &&
-          source.ownerId !== principal.userId
-        )
-          throw new DomainError("FORBIDDEN", 403);
-      }
+      await authorizeAction(tx, principal, action);
       if (action.version !== input.version)
         throw new DomainError("CONFLICT", 409);
       if (action.status === "completed")
@@ -780,6 +788,87 @@ export class CrmService {
         entityId: action.id,
       });
       return result;
+    });
+  }
+  async planActions(
+    principal: Principal,
+    input: z.infer<typeof actionPlanSchema>,
+  ) {
+    if (principal.source === "mcp")
+      throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
+    return this.db.transaction(async (tx) => {
+      const changed: (typeof s.actions.$inferSelect)[] = [];
+      for (const item of input.items) {
+        const [action] = await tx
+          .select()
+          .from(s.actions)
+          .where(
+            and(
+              eq(s.actions.id, item.actionId),
+              eq(s.actions.organizationId, input.organizationId),
+            ),
+          )
+          .for("update");
+        if (!action) throw new DomainError("NOT_FOUND", 404);
+        await authorizeAction(tx, principal, action);
+        if (action.version !== item.version)
+          throw new DomainError("CONFLICT", 409);
+        if (action.status === "blocked" && item.status)
+          throw new DomainError("REPLY_BLOCKED", 409);
+        if (action.status === "completed" && item.status !== "open")
+          throw new DomainError("ACTION_COMPLETED", 409);
+        if (item.ownerId) {
+          try {
+            await authorize(
+              tx,
+              { userId: item.ownerId, source: "session" },
+              input.organizationId,
+              action.productId,
+            );
+          } catch (error) {
+            if (error instanceof DomainError)
+              throw new DomainError("OWNER_NOT_ALLOWED", 403);
+            throw error;
+          }
+        }
+        const [result] = await tx
+          .update(s.actions)
+          .set({
+            ...(item.status ? { status: item.status } : {}),
+            ...(item.dueAt ? { dueAt: new Date(item.dueAt) } : {}),
+            ...(item.ownerId ? { ownerId: item.ownerId } : {}),
+            version: action.version + 1,
+          })
+          .where(
+            and(
+              eq(s.actions.id, action.id),
+              eq(s.actions.version, item.version),
+            ),
+          )
+          .returning();
+        if (!result) throw new DomainError("CONFLICT", 409);
+        const types = [
+          item.status === "completed" ? "action.complete" : "",
+          item.status === "open" && action.status === "completed"
+            ? "action.reopen"
+            : "",
+          item.dueAt ? "action.snooze" : "",
+          item.ownerId ? "action.assign" : "",
+        ].filter(Boolean);
+        if (types.length)
+          await tx.insert(s.changeEvents).values(
+            types.map((type) => ({
+              organizationId: action.organizationId,
+              productId: action.productId,
+              sourceConversationId: action.sourceConversationId,
+              actorId: principal.userId,
+              type,
+              entityId: action.id,
+            })),
+          );
+        changed.push(result);
+      }
+      return changed;
     });
   }
   async createFolder(
@@ -1006,3 +1095,18 @@ export type Snapshot = Awaited<ReturnType<CrmService["snapshot"]>>;
 export type PersonContext = Awaited<ReturnType<CrmService["context"]>>;
 
 export type CompanyContext = Awaited<ReturnType<CrmService["companyContext"]>>;
+
+async function authorizeAction(
+  db: Database,
+  principal: Principal,
+  action: typeof s.actions.$inferSelect,
+) {
+  await authorize(db, principal, action.organizationId, action.productId, true);
+  if (!action.sourceConversationId) return;
+  const [source] = await db
+    .select()
+    .from(s.conversations)
+    .where(eq(s.conversations.id, action.sourceConversationId));
+  if (source.visibility === "private" && source.ownerId !== principal.userId)
+    throw new DomainError("FORBIDDEN", 403);
+}

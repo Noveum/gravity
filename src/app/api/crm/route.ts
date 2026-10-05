@@ -2,6 +2,7 @@ import { assertMutationOrigin, currentPrincipal } from "@crm/auth/server";
 import { publishChange } from "@crm/core/changes";
 import {
   actionChangeSchema,
+  actionPlanSchema,
   CrmService,
   folderSchema,
   meetingChangeSchema,
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
       .enum([
         "workspace",
         "action",
+        "plan",
         "folder",
         "commitment",
         "organization",
@@ -89,26 +91,31 @@ export async function POST(request: Request) {
                   principal,
                   actionChangeSchema.parse(body),
                 )
-              : operation === "folder"
-                ? await service.createFolder(
+              : operation === "plan"
+                ? await service.planActions(
                     principal,
-                    folderSchema.parse(body),
+                    actionPlanSchema.parse(body),
                   )
-                : operation === "commitment"
-                  ? await service.acceptCommitment(
+                : operation === "folder"
+                  ? await service.createFolder(
                       principal,
-                      meetingChangeSchema.parse(body),
+                      folderSchema.parse(body),
                     )
-                  : operation === "organization"
-                    ? await service.createOrganization(
+                  : operation === "commitment"
+                    ? await service.acceptCommitment(
                         principal,
-                        nameSchema.parse(body.name),
+                        meetingChangeSchema.parse(body),
                       )
-                    : await service.createProduct(
-                        principal,
-                        z.uuid().parse(body.organizationId),
-                        nameSchema.parse(body.name),
-                      );
+                    : operation === "organization"
+                      ? await service.createOrganization(
+                          principal,
+                          nameSchema.parse(body.name),
+                        )
+                      : await service.createProduct(
+                          principal,
+                          z.uuid().parse(body.organizationId),
+                          nameSchema.parse(body.name),
+                        );
     const affected = result as { organizationId?: string; id?: string };
     publishChange(
       (operation === "workspace"

@@ -881,5 +881,13 @@
     "SYNC_COMPLETE": "Sync complete. Review imported context below.",
     "CONNECTION_DISCONNECTED": "Account disconnected. Imported CRM context is retained.",
     "IMPORT_REVIEWED": "Imported context reviewed."
-  }
+  },
+  "searchImports": "Search titles or participants\u2026",
+  "importProvider": "Import source",
+  "allImportProviders": "All sources",
+  "noImportsFound": "No imported items match this view.",
+  "importPage": "Page {page} \u00b7 {total} items to review",
+  "previousImports": "Previous",
+  "nextImports": "Next",
+  "integrationTimeZone": "Connection and import times use {zone}."
 }

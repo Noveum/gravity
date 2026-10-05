@@ -1,6 +1,16 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { appUrl } from "../auth/options";
 import { publishChange } from "../core/changes";
@@ -31,6 +41,13 @@ export const integrationScope = z.object({
   organizationId: z.uuid(),
   productId: z.uuid().optional(),
 });
+export const integrationOverviewInput = integrationScope.extend({
+  reviewQuery: z.string().trim().max(120).optional(),
+  reviewProvider: integrationProvider.optional(),
+  reviewCursor: z.string().min(1).max(1000).optional(),
+});
+const reviewPosition = z.object({ id: z.uuid(), createdAt: z.iso.datetime() });
+const reviewPageSize = 20;
 export const connectInput = integrationScope.extend({
   productId: z.uuid(),
   provider: integrationProvider,
@@ -107,6 +124,8 @@ export interface ConnectionOverview {
     productId: string;
     record: ImportRecord;
   }[];
+  reviewTotal: number;
+  nextReviewCursor: string | null;
 }
 export class IntegrationService {
   constructor(
@@ -115,9 +134,20 @@ export class IntegrationService {
   ) {}
   async overview(
     principal: Principal,
-    scope: z.infer<typeof integrationScope>,
+    input: z.infer<typeof integrationOverviewInput>,
   ): Promise<ConnectionOverview> {
     human(principal);
+    const scope = integrationOverviewInput.parse(input);
+    let position: z.infer<typeof reviewPosition> | undefined;
+    if (scope.reviewCursor) {
+      try {
+        position = reviewPosition.parse(
+          JSON.parse(Buffer.from(scope.reviewCursor, "base64url").toString()),
+        );
+      } catch {
+        throw new DomainError("INVALID_INPUT", 400);
+      }
+    }
     const allowed = await authorize(
       this.db,
       principal,
@@ -139,34 +169,65 @@ export class IntegrationService {
           ),
         ),
       );
-    const items = await this.db
+    const search = scope.reviewQuery?.replace(/[\\%_]/g, "\\$&");
+    const filter = and(
+      eq(s.integrationItems.organizationId, scope.organizationId),
+      inArray(
+        s.integrationItems.connectionId,
+        rows
+          .filter(
+            (r) =>
+              !scope.reviewProvider ||
+              uiProvider(r.provider) === scope.reviewProvider,
+          )
+          .map((r) => r.id),
+      ),
+      inArray(
+        s.integrationItems.productId,
+        allowed.products.map((p) => p.id),
+      ),
+      eq(s.integrationItems.status, "unmatched"),
+      search
+        ? sql`(${s.integrationItems.record}->>'title' ILIKE ${`%${search}%`} OR ${s.integrationItems.record}->>'participants' ILIKE ${`%${search}%`})`
+        : undefined,
+    );
+    const page = await this.db
       .select({
         id: s.integrationItems.id,
         connectionId: s.integrationItems.connectionId,
         productId: s.integrationItems.productId,
         record: s.integrationItems.record,
+        // Preserve PostgreSQL's microseconds; a JS Date would lose rows at a page boundary.
+        createdAt: sql<string>`to_char(${s.integrationItems.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
       })
       .from(s.integrationItems)
       .where(
         and(
-          eq(s.integrationItems.organizationId, scope.organizationId),
-          inArray(
-            s.integrationItems.connectionId,
-            rows.map((r) => r.id),
-          ),
-          inArray(
-            s.integrationItems.productId,
-            allowed.products.map((p) => p.id),
-          ),
-          eq(s.integrationItems.status, "unmatched"),
+          filter,
+          position
+            ? sql`(${s.integrationItems.createdAt}, ${s.integrationItems.id}) < (${position.createdAt}::timestamptz, ${position.id}::uuid)`
+            : undefined,
         ),
       )
-      .orderBy(desc(s.integrationItems.createdAt))
-      .limit(50);
+      .orderBy(desc(s.integrationItems.createdAt), desc(s.integrationItems.id))
+      .limit(reviewPageSize + 1);
+    const [total] = await this.db
+      .select({ value: count() })
+      .from(s.integrationItems)
+      .where(filter);
+    const items = page.slice(0, reviewPageSize);
+    const last = items.at(-1);
     return {
       configured: integrationAvailability(),
       connections: rows.map(publicConnection),
-      items,
+      items: items.map(({ createdAt: _createdAt, ...item }) => item),
+      reviewTotal: total.value,
+      nextReviewCursor:
+        page.length > reviewPageSize && last
+          ? Buffer.from(
+              JSON.stringify({ id: last.id, createdAt: last.createdAt }),
+            ).toString("base64url")
+          : null,
     };
   }
   async own(

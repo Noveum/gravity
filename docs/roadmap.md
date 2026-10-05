@@ -2,9 +2,9 @@
 
 ## Foundation delivered
 
-Independent local Git repository, pinned runtime/dependencies, reviewed SQL migrations, local persistence, multi-organization/product permissions, queue and context UI, contact creation and explicit product linking, private materials, reviewed commitments, normalized reply ingestion, and read-only OAuth MCP. A synthetic real HTTP OAuth test verifies consent and refresh binding across two simultaneous tenant flows. This does not establish live Google/GitHub or actual assistant interoperability.
+Independent local Git repository, pinned runtime/dependencies, reviewed SQL migrations, local persistence, multi-organization/product permissions, queue and context UI, contact creation and explicit product linking, private materials, reviewed commitments, normalized reply ingestion, and read-only OAuth MCP. A synthetic real HTTP OAuth test verifies consent and refresh binding across two simultaneous tenant flows. Local protocol tests do not establish live provider or assistant interoperability; deployment evidence is recorded separately in [integration qualification](integration-review-2026-10-05.md).
 
-The current app can be reviewed with fictional records. It cannot yet replace the company's live CRM or daily outreach tools. Existing Twenty/RepoCloud/domain/MCP infrastructure has not been changed by this implementation.
+The app supports fictional local review and an authenticated managed-database deployment. Gmail/primary Calendar and deployed Codex MCP have been live qualified. LinkedIn/Fireflies account qualification, outbound dispatch, team invitations and backup restore remain release gates; do not describe these unfinished flows as production-ready.
 
 ## Provider connection slice, 5 October 2026
 

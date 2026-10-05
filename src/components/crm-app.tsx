@@ -1577,6 +1577,7 @@ export function CrmApp({
                   endpoint={mcpEndpoint}
                   demo={demo}
                   onRevoke={revokeGrant}
+                  timeZone={currentOrg?.timezone ?? "UTC"}
                 />
               )}
               {view === "settings" && (

@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   afterAll,
   afterEach,
@@ -691,4 +691,132 @@ test("historical backfill records context without pausing current outreach or cr
   expect(await local.db.select().from(s.enrollments)).toEqual(
     beforeEnrollments,
   );
+});
+
+test("private review pages preserve microseconds and tied timestamps while filtering source, product and owner", async () => {
+  const service = new IntegrationService(local.db);
+  const connectionIds = [
+    demoId(18000),
+    demoId(18001),
+    demoId(18002),
+    demoId(18003),
+  ];
+  await local.db.insert(s.connections).values(
+    connectionIds.map((id, index) => ({
+      id,
+      organizationId: scope.organizationId,
+      productId: index === 3 ? demoId(11) : scope.productId,
+      ownerId: index === 2 ? another.userId : admin.userId,
+      provider: index === 1 ? ("fireflies" as const) : ("gmail" as const),
+      externalAccountId: `fictional-review-page-${index}`,
+      status: "connected" as const,
+    })),
+  );
+  const record: ImportRecord = {
+    externalId: "fictional-page",
+    kind: "meeting",
+    title: "Fictional paging review",
+    body: "Fictional private fixture",
+    occurredAt: "2026-10-01T00:00:00.000Z",
+    participants: ["paging@example.test"],
+  };
+  try {
+    await local.db.insert(s.integrationItems).values(
+      Array.from({ length: 64 }, (_, index) => ({
+        id: demoId(19000 + index),
+        organizationId: scope.organizationId,
+        productId: index === 63 ? demoId(11) : scope.productId,
+        connectionId:
+          connectionIds[
+            index === 61 ? 1 : index === 62 ? 2 : index === 63 ? 3 : 0
+          ],
+        externalId: `fictional-page-${index}`,
+        record: {
+          ...record,
+          externalId: `fictional-page-${index}`,
+          title: index === 0 ? "Fictional paging 100%_complete" : record.title,
+        },
+        // The first 40 share an exact timestamp; the rest differ by microseconds within one JS millisecond.
+        createdAt: sql`'2026-10-01 00:00:00.123000+00'::timestamptz + ${Math.max(0, index - 39)} * interval '1 microsecond'`,
+      })),
+    );
+    const scopeWithSearch = { ...scope, reviewQuery: "Fictional paging" };
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await service.overview(admin, {
+        ...scopeWithSearch,
+        reviewCursor: cursor,
+      });
+      expect(page.items.length).toBeLessThanOrEqual(20);
+      expect(page.reviewTotal).toBe(62);
+      seen.push(...page.items.map((item) => item.id));
+      cursor = page.nextReviewCursor ?? undefined;
+    } while (cursor);
+    expect(seen).toEqual(
+      Array.from({ length: 62 }, (_, i) => demoId(19061 - i)),
+    );
+    expect(new Set(seen).size).toBe(62);
+    const first = await service.overview(admin, scopeWithSearch);
+    // Removing a reviewed boundary row must not invalidate the next-page cursor.
+    await local.db
+      .update(s.integrationItems)
+      .set({ status: "ignored" })
+      .where(eq(s.integrationItems.id, first.items.at(-1)?.id ?? ""));
+    const second = await service.overview(admin, {
+      ...scopeWithSearch,
+      reviewCursor: first.nextReviewCursor ?? undefined,
+    });
+    expect(second.items[0].id).toBe(demoId(19041));
+    expect(second.reviewTotal).toBe(61);
+    expect(
+      (
+        await service.overview(admin, {
+          ...scopeWithSearch,
+          reviewProvider: "fireflies",
+        })
+      ).items.map((i) => i.id),
+    ).toEqual([demoId(19061)]);
+    expect(
+      (
+        await service.overview(admin, {
+          ...scope,
+          reviewQuery: "paging@example.test",
+          reviewProvider: "fireflies",
+        })
+      ).reviewTotal,
+    ).toBe(1);
+    expect(
+      (
+        await service.overview(admin, { ...scope, reviewQuery: "%_" })
+      ).items.map((i) => i.id),
+    ).toEqual([demoId(19000)]);
+    expect(
+      (await service.overview(another, scopeWithSearch)).items.map((i) => i.id),
+    ).toEqual([demoId(19062)]);
+    expect(
+      (
+        await service.overview(admin, {
+          organizationId: scope.organizationId,
+          reviewQuery: "Fictional paging",
+        })
+      ).reviewTotal,
+    ).toBe(62);
+    await expect(
+      service.overview(admin, {
+        ...scopeWithSearch,
+        reviewCursor: "not-a-cursor",
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(
+      service.overview({ ...admin, source: "mcp" }, scopeWithSearch),
+    ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
+  } finally {
+    await local.db
+      .delete(s.integrationItems)
+      .where(inArray(s.integrationItems.connectionId, connectionIds));
+    await local.db
+      .delete(s.connections)
+      .where(inArray(s.connections.id, connectionIds));
+  }
 });

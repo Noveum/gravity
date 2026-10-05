@@ -14,6 +14,7 @@ export function Connections({
   productId,
   initialNotice,
   onChanged,
+  timeZone = "UTC",
 }: {
   data: ClientSnapshot;
   endpoint: string;
@@ -23,6 +24,7 @@ export function Connections({
   productId: string;
   initialNotice: string;
   onChanged: () => Promise<void>;
+  timeZone?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
@@ -38,6 +40,7 @@ export function Connections({
         demo={demo}
         initialNotice={initialNotice}
         onChanged={onChanged}
+        timeZone={timeZone}
       />
       <article className="integration-card mcp-card">
         <div className="section-heading">

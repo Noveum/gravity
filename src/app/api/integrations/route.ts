@@ -2,6 +2,7 @@ import { assertMutationOrigin, currentPrincipal } from "@crm/auth/server";
 import {
   connectInput,
   IntegrationService,
+  integrationOverviewInput,
   integrationScope,
 } from "@crm/connectors/service";
 import { errorResponse, limitedBody } from "@crm/core/http";
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
   try {
     if (isDemoMode()) throw new DomainError("CONNECTOR_NOT_CONFIGURED", 503);
     const principal = await currentPrincipal(request.headers);
-    const scope = integrationScope.parse(
+    const scope = integrationOverviewInput.parse(
       Object.fromEntries(new URL(request.url).searchParams),
     );
     return Response.json(

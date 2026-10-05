@@ -147,3 +147,141 @@ test("a slow earlier overview response cannot overwrite newer connection state",
     screen.getByRole("button", { name: "Connect Gmail" }).matches(":disabled"),
   ).toBe(false);
 });
+
+test("review navigation reaches older items, resets for search and sources, and keeps filters after review", async () => {
+  const item = (id: string) => ({
+    id,
+    connectionId: "c",
+    productId: "p",
+    record: {
+      title: `Fictional import ${id}`,
+      occurredAt: "2026-10-01T00:00:00Z",
+      participants: ["person@example.test"],
+      body: "Fictional private preview",
+    },
+  });
+  const base = {
+    ...overview,
+    connections: [
+      {
+        id: "c",
+        provider: "gmail",
+        displayName: "Fictional account",
+        status: "connected",
+        productId: "p",
+        lastSyncedAt: null,
+        errorCode: null,
+        more: false,
+      },
+    ],
+    reviewTotal: 41,
+  };
+  request.mockImplementation(async (url, options) => {
+    if (options?.method === "POST") return { ok: true };
+    const query = new URL(String(url), "https://example.test").searchParams;
+    const filtered = query.has("reviewQuery") || query.has("reviewProvider");
+    return {
+      ...base,
+      items: [
+        item(
+          query.has("reviewCursor") ? "older" : filtered ? "filtered" : "newer",
+        ),
+      ],
+      nextReviewCursor:
+        query.has("reviewCursor") || filtered ? null : "fictional-cursor",
+    };
+  });
+  render(<IntegrationCards {...props} />);
+  await screen.findByText("Fictional import newer");
+  expect(
+    screen
+      .getByRole("button", { name: t.previousImports })
+      .matches(":disabled"),
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: t.nextImports }));
+  await screen.findByText("Fictional import older");
+  expect(String(request.mock.calls.at(-1)?.[0])).toContain(
+    "reviewCursor=fictional-cursor",
+  );
+  expect(
+    screen.getByRole("button", { name: t.nextImports }).matches(":disabled"),
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: t.previousImports }));
+  await screen.findByText("Fictional import newer");
+  fireEvent.click(screen.getByRole("button", { name: t.nextImports }));
+  await screen.findByText("Fictional import older");
+  fireEvent.change(screen.getByRole("searchbox", { name: t.searchImports }), {
+    target: { value: "person@example.test" },
+  });
+  await screen.findByText("Fictional import filtered");
+  const query = new URL(
+    String(request.mock.calls.at(-1)?.[0]),
+    "https://example.test",
+  ).searchParams;
+  expect(query.get("reviewQuery")).toBe("person@example.test");
+  expect(query.has("reviewCursor")).toBe(false);
+  fireEvent.change(screen.getByLabelText(t.importProvider), {
+    target: { value: "fireflies" },
+  });
+  await waitFor(() =>
+    expect(String(request.mock.calls.at(-1)?.[0])).toContain(
+      "reviewProvider=fireflies",
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: t.ignoreImport }));
+  await waitFor(() =>
+    expect(request.mock.calls.some((call) => call[1]?.method === "POST")).toBe(
+      true,
+    ),
+  );
+  await waitFor(() =>
+    expect(String(request.mock.calls.at(-1)?.[0])).toContain(
+      "reviewProvider=fireflies",
+    ),
+  );
+  expect(String(request.mock.calls.at(-1)?.[0])).toContain(
+    "reviewQuery=person%40example.test",
+  );
+});
+
+test("connection sync and imported context use the organization's time zone", async () => {
+  request.mockResolvedValue({
+    ...overview,
+    connections: [
+      {
+        id: "c",
+        provider: "gmail",
+        displayName: "Fictional account",
+        status: "connected",
+        productId: "p",
+        lastSyncedAt: "2026-10-01T04:00:00Z",
+        errorCode: null,
+        more: false,
+      },
+    ],
+    items: [
+      {
+        id: "i",
+        connectionId: "c",
+        productId: "p",
+        record: {
+          title: "Fictional meeting",
+          occurredAt: "2026-10-01T04:00:00Z",
+          participants: [],
+          body: "",
+        },
+      },
+    ],
+    reviewTotal: 1,
+    nextReviewCursor: null,
+  });
+  render(<IntegrationCards {...props} timeZone="Asia/Kolkata" />);
+  await screen.findByText("Fictional meeting");
+  expect(
+    screen.getByText(t.lastSynced.replace("{time}", "Oct 1, 9:30 AM")),
+  ).toBeTruthy();
+  expect(screen.getByText("Oct 1, 9:30 AM ·")).toBeTruthy();
+  expect(
+    screen.getByText(t.integrationTimeZone.replace("{zone}", "Asia/Kolkata")),
+  ).toBeTruthy();
+});

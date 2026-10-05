@@ -173,3 +173,21 @@ test("a database outage returns a retryable cron failure without exposing its ca
   );
   expect(JSON.stringify(log.mock.calls)).not.toContain("fictional-");
 });
+
+test("import review rejects malformed cursors, unsupported sources and unbounded search input", async () => {
+  const { GET } = await import("../src/app/api/integrations/route");
+  const base = `https://crm.example.test/api/integrations?organizationId=${demoId(1)}`;
+  for (const suffix of [
+    "&reviewCursor=invalid",
+    "&reviewProvider=anything",
+    `&reviewQuery=${"a".repeat(121)}`,
+  ]) {
+    const result = await GET(new Request(base + suffix));
+    expect(result.status).toBe(400);
+    expect(await result.json()).toEqual({ error: "INVALID_INPUT" });
+  }
+  const denied = await GET(
+    new Request(`${base}&productId=${demoId(13)}&reviewQuery=private`),
+  );
+  expect(denied.status).toBe(403);
+});

@@ -6,12 +6,15 @@ import t from "@crm/i18n/translations/en.json";
 import {
   CalendarDays,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Mail,
   MessageSquare,
   Mic,
   Plug,
   RefreshCw,
+  Search,
   Unplug,
   X,
 } from "lucide-react";
@@ -37,6 +40,7 @@ export function IntegrationCards({
   demo,
   initialNotice,
   onChanged,
+  timeZone = "UTC",
 }: {
   data: ClientSnapshot;
   organizationId: string;
@@ -44,6 +48,7 @@ export function IntegrationCards({
   demo: boolean;
   initialNotice: string;
   onChanged: () => Promise<void>;
+  timeZone?: string;
 }) {
   const [overview, setOverview] = useState<ConnectionOverview | null>(null);
   const [error, setError] = useState("");
@@ -52,15 +57,35 @@ export function IntegrationCards({
   const [notice, setNotice] = useState(initialNotice);
   const [modal, setModal] = useState<IntegrationProvider | null>(null);
   const [existing, setExisting] = useState<string | undefined>();
+  const [search, setSearch] = useState("");
+  const [reviewQuery, setReviewQuery] = useState("");
+  const [reviewProvider, setReviewProvider] = useState<
+    IntegrationProvider | ""
+  >("");
+  const [pages, setPages] = useState<(string | undefined)[]>([undefined]);
+  const reviewCursor = pages.at(-1);
   const pending = useRef(false);
   const alive = useRef(true);
   const loadGeneration = useRef(0);
+  useEffect(() => {
+    if (search.trim() === reviewQuery) return;
+    const timer = window.setTimeout(() => {
+      setReviewQuery(search.trim());
+      setPages([undefined]);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [search, reviewQuery]);
   const load = useCallback(async () => {
     if (demo) return;
     const generation = ++loadGeneration.current;
     try {
+      const query = new URLSearchParams({ organizationId });
+      if (productId) query.set("productId", productId);
+      if (reviewQuery) query.set("reviewQuery", reviewQuery);
+      if (reviewProvider) query.set("reviewProvider", reviewProvider);
+      if (reviewCursor) query.set("reviewCursor", reviewCursor);
       const result = await requestJson<ConnectionOverview>(
-        `/api/integrations?organizationId=${organizationId}${productId ? `&productId=${productId}` : ""}`,
+        `/api/integrations?${query}`,
       );
       if (alive.current && generation === loadGeneration.current) {
         setOverview(result);
@@ -73,9 +98,22 @@ export function IntegrationCards({
       if (alive.current && generation === loadGeneration.current)
         setLoading(false);
     }
-  }, [organizationId, productId, demo]);
+  }, [
+    organizationId,
+    productId,
+    demo,
+    reviewQuery,
+    reviewProvider,
+    reviewCursor,
+  ]);
+  const currentLoad = useRef(load);
+  currentLoad.current = load;
   useEffect(() => {
     alive.current = true;
+    setLoading(!demo);
+    setOverview((prior) =>
+      prior ? { ...prior, items: [], nextReviewCursor: null } : null,
+    );
     void load();
     const poll = window.setInterval(() => {
       if (document.visibilityState === "visible") void load();
@@ -85,7 +123,7 @@ export function IntegrationCards({
       loadGeneration.current++;
       clearInterval(poll);
     };
-  }, [load]);
+  }, [load, demo]);
   const priorRevision = useRef(data.asOf);
   useEffect(() => {
     if (priorRevision.current !== data.asOf) {
@@ -117,7 +155,7 @@ export function IntegrationCards({
               ? "CONNECTION_DISCONNECTED"
               : "IMPORT_REVIEWED",
         );
-        await load();
+        await currentLoad.current();
         await onChanged();
       }
     } catch (cause) {
@@ -131,6 +169,7 @@ export function IntegrationCards({
     <>
       <div className="integration-intro">
         <p>{t.integrationIntro}</p>
+        <p>{t.integrationTimeZone.replace("{zone}", timeZone)}</p>
         {loading && <span role="status">{t.loading}</span>}
         {error && (
           <p role="alert">
@@ -183,7 +222,7 @@ export function IntegrationCards({
                     {row.lastSyncedAt
                       ? t.lastSynced.replace(
                           "{time}",
-                          dateLabel(row.lastSyncedAt),
+                          dateLabel(row.lastSyncedAt, timeZone),
                         )
                       : t.notSynced}
                   </small>
@@ -282,96 +321,170 @@ export function IntegrationCards({
           </article>
         );
       })}
-      {!!overview?.items.length && (
+      {!!overview?.connections.length && (
         <article className="integration-card import-review">
           <div className="section-heading">
             <h2>
               <Check size={18} aria-hidden="true" />
               {t.importReview}
             </h2>
-            <span className="badge">{overview.items.length}</span>
+            <span className="badge">{overview.reviewTotal}</span>
           </div>
           <p>{t.importReviewDescription}</p>
-          {overview.items.map((item) => (
-            <form
-              className="import-row"
-              key={item.id}
-              onSubmit={(event) => {
-                event.preventDefault();
-                const values = new FormData(event.currentTarget);
-                void mutate(
-                  "link",
-                  {
-                    itemId: item.id,
-                    relationshipId: values.get("relationshipId"),
-                  },
-                  item.id,
+          <div className="import-review-toolbar">
+            <label className="import-search">
+              <Search size={16} aria-hidden="true" />
+              <span className="sr-only">{t.searchImports}</span>
+              <input
+                className="import-search-input"
+                type="search"
+                value={search}
+                maxLength={120}
+                placeholder={t.searchImports}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </label>
+            <label className="sr-only" htmlFor="import-provider">
+              {t.importProvider}
+            </label>
+            <select
+              id="import-provider"
+              value={reviewProvider}
+              disabled={!!busy}
+              onChange={(event) => {
+                setReviewProvider(
+                  event.target.value as IntegrationProvider | "",
                 );
+                setPages([undefined]);
               }}
             >
-              <div>
-                <strong>{item.record.title}</strong>
-                <small className="connection-meta">
-                  {dateLabel(item.record.occurredAt)} ·{" "}
-                  {item.record.participants.join(", ")}
-                </small>
-                <details>
-                  <summary>{t.previewImport}</summary>
-                  <p className="import-preview">
-                    {item.record.body || t.noMessageText}
-                  </p>
-                  {item.record.proposedCommitment && (
-                    <p className="import-preview">
-                      {item.record.proposedCommitment}
-                    </p>
-                  )}
-                </details>
-              </div>
-              <label className="sr-only" htmlFor={`match-${item.id}`}>
-                {t.linkRelationship}
-              </label>
-              <select
-                className="import-match"
-                id={`match-${item.id}`}
-                name="relationshipId"
-                required
-                disabled={!!busy}
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  {t.chooseRelationship}
+              <option value="">{t.allImportProviders}</option>
+              {providers.map((provider) => (
+                <option value={provider} key={provider}>
+                  {t[provider]}
                 </option>
-                {data.relationships.map((relationship) => (
-                  <option key={relationship.id} value={relationship.id}>
-                    {
-                      data.people.find((p) => p.id === relationship.personId)
-                        ?.name
-                    }{" "}
-                    ·{" "}
-                    {
-                      data.products.find((p) => p.id === relationship.productId)
-                        ?.name
+              ))}
+            </select>
+          </div>
+          <div aria-busy={loading}>
+            {!loading && !overview.items.length && (
+              <p role="status">{t.noImportsFound}</p>
+            )}
+            {loading && <p role="status">{t.loading}</p>}
+            {!loading &&
+              overview.items.map((item) => (
+                <form
+                  className="import-row"
+                  key={item.id}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const values = new FormData(event.currentTarget);
+                    void mutate(
+                      "link",
+                      {
+                        itemId: item.id,
+                        relationshipId: values.get("relationshipId"),
+                      },
+                      item.id,
+                    );
+                  }}
+                >
+                  <div>
+                    <strong>{item.record.title}</strong>
+                    <small className="connection-meta">
+                      {dateLabel(item.record.occurredAt, timeZone)} ·{" "}
+                      {item.record.participants.join(", ")}
+                    </small>
+                    <details>
+                      <summary>{t.previewImport}</summary>
+                      <p className="import-preview">
+                        {item.record.body || t.noMessageText}
+                      </p>
+                      {item.record.proposedCommitment && (
+                        <p className="import-preview">
+                          {item.record.proposedCommitment}
+                        </p>
+                      )}
+                    </details>
+                  </div>
+                  <label className="sr-only" htmlFor={`match-${item.id}`}>
+                    {t.linkRelationship}
+                  </label>
+                  <select
+                    className="import-match"
+                    id={`match-${item.id}`}
+                    name="relationshipId"
+                    required
+                    disabled={!!busy}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>
+                      {t.chooseRelationship}
+                    </option>
+                    {data.relationships.map((relationship) => (
+                      <option key={relationship.id} value={relationship.id}>
+                        {
+                          data.people.find(
+                            (p) => p.id === relationship.personId,
+                          )?.name
+                        }{" "}
+                        ·{" "}
+                        {
+                          data.products.find(
+                            (p) => p.id === relationship.productId,
+                          )?.name
+                        }
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="submit"
+                    disabled={!!busy || !data.relationships.length}
+                  >
+                    {busy === item.id ? t.saving : t.linkImport}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!!busy}
+                    onClick={() =>
+                      void mutate("ignore", { itemId: item.id }, item.id)
                     }
-                  </option>
-                ))}
-              </select>
+                  >
+                    {t.ignoreImport}
+                  </button>
+                </form>
+              ))}
+          </div>
+          <div className="import-pagination">
+            <span role="status" className="import-page-status">
+              {t.importPage
+                .replace("{page}", String(pages.length))
+                .replace("{total}", String(overview.reviewTotal))}
+            </span>
+            <div className="connection-buttons">
               <button
-                type="submit"
-                disabled={!!busy || !data.relationships.length}
+                type="button"
+                disabled={loading || !!busy || pages.length === 1}
+                onClick={() => setPages((prior) => prior.slice(0, -1))}
               >
-                {busy === item.id ? t.saving : t.linkImport}
+                <ChevronLeft size={15} aria-hidden="true" />
+                {t.previousImports}
               </button>
               <button
                 type="button"
-                disabled={!!busy}
+                disabled={loading || !!busy || !overview.nextReviewCursor}
                 onClick={() =>
-                  void mutate("ignore", { itemId: item.id }, item.id)
+                  setPages((prior) => [
+                    ...prior,
+                    overview.nextReviewCursor ?? undefined,
+                  ])
                 }
               >
-                {t.ignoreImport}
+                {t.nextImports}
+                <ChevronRight size={15} aria-hidden="true" />
               </button>
-            </form>
-          ))}
+            </div>
+          </div>
         </article>
       )}
       {modal && (

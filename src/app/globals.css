@@ -2621,6 +2621,31 @@ body:has(.resize-handle[data-dragging]) {
   border-top: 1px solid var(--line);
   padding: 18px 0;
 }
+.import-review-toolbar,
+.import-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 18px;
+}
+.import-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: min(240px, 100%);
+  color: var(--muted);
+}
+.import-search-input {
+  width: 100%;
+  min-width: 0;
+}
+.import-page-status {
+  font-size: 12px;
+  color: var(--muted);
+}
 .import-row .import-match {
   width: 100%;
   min-width: 0;

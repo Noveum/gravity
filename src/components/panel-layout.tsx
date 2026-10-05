@@ -9,7 +9,6 @@ export function usePanelLayout() {
   const frame = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1280);
   const [inspector, setInspector] = useState(400);
-  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     try {
       const right = Number(localStorage.getItem("gravity-inspector-width"));
@@ -37,8 +36,6 @@ export function usePanelLayout() {
     inspector: bound(inspector, 300, inspectorMax),
     inspectorMax,
     resizeInspector,
-    expanded,
-    setExpanded,
   };
 }
 export function ResizeHandle({

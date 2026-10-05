@@ -1,6 +1,7 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import { Menu, Search } from "lucide-react";
+import Link from "next/link";
 import { Fragment } from "react";
 import { GravityMark } from "../gravity-logo";
 import { ThemeToggle } from "../preferences";
@@ -41,7 +42,11 @@ export function TopBar({
               <li className={`crumb crumb-${crumb.id}`}>
                 {crumb.heading ? (
                   <h1 tabIndex={-1} className="view-title">
-                    {crumb.label}
+                    {crumb.href ? (
+                      <Link href={crumb.href}>{crumb.label}</Link>
+                    ) : (
+                      crumb.label
+                    )}
                   </h1>
                 ) : (
                   <span>{crumb.label}</span>

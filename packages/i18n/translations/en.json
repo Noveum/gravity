@@ -830,5 +830,9 @@
   "organizations": "Organizations",
   "preferences": "Preferences",
   "preferencesDetail": "Appearance and row density apply to this browser.",
-  "demoMode": "Demo"
+  "demoMode": "Demo",
+  "outreach": "Outreach",
+  "outreachSoon": "Outreach is on its way",
+  "outreachSoonDetail": "Due touches, drafts awaiting approval and recent sends will gather here. Sequences stay available in the meantime.",
+  "openRecord": "Open record"
 }

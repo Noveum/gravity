@@ -8,6 +8,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import {
   afterAll,
   afterEach,
@@ -25,7 +27,23 @@ import t from "../packages/i18n/translations/en.json";
 import { appearanceBootScript } from "../src/components/appearance-boot";
 import { requestJson } from "../src/components/client-api";
 import { CrmApp } from "../src/components/crm-app";
+import { CompanyRecord } from "../src/components/records/company-record";
+import { PersonRecord } from "../src/components/records/person-record";
+import { type Route, routeFor } from "../src/components/routes";
+import { ActionsView } from "../src/components/views/actions-view";
+import { CompaniesView } from "../src/components/views/companies-view";
+import { ConnectionsView } from "../src/components/views/connections-view";
+import { MaterialsView } from "../src/components/views/materials-view";
+import { MeetingsView } from "../src/components/views/meetings-view";
+import { OpportunitiesView } from "../src/components/views/opportunities-view";
+import { OutreachView } from "../src/components/views/outreach-view";
+import { PeopleView } from "../src/components/views/people-view";
+import { SequencesView } from "../src/components/views/sequences-view";
+import { SettingsView } from "../src/components/views/settings-view";
+import { usePathname, visit } from "./support/memory-router";
 
+vi.mock("next/navigation", () => import("./support/memory-router"));
+vi.mock("next/link", () => import("./support/memory-router"));
 vi.mock("../src/components/client-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/components/client-api")>()),
   requestJson: vi.fn(),
@@ -35,8 +53,13 @@ let service: CrmService;
 let snapshot: ClientSnapshot;
 const principal = { userId: demoUser, source: "demo" as const };
 const organizations = [
-  { id: demoId(1), name: "Northstar Collective", timezone: "UTC" },
-  { id: demoId(2), name: "Lunar Studio", timezone: "UTC" },
+  {
+    id: demoId(1),
+    name: "Northstar Collective",
+    slug: "northstar",
+    timezone: "UTC",
+  },
+  { id: demoId(2), name: "Lunar Studio", slug: "lunar", timezone: "UTC" },
 ];
 const request = vi.mocked(requestJson);
 beforeAll(async () => {
@@ -90,6 +113,11 @@ function setCompactScreen(compact: boolean) {
   })) as unknown as typeof window.matchMedia;
 }
 beforeEach(() => {
+  visit("/actions");
+  for (const cookie of document.cookie.split("; ")) {
+    // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API.
+    document.cookie = `${cookie.split("=")[0]}=; Max-Age=0; Path=/`;
+  }
   localStorage.clear();
   document.documentElement.className = "";
   delete document.documentElement.dataset.sidebar;
@@ -117,7 +145,34 @@ beforeEach(() => {
     return serialize(await service.snapshot(principal, { organizationId }));
   });
 });
-function mount() {
+function page(route: Route | null): ReactNode {
+  if (!route) return null;
+  if (route.recordId)
+    return route.section === "people" ? (
+      <PersonRecord key={route.recordId} personId={route.recordId} />
+    ) : (
+      <CompanyRecord key={route.recordId} companyId={route.recordId} />
+    );
+  const views = {
+    actions: ActionsView,
+    people: PeopleView,
+    companies: CompaniesView,
+    sequences: SequencesView,
+    meetings: MeetingsView,
+    opportunities: OpportunitiesView,
+    materials: MaterialsView,
+    outreach: OutreachView,
+    integrations: ConnectionsView,
+    settings: SettingsView,
+  };
+  const View = views[route.section];
+  return <View />;
+}
+function Routed() {
+  return page(routeFor(usePathname()));
+}
+function mount(path = "") {
+  if (path) visit(path);
   render(
     <CrmApp
       initial={snapshot}
@@ -125,40 +180,50 @@ function mount() {
       initialOrganizationId={demoId(1)}
       userId={demoUser}
       demo
-    />,
+    >
+      <Routed />
+    </CrmApp>,
   );
 }
+const heading = (name: string, level = 1) =>
+  screen.getByRole("heading", { name, level });
 
-test("go-to navigation lands on a title from which J and Enter open the first visible record", async () => {
+test("go-to navigation lands on a title from which J moves, Space peeks and Enter opens the record page", async () => {
   mount();
   fireEvent.keyDown(document.body, { key: "g" });
   fireEvent.keyDown(document.body, { key: "p" });
-  await waitFor(() =>
-    expect(document.activeElement).toBe(
-      screen.getByRole("heading", { name: t.people, level: 1 }),
-    ),
-  );
-  fireEvent.keyDown(screen.getByRole("heading", { name: t.people, level: 1 }), {
-    key: "j",
-  });
-  const first = screen.getByRole("button", { name: "Mira Chen" });
+  await waitFor(() => expect(document.activeElement).toBe(heading(t.people)));
+  expect(window.location.pathname).toBe("/people");
+  fireEvent.keyDown(heading(t.people), { key: "j" });
+  const first = screen.getByRole("link", { name: "Mira Chen" });
   expect(document.activeElement).toBe(first);
-  fireEvent.click(first);
+  fireEvent.keyDown(first, { key: " " });
   await waitFor(() =>
     expect(
       screen.getByRole("complementary", { name: t.recordDetails }),
     ).toBeTruthy(),
   );
+  expect(window.location.pathname).toBe("/people");
   fireEvent.keyDown(first, { key: "Escape" });
   expect(
     screen.queryByRole("complementary", { name: t.recordDetails }),
   ).toBeNull();
   expect(document.activeElement).toBe(first);
+  await userEvent.setup().keyboard("{Enter}");
+  await waitFor(() =>
+    expect(window.location.pathname).toBe(`/people/${demoId(200)}`),
+  );
+  await waitFor(() =>
+    expect(document.activeElement).toBe(heading("Mira Chen", 2)),
+  );
+  expect(
+    screen.queryByRole("complementary", { name: t.recordDetails }),
+  ).toBeNull();
 });
 
 test("product switching changes records synchronously without another snapshot read or blank view", async () => {
   mount();
-  fireEvent.click(screen.getByRole("button", { name: t.people }));
+  fireEvent.click(screen.getByRole("link", { name: t.people }));
   await waitFor(() =>
     expect(
       request.mock.calls.filter(([url]) => !url.includes("operation=")).length,
@@ -169,8 +234,8 @@ test("product switching changes records synchronously without another snapshot r
   fireEvent.change(screen.getByRole("combobox", { name: t.product }), {
     target: { value: demoId(11) },
   });
-  expect(screen.getByRole("button", { name: "Jonah Reed" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Leena Rao" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Jonah Reed" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Leena Rao" })).toBeNull();
   expect(screen.queryByText(t.loading, { exact: true })).toBeNull();
   expect(
     request.mock.calls.filter(([url]) => !url.includes("operation=")),
@@ -312,7 +377,7 @@ test("modifier Enter saves the draft once without approval or a false version co
 
 test("creating a person for another product refreshes the full snapshot before opening the new record", async () => {
   mount();
-  fireEvent.click(screen.getByRole("button", { name: t.people }));
+  fireEvent.click(screen.getByRole("link", { name: t.people }));
   fireEvent.change(screen.getByRole("combobox", { name: t.product }), {
     target: { value: demoId(10) },
   });
@@ -343,9 +408,12 @@ test("creating a person for another product refreshes the full snapshot before o
   });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(
-    screen.getByRole("button", {
+    screen.getByRole("link", {
       name: "Fictional cross-product keyboard buyer",
     }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("complementary", { name: t.recordDetails }),
   ).toBeTruthy();
   expect(
     (screen.getByRole("combobox", { name: t.product }) as HTMLSelectElement)
@@ -371,6 +439,7 @@ test("a fresh workspace opens its first product and offers working contact and i
         {
           id: created.organizationId,
           name: "Fictional UI onboarding",
+          slug: "fictional-ui-onboarding",
           timezone: "UTC",
         },
       ]}
@@ -379,7 +448,9 @@ test("a fresh workspace opens its first product and offers working contact and i
       userId={demoUser}
       demo
       mcpEndpoint="https://gravity.example.test/mcp"
-    />,
+    >
+      <Routed />
+    </CrmApp>,
   );
   expect(
     (screen.getByRole("combobox", { name: t.product }) as HTMLSelectElement)
@@ -394,10 +465,9 @@ test("a fresh workspace opens its first product and offers working contact and i
     expect(screen.getByLabelText(t.name).matches(":disabled")).toBe(false),
   );
   fireEvent.click(screen.getByRole("button", { name: t.cancel }));
-  fireEvent.click(screen.getByRole("button", { name: t.connectTools }));
-  expect(
-    screen.getByRole("heading", { name: t.integrations, level: 1 }),
-  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("link", { name: t.connectTools }));
+  expect(window.location.pathname).toBe("/connections");
+  expect(heading(t.integrations)).toBeTruthy();
   expect((screen.getByLabelText(t.mcpEndpoint) as HTMLInputElement).value).toBe(
     "https://gravity.example.test/mcp",
   );
@@ -412,7 +482,7 @@ test("the header theme toggle persists across a reload and agrees with preferenc
   expect(document.documentElement.classList.contains("dark")).toBe(true);
   expect(localStorage.getItem("gravity-theme")).toBe("dark");
   expect(toggle().getAttribute("aria-pressed")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: t.settings }));
+  fireEvent.click(screen.getByRole("link", { name: t.settings }));
   const preference = screen.getByRole("combobox", {
     name: t.appearance,
   }) as HTMLSelectElement;
@@ -426,7 +496,7 @@ test("the header theme toggle persists across a reload and agrees with preferenc
   fireEvent.click(toggle());
   expect(document.documentElement.classList.contains("dark")).toBe(false);
   expect(localStorage.getItem("gravity-theme")).toBe("light");
-  fireEvent.click(screen.getByRole("button", { name: t.settings }));
+  fireEvent.click(screen.getByRole("link", { name: t.settings }));
   fireEvent.change(screen.getByRole("combobox", { name: t.appearance }), {
     target: { value: "system" },
   });
@@ -442,7 +512,7 @@ test("the bracket key collapses the sidebar, the choice survives a reload, and e
   expect(document.documentElement.dataset.sidebar).toBe("collapsed");
   expect(localStorage.getItem("gravity-sidebar")).toBe("collapsed");
   expect(collapse().getAttribute("aria-expanded")).toBe("false");
-  const people = screen.getByRole("button", { name: t.people });
+  const people = screen.getByRole("link", { name: t.people });
   expect(people.getAttribute("aria-label")).toBe(t.people);
   fireEvent.click(people);
   expect(
@@ -458,7 +528,7 @@ test("the bracket key collapses the sidebar, the choice survives a reload, and e
   expect(document.documentElement.dataset.sidebar).toBe("expanded");
   expect(collapse().getAttribute("aria-expanded")).toBe("true");
   expect(
-    screen.getByRole("button", { name: t.people }).getAttribute("aria-label"),
+    screen.getByRole("link", { name: t.people }).getAttribute("aria-label"),
   ).toBeNull();
 });
 
@@ -474,8 +544,9 @@ test("on a narrow screen the bracket key opens the navigation drawer and Escape 
   expect(sidebar?.dataset.drawer).toBe("closed");
   fireEvent.click(screen.getByRole("button", { name: t.openNavigation }));
   expect(sidebar?.dataset.drawer).toBe("open");
-  fireEvent.click(screen.getByRole("button", { name: t.companies }));
+  fireEvent.click(screen.getByRole("link", { name: t.companies }));
   expect(sidebar?.dataset.drawer).toBe("closed");
+  expect(window.location.pathname).toBe("/companies");
 });
 
 test("results arrive as dismissible toasts instead of a footer status strip", async () => {
@@ -518,4 +589,199 @@ test("results arrive as dismissible toasts instead of a footer status strip", as
   fireEvent.click(within(success).getByRole("button", { name: t.dismiss }));
   expect(within(notifications).queryByRole("status")).toBeNull();
   expect(within(notifications).getByRole("alert")).toBeTruthy();
+});
+
+test("deep links render the view or record they name", async () => {
+  const views: [string, string, string][] = [
+    ["/actions", "actions", t.actions],
+    ["/people", "people", t.people],
+    ["/companies", "companies", t.companies],
+    ["/sequences", "sequences", t.sequences],
+    ["/meetings", "meetings", t.meetings],
+    ["/opportunities", "opportunities", t.opportunities],
+    ["/materials", "materials", t.materials],
+    ["/outreach", "outreach", t.outreach],
+    ["/connections", "integrations", t.integrations],
+    ["/settings", "settings", t.settings],
+  ];
+  for (const [path, section, name] of views) {
+    mount(path);
+    expect(heading(name).textContent).toBe(name);
+    const current = document.querySelectorAll<HTMLElement>(
+      '.sidebar [aria-current="page"]',
+    );
+    expect([...current].map((link) => link.dataset.navItem)).toEqual([section]);
+    expect(current[0]?.getAttribute("href")).toBe(path);
+    cleanup();
+  }
+  mount("/outreach");
+  expect(screen.getByRole("heading", { name: t.outreachSoon })).toBeTruthy();
+  cleanup();
+  mount(`/people/${demoId(200)}`);
+  expect(heading("Mira Chen", 2)).toBeTruthy();
+  const crumbs = within(screen.getByRole("navigation", { name: t.breadcrumb }));
+  expect(
+    crumbs.getByRole("link", { name: t.people }).getAttribute("href"),
+  ).toBe("/people");
+  expect(crumbs.getByText("Mira Chen")).toBeTruthy();
+  const timeline = screen.getByRole("region", { name: t.timeline });
+  expect(
+    await within(timeline).findByText(
+      "We can review the evaluation setup on Monday. Please send your shortlist.",
+    ),
+  ).toBeTruthy();
+  cleanup();
+  mount(`/companies/${demoId(100)}`);
+  expect(heading("Northstar Labs", 2)).toBeTruthy();
+  expect(
+    await within(screen.getByRole("region", { name: t.timeline })).findByRole(
+      "button",
+      { name: "Follow-up 2 paused by a reply" },
+    ),
+  ).toBeTruthy();
+  cleanup();
+  mount(`/people/${demoId(9999)}`);
+  expect(
+    screen.getByRole("heading", { name: t.recordUnavailable }),
+  ).toBeTruthy();
+});
+
+test("sidebar links push history so Back and Forward return to the previous view", async () => {
+  mount("/actions");
+  fireEvent.click(screen.getByRole("link", { name: t.people }));
+  expect(window.location.pathname).toBe("/people");
+  expect(heading(t.people)).toBeTruthy();
+  fireEvent.click(screen.getByRole("link", { name: "Mira Chen" }));
+  expect(window.location.pathname).toBe(`/people/${demoId(200)}`);
+  expect(heading("Mira Chen", 2)).toBeTruthy();
+  act(() => window.history.back());
+  await waitFor(() => expect(window.location.pathname).toBe("/people"));
+  expect(heading(t.people)).toBeTruthy();
+  act(() => window.history.back());
+  await waitFor(() => expect(window.location.pathname).toBe("/actions"));
+  expect(heading(t.actions)).toBeTruthy();
+  act(() => window.history.forward());
+  await waitFor(() => expect(window.location.pathname).toBe("/people"));
+  expect(
+    screen.getByRole("link", { name: t.people }).getAttribute("aria-current"),
+  ).toBe("page");
+});
+
+test("a reload on a record page keeps the record, its relationship and the reviewed draft", async () => {
+  mount(`/people/${demoId(200)}?relationship=${demoId(306)}`);
+  const relationship = () =>
+    screen.getByRole("button", { name: /API Marketplace/, pressed: true });
+  await waitFor(() => expect(relationship()).toBeTruthy());
+  cleanup();
+  mount();
+  expect(window.location.search).toBe(`?relationship=${demoId(306)}`);
+  expect(heading("Mira Chen", 2)).toBeTruthy();
+  await waitFor(() => expect(relationship()).toBeTruthy());
+  cleanup();
+  mount(
+    `/people/${demoId(200)}?relationship=${demoId(300)}&action=${demoId(600)}`,
+  );
+  const saved = snapshot.actions.find((action) => action.id === demoId(600));
+  expect(
+    (
+      (await screen.findByRole("textbox", {
+        name: t.draftLabel,
+      })) as HTMLTextAreaElement
+    ).value,
+  ).toBe(saved?.draft);
+  cleanup();
+  mount();
+  expect(
+    (
+      (await screen.findByRole("textbox", {
+        name: t.draftLabel,
+      })) as HTMLTextAreaElement
+    ).value,
+  ).toBe(saved?.draft);
+  expect(
+    screen.getByRole("button", { name: t.draft }).getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(screen.getByRole("heading", { name: saved?.title })).toBeTruthy();
+});
+
+test("Enter on an action opens its person on the draft and the peek offers the same page", async () => {
+  mount("/actions");
+  const row = await screen.findByRole("button", {
+    name: /Mira Chen.*Follow-up 2 paused by a reply/,
+  });
+  fireEvent.keyDown(row, { key: " " });
+  fireEvent.click(row);
+  const peek = await screen.findByRole("complementary", {
+    name: t.recordDetails,
+  });
+  expect(
+    within(peek).getByRole("link", { name: t.openRecord }).getAttribute("href"),
+  ).toBe(
+    `/people/${demoId(200)}?relationship=${demoId(300)}&action=${demoId(600)}`,
+  );
+  expect(window.location.pathname).toBe("/actions");
+  row.focus();
+  fireEvent.keyDown(row, { key: "Enter" });
+  expect(window.location.pathname).toBe(`/people/${demoId(200)}`);
+  expect(window.location.search).toBe(
+    `?relationship=${demoId(300)}&action=${demoId(600)}`,
+  );
+  expect(
+    await screen.findByRole("textbox", { name: t.draftLabel }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("complementary", { name: t.recordDetails }),
+  ).toBeNull();
+});
+
+test("saved views are links whose filter lives in the URL", async () => {
+  mount("/people");
+  fireEvent.click(screen.getByRole("link", { name: t.replies }));
+  expect(window.location.pathname).toBe("/actions");
+  expect(window.location.search).toBe("?kind=reply");
+  const actionRows = () =>
+    [...document.querySelectorAll(".action-row")].map(
+      (row) => row.querySelector(".row-kind")?.textContent,
+    );
+  expect(actionRows().length).toBeGreaterThan(0);
+  expect(new Set(actionRows())).toEqual(new Set([t.reply]));
+  expect(
+    screen.getByRole("link", { name: t.replies }).getAttribute("aria-current"),
+  ).toBe("true");
+  cleanup();
+  mount();
+  expect(
+    (screen.getByRole("combobox", { name: t.actionType }) as HTMLSelectElement)
+      .value,
+  ).toBe("reply");
+  fireEvent.change(screen.getByRole("combobox", { name: t.actionType }), {
+    target: { value: "" },
+  });
+  expect(window.location.search).toBe("");
+  expect(new Set(actionRows()).size).toBeGreaterThan(1);
+  fireEvent.click(screen.getByRole("link", { name: t.waiting }));
+  expect(window.location.search).toBe("?waiting=1");
+  expect(
+    screen.getByRole("button", { name: `${t.waiting}: ${t.clearFilters}` }),
+  ).toBeTruthy();
+});
+
+test("switching workspace remembers its slug and leaves a record of the old workspace", async () => {
+  mount(`/companies/${demoId(100)}`);
+  expect(heading("Northstar Labs", 2)).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: `${t.switchOrganization}: Northstar Collective`,
+    }),
+  );
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Lunar Studio" }));
+  expect(window.location.pathname).toBe("/companies");
+  expect(document.cookie).toContain("gravity-workspace=lunar");
+  await waitFor(() =>
+    expect(screen.getByRole("link", { name: "Moonlit Design" })).toBeTruthy(),
+  );
+  fireEvent.change(screen.getByRole("combobox", { name: t.product }), {
+    target: { value: demoId(13) },
+  });
+  expect(document.cookie).toContain(`gravity-brand=${demoId(13)}`);
 });

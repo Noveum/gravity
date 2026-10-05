@@ -7,6 +7,7 @@ import {
   Search,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { type ReactNode, useState } from "react";
 
 export interface SidebarItem {
@@ -17,7 +18,8 @@ export interface SidebarItem {
   count?: number;
   hint?: string;
   active: boolean;
-  kind?: "page" | "filter";
+  kind?: "page" | "view" | "filter";
+  href?: string;
   onSelect: () => void;
 }
 export interface SidebarGroup {
@@ -34,24 +36,17 @@ function NavItem({
   collapsed: boolean;
 }) {
   const Icon = item.icon;
-  const state =
-    item.kind === "filter"
-      ? { "aria-pressed": item.active }
-      : { "aria-current": item.active ? ("page" as const) : undefined };
-  return (
-    <button
-      type="button"
-      className="nav-item"
-      data-nav-item={item.id}
-      aria-label={collapsed ? item.label : undefined}
-      title={
-        collapsed
-          ? [item.label, item.hint].filter(Boolean).join(" ")
-          : item.hint
-      }
-      onClick={item.onSelect}
-      {...state}
-    >
+  const shared = {
+    className: "nav-item",
+    "data-nav-item": item.id,
+    "aria-label": collapsed ? item.label : undefined,
+    title: collapsed
+      ? [item.label, item.hint].filter(Boolean).join(" ")
+      : item.hint || undefined,
+    onClick: item.onSelect,
+  };
+  const content = (
+    <>
       {Icon ? (
         <Icon size={15} strokeWidth={1.75} aria-hidden className="nav-icon" />
       ) : (
@@ -66,6 +61,23 @@ function NavItem({
       {item.count !== undefined && (
         <span className="nav-count nav-label-text">{item.count}</span>
       )}
+    </>
+  );
+  if (item.href)
+    return (
+      <Link
+        href={item.href}
+        aria-current={
+          item.active ? (item.kind === "view" ? "true" : "page") : undefined
+        }
+        {...shared}
+      >
+        {content}
+      </Link>
+    );
+  return (
+    <button type="button" aria-pressed={item.active} {...shared}>
+      {content}
     </button>
   );
 }

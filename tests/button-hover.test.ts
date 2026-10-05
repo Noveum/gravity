@@ -64,10 +64,10 @@ afterEach(() => {
 describe("button hover in light mode", () => {
   test("the stylesheet paints buttons from the variant fill and leaves base element rules at zero specificity", () => {
     expect(stylesheet).toMatch(
-      /:where\(button\) \{[^}]*background-color: var\(--button-current, var\(--button-fill\)\)/,
+      /:where\(button(, a\.[\w-]+)*\) \{[^}]*background-color: var\(--button-current, var\(--button-fill\)\)/,
     );
     expect(stylesheet).toMatch(
-      /:where\(button:not\(:disabled\):hover\) \{\s*--button-current: var\(--button-hover\);\s*\}/,
+      /:where\(button:not\(:disabled\):hover(, a\.[\w-]+:hover)*\) \{\s*--button-current: var\(--button-hover\);\s*\}/,
     );
     expect(stylesheet).not.toMatch(/(^|\n)button(:[\w-]+)*\s*[,{]/);
   });

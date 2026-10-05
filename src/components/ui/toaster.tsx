@@ -9,6 +9,7 @@ export interface Toast {
   title: string;
   tone: ToastTone;
 }
+export type Notify = (title: string, tone?: ToastTone) => void;
 export const maxToasts = 3;
 export const toastDuration: Record<ToastTone, number> = {
   neutral: 5000,

@@ -1177,7 +1177,8 @@ describe("editing a sequence", () => {
           : step,
       ),
     });
-    expect(updated.version).toBe(sequence.version + 1);
+    expect(updated.sequence.version).toBe(sequence.version + 1);
+    expect(updated.changedTouches).toBe(1);
     expect(await firstTouch(f)).toMatchObject({
       status: "planned",
       draft: "New template",
@@ -1200,7 +1201,7 @@ describe("editing a sequence", () => {
     await outreach.updateSequence(admin, {
       organizationId: org,
       sequenceId: sequence.id,
-      version: updated.version,
+      version: updated.sequence.version,
       steps: steps.filter((step) => step.number !== 1),
     });
     expect(await firstTouch(f)).toMatchObject({ status: "expired" });
@@ -1339,5 +1340,164 @@ describe("tenant isolation", () => {
       status: "paused",
       pauseReason: "archived",
     });
+  });
+});
+
+describe("views for the outreach section", () => {
+  test("the queue lists drafts, approved and recent sends, and paused enrollments with an archived flag", async () => {
+    now = Date.parse("2026-10-27T10:00:00Z");
+    const f = await fixture();
+    await enroll(f);
+    const touch = await firstTouch(f);
+    const scope = { organizationId: org, productId: f.productId };
+    const first = await outreach.queue(admin, scope);
+    expect(first.drafts.map((row) => row.id)).toEqual([touch.id]);
+    expect(first.drafts[0]).toMatchObject({
+      status: "planned",
+      followUp: 0,
+      person: { id: f.personId, archived: false },
+      sequenceName: "Fixture sequence",
+    });
+    expect(first.approved).toEqual([]);
+    await draftAndApprove(touch.id);
+    const approved = await outreach.queue(admin, scope);
+    expect(approved.drafts).toEqual([]);
+    expect(approved.approved[0]).toMatchObject({
+      id: touch.id,
+      allowed: true,
+      sendAfter: new Date(now).toISOString(),
+    });
+    await send(touch.id, admin, { externalMessageId: "queue-link-1" });
+    const sent = await outreach.queue(admin, scope);
+    expect(sent.approved).toEqual([]);
+    expect(sent.sent[0]).toMatchObject({
+      id: touch.id,
+      externalMessageId: "queue-link-1",
+      sentByName: "Alex Morgan",
+    });
+    const enrollment = await enrollmentOf(f.relationshipId);
+    await outreach.changeEnrollment(admin, {
+      organizationId: org,
+      enrollmentId: enrollment.id,
+      version: enrollment.version,
+      command: "pause",
+    });
+    const paused = await outreach.queue(admin, scope);
+    expect(paused.paused).toMatchObject([
+      {
+        id: enrollment.id,
+        pauseReason: "manual",
+        sequenceName: "Fixture sequence",
+        person: { id: f.personId, archived: false },
+      },
+    ]);
+    const person = await personRow(f.personId);
+    await records.archivePerson(admin, {
+      organizationId: org,
+      personId: person.id,
+      version: person.version,
+      archived: true,
+    });
+    const archived = await outreach.queue(admin, scope);
+    expect(archived.paused[0]?.person.archived).toBe(true);
+    expect(
+      (await outreach.queue(teammate, { organizationId: org })).paused.some(
+        (row) => row.id === enrollment.id,
+      ),
+    ).toBe(false);
+  });
+
+  test("a skip can be undone: the touch reopens, an untouched next step is withdrawn and the step can be skipped again", async () => {
+    now = Date.parse("2026-10-28T06:00:00Z");
+    const f = await fixture();
+    await enroll(f);
+    const touch = await firstTouch(f);
+    const skipped = await outreach.skip(admin, {
+      organizationId: org,
+      touchId: touch.id,
+      version: touch.version,
+      reason: "Met in person",
+    });
+    now += 3 * day;
+    await outreach.advanceEnrollments(admin, { organizationId: org });
+    expect(await touchesOf(f.relationshipId)).toHaveLength(2);
+    const reopened = await outreach.reopen(admin, {
+      organizationId: org,
+      touchId: touch.id,
+      version: skipped.version,
+    });
+    expect(reopened).toMatchObject({
+      status: "drafted",
+      skipReason: null,
+      closedAt: null,
+    });
+    expect(await touchesOf(f.relationshipId)).toMatchObject([
+      { stepNumber: 1, status: "drafted" },
+    ]);
+    expect(await enrollmentOf(f.relationshipId)).toMatchObject({
+      status: "running",
+      step: 1,
+    });
+    await expect(
+      outreach.reopen(admin, {
+        organizationId: org,
+        touchId: touch.id,
+        version: reopened.version,
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    const again = await outreach.skip(admin, {
+      organizationId: org,
+      touchId: touch.id,
+      version: reopened.version,
+      reason: "Met in person",
+    });
+    now += 3 * day;
+    await outreach.advanceEnrollments(admin, { organizationId: org });
+    const next = (await touchesOf(f.relationshipId))[1];
+    if (!next) throw new Error("missing next touch");
+    await outreach.editDraft(admin, {
+      organizationId: org,
+      touchId: next.id,
+      version: next.version,
+      draft: "Edited by hand",
+    });
+    await expect(
+      outreach.reopen(admin, {
+        organizationId: org,
+        touchId: touch.id,
+        version: again.version,
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  test("saving a sequence reports how many planned touches changed", async () => {
+    now = Date.parse("2026-10-30T06:00:00Z");
+    const brand = (await product()).id;
+    const f = await fixture(brand);
+    const g = await fixture(brand);
+    const sequence = await addSequence(brand);
+    await outreach.enroll(admin, {
+      organizationId: org,
+      sequenceId: sequence.id,
+      relationshipIds: [f.relationshipId, g.relationshipId],
+      dryRun: false,
+    });
+    const unchanged = await outreach.updateSequence(admin, {
+      organizationId: org,
+      sequenceId: sequence.id,
+      version: sequence.version,
+      steps,
+    });
+    expect(unchanged.changedTouches).toBe(0);
+    const edited = await outreach.updateSequence(admin, {
+      organizationId: org,
+      sequenceId: sequence.id,
+      version: unchanged.sequence.version,
+      steps: steps.map((step) =>
+        step.number === 1 ? { ...step, template: "Rewritten" } : step,
+      ),
+    });
+    expect(edited.changedTouches).toBe(2);
+    expect(edited.sequence.version).toBe(sequence.version + 2);
   });
 });

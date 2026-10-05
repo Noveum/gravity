@@ -1,12 +1,15 @@
 import {
   and,
   asc,
+  desc,
   eq,
+  gt,
   gte,
   inArray,
   isNull,
   lt,
   max,
+  or,
   type SQL,
   sql,
 } from "drizzle-orm";
@@ -67,6 +70,7 @@ export const touchSentSchema = touchScope.extend({
   sentAt: z.iso.datetime().optional(),
   externalMessageId: z.string().trim().min(1).max(500).optional(),
 });
+export const touchReopenSchema = touchScope.extend({ version });
 export const touchSkipSchema = touchScope.extend({
   version,
   reason: z.string().trim().min(1).max(500),
@@ -133,6 +137,8 @@ export const contactPreferencesSchema = scopeSchema.extend({
 });
 
 const openStatuses = ["planned", "drafted", "approved"] as const;
+const sentWindowDays = 30;
+const day = 86400000;
 const isOpen = (touch: Touch) =>
   (openStatuses as readonly string[]).includes(touch.status);
 
@@ -916,6 +922,166 @@ export class OutreachService {
     };
   }
 
+  async queue(principal: Principal, scope: z.infer<typeof scopeSchema>) {
+    const permission = await authorize(
+      this.db,
+      principal,
+      scope.organizationId,
+      scope.productId,
+    );
+    const productIds = permission.products
+      .map((product) => product.id)
+      .filter((id) => !scope.productId || id === scope.productId);
+    const now = this.clock();
+    const asOf = new Date(now).toISOString();
+    if (!productIds.length)
+      return { drafts: [], approved: [], sent: [], paused: [], asOf };
+    const person = {
+      id: s.people.id,
+      name: s.people.name,
+      email: s.people.email,
+      doNotContact: s.people.doNotContact,
+      timeZone: s.people.timeZone,
+      archivedAt: s.people.archivedAt,
+    };
+    const rows = await this.db
+      .select({
+        touch: s.touches,
+        person,
+        stageId: s.relationships.stageId,
+        sequenceName: s.sequences.name,
+        sentByName: s.user.name,
+      })
+      .from(s.touches)
+      .innerJoin(
+        s.enrollments,
+        and(
+          eq(s.enrollments.id, s.touches.enrollmentId),
+          eq(s.enrollments.organizationId, s.touches.organizationId),
+        ),
+      )
+      .innerJoin(
+        s.sequences,
+        and(
+          eq(s.sequences.id, s.enrollments.sequenceId),
+          eq(s.sequences.organizationId, s.enrollments.organizationId),
+        ),
+      )
+      .innerJoin(
+        s.relationships,
+        and(
+          eq(s.relationships.id, s.touches.relationshipId),
+          eq(s.relationships.organizationId, s.touches.organizationId),
+        ),
+      )
+      .innerJoin(
+        s.people,
+        and(
+          eq(s.people.id, s.relationships.personId),
+          eq(s.people.organizationId, s.relationships.organizationId),
+        ),
+      )
+      .leftJoin(s.user, eq(s.user.id, s.touches.sentBy))
+      .where(
+        and(
+          eq(s.touches.organizationId, scope.organizationId),
+          inArray(s.touches.productId, productIds),
+          or(
+            and(
+              inArray(s.touches.status, [...openStatuses]),
+              eq(s.enrollments.status, "running"),
+              isNull(s.people.archivedAt),
+            ),
+            and(
+              eq(s.touches.status, "sent"),
+              gte(s.touches.sentAt, new Date(now - sentWindowDays * day)),
+            ),
+          ),
+        ),
+      )
+      .orderBy(asc(s.touches.dueAt), asc(s.touches.id));
+    const gate = await gateContext(
+      this.db,
+      scope.organizationId,
+      [
+        ...new Set(
+          rows
+            .filter((row) => row.touch.status === "approved")
+            .map((row) => row.person.id),
+        ),
+      ],
+      now,
+    );
+    const listed = await Promise.all(
+      rows.map(async ({ touch, person: who, ...row }) => {
+        const base = {
+          ...touch,
+          ...row,
+          person: { ...who, archived: !!who.archivedAt },
+        };
+        if (touch.status !== "approved")
+          return { ...base, allowed: true, sendAfter: null, reasons: [] };
+        const window = await gate(touch, who);
+        return { ...base, allowed: window.allowed, ...gateData(window) };
+      }),
+    );
+    const paused = await this.db
+      .select({
+        enrollment: s.enrollments,
+        person,
+        sequenceName: s.sequences.name,
+        stageId: s.relationships.stageId,
+        lastInboundAt: s.relationships.lastInboundAt,
+      })
+      .from(s.enrollments)
+      .innerJoin(
+        s.sequences,
+        and(
+          eq(s.sequences.id, s.enrollments.sequenceId),
+          eq(s.sequences.organizationId, s.enrollments.organizationId),
+        ),
+      )
+      .innerJoin(
+        s.relationships,
+        and(
+          eq(s.relationships.id, s.enrollments.relationshipId),
+          eq(s.relationships.organizationId, s.enrollments.organizationId),
+        ),
+      )
+      .innerJoin(
+        s.people,
+        and(
+          eq(s.people.id, s.relationships.personId),
+          eq(s.people.organizationId, s.relationships.organizationId),
+        ),
+      )
+      .where(
+        and(
+          eq(s.enrollments.organizationId, scope.organizationId),
+          inArray(s.enrollments.productId, productIds),
+          eq(s.enrollments.status, "paused"),
+        ),
+      )
+      .orderBy(desc(s.relationships.lastInboundAt), asc(s.enrollments.id));
+    return {
+      drafts: listed.filter(
+        (touch) => touch.status === "planned" || touch.status === "drafted",
+      ),
+      approved: listed.filter((touch) => touch.status === "approved"),
+      sent: listed
+        .filter((touch) => touch.status === "sent")
+        .sort(
+          (a, b) => (b.sentAt?.getTime() ?? 0) - (a.sentAt?.getTime() ?? 0),
+        ),
+      paused: paused.map(({ enrollment, person: who, ...row }) => ({
+        ...enrollment,
+        ...row,
+        person: { ...who, archived: !!who.archivedAt },
+      })),
+      asOf,
+    };
+  }
+
   async touch(principal: Principal, input: z.infer<typeof touchQuerySchema>) {
     const [touch] = await this.db
       .select()
@@ -1311,6 +1477,67 @@ export class OutreachService {
     );
   }
 
+  async reopen(principal: Principal, input: z.infer<typeof touchReopenSchema>) {
+    return this.lockedTouch(
+      principal,
+      input,
+      async ({ tx, touch, enrollment }) => {
+        if (touch.status !== "skipped" || touch.version !== input.version)
+          throw new DomainError("CONFLICT", 409);
+        if (enrollment.status === "stopped")
+          throw new DomainError("ENROLLMENT_CLOSED", 409);
+        const later = await tx
+          .select()
+          .from(s.touches)
+          .where(
+            and(
+              eq(s.touches.organizationId, touch.organizationId),
+              eq(s.touches.enrollmentId, touch.enrollmentId),
+              gt(s.touches.stepNumber, touch.stepNumber),
+            ),
+          );
+        if (later.some((row) => row.status !== "planned" || row.version !== 1))
+          throw new DomainError("CONFLICT", 409);
+        if (later.length)
+          await tx.delete(s.touches).where(
+            inArray(
+              s.touches.id,
+              later.map((row) => row.id),
+            ),
+          );
+        const now = new Date(this.clock());
+        const [updated] = await tx
+          .update(s.touches)
+          .set({
+            status: touch.draft.trim() ? "drafted" : "planned",
+            skipReason: null,
+            closedAt: null,
+            updatedAt: now,
+            version: touch.version + 1,
+          })
+          .where(
+            and(
+              eq(s.touches.id, touch.id),
+              eq(s.touches.version, touch.version),
+            ),
+          )
+          .returning();
+        if (!updated) throw new DomainError("CONFLICT", 409);
+        await tx
+          .update(s.enrollments)
+          .set({
+            step: touch.stepNumber,
+            status:
+              enrollment.status === "completed" ? "running" : enrollment.status,
+            version: enrollment.version + 1,
+          })
+          .where(eq(s.enrollments.id, enrollment.id));
+        await this.event(tx, principal, touch, "touch.reopened");
+        return updated;
+      },
+    );
+  }
+
   async snooze(principal: Principal, input: z.infer<typeof touchSnoozeSchema>) {
     return this.lockedTouch(principal, input, async ({ tx, touch }) => {
       await assertTouchOpen(tx, touch);
@@ -1584,7 +1811,7 @@ export class OutreachService {
         )
         .orderBy(asc(s.enrollments.id))
         .for("update");
-      if (!enrollments.length) return updated;
+      if (!enrollments.length) return { sequence: updated, changedTouches: 0 };
       const now = new Date(this.clock());
       const planned = await tx
         .select({ touch: s.touches, person: s.people })
@@ -1604,12 +1831,19 @@ export class OutreachService {
             eq(s.touches.status, "planned"),
           ),
         );
+      let changedTouches = 0;
       for (const { touch, person } of planned) {
         const step = steps.find(
           (candidate) => candidate.number === touch.stepNumber,
         );
-        if (!step) continue;
-        await tx
+        if (
+          !step ||
+          (step.channel === touch.channel &&
+            step.followUp === touch.followUp &&
+            step.template === touch.draft)
+        )
+          continue;
+        const [rewritten] = await tx
           .update(s.touches)
           .set({
             channel: step.channel,
@@ -1631,7 +1865,9 @@ export class OutreachService {
               eq(s.touches.status, "planned"),
               eq(s.touches.version, touch.version),
             ),
-          );
+          )
+          .returning({ id: s.touches.id });
+        if (rewritten) changedTouches += 1;
       }
       const numbers = new Set(steps.map((step) => step.number));
       for (const enrollment of enrollments) {
@@ -1642,7 +1878,9 @@ export class OutreachService {
               !numbers.has(touch.stepNumber),
           )
           .map(({ touch }) => touch.stepNumber);
-        await expireOpenTouches(tx, principal, enrollment, now, removed);
+        changedTouches += (
+          await expireOpenTouches(tx, principal, enrollment, now, removed)
+        ).length;
       }
       await advance(
         tx,
@@ -1651,7 +1889,7 @@ export class OutreachService {
         now.getTime(),
         enrollments.map((row) => row.id),
       );
-      return updated;
+      return { sequence: updated, changedTouches };
     });
   }
 
@@ -1811,3 +2049,4 @@ export class OutreachService {
 
 export type DueTouches = Awaited<ReturnType<OutreachService["dueTouches"]>>;
 export type TouchContext = Awaited<ReturnType<OutreachService["touch"]>>;
+export type OutreachQueue = Awaited<ReturnType<OutreachService["queue"]>>;

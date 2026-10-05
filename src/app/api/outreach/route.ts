@@ -13,6 +13,7 @@ import {
   touchApproveSchema,
   touchDraftSchema,
   touchQuerySchema,
+  touchReopenSchema,
   touchSentSchema,
   touchSkipSchema,
   touchSnoozeSchema,
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
     const service = new OutreachService(await getDatabase());
     const query = Object.fromEntries(new URL(request.url).searchParams);
     const operation = z
-      .enum(["due", "touch", "rules"])
+      .enum(["due", "queue", "touch", "rules"])
       .default("due")
       .parse(query.operation);
     const scope = scopeSchema.parse(query);
@@ -40,6 +41,8 @@ export async function GET(request: Request) {
         await service.touch(principal, touchQuerySchema.parse(query)),
         { headers },
       );
+    if (operation === "queue")
+      return Response.json(await service.queue(principal, scope), { headers });
     if (operation === "rules")
       return Response.json(
         await service.contactRules(principal, scope.organizationId),
@@ -70,6 +73,7 @@ export async function POST(request: Request) {
       approve: () => service.approve(principal, touchApproveSchema.parse(body)),
       sent: () => service.markSent(principal, touchSentSchema.parse(body)),
       skip: () => service.skip(principal, touchSkipSchema.parse(body)),
+      reopen: () => service.reopen(principal, touchReopenSchema.parse(body)),
       snooze: () => service.snooze(principal, touchSnoozeSchema.parse(body)),
       enrollment: () =>
         service.changeEnrollment(principal, enrollmentChangeSchema.parse(body)),

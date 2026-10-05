@@ -144,4 +144,38 @@ describe("outreach HTTP contracts", () => {
       details: { sentBy: "Alex Morgan", externalMessageId: "route-message" },
     });
   });
+  test("the queue lists recent sends and a skipped touch reopens through the route", async () => {
+    const queue = await (
+      await get(
+        { operation: "queue", organizationId: org, productId: demoId(10) },
+        demoUser,
+      )
+    ).json();
+    expect(
+      queue.sent.map(
+        (row: { externalMessageId: string }) => row.externalMessageId,
+      ),
+    ).toContain("route-message");
+    const draft = queue.drafts.find(
+      (row: { status: string }) => row.status === "planned",
+    );
+    expect(draft).toBeTruthy();
+    const skipped = await (
+      await post({
+        operation: "skip",
+        organizationId: org,
+        touchId: draft.id,
+        version: draft.version,
+        reason: "Route skip",
+      })
+    ).json();
+    const reopened = await post({
+      operation: "reopen",
+      organizationId: org,
+      touchId: draft.id,
+      version: skipped.version,
+    });
+    expect(reopened.status).toBe(200);
+    expect((await reopened.json()).status).toBe("drafted");
+  });
 });

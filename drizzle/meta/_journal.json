@@ -50,6 +50,20 @@
       "when": 1791120722715,
       "tag": "0006_server_database_access",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791180426670,
+      "tag": "0007_regular_ted_forrester",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791197061540,
+      "tag": "0008_redundant_joshua_kane",
+      "breakpoints": true
     }
   ]
 }

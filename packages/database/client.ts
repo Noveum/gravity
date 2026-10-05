@@ -8,6 +8,7 @@ import { drizzle as postgresDrizzle } from "drizzle-orm/postgres-js";
 import { migrate as postgresMigrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { databaseOptions } from "./config";
+import { allowIdleDatabaseRelease } from "./lifecycle";
 import * as schema from "./schema";
 
 export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
@@ -54,6 +55,7 @@ declare global {
   var crmDatabase: Promise<Database> | undefined;
 }
 export async function getDatabase(): Promise<Database> {
+  allowIdleDatabaseRelease();
   if (!globalThis.crmDatabase) {
     globalThis.crmDatabase = (async () => {
       if (process.env.DATABASE_URL)

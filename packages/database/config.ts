@@ -6,6 +6,8 @@ interface DatabaseEnvironment {
   DATABASE_SSL_CA?: string;
 }
 
+export const DATABASE_IDLE_SECONDS = 5;
+
 export function databaseOptions(
   connectionUrl: string,
   environment: DatabaseEnvironment = process.env,
@@ -38,7 +40,7 @@ export function databaseOptions(
     max: 1,
     prepare: false,
     connect_timeout: 10,
-    idle_timeout: 20,
+    idle_timeout: DATABASE_IDLE_SECONDS,
     max_lifetime: 300,
     ssl:
       sslMode === "disable"

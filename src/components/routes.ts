@@ -18,6 +18,32 @@ const recordSections: ReadonlySet<Section> = new Set(["people", "companies"]);
 const sections = Object.keys(sectionPaths) as Section[];
 
 export const homePath = sectionPaths.actions;
+
+export function legacyDestination(
+  query: Record<string, string | string[] | undefined>,
+) {
+  const section = query.view === "connections" ? "integrations" : query.view;
+  const path = sections.includes(section as Section)
+    ? sectionPath(section as Section)
+    : homePath;
+  const notice = new URLSearchParams();
+  if (path === sectionPaths.integrations) {
+    if (query.integration === "connected" || query.integration === "pending")
+      notice.set("integration", query.integration);
+    if (typeof query.integrationError === "string")
+      notice.set("integrationError", query.integrationError);
+  }
+  const next = notice.size ? `${path}?${notice}` : path;
+  const workspace = new URLSearchParams();
+  for (const key of ["workspace", "organizationId", "productId"]) {
+    const value = query[key];
+    if (typeof value === "string" && value) workspace.set(key, value);
+  }
+  if (!workspace.has("workspace") && !workspace.has("organizationId"))
+    return next;
+  workspace.set("next", next);
+  return `/api/workspace?${workspace}`;
+}
 export const requestPathHeader = "x-gravity-path";
 const unsafeCharacter = (character: string) => {
   const code = character.charCodeAt(0);

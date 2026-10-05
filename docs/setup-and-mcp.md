@@ -13,15 +13,15 @@ The local fictional demo works without credentials. `CRM_DEMO_MODE=false` or any
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional Google login app |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Optional GitHub login app |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Optional passwordless email sign-in; sender must be verified in Resend |
-| `UNIPILE_WEBHOOK_SECRET` | Per-endpoint v2 signature secret; handler remains disabled in demo |
+| `INTEGRATION_ENCRYPTION_KEY`, `CRON_SECRET` | Stable provider encryption key and private scheduled-sync credential |
 | `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Private object storage credentials |
 | `S3_ENDPOINT`, `S3_REGION` | Provider endpoint/region; region defaults to `auto` |
 
-No Unipile API key or Gmail mailbox refresh token is consumed by the foundation because hosted connection setup and synchronization clients are not implemented. Do not add credentials that no adapter uses. Resend sends requested login codes; teammate invitations are still pending.
+Users set up their own Unipile API key and webhook signing secret in Connections; deployment-wide Unipile keys are not used. Gmail/calendar use separate user consent and encrypted refresh tokens. Fireflies keys are entered by each account owner. See [connector setup and limits](connectors.md). Resend sends requested login codes; teammate invitations are still pending.
 
 Email sign-in uses six-digit, single-use OTP codes that expire after five minutes, with three incorrect attempts allowed. Codes are hashed in the protected verification store. Atomic database rate limits work across serverless instances; each recipient can request one code per minute. A rejected resend leaves the original code usable. The browser handles delivery failures, code errors and resend cooldowns without losing the recipient or assistant authorization request. Login-code delivery is awaited, and its bounded log events never include the code, recipient or provider response body.
 
-The social-login callback paths are `/api/auth/callback/google` and `/api/auth/callback/github`, under the exact configured origin. Register a distinct CRM client or explicitly review an additional callback in an existing app. Do not copy credentials from another project into code. Gmail connection scopes/callbacks will be separate from login, and require the Google verification/security requirements relevant to the chosen scope.
+The social-login callback paths are `/api/auth/callback/google` and `/api/auth/callback/github`, under the exact configured origin. Register a distinct CRM client or explicitly review an additional callback in an existing app. Do not copy credentials from another project into code. Gmail connection scopes/callbacks are separate from login, and require the Google verification/security requirements relevant to the chosen scope.
 
 Review `drizzle/` before applying `bun run db:migrate` to the supplied database. Confirm database/project/region, backups, restore procedure, pooling and least-privileged access first. Never use `db:seed` on a real database. Build with `bun run build`, then run on Node with production environment variables. See [Supabase PostgreSQL](supabase.md) for separate migration/runtime credentials, verified TLS, RLS, recovery and the production health check. Provider sign-in and client consent still require qualification on the actual production origin.
 

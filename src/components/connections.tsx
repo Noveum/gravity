@@ -1,20 +1,37 @@
 "use client";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { Check, Copy, ExternalLink } from "lucide-react";
+import {
+  Bot,
+  Check,
+  Copy,
+  ExternalLink,
+  ShieldCheck,
+  Unplug,
+} from "lucide-react";
 import { useRef, useState } from "react";
 
-const providers = ["gmail", "calendar", "linkedin", "fireflies"] as const;
+import { IntegrationCards } from "./integration-cards";
 export function Connections({
   data,
   endpoint,
   demo,
   onRevoke,
+  organizationId,
+  productId,
+  initialNotice,
+  onChanged,
+  timeZone = "UTC",
 }: {
   data: ClientSnapshot;
   endpoint: string;
   demo: boolean;
   onRevoke: (id: string) => Promise<boolean>;
+  organizationId: string;
+  productId: string;
+  initialNotice: string;
+  onChanged: () => Promise<void>;
+  timeZone?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
@@ -22,31 +39,26 @@ export function Connections({
   const pending = useRef(false);
   return (
     <div className="page-content integration-grid">
-      {providers.map((provider) => (
-        <article key={provider} className="integration-card">
-          <div className="section-heading">
-            <h2>{t[provider]}</h2>
-            <span className="badge">{t.notConnected}</span>
-          </div>
-          <p>{t[`${provider}Description`]}</p>
-          <details className="connection-guide">
-            <summary>{t.connectionSetup}</summary>
-            <p>{t.providerConnectionPending}</p>
-            <ol>
-              {t.connectionSteps[provider].map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-          </details>
-          {provider === "gmail" && (
-            <p className="connection-note">{t.mailboxSeparateLogin}</p>
-          )}
-        </article>
-      ))}
+      <IntegrationCards
+        key={`${organizationId}:${productId}`}
+        data={data}
+        organizationId={organizationId}
+        productId={productId}
+        demo={demo}
+        initialNotice={initialNotice}
+        onChanged={onChanged}
+        timeZone={timeZone}
+      />
       <article className="integration-card mcp-card">
         <div className="section-heading">
-          <h2>{t.mcp}</h2>
-          <span className="badge">OAuth 2.1</span>
+          <h2>
+            <Bot size={18} aria-hidden="true" />
+            {t.mcp}
+          </h2>
+          <span className="badge">
+            <ShieldCheck size={12} aria-hidden="true" />
+            OAuth 2.1
+          </span>
         </div>
         <p>{t.mcpDescription}</p>
         <div className="endpoint-field">
@@ -67,7 +79,11 @@ export function Connections({
                 }
               }}
             >
-              {copied ? <Check size={15} /> : <Copy size={15} />}
+              {copied ? (
+                <Check size={15} aria-hidden="true" />
+              ) : (
+                <Copy size={15} aria-hidden="true" />
+              )}
               <span>{copied ? t.copied : t.copy}</span>
             </button>
           </div>
@@ -86,13 +102,13 @@ export function Connections({
         </ol>
         <p className="muted">{t.noKey}</p>
         <a
-          href="https://github.com/Noveum/gravity/blob/main/docs/setup-and-mcp.md"
+          href="/docs/connect-an-assistant"
           target="_blank"
           rel="noreferrer"
           className="text-button"
         >
           {t.integrationGuide}
-          <ExternalLink size={13} />
+          <ExternalLink size={13} aria-hidden="true" />
         </a>
         <h3 className="spaced">{t.assistantGrants}</h3>
         {data.grants.length ? (
@@ -122,6 +138,7 @@ export function Connections({
                   }
                 }}
               >
+                <Unplug size={14} aria-hidden="true" />
                 {revoking === grant.id ? t.saving : t.revoke}
               </button>
             </div>

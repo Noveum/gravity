@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { DomainError } from "../core/policy";
 import type { Database } from "../database/client";
@@ -9,12 +9,14 @@ import t from "../i18n/translations/en.json";
 export const replySchema = z.object({
   provider: z.enum(["gmail", "unipile"]),
   accountId: z.string().min(1).max(500),
+  connectionId: z.uuid().optional(),
   messageId: z.string().min(1).max(500),
   threadId: z.string().min(1).max(500),
   direction: z.enum(["inbound", "outbound"]),
   channel: z.enum(["gmail", "linkedin"]),
   body: z.string().max(100000),
   occurredAt: z.iso.datetime(),
+  historical: z.boolean().optional(),
 });
 export type ReplyEvent = z.infer<typeof replySchema>;
 export function verifyUnipileSignature(
@@ -114,16 +116,21 @@ export function normalizeUnipileV2(
 export async function ingestReply(db: Database, input: ReplyEvent) {
   const event = replySchema.parse(input);
   return db.transaction(async (tx) => {
-    const [connection] = await tx
+    const candidates = await tx
       .select()
       .from(s.connections)
       .where(
         and(
           eq(s.connections.provider, event.provider),
           eq(s.connections.externalAccountId, event.accountId),
+          event.connectionId
+            ? eq(s.connections.id, event.connectionId)
+            : undefined,
         ),
       )
+      .limit(2)
       .for("update");
+    const connection = candidates.length === 1 ? candidates[0] : undefined;
     if (!connection || !["connected", "demo"].includes(connection.status))
       throw new DomainError("CONNECTION_UNAVAILABLE", 422);
     const [receipt] = await tx
@@ -179,7 +186,51 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
       })
       .onConflictDoNothing()
       .returning();
-    if (message && event.direction === "inbound") {
+    const [latest] = await tx
+      .select()
+      .from(s.messages)
+      .where(eq(s.messages.conversationId, conversation.id))
+      .orderBy(desc(s.messages.occurredAt), desc(s.messages.createdAt))
+      .limit(1);
+    if (
+      message &&
+      latest?.id === message.id &&
+      event.direction === "outbound"
+    ) {
+      const resolved = await tx
+        .update(s.actions)
+        .set({
+          status: "completed",
+          approvedHash: null,
+          approvedBy: null,
+          version: sqIncrement(s.actions.version),
+        })
+        .where(
+          and(
+            eq(s.actions.sourceConversationId, conversation.id),
+            eq(s.actions.kind, "reply"),
+            eq(s.actions.status, "open"),
+          ),
+        )
+        .returning();
+      if (resolved.length)
+        await tx.insert(s.changeEvents).values(
+          resolved.map((action) => ({
+            organizationId: action.organizationId,
+            productId: action.productId,
+            sourceConversationId: conversation.id,
+            actorId: connection.ownerId,
+            type: "reply.observed_answer",
+            entityId: action.id,
+          })),
+        );
+    }
+    if (
+      !event.historical &&
+      message &&
+      latest?.id === message.id &&
+      event.direction === "inbound"
+    ) {
       await tx
         .update(s.enrollments)
         .set({

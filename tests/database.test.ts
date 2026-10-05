@@ -20,12 +20,12 @@ test("all CRM and authentication tables have RLS with only the trusted server po
     SELECT relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'r'
   `);
-  expect(tables.rows).toHaveLength(36);
+  expect(tables.rows).toHaveLength(40);
   expect(tables.rows.every((table) => table.relrowsecurity)).toBe(true);
   const policies = await local.client.query<{ roles: string[] }>(`
     SELECT roles FROM pg_policies WHERE schemaname = 'public'
   `);
-  expect(policies.rows).toHaveLength(36);
+  expect(policies.rows).toHaveLength(40);
   expect(
     policies.rows.every((policy) => policy.roles.join() === "gravity_app"),
   ).toBe(true);
@@ -33,7 +33,12 @@ test("all CRM and authentication tables have RLS with only the trusted server po
 
 test("browser roles cannot read CRM, sessions, or signing keys even if table grants are accidentally restored", async () => {
   for (const role of ["anon", "authenticated"]) {
-    for (const table of ["organizations", "session", "jwks"]) {
+    for (const table of [
+      "organizations",
+      "session",
+      "jwks",
+      "provider_configurations",
+    ]) {
       await local.client.exec(
         `GRANT SELECT, INSERT ON public.${table} TO ${role}`,
       );

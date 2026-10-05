@@ -169,6 +169,51 @@ describe("route table", () => {
     expect(target.searchParams.get("productId")).toBe(demoId(13));
     expect(target.searchParams.get("next")).toBe("/actions");
   });
+
+  test("provider callbacks retain their workspace, destination and result", async () => {
+    const { default: Root } = await import("../src/app/page");
+    async function target(query: Record<string, string | string[]>) {
+      try {
+        await Root({ searchParams: Promise.resolve(query) });
+      } catch (error) {
+        return new URL(
+          (error as { digest: string }).digest.split(";")[2] ?? "",
+          "https://crm.example.test",
+        );
+      }
+      throw new Error("Missing redirect");
+    }
+    for (const integration of ["connected", "pending"]) {
+      const result = await target({
+        view: "connections",
+        organizationId: demoId(2),
+        productId: demoId(13),
+        integration,
+        code: "must-not-forward-provider-code",
+      });
+      expect(result.pathname).toBe("/api/workspace");
+      expect(result.searchParams.get("organizationId")).toBe(demoId(2));
+      expect(result.searchParams.get("productId")).toBe(demoId(13));
+      expect(result.searchParams.get("next")).toBe(
+        `/connections?integration=${integration}`,
+      );
+      expect(result.searchParams.has("code")).toBe(false);
+    }
+    const failure = await target({
+      view: "connections",
+      integrationError: "PROVIDER_UNAVAILABLE",
+    });
+    expect(failure.pathname).toBe("/connections");
+    expect(failure.searchParams.get("integrationError")).toBe(
+      "PROVIDER_UNAVAILABLE",
+    );
+    expect((await target({ view: "//evil.example" })).pathname).toBe(
+      "/actions",
+    );
+    expect((await target({ view: ["connections", "people"] })).pathname).toBe(
+      "/actions",
+    );
+  });
 });
 
 describe("workspace preference", () => {

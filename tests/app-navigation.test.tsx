@@ -199,7 +199,7 @@ function page(route: Route | null): ReactNode {
 function Routed() {
   return page(routeFor(usePathname()));
 }
-function mount(path = "") {
+function mount(path = "", demo = true) {
   if (path) visit(path);
   render(
     <CrmApp
@@ -207,7 +207,7 @@ function mount(path = "") {
       organizations={organizations}
       initialOrganizationId={demoId(1)}
       userId={demoUser}
-      demo
+      demo={demo}
     >
       <Routed />
     </CrmApp>,
@@ -215,6 +215,78 @@ function mount(path = "") {
 }
 const heading = (name: string, level = 1) =>
   screen.getByRole("heading", { name, level });
+
+test("navigation width is keyboard adjustable, persisted and restored after collapse", () => {
+  mount();
+  const resize = screen.getByRole("separator", { name: t.resizeNavigation });
+  expect(resize.getAttribute("aria-controls")).toBe("navigation-panel");
+  expect(resize.getAttribute("aria-valuenow")).toBe("232");
+  fireEvent.keyDown(resize, { key: "ArrowRight" });
+  expect(resize.getAttribute("aria-valuenow")).toBe("242");
+  expect(localStorage.getItem("gravity-navigation-width")).toBe("242");
+  fireEvent.click(screen.getByRole("button", { name: t.toggleSidebar }));
+  expect(
+    screen.queryByRole("separator", { name: t.resizeNavigation }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: t.toggleSidebar }));
+  expect(
+    screen
+      .getByRole("separator", { name: t.resizeNavigation })
+      .getAttribute("aria-valuenow"),
+  ).toBe("242");
+  cleanup();
+  mount();
+  expect(
+    screen
+      .getByRole("separator", { name: t.resizeNavigation })
+      .getAttribute("aria-valuenow"),
+  ).toBe("242");
+});
+
+test("the routed Connections view loads the active scope, shows callback results and opens personal Unipile setup", async () => {
+  const regular = request.getMockImplementation();
+  if (!regular) throw new Error("Missing request implementation");
+  request.mockImplementation(async (url, init) =>
+    url.startsWith("/api/integrations")
+      ? {
+          configured: {
+            gmail: true,
+            calendar: true,
+            linkedin: false,
+            fireflies: true,
+          },
+          connections: [],
+          items: [],
+          reviewTotal: 0,
+          nextReviewCursor: null,
+        }
+      : regular(url, init),
+  );
+  mount("/connections?integration=connected", false);
+  expect(
+    screen.getByText(t.integrationMessages.CONNECTION_CONNECTED),
+  ).toBeTruthy();
+  const setup = await screen.findByRole("button", { name: t.unipileSetUp });
+  await waitFor(() => expect(setup.matches(":disabled")).toBe(false));
+  const integrationReads = () =>
+    request.mock.calls
+      .map(([url]) => new URL(url, "https://crm.example.test"))
+      .filter((url) => url.pathname === "/api/integrations");
+  expect(integrationReads().at(-1)?.searchParams.get("organizationId")).toBe(
+    demoId(1),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "AI Platform" }));
+  await waitFor(() =>
+    expect(integrationReads().at(-1)?.searchParams.get("productId")).toBe(
+      demoId(10),
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: t.unipileSetUp }));
+  expect(screen.getByLabelText(t.unipileApiKey).getAttribute("type")).toBe(
+    "password",
+  );
+  expect(screen.getByText(t.unipileOwnership)).toBeTruthy();
+});
 
 test("go-to navigation lands on a title from which J moves, Space peeks and Enter opens the record page", async () => {
   mount();

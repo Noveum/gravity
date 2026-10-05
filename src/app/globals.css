@@ -3628,3 +3628,79 @@ tbody tr[data-selected] td:first-child::before {
   gap: 2px;
   font-size: var(--text-dense);
 }
+.sequence-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0 16px;
+}
+.sequence-name {
+  max-width: 360px;
+}
+.sequence-editor-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.sequence-editor-step {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: var(--gravity-radius-lg);
+  background: var(--gravity-surface);
+  min-width: 0;
+}
+.sequence-editor-fields {
+  display: grid;
+  grid-template-columns: minmax(140px, 2fr) repeat(3, minmax(96px, 1fr));
+  gap: 8px;
+}
+.sequence-template {
+  grid-column: 1 / -1;
+}
+.sequence-template textarea {
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: var(--text-dense);
+  resize: vertical;
+}
+.sequence-editor-order {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sequence-editor-actions {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sequence-editor-actions .field-hint {
+  margin: 0 auto 0 0;
+}
+.sequence-enrollments {
+  margin-top: 12px;
+  width: 100%;
+  font-size: var(--text-dense);
+}
+.sequence-enrollments :where(td) {
+  height: var(--gravity-list-row);
+  padding: 0 8px 0 0;
+  border-bottom: 1px solid var(--gravity-border-hairline);
+}
+@media (max-width: 760px) {
+  .sequence-editor-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .sequence-editor-step {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .sequence-editor-step .step-number {
+    display: none;
+  }
+}

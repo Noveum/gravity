@@ -361,3 +361,105 @@ describe("enrolling from People", () => {
     ).toBe(true);
   });
 });
+
+describe("the sequences tab", () => {
+  test("the editor adds, reorders and removes steps, saves them and says how many planned touches changed", async () => {
+    await mountCrm(harness, "/outreach/sequences");
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: `${t.editSteps}: Thoughtful introduction · AI Platform`,
+      }),
+    );
+    const editor = await screen.findByRole("form", {
+      name: `${t.editSteps}: Thoughtful introduction · AI Platform`,
+    });
+    const step = (number: number) =>
+      within(editor).getByRole("group", {
+        name: t.stepLabel.replace("{number}", String(number)),
+      });
+    fireEvent.change(within(step(3)).getByLabelText(t.stepTemplate), {
+      target: { value: "Rewritten follow-up" },
+    });
+    fireEvent.click(within(editor).getByRole("button", { name: t.addStep }));
+    fireEvent.change(within(step(5)).getByLabelText(t.stepName), {
+      target: { value: "Case study" },
+    });
+    fireEvent.change(within(step(5)).getByLabelText(t.stepDelay), {
+      target: { value: "4" },
+    });
+    fireEvent.click(
+      within(step(5)).getByRole("button", {
+        name: t.moveStepUp.replace("{number}", "5"),
+      }),
+    );
+    expect(
+      (within(step(4)).getByLabelText(t.stepName) as HTMLInputElement).value,
+    ).toBe("Case study");
+    fireEvent.click(
+      within(step(5)).getByRole("button", {
+        name: t.removeStep.replace("{number}", "5"),
+      }),
+    );
+    fireEvent.click(
+      within(editor).getByRole("button", { name: t.saveSequence }),
+    );
+    await screen.findByText(
+      t.sequenceSaved
+        .replace("{name}", "Thoughtful introduction")
+        .replace("{changes}", t.plannedChangedOne),
+    );
+    const saved = harness.posts.find((post) => post.operation === "sequence");
+    expect(
+      ((saved?.steps ?? []) as { number: number; name: string }[]).map(
+        (item) => [item.number, item.name],
+      ),
+    ).toEqual([
+      [1, "Initial message"],
+      [2, "Follow-up 1"],
+      [3, "Follow-up 2"],
+      [4, "Case study"],
+    ]);
+    const [touch] = await harness.local.db
+      .select()
+      .from(s.touches)
+      .where(eq(s.touches.id, demoId(1307)));
+    expect(touch?.draft).toBe("Rewritten follow-up");
+  });
+
+  test("each sequence lists its enrollments with status and step, and pause and resume work from there", async () => {
+    await mountCrm(harness, "/outreach/sequences");
+    const list = await screen.findByRole("table", {
+      name: `${t.enrollments}: Thoughtful introduction · AI Platform`,
+    });
+    const amara = within(list).getByRole("row", { name: /Amara Stone/ });
+    expect(amara.textContent).toContain(t.enrollmentStatus.running);
+    expect(amara.textContent).toContain(
+      t.currentStep.replace("{step}", "2").replace("{total}", "4"),
+    );
+    expect(
+      within(list).getByRole("row", { name: /Mira Chen/ }).textContent,
+    ).toContain(t.paused_reply);
+    fireEvent.click(
+      within(amara).getByRole("button", { name: `${t.pause}: Amara Stone` }),
+    );
+    await screen.findByText(t.pausedSequence.replace("{name}", "Amara Stone"));
+    await waitFor(() =>
+      expect(
+        within(
+          screen.getByRole("table", {
+            name: `${t.enrollments}: Thoughtful introduction · AI Platform`,
+          }),
+        ).getByRole("button", { name: `${t.resume}: Amara Stone` }),
+      ).toBeTruthy(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: `${t.resume}: Amara Stone` }),
+    );
+    await screen.findByText(t.resumed.replace("{name}", "Amara Stone"));
+    const [enrollment] = await harness.local.db
+      .select()
+      .from(s.enrollments)
+      .where(eq(s.enrollments.id, demoId(501)));
+    expect(enrollment?.status).toBe("running");
+  });
+});

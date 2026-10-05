@@ -1207,5 +1207,30 @@
   "enrollDone": "Enrolled {people} in {sequence}",
   "enrollNobody": "Nobody here can be enrolled in this sequence.",
   "enrollNoSequences": "Create a sequence for this brand first.",
-  "goBack": "Back"
+  "goBack": "Back",
+  "editSteps": "Edit steps",
+  "addStep": "Add step",
+  "removeStep": "Remove step {number}",
+  "moveStepUp": "Move step {number} up",
+  "moveStepDown": "Move step {number} down",
+  "stepName": "Step name",
+  "stepDelay": "Delay in days",
+  "stepFollowUp": "Follow-up",
+  "stepTemplate": "Template",
+  "sequenceName": "Sequence name",
+  "saveSequence": "Save sequence",
+  "sequenceSaved": "Saved {name}. {changes}",
+  "plannedChangedNone": "No planned messages changed.",
+  "plannedChangedOne": "1 planned message changed.",
+  "plannedChanged": "{count} planned messages changed.",
+  "sequenceEditHint": "Steps are numbered in order. Planned messages follow their step number and pick up the new template; drafted, approved and sent messages never change.",
+  "stepsCount": "{count} steps",
+  "currentStep": "Step {step} of {total}",
+  "noEnrollments": "Nobody is enrolled yet.",
+  "enrollmentStatus": {
+    "running": "Running",
+    "completed": "Completed",
+    "stopped": "Stopped"
+  },
+  "enrollmentChange": "Change"
 }

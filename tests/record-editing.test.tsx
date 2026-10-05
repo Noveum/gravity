@@ -3,10 +3,12 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { eq } from "drizzle-orm";
 import { describe, expect, test, vi } from "vitest";
+import { RecordService } from "../packages/core/records";
 import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { requestJson } from "../src/components/client-api";
+import { localInputValue } from "../src/components/records/record-dialogs";
 import { browserNavigation } from "../src/components/shell/user-menu";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 
@@ -113,6 +115,120 @@ describe("people", () => {
     fireEvent.click(restore);
     expect(await screen.findByRole("button", { name: t.archive })).toBeTruthy();
     expect(screen.queryByText(t.archivedPersonNote)).toBeNull();
+  });
+});
+
+describe("fix round 1", () => {
+  test("an archived company stays on the person, labelled archived, and an unchanged save keeps it", async () => {
+    const records = new RecordService(harness.local.db);
+    await records.archiveCompany(
+      { userId: "demo-you", source: "demo" },
+      {
+        organizationId: demoId(1),
+        companyId: demoId(105),
+        version: 1,
+        archived: true,
+      },
+    );
+    await mountCrm(harness, `/people/${demoId(205)}`);
+    const archivedName = `Vale Software ${t.archivedSuffix}`;
+    expect(await screen.findAllByText(archivedName)).not.toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: t.edit }));
+    const dialog = screen.getByRole("dialog", { name: t.editPerson });
+    const company = within(dialog).getByLabelText(
+      t.company,
+    ) as HTMLSelectElement;
+    expect(company.value).toBe(demoId(105));
+    expect(company.selectedOptions[0]?.textContent).toBe(archivedName);
+    expect(
+      within(dialog).getByLabelText(t.linkedinUrl).getAttribute("placeholder"),
+    ).toBe(t.linkedinPlaceholder);
+    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: t.editPerson })).toBeNull(),
+    );
+    const post = harness.posts.find(
+      (body) => body.operation === "person-update",
+    );
+    expect(post).toBeTruthy();
+    expect(post && "companyId" in post).toBe(false);
+    const [stored] = await harness.local.db
+      .select()
+      .from(s.people)
+      .where(eq(s.people.id, demoId(205)));
+    expect(stored?.companyId).toBe(demoId(105));
+  });
+
+  test("meeting times are shown and saved in the workspace time zone", async () => {
+    expect(localInputValue("2030-03-04T04:30:00.000Z", "Asia/Kolkata")).toBe(
+      "2030-03-04T10:00",
+    );
+    await mountCrm(harness, "/meetings");
+    screen.getByRole("button", { name: "Leena Rao" }).focus();
+    await userEvent.setup().keyboard("e");
+    const dialog = screen.getByRole("dialog", { name: t.editMeeting });
+    const starts = within(dialog).getByLabelText(
+      t.startsAt,
+    ) as HTMLInputElement;
+    const [meeting] = await harness.local.db
+      .select()
+      .from(s.meetings)
+      .where(eq(s.meetings.id, demoId(1000)));
+    expect(starts.value).toBe(
+      localInputValue(meeting?.startsAt.toISOString() ?? "", "UTC"),
+    );
+    fireEvent.change(starts, { target: { value: "2030-05-06T07:45" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
+    await waitFor(() =>
+      expect(
+        harness.posts.find((body) => body.operation === "meeting"),
+      ).toMatchObject({ startsAt: "2030-05-06T07:45:00.000Z" }),
+    );
+  });
+
+  test("deal values use the currency's minor units", async () => {
+    await mountCrm(harness, "/opportunities");
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.setup().keyboard("c");
+    const deal = screen.getByRole("dialog", { name: t.newOpportunity });
+    const user = userEvent.setup();
+    await user.selectOptions(
+      within(deal).getByLabelText(t.person),
+      "Jonah Reed · API Marketplace",
+    );
+    await user.type(within(deal).getByLabelText(t.name), "Fictional yen deal");
+    await user.type(within(deal).getByLabelText(t.amount), "1250");
+    const currency = within(deal).getByLabelText(t.currency);
+    await user.clear(currency);
+    await user.type(currency, "JPY");
+    fireEvent.click(within(deal).getByRole("button", { name: t.create }));
+    expect(
+      await screen.findByRole("button", { name: "Fictional yen deal" }),
+    ).toBeTruthy();
+    expect(
+      harness.posts.find((body) => body.operation === "opportunity"),
+    ).toMatchObject({ amountMinor: 1250, currency: "JPY" });
+    const card = screen
+      .getByRole("button", { name: "Fictional yen deal" })
+      .closest("article") as HTMLElement;
+    expect(card.textContent).toContain("¥1,250");
+  });
+
+  test("a save pressed while another change is in flight says to try again", async () => {
+    await mountCrm(harness, `/people/${demoId(201)}`);
+    const request = vi.mocked(requestJson);
+    const respond = request.getMockImplementation();
+    request.mockImplementation((url, init) =>
+      init?.method === "POST"
+        ? new Promise(() => {})
+        : (respond?.(url, init) ?? Promise.resolve({})),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: t.archive }));
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.setup().keyboard("e");
+    const dialog = screen.getByRole("dialog", { name: t.editPerson });
+    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
+    expect(await within(dialog).findByText(t.stillSaving)).toBeTruthy();
   });
 });
 

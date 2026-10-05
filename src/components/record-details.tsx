@@ -282,7 +282,9 @@ export function PersonDetails({
               className="text-button"
               onClick={() => onCompany(context.company?.id || "")}
             >
-              {context.company.name}
+              {context.company.archivedAt
+                ? `${context.company.name} ${t.archivedSuffix}`
+                : context.company.name}
               <ChevronRight size={12} />
             </button>
           ) : (

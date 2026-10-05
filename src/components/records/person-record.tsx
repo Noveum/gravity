@@ -80,9 +80,18 @@ export function PersonRecord({ personId }: { personId: string }) {
         }
       />
     );
-  const company = sourceData.companies.find(
+  const activeCompany = sourceData.companies.find(
     (item) => item.id === person.companyId,
   );
+  const archivedCompany = sourceData.archived.companies.find(
+    (item) => item.id === person.companyId,
+  );
+  const company =
+    activeCompany ??
+    (archivedCompany && {
+      id: archivedCompany.id,
+      name: `${archivedCompany.name} ${t.archivedSuffix}`,
+    });
   const focus = (relationshipId: string, actionId = "") => {
     const owner = sourceData.relationships.find(
       (item) => item.id === relationshipId,

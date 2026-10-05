@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
   dueToday,
+  instantFromZonedInput,
   nextWorkingMorning,
   snoozeLabel,
+  zonedInputValue,
 } from "../packages/core/calendar";
 
 describe("workspace calendar", () => {
@@ -48,5 +50,20 @@ describe("workspace calendar", () => {
     expect(snoozeLabel(nextWorkingMorning(friday, "UTC"), friday, "UTC")).toBe(
       "Monday",
     );
+  });
+});
+
+describe("wall clock inputs in the workspace time zone", () => {
+  test("an instant shows as the workspace's wall clock and round-trips", () => {
+    const instant = "2030-03-04T04:30:00.000Z";
+    expect(zonedInputValue(instant, "Asia/Kolkata")).toBe("2030-03-04T10:00");
+    expect(zonedInputValue(instant, "UTC")).toBe("2030-03-04T04:30");
+    expect(instantFromZonedInput("2030-03-04T10:00", "Asia/Kolkata")).toBe(
+      instant,
+    );
+    expect(instantFromZonedInput("2030-07-01T09:15", "Europe/London")).toBe(
+      "2030-07-01T08:15:00.000Z",
+    );
+    expect(instantFromZonedInput("not a time", "UTC")).toBe("");
   });
 });

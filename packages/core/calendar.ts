@@ -64,8 +64,9 @@ function zonedInstant(
   date: number,
   hour: number,
   timeZone: string,
+  minute = 0,
 ) {
-  const guess = Date.UTC(year, month - 1, date, hour);
+  const guess = Date.UTC(year, month - 1, date, hour, minute);
   const first = guess - offset(guess, timeZone);
   return guess - offset(first, timeZone);
 }
@@ -88,6 +89,31 @@ export function nextWorkingMorning(now: number, timeZone: string) {
     9,
     timeZone,
   );
+}
+
+const pad = (value: number) => String(value).padStart(2, "0");
+
+export function zonedInputValue(value: string, timeZone: string) {
+  const instant = Date.parse(value);
+  if (Number.isNaN(instant)) return "";
+  const clock = wallClock(instant, timeZone);
+  return `${clock.year}-${pad(clock.month)}-${pad(clock.day)}T${pad(clock.hour)}:${pad(clock.minute)}`;
+}
+
+export function instantFromZonedInput(value: string, timeZone: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return "";
+  const [, year, month, date, hour, minute] = match.map(Number);
+  return new Date(
+    zonedInstant(
+      year ?? 0,
+      month ?? 1,
+      date ?? 1,
+      hour ?? 0,
+      timeZone,
+      minute ?? 0,
+    ),
+  ).toISOString();
 }
 
 export function dueToday(dueAt: string, now: number, timeZone: string) {

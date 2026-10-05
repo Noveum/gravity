@@ -324,7 +324,10 @@ function useCrmState({
     announce: boolean | string = true,
     toastErrors = true,
   ): Promise<{ ok: boolean; result?: unknown; error?: string }> {
-    if (mutating.current) return { ok: false };
+    if (mutating.current) {
+      if (toastErrors) notify(t.stillSaving, "neutral");
+      return { ok: false, error: t.stillSaving };
+    }
     mutating.current = true;
     const submittedOrganization = organizationId;
     setBusy(true);

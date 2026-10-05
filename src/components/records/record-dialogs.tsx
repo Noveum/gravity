@@ -1,10 +1,12 @@
 "use client";
+import { instantFromZonedInput, zonedInputValue } from "@crm/core/calendar";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { useState } from "react";
 import { label } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { pipelineStages } from "../crm/use-stage-moves";
+import { fromMinor, toMinor } from "../money";
 import { RecordDialog, text } from "./record-dialog";
 
 type Snapshot = ClientSnapshot;
@@ -16,12 +18,7 @@ type Opportunity = Snapshot["opportunities"][number];
 const failure = ({ ok, error }: { ok: boolean; error?: string }) =>
   ok ? null : (error ?? "");
 
-export function localInputValue(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const pad = (part: number) => String(part).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
+export const localInputValue = zonedInputValue;
 
 export function PersonEditDialog({
   person,
@@ -32,6 +29,12 @@ export function PersonEditDialog({
 }) {
   const crm = useCrm();
   const companies = crm.sourceData?.companies ?? [];
+  const archivedCompany = crm.sourceData?.archived.companies.find(
+    (company) =>
+      company.id === person.companyId &&
+      !companies.some((item) => item.id === company.id),
+  );
+  const currentCompany = person.companyId ?? "";
   return (
     <RecordDialog
       title={t.editPerson}
@@ -53,7 +56,9 @@ export function PersonEditDialog({
                 .filter(Boolean),
               phone: text(fields, "phone"),
               linkedinUrl: text(fields, "linkedinUrl"),
-              companyId: text(fields, "companyId") || null,
+              ...(text(fields, "companyId") !== currentCompany
+                ? { companyId: text(fields, "companyId") || null }
+                : {}),
               summary: text(fields, "summary"),
             },
             t.personSaved,
@@ -112,7 +117,7 @@ export function PersonEditDialog({
           name="linkedinUrl"
           type="url"
           maxLength={300}
-          placeholder="https://www.linkedin.com/in/"
+          placeholder={t.linkedinPlaceholder}
           defaultValue={person.linkedinUrl}
         />
       </label>
@@ -120,6 +125,11 @@ export function PersonEditDialog({
         {t.company}
         <select name="companyId" defaultValue={person.companyId ?? ""}>
           <option value="">{t.noCompany}</option>
+          {archivedCompany && (
+            <option value={archivedCompany.id}>
+              {`${archivedCompany.name} ${t.archivedSuffix}`}
+            </option>
+          )}
           {companies.map((company) => (
             <option key={company.id} value={company.id}>
               {company.name}
@@ -276,7 +286,10 @@ export function MeetingDialog({
                 ? { meetingId: meeting.id, version: meeting.version }
                 : { relationshipId: text(fields, "relationshipId") }),
               title: text(fields, "title"),
-              startsAt: new Date(text(fields, "startsAt")).toISOString(),
+              startsAt: instantFromZonedInput(
+                text(fields, "startsAt"),
+                crm.timeZone,
+              ),
               status: text(fields, "status"),
               summary: text(fields, "summary"),
             },
@@ -312,7 +325,9 @@ export function MeetingDialog({
           name="startsAt"
           type="datetime-local"
           required
-          defaultValue={meeting ? localInputValue(meeting.startsAt) : ""}
+          defaultValue={
+            meeting ? zonedInputValue(meeting.startsAt, crm.timeZone) : ""
+          }
         />
       </label>
       <label>
@@ -336,12 +351,6 @@ export function MeetingDialog({
       </label>
     </RecordDialog>
   );
-}
-
-function minorUnits(value: string) {
-  if (!value) return null;
-  const amount = Number(value);
-  return Number.isFinite(amount) ? Math.round(amount * 100) : Number.NaN;
 }
 
 export function OpportunityDialog({
@@ -385,7 +394,10 @@ export function OpportunityDialog({
                   }),
               name: text(fields, "name"),
               stageId: text(fields, "stageId"),
-              amountMinor: minorUnits(text(fields, "amount")),
+              amountMinor: toMinor(
+                text(fields, "amount"),
+                text(fields, "currency") || "USD",
+              ),
               currency: text(fields, "currency") || "USD",
             },
             t.opportunitySaved,
@@ -436,9 +448,8 @@ export function OpportunityDialog({
           inputMode="decimal"
           aria-describedby="amount-hint"
           defaultValue={
-            opportunity?.amountMinor !== null &&
-            opportunity?.amountMinor !== undefined
-              ? String(opportunity.amountMinor / 100)
+            opportunity
+              ? fromMinor(opportunity.amountMinor, opportunity.currency)
               : ""
           }
         />

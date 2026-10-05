@@ -6,21 +6,9 @@ import { useCreate, useEdit, useWorkspaceData } from "../crm/crm-context";
 import { useRevealedRecord } from "../crm/use-revealed-record";
 import { pipelineStages, useStageMoves } from "../crm/use-stage-moves";
 import { focusedRecord } from "../keyboard-navigation";
+import { formatMoney } from "../money";
 
 const dragType = "application/x-gravity-opportunity";
-
-function money(amountMinor: number | null, currency: string) {
-  if (amountMinor === null) return t.amountUnknown;
-  try {
-    return new Intl.NumberFormat("en", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: 0,
-    }).format(amountMinor / 100);
-  } catch {
-    return `${currency} ${(amountMinor / 100).toFixed(0)}`;
-  }
-}
 
 export function OpportunitiesView() {
   const crm = useWorkspaceData();
@@ -182,7 +170,7 @@ export function OpportunitiesView() {
                             </div>
                             <p>{personFor(opportunity.relationshipId)?.name}</p>
                             <small>
-                              {money(
+                              {formatMoney(
                                 opportunity.amountMinor,
                                 opportunity.currency,
                               )}

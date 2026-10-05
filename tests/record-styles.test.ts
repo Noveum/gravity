@@ -26,4 +26,5 @@ test("group headers in the record timeline span the padded column edge to edge",
   expect(style.marginRight).toBe("-24px");
   expect(style.paddingLeft).toBe("24px");
   expect(style.position).toBe("sticky");
+  expect(style.top).toBe("0px");
 });

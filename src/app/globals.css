@@ -1606,7 +1606,6 @@ ul.timeline {
 .record-timeline .group-title {
   margin: 0 -24px 10px;
   padding: 0 24px;
-  top: -12px;
 }
 .activity-group + .activity-group {
   margin-top: 12px;

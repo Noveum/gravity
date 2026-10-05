@@ -107,12 +107,27 @@ afterAll(async () => {
   vi.unstubAllGlobals();
 });
 afterEach(cleanup);
+let compactScreen = false;
+const screenListeners = new Set<() => void>();
 function setCompactScreen(compact: boolean) {
+  compactScreen = compact;
   window.matchMedia = vi.fn((query: string) => ({
-    matches: compact && query.includes("max-width"),
-    addEventListener() {},
-    removeEventListener() {},
+    get matches() {
+      return compactScreen && query.includes("max-width");
+    },
+    addEventListener(_type: string, listener: () => void) {
+      if (query.includes("max-width")) screenListeners.add(listener);
+    },
+    removeEventListener(_type: string, listener: () => void) {
+      screenListeners.delete(listener);
+    },
   })) as unknown as typeof window.matchMedia;
+}
+function resizeScreen(compact: boolean) {
+  compactScreen = compact;
+  act(() => {
+    for (const listener of [...screenListeners]) listener();
+  });
 }
 beforeEach(() => {
   visit("/actions");
@@ -908,7 +923,9 @@ test("a collapsed sidebar still exposes the sync status, and the shell carries n
   const controlled = collapse.getAttribute("aria-controls");
   if (controlled)
     expect(document.getElementById(controlled)?.contains(collapse)).toBe(false);
-  const navigation = sidebar.querySelector(`nav[aria-label="${t.myWork}"]`);
+  const navigation = sidebar.querySelector(
+    `nav[aria-label="${t.mainNavigation}"]`,
+  );
   for (const id of ["settings", "integrations"])
     expect(
       navigation?.querySelector(`a[data-nav-item="${id}"]`)?.textContent,
@@ -1111,4 +1128,60 @@ test("typing a draft re-renders the draft, not the whole shell", async () => {
   expect((draft as HTMLTextAreaElement).value).toBe("Fic");
   expect(shellRenders).not.toHaveBeenCalled();
   shellRenders.mockRestore();
+});
+
+test("widening the window past the narrow breakpoint closes the drawer and releases the page", async () => {
+  setCompactScreen(true);
+  mount();
+  const sidebar = document.getElementById("navigation-panel") as HTMLElement;
+  const main = document.querySelector("main") as HTMLElement;
+  fireEvent.click(screen.getByRole("button", { name: t.openNavigation }));
+  expect(sidebar.dataset.drawer).toBe("open");
+  expect(main.hasAttribute("inert")).toBe(true);
+  resizeScreen(false);
+  expect(sidebar.dataset.drawer).toBe("closed");
+  expect(main.hasAttribute("inert")).toBe(false);
+  expect(sidebar.getAttribute("role")).toBeNull();
+  expect(sidebar.hasAttribute("aria-modal")).toBe(false);
+});
+
+test("the workspace menu opened from the drawer lives inside the drawer", async () => {
+  setCompactScreen(true);
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: t.openNavigation }));
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: `${t.switchOrganization}: Northstar Collective`,
+    }),
+  );
+  const drawer = document.getElementById("navigation-panel") as HTMLElement;
+  const menu = document.querySelector('[role="menu"]');
+  expect(menu).not.toBeNull();
+  expect(drawer.contains(menu)).toBe(true);
+  fireEvent.keyDown(
+    menu?.querySelector('[role="menuitemradio"]') as HTMLElement,
+    {
+      key: "Escape",
+    },
+  );
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  expect(drawer.dataset.drawer).toBe("open");
+  expect(
+    drawer.querySelector(`nav[aria-label="${t.mainNavigation}"]`),
+  ).not.toBeNull();
+});
+
+test("a company record stacks its people and opportunities as sibling sections without an extra wrapper", async () => {
+  mount(`/companies/${demoId(100)}`);
+  await screen.findByRole("heading", { name: t.opportunities });
+  const attributes = document.querySelector(
+    ".record-attributes",
+  ) as HTMLElement;
+  expect(attributes.querySelector(".related-work")).toBeNull();
+  const sections = [...attributes.children].filter((child) =>
+    child.classList.contains("record-section"),
+  );
+  expect(
+    sections.map((section) => section.querySelector("h3")?.textContent),
+  ).toEqual([t.allPeople, t.opportunities]);
 });

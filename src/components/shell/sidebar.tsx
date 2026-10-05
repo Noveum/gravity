@@ -229,7 +229,7 @@ export function Sidebar({
         <span className="nav-label-text">{t.searchShort}</span>
         <kbd className="nav-label-text">{t.keys.commandHint}</kbd>
       </button>
-      <nav className="sidebar-nav" aria-label={t.myWork}>
+      <nav className="sidebar-nav" aria-label={t.mainNavigation}>
         <div className="sidebar-scroll">
           {groups.map((group) => (
             <Section key={group.id} group={group} collapsed={collapsed} />

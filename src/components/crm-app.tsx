@@ -43,9 +43,10 @@ import { Shortcuts } from "./shortcuts";
 import { EmptyState, ErrorState, LoadingState } from "./ui/states";
 import { Toaster } from "./ui/toaster";
 
+const compactQuery = "(max-width: 760px)";
 const compactScreen = () =>
   typeof window.matchMedia === "function" &&
-  window.matchMedia("(max-width: 760px)").matches;
+  window.matchMedia(compactQuery).matches;
 const toolbarSections: ReadonlySet<Section> = new Set([
   "actions",
   "people",
@@ -105,6 +106,15 @@ function CrmShell({ children }: { children: ReactNode }) {
     if (compactScreen()) setDrawerOpen((open) => !open);
     else setSidebarCollapsed(!appearance.sidebarCollapsed);
   }
+  useEffect(() => {
+    if (!drawerOpen || typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(compactQuery);
+    const widen = () => {
+      if (!query.matches) setDrawerOpen(false);
+    };
+    query.addEventListener("change", widen);
+    return () => query.removeEventListener("change", widen);
+  }, [drawerOpen]);
   function closeDrawer() {
     flushSync(() => setDrawerOpen(false));
     document.querySelector<HTMLElement>(".drawer-trigger")?.focus();

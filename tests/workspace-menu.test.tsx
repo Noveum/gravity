@@ -107,3 +107,28 @@ test("Tab closes the menu and returns focus to the trigger instead of leaving it
   expect(screen.queryByRole("menu")).toBeNull();
   expect(document.activeElement).toBe(trigger);
 });
+
+test("inside a modal drawer the menu renders within the drawer so it stays reachable", () => {
+  render(
+    <aside role="dialog" aria-modal="true" aria-label="Navigation">
+      <WorkspaceMenu
+        organizations={organizations}
+        organizationId="north"
+        userName="Alex Morgan"
+        userDetail="Demo"
+        onSwitch={vi.fn()}
+      />
+    </aside>,
+  );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: `${t.switchOrganization}: Northstar Collective`,
+    }),
+  );
+  const drawer = screen.getByRole("dialog", { name: "Navigation" });
+  const menu = screen.getByRole("menu");
+  expect(drawer.contains(menu)).toBe(true);
+  expect(document.activeElement).toBe(
+    screen.getByRole("menuitemradio", { name: "Northstar Collective" }),
+  );
+});

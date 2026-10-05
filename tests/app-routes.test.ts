@@ -175,8 +175,8 @@ describe("route table", () => {
     expect(companyPage.props.companyId).toBe(demoId(100));
   });
 
-  test("the root redirects to actions and hands workspace links to the cookie route", async () => {
-    const { default: Root } = await import("../src/app/page");
+  test("the root is public and hands legacy workspace links to the cookie route", async () => {
+    const { default: Root } = await import("../src/app/(public)/page");
     const digest = async (query: Record<string, string>) => {
       try {
         await Root({ searchParams: Promise.resolve(query) });
@@ -185,7 +185,16 @@ describe("route table", () => {
       }
       return "";
     };
-    expect(await digest({})).toContain(";/actions;");
+    expect(
+      componentName(await Root({ searchParams: Promise.resolve({}) })),
+    ).toBe("LandingPage");
+    expect(
+      componentName(
+        await Root({
+          searchParams: Promise.resolve({ utm_source: "newsletter" }),
+        }),
+      ),
+    ).toBe("LandingPage");
     const link = await digest({
       organizationId: demoId(2),
       productId: demoId(13),
@@ -198,7 +207,7 @@ describe("route table", () => {
   });
 
   test("provider callbacks retain their workspace, destination and result", async () => {
-    const { default: Root } = await import("../src/app/page");
+    const { default: Root } = await import("../src/app/(public)/page");
     async function target(query: Record<string, string | string[]>) {
       try {
         await Root({ searchParams: Promise.resolve(query) });

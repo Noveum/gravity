@@ -57,7 +57,7 @@ export function WorkspaceSetup({
             ))}
           </ol>
           <p className="muted">{t.setupPrivacy}</p>
-          <a href="/">{t.backToWorkspace}</a>
+          <a href="/actions">{t.backToWorkspace}</a>
         </aside>
         <section className="setup-form-card" aria-label={t.workspaceSetup}>
           <h2>{t.setupStepWorkspace}</h2>

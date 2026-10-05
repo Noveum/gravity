@@ -459,13 +459,13 @@
     "skip": "Skip to content",
     "navLabel": "Gravity website",
     "footer": "Gravity by Noveum · Open source · Apache-2.0",
-    "previewBadge": "Early preview",
+    "previewBadge": "Available in the cloud",
     "eyebrow": "Open-source CRM for founders and small sales teams",
     "heroTitle": "Know who to follow up with next.",
-    "heroDescription": "Organize outreach, replies and meeting follow-ups around a clear next step. Keep the person, conversation and product context together, so your team and AI assistant can pick up where you left off.",
-    "tryDemo": "Explore the preview",
+    "heroDescription": "Turn outreach, replies and meeting follow-ups into a clear next step. Keep every person, conversation and product relationship together, so your team and AI assistant can pick up where you left off.",
+    "tryDemo": "Open workspace",
     "readSetup": "Read the setup guide",
-    "heroNote": "Apache-2.0 licensed. Self-hostable. The local preview uses fictional data.",
+    "heroNote": "Use the hosted app. Self-host when you need to. Open source under Apache 2.0.",
     "previewLabel": "Illustrative workflow with fictional data",
     "previewOrg": "Northstar Collective",
     "previewProduct": "AI Platform",
@@ -522,11 +522,11 @@
     "mcpTitle": "Give your assistant the relationship behind the task.",
     "mcpDescription": "Ask for a meeting brief, the history behind a follow-up, or the materials to review. Read-only MCP gives your assistant access to CRM context through the same permissions as the app. You choose the organization and products to share.",
     "mcpPrompt": "“Catch me up on Mira’s evaluation. What did we promise, what changed, and which materials should I review?”",
-    "mcpBoundary": "Read-only OAuth MCP is implemented. A configured HTTPS installation and live connection testing are needed for Codex and Claude Code.",
+    "mcpBoundary": "Connect through OAuth, choose the organization and products to share, and revoke access anytime. Assistant tools are read-only.",
     "mcpLink": "Connect an assistant",
-    "statusTitle": "Explore what works today. See what we’re building next.",
-    "statusDescription": "Gravity is in active development. Explore the core workflows, then configure your own provider accounts to import conversations and meetings.",
-    "readyTitle": "Available in the preview",
+    "statusTitle": "Ready for your daily sales workflow.",
+    "statusDescription": "Start with your team, products and next actions. Connect your own accounts to bring conversations and meeting context into the workspace. Gravity is actively developed; here is what is available and what comes next.",
+    "readyTitle": "Available today",
     "readyItems": [
       "Organizations and products",
       "People, company context and next actions",
@@ -556,29 +556,29 @@
       },
       {
         "question": "Can I self-host and modify Gravity?",
-        "answer": "Yes. Gravity is licensed under Apache 2.0. You can run, inspect and modify the code under that license. Start with the local setup guide, then review the deployment guide before putting it on your infrastructure."
+        "answer": "Yes. Gravity is licensed under Apache 2.0. You can use the hosted app, or run and modify the same source on your own infrastructure. The self-hosting guide covers deployment, authentication, storage and recovery."
       },
       {
         "question": "Can I connect Codex or Claude Code?",
-        "answer": "Gravity implements read-only OAuth MCP. Connect a configured HTTPS installation, sign in and choose the products to share. Actual Codex and Claude Code connections still need live qualification. CRM API keys are not implemented."
+        "answer": "Yes. Add https://gravity.noveum.ai/mcp as a remote HTTP MCP server, authenticate with OAuth and choose the organization and products to share. Gravity exposes read-only context tools; a CRM API key is not required. The connection guide has client setup instructions."
       },
       {
         "question": "Are Gmail, LinkedIn and Calendar connected?",
-        "answer": "Gravity includes separate read-only Gmail and primary-calendar consent, Fireflies API-key import, and a LinkedIn adapter through Unipile V2. Each account still needs provider setup, owner authorization and live qualification. The local demo uses fictional data and connects no accounts."
+        "answer": "Connect your own Gmail and primary Google Calendar from Connections with separate read-only consent. Bring your own Unipile credentials for LinkedIn or your Fireflies key for meeting notes. Credentials stay private to their owner and organization. Review imported conversations before sharing them as product context."
       },
       {
         "question": "Does Gravity send outreach for me?",
-        "answer": "Sending is not available in the current preview. You can organize next actions and review drafts. Completing a task or approving a draft does not send a message."
+        "answer": "Sending is not available yet. You can organize next actions and review drafts. Completing a task or approving a draft does not send a message."
       },
       {
         "question": "Can I add real sales data yet?",
-        "answer": "Use fictional data in the local preview. Before real data, qualify your production database, sign-in, team permissions, private storage and backup restore. The deployment guide lists the remaining checks."
+        "answer": "Yes. Sign in to the hosted app, create an organization and product, and add your contacts and next actions. Your workspace is private. Connect provider accounts separately and review imported context before sharing it. If you self-host, follow the deployment guide to configure your database, authentication, storage and backups."
       }
     ],
-    "finalTitle": "Build your sales workflow on Gravity.",
-    "finalDescription": "Run the preview locally, explore the workflows and adapt the source to how your team sells.",
+    "finalTitle": "Make the next step clear.",
+    "finalDescription": "Open Gravity in your browser, create your workspace and start organizing the relationships that matter. No local installation required.",
     "docsTitle": "Gravity documentation",
-    "docsDescription": "Set up a workspace, understand the boundaries and connect an assistant when your installation is ready.",
+    "docsDescription": "Get started in the hosted app, connect your accounts and give your assistant the context to help. Self-hosting guides are here when you need them.",
     "blogTitle": "The Gravity journal",
     "blogDescription": "How to organize follow-ups and build useful context for a team selling several products.",
     "backDocs": "All documentation",
@@ -591,16 +591,15 @@
       {
         "slug": "getting-started",
         "title": "Set up your first workspace",
-        "description": "From a fictional local preview to an organization, a product and a useful next action.",
+        "description": "Create a workspace in the hosted app, add a product and make your first next action useful.",
         "sections": [
           {
-            "id": "local",
-            "title": "Run the local preview",
+            "id": "hosted",
+            "title": "Start in the hosted app",
             "paragraphs": [
-              "Install Node.js 22.12 or newer and Bun 1.3.14, clone Gravity, then install the locked dependencies and start the app. The demo migrates and seeds a local PGlite database with fictional records. No paid provider is needed.",
-              "Keep this fixed-identity demo for fictional data. A real database or production environment disables the demo identity."
-            ],
-            "code": "git clone https://github.com/Noveum/gravity.git\ncd gravity\nbun install --frozen-lockfile\nbun run dev"
+              "Open https://gravity.noveum.ai and choose Start using Gravity. Sign in with Google, GitHub or an email verification code. No local setup or database credentials are needed to use the hosted app.",
+              "New users go through workspace onboarding. Returning users open their daily action queue. Your organization keeps its people, products and conversations separate from other workspaces."
+            ]
           },
           {
             "id": "workspace",
@@ -614,7 +613,7 @@
             "id": "first-person",
             "title": "Make the first record useful",
             "paragraphs": [
-              "Choose Add person. Add a fictional identity, a product relationship, its purpose and context. A person can have a separate buyer or partner relationship for another product without duplicating their identity.",
+              "Choose Add person. Add a contact, a product relationship, its purpose and context. A person can have a separate buyer or partner relationship for another product without duplicating their identity.",
               "Add a research task or schedule a next action with an owner and deadline. Record what needs to happen and why. A task is a reviewable piece of work, not proof that an email was sent."
             ]
           },
@@ -627,12 +626,21 @@
             ]
           },
           {
-            "id": "real-data",
-            "title": "Before adding real data",
+            "id": "connect-accounts",
+            "title": "Connect your accounts",
             "paragraphs": [
-              "Use an isolated staging database and a stable HTTPS origin. Configure real authentication, qualify two-user membership and product permissions, and verify private object storage. Complete a backup restore rehearsal.",
-              "Gmail and primary Calendar have separate read-only connection flows. In Connections, bring your own Unipile API key and webhook for LinkedIn, or your Fireflies key for meeting notes. Invitations, record editing/imports and backup restore qualification remain unfinished."
+              "Open Connections to authorize your own Gmail and primary Google Calendar with separate read-only consent. Google sign-in alone does not connect your mailbox.",
+              "For LinkedIn, save your own Unipile API key and endpoint in Connections and configure the signed webhook. For meeting notes, connect your Fireflies key. Provider credentials are private to their owner and organization. Review imported conversations and notes before associating them with a product relationship."
             ]
+          },
+          {
+            "id": "self-host",
+            "title": "Optional: develop or self-host",
+            "paragraphs": [
+              "To work on the source, install Node.js 22.12 or newer and Bun 1.3.14, clone Gravity, install the locked dependencies and start the app. The development demo uses a local PGlite database with fictional records.",
+              "The hosted app does not require these commands. For your own production deployment, follow the self-hosting guide to configure PostgreSQL, authentication, private storage and backups. Keep the fixed-identity development demo limited to fictional data."
+            ],
+            "code": "git clone https://github.com/Noveum/gravity.git\ncd gravity\nbun install --frozen-lockfile\nbun run dev"
           }
         ]
       },
@@ -643,10 +651,10 @@
         "sections": [
           {
             "id": "prerequisites",
-            "title": "Start with a configured installation",
+            "title": "Use the hosted MCP endpoint",
             "paragraphs": [
-              "The MCP endpoint is your configured application origin followed by /mcp. Register the Google or GitHub sign-in callback under that origin and configure the auth secret and production database.",
-              "The fictional local demo returns AUTH_UNAVAILABLE rather than exposing anonymous MCP data. A URL alone is not a working connection. Use the deployed HTTPS URL below instead of the example."
+              "Connect to https://gravity.noveum.ai/mcp. OAuth handles sign-in and asks you to choose the organization and products to share; no CRM API key is needed.",
+              "If you self-host Gravity, use your own configured HTTPS origin followed by /mcp. Configure authentication and the production database using the self-hosting guide. The fictional development demo does not expose anonymous MCP access."
             ]
           },
           {
@@ -656,7 +664,7 @@
               "In Codex Settings, add a custom remote HTTP MCP server and enter the Gravity endpoint. Choose Authenticate when available. With a current Codex CLI, add the server and start login using these commands.",
               "If codex mcp is unavailable, update the CLI you are invoking; an old binary in PATH can differ from the desktop app."
             ],
-            "code": "codex mcp add gravity --url https://crm.example.com/mcp\ncodex mcp login gravity"
+            "code": "codex mcp add gravity --url https://gravity.noveum.ai/mcp\ncodex mcp login gravity"
           },
           {
             "id": "claude-code",
@@ -664,7 +672,7 @@
             "paragraphs": [
               "Add Gravity as an HTTP server, then authenticate. Using user scope makes the connection available across your projects. If your installed version does not have mcp login, use /mcp in a Claude Code session to authenticate."
             ],
-            "code": "claude mcp add --transport http --scope user gravity https://crm.example.com/mcp\nclaude mcp login gravity"
+            "code": "claude mcp add --transport http --scope user gravity https://gravity.noveum.ai/mcp\nclaude mcp login gravity"
           },
           {
             "id": "consent",
@@ -702,14 +710,14 @@
       },
       {
         "slug": "deployment-readiness",
-        "title": "Prepare a staging installation for real data",
-        "description": "Database, authentication, recovery, storage and integration gates before migration.",
+        "title": "Self-host and operate Gravity",
+        "description": "Deploy your own instance with PostgreSQL, authentication, storage and a tested recovery plan.",
         "sections": [
           {
             "id": "target",
             "title": "Choose the target deliberately",
             "paragraphs": [
-              "Use a separate Gravity Vercel project, managed PostgreSQL database and private object bucket. Keep the existing Twenty deployment and domain unchanged while staging is being qualified.",
+              "The hosted app at https://gravity.noveum.ai is available without local setup. This guide is for teams deploying their own Gravity instance. Use a dedicated Vercel project, managed PostgreSQL database and private object bucket.",
               "Review migrations and the database target before applying them. Use separate migration and runtime roles, isolated staging records and provider-approved TLS/pooling. Never seed fictional demo identities into a real database."
             ]
           },
@@ -783,7 +791,7 @@
             "title": "A practical daily review",
             "paragraphs": [
               "Handle new replies first. Review promises with an owner and deadline. Then examine scheduled follow-ups against the latest conversation. When context is missing, create a research action rather than inventing a qualification.",
-              "Gravity organizes these states in separate saved views. Its preview supports reviewed tasks and draft approval, while live provider sync and message dispatch remain future work."
+              "Gravity organizes these states in separate saved views. Connect your accounts to import conversation context, then review tasks and drafts against the latest history. Message dispatch remains future work."
             ]
           }
         ]
@@ -821,8 +829,8 @@
             "id": "preview",
             "title": "What Gravity does today",
             "paragraphs": [
-              "The preview links readable people to explicit product relationships, exposes company context and keeps grants bounded. Its local tests exercise cross-product and cross-organization rejection.",
-              "Record editing, CSV imports and collision detection remain planned. Provider imports require explicit conversation classification. Until those are qualified, use the preview to evaluate the model with fictional records."
+              "Gravity links people to explicit product relationships, exposes company context and keeps assistant grants bounded. Its tests exercise cross-product and cross-organization rejection.",
+              "The hosted app supports contact creation and owner-scoped provider imports with explicit conversation classification. Record editing, CSV imports and collision detection remain planned."
             ]
           }
         ]
@@ -830,15 +838,14 @@
     ],
     "metaTitle": "Open-source CRM for founder-led sales",
     "metaDescription": "Gravity is an open-source CRM for founders and small sales teams. Organize follow-ups, keep product context and connect AI assistants through OAuth MCP.",
-    "runLocally": "Run Gravity locally",
     "viewSource": "View on GitHub",
     "openSourceEyebrow": "Open source from the start",
     "openSourceTitle": "A CRM you can run, understand and change.",
-    "openSourceDescription": "Gravity is licensed under Apache 2.0. Inspect the source, self-host the application and adapt it to how your team sells.",
+    "openSourceDescription": "Use Gravity in the cloud, or deploy it on your own infrastructure. The Apache 2.0 source is yours to inspect, extend and adapt to how your team sells.",
     "openSourceValues": [
       {
-        "title": "Choose your infrastructure.",
-        "body": "Use your own PostgreSQL and deployment. The setup guide covers authentication, storage and the checks needed before adding real data."
+        "title": "Choose how you run it.",
+        "body": "Start in the hosted app without installing anything. If you want to own the infrastructure, deploy the same source with PostgreSQL and your own provider accounts."
       },
       {
         "title": "Shape your sales workflow.",
@@ -848,7 +855,9 @@
         "title": "Share context on your terms.",
         "body": "Keep organizations separate and give an assistant access to selected products. Revoke its grant when it no longer needs access."
       }
-    ]
+    ],
+    "selfHost": "Self-hosting guide",
+    "startUsing": "Start using Gravity"
   },
   "orEmail": "Or continue with email",
   "emailAddress": "Email address",

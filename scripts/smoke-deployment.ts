@@ -25,10 +25,19 @@ for (const path of publicPaths) {
   if (
     response.status !== 200 ||
     !html.includes('id="public-main"') ||
-    (path === "/welcome" && !html.includes(siteCopy.heroTitle))
+    (path === "/" && !html.includes(siteCopy.heroTitle))
   )
     throw new Error(`DEPLOYMENT_PUBLIC_PAGE_FAILED: ${path}`);
 }
+const welcome = await fetch(new URL("/welcome", origin), {
+  redirect: "manual",
+  signal: AbortSignal.timeout(15000),
+});
+if (
+  welcome.status !== 308 ||
+  new URL(welcome.headers.get("location") ?? "", origin).pathname !== "/"
+)
+  throw new Error("LANDING_REDIRECT_FAILED");
 const signIn = await request("/sign-in");
 if (signIn.status !== 200 || !(await signIn.text()).includes("gravity-mark"))
   throw new Error("DEPLOYMENT_SIGN_IN_FAILED");

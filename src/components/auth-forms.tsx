@@ -27,7 +27,7 @@ export function AuthLayout({
   return (
     <main className={`auth-page ${isSignIn ? "auth-sign-in" : ""}`}>
       <header className="auth-header">
-        <a href="/welcome" className="auth-wordmark">
+        <a href="/" className="auth-wordmark">
           <GravityMark size={34} />
           <span>{t.brand}</span>
         </a>
@@ -356,7 +356,7 @@ export function SignIn({
         </>
       )}
       {demo && (
-        <a href="/" className="auth-link">
+        <a href="/actions" className="auth-link">
           {t.openDemo}
         </a>
       )}
@@ -493,7 +493,7 @@ export function Authorization() {
     return (
       <AuthLayout title={t.authorize} description={t.authorizeDescription}>
         <p className="callout">{t.authFlowMissing}</p>
-        <a className="auth-link" href="/">
+        <a className="auth-link" href="/actions">
           {t.backToWorkspace}
         </a>
       </AuthLayout>
@@ -686,7 +686,7 @@ export function Consent() {
     return (
       <AuthLayout title={t.consent} description={t.consentDescription}>
         <p className="callout">{t.authFlowMissing}</p>
-        <a className="auth-link" href="/">
+        <a className="auth-link" href="/actions">
           {t.backToWorkspace}
         </a>
       </AuthLayout>

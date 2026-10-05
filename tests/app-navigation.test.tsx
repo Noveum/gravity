@@ -624,7 +624,7 @@ test("deep links render the view or record they name", async () => {
     crumbs.getByRole("link", { name: t.people }).getAttribute("href"),
   ).toBe("/people");
   expect(crumbs.getByText("Mira Chen")).toBeTruthy();
-  const timeline = screen.getByRole("region", { name: t.timeline });
+  const timeline = screen.getByRole("region", { name: t.activity });
   expect(
     await within(timeline).findByText(
       "We can review the evaluation setup on Monday. Please send your shortlist.",
@@ -634,7 +634,7 @@ test("deep links render the view or record they name", async () => {
   mount(`/companies/${demoId(100)}`);
   expect(heading("Northstar Labs", 2)).toBeTruthy();
   expect(
-    await within(screen.getByRole("region", { name: t.timeline })).findByRole(
+    await within(screen.getByRole("region", { name: t.activity })).findByRole(
       "button",
       { name: "Follow-up 2 paused by a reply" },
     ),

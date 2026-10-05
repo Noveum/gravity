@@ -204,9 +204,6 @@
 :where(button:not(:disabled):hover, a.button:hover, a.nav-item:hover) {
   --button-current: var(--button-hover);
 }
-:where(a.button, a.nav-item, a.text-button) {
-  text-decoration: none;
-}
 :where(button:disabled) {
   opacity: 0.5;
   cursor: not-allowed;
@@ -267,6 +264,10 @@
 }
 :where(a) {
   color: var(--gravity-accent);
+}
+:where(a.button, a.nav-item, a.text-button) {
+  color: var(--button-ink);
+  text-decoration: none;
 }
 :where(kbd) {
   font:

@@ -107,7 +107,7 @@ export function PersonRecord({ personId }: { personId: string }) {
           <LoadingState rows={5} />
         )}
       </div>
-      <section className="record-timeline" aria-label={t.timeline}>
+      <section className="record-timeline" aria-label={t.activity}>
         {context ? (
           <PersonActivity context={context} action={action} draft={draft} />
         ) : (

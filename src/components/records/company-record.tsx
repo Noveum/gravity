@@ -78,8 +78,8 @@ export function CompanyRecord({ companyId }: { companyId: string }) {
           <LoadingState rows={5} />
         )}
       </div>
-      <section className="record-timeline" aria-label={t.timeline}>
-        <h3 className="record-timeline-title">{t.timeline}</h3>
+      <section className="record-timeline" aria-label={t.activity}>
+        <h3 className="record-timeline-title">{t.activity}</h3>
         {!context ? (
           <LoadingState rows={4} />
         ) : activity.length ? (

@@ -95,4 +95,15 @@ describe("button hover in light mode", () => {
       expect(luminance(hover)).toBeLessThanOrEqual(luminance(resting));
     },
   );
+
+  test("links styled as buttons take their ink after the base link colour", () => {
+    const base = stylesheet.search(
+      /:where\(a\) \{\s*color: var\(--gravity-accent\);/,
+    );
+    const ink = stylesheet.search(
+      /:where\(a\.button, a\.nav-item, a\.text-button\) \{\s*color: var\(--button-ink\);\s*text-decoration: none;/,
+    );
+    expect(base).toBeGreaterThan(-1);
+    expect(ink).toBeGreaterThan(base);
+  });
 });

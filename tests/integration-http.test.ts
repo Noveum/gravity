@@ -1,7 +1,10 @@
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
+import { IntegrationService } from "../packages/connectors/service";
 import type { Principal } from "../packages/core/policy";
 import { DomainError } from "../packages/core/policy";
 import { createLocalDatabase } from "../packages/database/client";
+import { connections } from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
@@ -105,12 +108,49 @@ test("cron fails closed without its Bearer secret and exposes only aggregate res
   expect(await response.json()).toEqual({
     synced: 0,
     failed: 0,
+    skipped: 0,
     receipts: { processed: 0, failed: 0 },
   });
   expect(JSON.stringify(log.mock.calls)).not.toContain(
     "fictional-strong-scheduler-key",
   );
   log.mockRestore();
+});
+
+test("a concurrent account lease is counted as skipped rather than a failed provider", async () => {
+  vi.stubEnv("CRON_SECRET", "fictional-strong-scheduler-key");
+  const { GET } = await import("../src/app/api/integrations/cron/route");
+  const id = demoId(9777);
+  await local.db.insert(connections).values({
+    id,
+    organizationId: demoId(1),
+    productId: demoId(10),
+    ownerId: demoUser,
+    provider: "gmail",
+    externalAccountId: "fictional-cron-account",
+    status: "connected",
+    encryptedCredentials: "fictional-lease-fixture",
+  });
+  vi.spyOn(IntegrationService.prototype, "sync").mockRejectedValueOnce(
+    new DomainError("SYNC_IN_PROGRESS", 409),
+  );
+  vi.spyOn(console, "info").mockImplementation(() => {});
+  try {
+    const response = await GET(
+      new Request("https://crm.example.test/api/integrations/cron", {
+        headers: { authorization: "Bearer fictional-strong-scheduler-key" },
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      synced: 0,
+      failed: 0,
+      skipped: 1,
+      receipts: { processed: 0, failed: 0 },
+    });
+  } finally {
+    await local.db.delete(connections).where(eq(connections.id, id));
+  }
 });
 
 test("a database outage returns a retryable cron failure without exposing its cause", async () => {

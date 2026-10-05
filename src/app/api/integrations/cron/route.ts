@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { processReceipts } from "@crm/connectors/receipts";
 import { IntegrationService } from "@crm/connectors/service";
+import { DomainError } from "@crm/core/policy";
 import { getDatabase, isDemoMode } from "@crm/database/client";
 import { connections } from "@crm/database/schema";
 import { and, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
@@ -38,7 +39,8 @@ export async function GET(request: Request) {
       .orderBy(sql`${connections.lastSyncedAt} ASC NULLS FIRST`)
       .limit(4);
     let synced = 0,
-      failed = 0;
+      failed = 0,
+      skipped = 0;
     for (let offset = 0; offset < rows.length; offset += 2) {
       await Promise.all(
         rows.slice(offset, offset + 2).map(async (row) => {
@@ -49,8 +51,15 @@ export async function GET(request: Request) {
               row.id,
             );
             synced++;
-          } catch {
-            failed++;
+          } catch (error) {
+            // A manual sync or another cron can acquire the account after
+            // selection. Its active lease is a safe skip, not a provider fault.
+            if (
+              error instanceof DomainError &&
+              error.code === "SYNC_IN_PROGRESS"
+            )
+              skipped++;
+            else failed++;
           }
         }),
       );
@@ -60,12 +69,13 @@ export async function GET(request: Request) {
         event: "gravity.integrations.cron",
         synced,
         failed,
+        skipped,
         receipts,
         durationMs: Date.now() - started,
       }),
     );
     return Response.json(
-      { synced, failed, receipts },
+      { synced, failed, skipped, receipts },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch {

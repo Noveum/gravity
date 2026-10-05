@@ -24,6 +24,7 @@ import {
 import { IntegrationService } from "../packages/connectors/service";
 import type { ImportRecord } from "../packages/connectors/types";
 import { CrmService } from "../packages/core/crm";
+import { OutreachService } from "../packages/core/outreach";
 import type { Principal } from "../packages/core/policy";
 import { RecordService } from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
@@ -641,6 +642,7 @@ test("provider normalization preserves direction, MIME text, all-day dates and c
     "owner@example.test",
   );
   expect(record?.direction).toBe("outbound");
+  expect(record?.from).toBe("owner@example.test");
   expect(record?.body).toBe("Plain message");
   expect(record?.participants).toEqual(["contact@example.test"]);
   expect(
@@ -1007,4 +1009,132 @@ test("private review pages preserve microseconds and tied timestamps while filte
       .delete(s.connections)
       .where(inArray(s.connections.id, connectionIds));
   }
+});
+
+test("a synced reply from a secondary address on an unlinked thread pauses that person in every brand, and a backfill pauses nothing", async () => {
+  const service = new IntegrationService(local.db, authTransport);
+  const crm = new CrmService(local.db);
+  const outreach = new OutreachService(local.db);
+  const records = new RecordService(local.db);
+  const [gmail] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.externalAccountId, "integration-google-user"));
+  gmail.syncCursor = { connectedAt: "2026-10-01T00:00:00.000Z" };
+  await local.db
+    .update(s.connections)
+    .set({ syncCursor: gmail.syncCursor })
+    .where(eq(s.connections.id, gmail.id));
+  const enrolled = async (name: string, email: string, other: string) => {
+    const first = await crm.createPerson(admin, {
+      organizationId: scope.organizationId,
+      productId: demoId(10),
+      name,
+      email,
+      title: "",
+      purpose: "buyer",
+      context: "",
+      review: false,
+      channel: "gmail",
+    });
+    const second = await crm.createPerson(admin, {
+      organizationId: scope.organizationId,
+      productId: demoId(12),
+      personId: first.personId,
+      title: "",
+      purpose: "buyer",
+      context: "",
+      review: false,
+      channel: "gmail",
+    });
+    const [person] = await local.db
+      .select()
+      .from(s.people)
+      .where(eq(s.people.id, first.personId));
+    await records.updatePerson(admin, {
+      organizationId: scope.organizationId,
+      productId: demoId(10),
+      personId: first.personId,
+      version: person?.version ?? 1,
+      name,
+      title: "",
+      email,
+      otherEmails: [other],
+      phone: "",
+      linkedinUrl: "",
+      summary: "",
+    });
+    for (const [sequenceId, relationshipId] of [
+      [demoId(400), first.relationshipId],
+      [demoId(402), second.relationshipId],
+    ] as const)
+      await outreach.enroll(admin, {
+        organizationId: scope.organizationId,
+        sequenceId,
+        relationshipIds: [relationshipId],
+        dryRun: false,
+      });
+    return [first.relationshipId, second.relationshipId];
+  };
+  const statuses = async (relationshipIds: string[]) =>
+    (
+      await local.db
+        .select()
+        .from(s.enrollments)
+        .where(inArray(s.enrollments.relationshipId, relationshipIds))
+    ).map((row) => [row.status, row.pauseReason]);
+  const live = await enrolled(
+    "Synced reply fixture",
+    "synced-primary@example.test",
+    "synced-secondary@example.test",
+  );
+  const backfilled = await enrolled(
+    "Backfill fixture",
+    "backfill-primary@example.test",
+    "backfill-secondary@example.test",
+  );
+  const reply = (
+    externalId: string,
+    from: string,
+    occurredAt: string,
+  ): ImportRecord => ({
+    externalId,
+    threadId: `${externalId}-thread`,
+    kind: "message",
+    title: "Fictional reply",
+    body: "Fictional reply body",
+    occurredAt,
+    direction: "inbound",
+    participants: [from],
+    from,
+  });
+  await service.importRecord(
+    gmail,
+    reply(
+      "backfill-reply",
+      "Backfill-Secondary@Example.test",
+      "2026-09-20T09:00:00.000Z",
+    ),
+  );
+  expect(await statuses(backfilled)).toEqual([
+    ["running", null],
+    ["running", null],
+  ]);
+  await service.importRecord(
+    gmail,
+    reply(
+      "synced-reply",
+      "Synced-Secondary@Example.TEST",
+      "2026-10-04T09:00:00.000Z",
+    ),
+  );
+  expect(await statuses(live)).toEqual([
+    ["paused", "reply"],
+    ["paused", "reply"],
+  ]);
+  const [item] = await local.db
+    .select()
+    .from(s.integrationItems)
+    .where(eq(s.integrationItems.externalId, "synced-reply"));
+  expect(item?.status).toBe("unmatched");
 });

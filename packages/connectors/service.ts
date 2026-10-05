@@ -14,6 +14,7 @@ import {
 import { z } from "zod";
 import { appUrl } from "../auth/options";
 import { publishChange } from "../core/changes";
+import { pauseForReply, peopleByEmail } from "../core/outreach";
 import { authorize, DomainError, type Principal } from "../core/policy";
 import { assertActiveRelationships } from "../core/visibility";
 import type { Database } from "../database/client";
@@ -64,6 +65,15 @@ const human = (principal: Principal) => {
   if (principal.source !== "session")
     throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
 };
+function historicalFor(
+  connection: typeof s.connections.$inferSelect,
+  occurredAt: string,
+) {
+  return (
+    typeof connection.syncCursor.connectedAt === "string" &&
+    new Date(occurredAt) < new Date(connection.syncCursor.connectedAt)
+  );
+}
 export function integrationAvailability() {
   const key = encryptionConfigured();
   return {
@@ -685,6 +695,37 @@ export class IntegrationService {
         isDeepStrictEqual(prior.record, record)
       )
         return null;
+      const [linked] =
+        record.kind === "message" && record.threadId
+          ? await tx
+              .select({ id: s.conversations.id })
+              .from(s.conversations)
+              .where(
+                and(
+                  eq(s.conversations.connectionId, connection.id),
+                  eq(s.conversations.externalThreadId, record.threadId),
+                ),
+              )
+          : [];
+      if (
+        !prior &&
+        !linked &&
+        record.kind === "message" &&
+        record.direction === "inbound" &&
+        record.from &&
+        !historicalFor(active, record.occurredAt)
+      )
+        await pauseForReply(tx, {
+          organizationId: active.organizationId,
+          personIds: await peopleByEmail(
+            tx,
+            active.organizationId,
+            record.from,
+          ),
+          occurredAt: new Date(record.occurredAt),
+          actorId: active.ownerId,
+          pause: true,
+        });
       const [item] = await tx
         .insert(s.integrationItems)
         .values({
@@ -799,10 +840,8 @@ export class IntegrationService {
           channel: stored.channel,
           body: record.body,
           occurredAt: record.occurredAt,
-          historical:
-            typeof connection.syncCursor.connectedAt === "string" &&
-            new Date(record.occurredAt) <
-              new Date(connection.syncCursor.connectedAt),
+          ...(record.from ? { from: record.from } : {}),
+          historical: historicalFor(connection, record.occurredAt),
         });
         await tx
           .update(s.integrationItems)

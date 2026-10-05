@@ -18,53 +18,69 @@ export async function GET(request: Request) {
   )
     return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const started = Date.now();
-  const db = await getDatabase();
-  const receipts = await processReceipts(db);
-  const service = new IntegrationService(db);
-  const rows = await db
-    .select()
-    .from(connections)
-    .where(
-      and(
-        eq(connections.status, "connected"),
-        isNotNull(connections.encryptedCredentials),
-        or(
-          isNull(connections.leaseUntil),
-          lt(connections.leaseUntil, new Date()),
+  try {
+    const db = await getDatabase();
+    const receipts = await processReceipts(db);
+    const service = new IntegrationService(db);
+    const rows = await db
+      .select()
+      .from(connections)
+      .where(
+        and(
+          eq(connections.status, "connected"),
+          isNotNull(connections.encryptedCredentials),
+          or(
+            isNull(connections.leaseUntil),
+            lt(connections.leaseUntil, new Date()),
+          ),
         ),
-      ),
-    )
-    .orderBy(sql`${connections.lastSyncedAt} ASC NULLS FIRST`)
-    .limit(4);
-  let synced = 0,
-    failed = 0;
-  for (let offset = 0; offset < rows.length; offset += 2) {
-    await Promise.all(
-      rows.slice(offset, offset + 2).map(async (row) => {
-        try {
-          await service.sync(
-            { userId: row.ownerId, source: "session" },
-            row.organizationId,
-            row.id,
-          );
-          synced++;
-        } catch {
-          failed++;
-        }
+      )
+      .orderBy(sql`${connections.lastSyncedAt} ASC NULLS FIRST`)
+      .limit(4);
+    let synced = 0,
+      failed = 0;
+    for (let offset = 0; offset < rows.length; offset += 2) {
+      await Promise.all(
+        rows.slice(offset, offset + 2).map(async (row) => {
+          try {
+            await service.sync(
+              { userId: row.ownerId, source: "session" },
+              row.organizationId,
+              row.id,
+            );
+            synced++;
+          } catch {
+            failed++;
+          }
+        }),
+      );
+    }
+    console.info(
+      JSON.stringify({
+        event: "gravity.integrations.cron",
+        synced,
+        failed,
+        receipts,
+        durationMs: Date.now() - started,
       }),
     );
+    return Response.json(
+      { synced, failed, receipts },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch {
+    // Driver errors can contain connection details. Keep failure logs useful
+    // without logging SQL, credentials, provider responses or imported data.
+    console.error(
+      JSON.stringify({
+        event: "gravity.integrations.cron.failed",
+        errorCode: "INTEGRATION_SYNC_UNAVAILABLE",
+        durationMs: Date.now() - started,
+      }),
+    );
+    return Response.json(
+      { error: "INTEGRATION_SYNC_UNAVAILABLE" },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
-  console.info(
-    JSON.stringify({
-      event: "gravity.integrations.cron",
-      synced,
-      failed,
-      receipts,
-      durationMs: Date.now() - started,
-    }),
-  );
-  return Response.json(
-    { synced, failed, receipts },
-    { headers: { "Cache-Control": "no-store" } },
-  );
 }

@@ -6,9 +6,14 @@ import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let principal: Principal | null = { userId: demoUser, source: "session" };
+let databaseFailure = false;
 vi.mock("@crm/database/client", async (original) => ({
   ...(await original<typeof import("../packages/database/client")>()),
-  getDatabase: async () => local.db,
+  getDatabase: async () => {
+    if (databaseFailure)
+      throw new Error("fictional-database-password-and-provider-payload");
+    return local.db;
+  },
   isDemoMode: () => false,
 }));
 vi.mock("@crm/auth/server", async (original) => ({
@@ -26,6 +31,8 @@ afterAll(async () => local.client.close());
 afterEach(() => {
   vi.unstubAllEnvs();
   principal = { userId: demoUser, source: "session" };
+  databaseFailure = false;
+  vi.restoreAllMocks();
 });
 test("integration HTTP reads require a human session and isolate organization scope", async () => {
   const { GET } = await import("../src/app/api/integrations/route");
@@ -104,4 +111,25 @@ test("cron fails closed without its Bearer secret and exposes only aggregate res
     "fictional-strong-scheduler-key",
   );
   log.mockRestore();
+});
+
+test("a database outage returns a retryable cron failure without exposing its cause", async () => {
+  vi.stubEnv("CRON_SECRET", "fictional-strong-scheduler-key");
+  const { GET } = await import("../src/app/api/integrations/cron/route");
+  databaseFailure = true;
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const response = await GET(
+    new Request("https://crm.example.test/api/integrations/cron", {
+      headers: { authorization: "Bearer fictional-strong-scheduler-key" },
+    }),
+  );
+  expect(response.status).toBe(503);
+  expect(response.headers.get("cache-control")).toContain("no-store");
+  expect(await response.json()).toEqual({
+    error: "INTEGRATION_SYNC_UNAVAILABLE",
+  });
+  expect(JSON.stringify(log.mock.calls)).toContain(
+    "gravity.integrations.cron.failed",
+  );
+  expect(JSON.stringify(log.mock.calls)).not.toContain("fictional-");
 });

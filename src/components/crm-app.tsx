@@ -206,7 +206,7 @@ export function CrmApp({
     if (!organizationId) return;
     let stopped = false;
     const feed = new EventSource(
-      `/api/events?organizationId=${organizationId}`,
+      `/api/crm/live?organizationId=${organizationId}`,
     );
     feed.onopen = () => {
       if (!stopped) setSyncState("live");

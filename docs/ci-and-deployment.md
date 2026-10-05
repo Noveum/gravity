@@ -31,4 +31,4 @@ Migration 0007 and persistent `INTEGRATION_ENCRYPTION_KEY`/`CRON_SECRET` are req
 
 ## Public deployment options
 
-The landing page and README offer a Vercel clone button with environment **names** and non-sensitive flag defaults. [Vercel setup](vercel.md) covers runtime/migration roles, callbacks, independent credentials, basic and scheduled profiles. The hosted instance uses `--local-config vercel.scheduled.json` when deploying so its existing five-minute schedule remains enabled.
+The landing page and README offer a Vercel clone button with environment **names** and non-sensitive flag defaults. [Vercel setup](vercel.md) covers runtime/migration roles, callbacks, independent credentials, basic and scheduled profiles. The hosted instance uploads the scheduled profile as the canonical `vercel.json` when deploying, then verifies the actual production project cron definitions after promotion. A custom `--local-config` filename alone does not configure the remote build.

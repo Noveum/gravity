@@ -27,4 +27,12 @@ test("group headers in the record timeline span the padded column edge to edge",
   expect(style.paddingLeft).toBe("24px");
   expect(style.position).toBe("sticky");
   expect(style.top).toBe("0px");
+  const column = getComputedStyle(
+    document.querySelector(".record-timeline") as HTMLElement,
+  );
+  expect(column.paddingTop).toBe("0px");
+  expect(
+    getComputedStyle(document.querySelector(".activity-group") as HTMLElement)
+      .marginTop,
+  ).toBe("12px");
 });

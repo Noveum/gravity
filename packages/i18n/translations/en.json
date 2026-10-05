@@ -1095,5 +1095,57 @@
   "save": "Save",
   "archivedSuffix": "(archived)",
   "linkedinPlaceholder": "https://www.linkedin.com/in/",
-  "stillSaving": "Still saving, try again in a moment."
+  "stillSaving": "Still saving, try again in a moment.",
+  "outreachTabsLabel": "Outreach tabs",
+  "outreachTabs": {
+    "today": "Today",
+    "drafts": "Drafts",
+    "approved": "Approved",
+    "sent": "Sent",
+    "paused": "Paused",
+    "sequences": "Sequences",
+    "pipeline": "Pipeline"
+  },
+  "followUpGroups": [
+    "First touch",
+    "Follow-up 1",
+    "Follow-up 2",
+    "Follow-up 3"
+  ],
+  "touchStatus": {
+    "planned": "Planned",
+    "drafted": "Drafted",
+    "approved": "Approved",
+    "sent": "Sent",
+    "skipped": "Skipped",
+    "expired": "Expired"
+  },
+  "outreachEmpty": {
+    "today": "Nothing is due today.",
+    "drafts": "No drafts are waiting for approval.",
+    "approved": "No approved messages are waiting to be sent.",
+    "sent": "Nothing was reported sent in the last 30 days.",
+    "paused": "No sequences are paused."
+  },
+  "outreachEmptyDetail": "Enroll people from the People list to start a sequence.",
+  "outreachLoadError": "Outreach could not be loaded. Retry to reconnect.",
+  "sendAfter": "Send after {time}",
+  "gateReasons": {
+    "DO_NOT_CONTACT": "Do not contact",
+    "CONTACT_COOLDOWN": "Cooldown until {until}",
+    "DAILY_CAP_REACHED": "Daily cap of {cap} reached",
+    "QUIET_HOURS": "Quiet hours until {until}"
+  },
+  "emptyDraft": "No draft yet",
+  "sentByOn": "Sent by {name} on {time}",
+  "messageLink": "Message link",
+  "archivedFlag": "Archived",
+  "lastReply": "Last reply {time}",
+  "resume": "Resume",
+  "pause": "Pause",
+  "resumed": "Resumed {name}'s sequence",
+  "pausedSequence": "Paused {name}'s sequence",
+  "openPerson": "Open person",
+  "stepLabel": "Step {number}",
+  "outreachRows": "Messages"
 }

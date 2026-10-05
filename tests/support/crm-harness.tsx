@@ -10,6 +10,21 @@ import {
 } from "../../packages/core/crm";
 import { type ClientSnapshot, serialize } from "../../packages/core/dto";
 import {
+  enrollmentChangeSchema,
+  enrollSchema,
+  OutreachService,
+  relationshipChangeSchema,
+  sequenceUpdateSchema,
+  touchApproveSchema,
+  touchDraftSchema,
+  touchQuerySchema,
+  touchReopenSchema,
+  touchSentSchema,
+  touchSkipSchema,
+  touchSnoozeSchema,
+} from "../../packages/core/outreach";
+import { DomainError } from "../../packages/core/policy";
+import {
   companyArchiveSchema,
   companySchema,
   meetingSchema,
@@ -21,7 +36,7 @@ import {
 } from "../../packages/core/records";
 import { createLocalDatabase } from "../../packages/database/client";
 import { demoId, demoUser, seedDemo } from "../../packages/database/seed";
-import { requestJson } from "../../src/components/client-api";
+import { RequestError, requestJson } from "../../src/components/client-api";
 import { CrmApp } from "../../src/components/crm-app";
 import { CompanyRecord } from "../../src/components/records/company-record";
 import { PersonRecord } from "../../src/components/records/person-record";
@@ -53,6 +68,7 @@ export interface Harness {
   local: Awaited<ReturnType<typeof createLocalDatabase>>;
   service: CrmService;
   posts: Record<string, unknown>[];
+  clock: () => number;
 }
 
 function page(route: Route | null): ReactNode {
@@ -83,7 +99,67 @@ function Routed() {
   return page(routeFor(usePathname()));
 }
 
+async function respondOutreach(
+  harness: Harness,
+  url: string,
+  init?: RequestInit,
+) {
+  const outreach = new OutreachService(harness.local.db, harness.clock);
+  try {
+    if (init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      harness.posts.push(body);
+      const operations: Record<string, () => Promise<unknown>> = {
+        enroll: () => outreach.enroll(principal, enrollSchema.parse(body)),
+        draft: () =>
+          outreach.editDraft(principal, touchDraftSchema.parse(body)),
+        approve: () =>
+          outreach.approve(principal, touchApproveSchema.parse(body)),
+        sent: () => outreach.markSent(principal, touchSentSchema.parse(body)),
+        skip: () => outreach.skip(principal, touchSkipSchema.parse(body)),
+        reopen: () => outreach.reopen(principal, touchReopenSchema.parse(body)),
+        snooze: () => outreach.snooze(principal, touchSnoozeSchema.parse(body)),
+        enrollment: () =>
+          outreach.changeEnrollment(
+            principal,
+            enrollmentChangeSchema.parse(body),
+          ),
+        relationship: () =>
+          outreach.changeRelationship(
+            principal,
+            relationshipChangeSchema.parse(body),
+          ),
+        sequence: () =>
+          outreach.updateSequence(principal, sequenceUpdateSchema.parse(body)),
+      };
+      const run = operations[body.operation];
+      if (!run) throw new Error("UNSUPPORTED");
+      return serialize(await run());
+    }
+    const params = Object.fromEntries(
+      new URL(url, "http://localhost").searchParams,
+    );
+    const scope = {
+      organizationId: params.organizationId || demoId(1),
+      ...(params.productId ? { productId: params.productId } : {}),
+    };
+    if (params.operation === "touch")
+      return serialize(
+        await outreach.touch(principal, touchQuerySchema.parse(params)),
+      );
+    if (params.operation === "queue")
+      return serialize(await outreach.queue(principal, scope));
+    return serialize(await outreach.dueTouches(principal, scope));
+  } catch (error) {
+    if (error instanceof DomainError)
+      throw new RequestError(error.code, error.details ?? {});
+    throw error;
+  }
+}
+
 async function respond(harness: Harness, url: string, init?: RequestInit) {
+  if (url.startsWith("/api/outreach"))
+    return respondOutreach(harness, url, init);
   const { service } = harness;
   if (init?.method === "POST") {
     const body = JSON.parse(String(init.body));
@@ -197,6 +273,7 @@ export function installCrmHarness() {
     await seedDemo(harness.local.db);
     harness.service = new CrmService(harness.local.db);
     harness.posts = [];
+    harness.clock = Date.now;
     visit("/actions");
     localStorage.clear();
     document.documentElement.className = "";

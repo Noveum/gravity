@@ -142,6 +142,7 @@ beforeEach(() => {
   missingContexts.clear();
   request.mockReset();
   request.mockImplementation(async (url) => {
+    if (url.startsWith("/api/outreach")) throw new Error("NOT_FOUND");
     const params = new URL(url, "http://localhost").searchParams;
     const organizationId = params.get("organizationId") || demoId(1);
     if (
@@ -725,7 +726,15 @@ test("deep links render the view or record they name", async () => {
     cleanup();
   }
   mount("/outreach");
-  expect(screen.getByRole("heading", { name: t.outreachSoon })).toBeTruthy();
+  await waitFor(() => expect(window.location.pathname).toBe("/outreach/today"));
+  expect(
+    within(screen.getByRole("navigation", { name: t.outreachTabsLabel }))
+      .getByRole("link", { name: t.outreachTabs.today })
+      .getAttribute("aria-current"),
+  ).toBe("page");
+  expect(
+    await screen.findByRole("heading", { name: t.outreachLoadError }),
+  ).toBeTruthy();
   cleanup();
   mount(`/people/${demoId(200)}`);
   expect(heading("Mira Chen", 2)).toBeTruthy();

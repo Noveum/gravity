@@ -20,7 +20,7 @@ import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { requestJson } from "../src/components/client-api";
-import { sectionPath } from "../src/components/routes";
+import { outreachPath, sectionPath } from "../src/components/routes";
 import { Shortcuts } from "../src/components/shortcuts";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 
@@ -66,7 +66,11 @@ describe("go-to chords", () => {
       const [first, second] = (entry.bindings[0] ?? "").split(" ");
       await press(`${first}${second}`);
       await waitFor(() =>
-        expect(pathname()).toBe(sectionPath(entry.view ?? "actions")),
+        expect(pathname()).toBe(
+          entry.view === "outreach"
+            ? outreachPath("today")
+            : sectionPath(entry.view ?? "actions"),
+        ),
       );
     },
   );

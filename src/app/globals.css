@@ -3383,3 +3383,102 @@ tbody tr[data-selected] td:first-child::before {
     width: 100%;
   }
 }
+
+.outreach-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: var(--gravity-group-row);
+  padding: 0 calc(var(--gravity-row-x) - 6px);
+  border-bottom: 1px solid var(--gravity-border-hairline);
+  background: var(--gravity-surface);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.outreach-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  font-size: var(--text-xs);
+  color: var(--gravity-faint);
+  text-decoration: none;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: var(--transition-colors);
+}
+.outreach-tab:hover {
+  color: var(--gravity-text);
+}
+.outreach-tab[aria-current="page"] {
+  color: var(--gravity-text);
+  border-bottom-color: var(--gravity-accent);
+}
+.outreach-tab-count {
+  color: var(--gravity-faint);
+  font-variant-numeric: tabular-nums;
+}
+.touch-group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.touch-group-title {
+  top: var(--gravity-group-row);
+}
+.touch-row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+.touch-row > .action-row {
+  flex: 1;
+  min-width: 0;
+}
+.touch-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 0;
+  border-bottom: 1px solid var(--gravity-border-hairline);
+  background: var(--gravity-surface);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.touch-row:hover .touch-actions,
+.touch-row:focus-within .touch-actions,
+.touch-actions.visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .touch-actions {
+    opacity: 1;
+  }
+}
+.touch-actions :where(button, a) {
+  --gravity-control: 22px;
+  font-size: var(--text-xs);
+}
+.touch-actions .icon-button {
+  width: 22px;
+}
+.row-action.muted {
+  color: var(--gravity-faint);
+}
+@container (max-width: 560px) {
+  .touch-row .row-action,
+  .touch-row .row-meta {
+    display: none;
+  }
+  .touch-row .row-kind {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

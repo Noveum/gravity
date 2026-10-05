@@ -26,6 +26,7 @@ import {
   actionFilters,
   actionsPath,
   homePath,
+  outreachTabFor,
   type Section,
   sectionPath,
 } from "./routes";
@@ -62,6 +63,7 @@ const toolbarSections: ReadonlySet<Section> = new Set([
   "meetings",
   "opportunities",
   "materials",
+  "outreach",
 ]);
 const savedViews = [
   { id: "reply", name: t.replies, href: actionsPath({ kind: "reply" }) },
@@ -280,12 +282,17 @@ function CrmShell({ children }: { children: ReactNode }) {
   const productName = crm.productId
     ? crm.product(crm.productId)?.name
     : undefined;
+  const outreachTab = section === "outreach" ? outreachTabFor(pathname) : null;
   const crumbs = breadcrumbsFor({
     view: label(section),
-    ...(recordId ? { viewHref: sectionPath(section) } : {}),
+    ...(recordId || outreachTab ? { viewHref: sectionPath(section) } : {}),
     ...(crm.currentOrg ? { workspace: crm.currentOrg.name } : {}),
     ...(productName ? { product: productName } : {}),
-    ...(recordName ? { record: recordName } : {}),
+    ...(recordName
+      ? { record: recordName }
+      : outreachTab
+        ? { record: t.outreachTabs[outreachTab] }
+        : {}),
   });
   return (
     <div

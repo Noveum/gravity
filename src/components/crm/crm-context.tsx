@@ -384,7 +384,7 @@ function useCrmState({
         notify(typeof announce === "string" ? announce : t.updated, "success");
       return { ok: true, result };
     } catch (error) {
-      const message = errorText(error);
+      const message = errorText(error, timeZone);
       if (activeOrganization.current === submittedOrganization) {
         if (toastErrors) notify(message, "danger");
         if (isAccessError(error, ["CONFLICT", "FORBIDDEN", "UNAUTHORIZED"]))

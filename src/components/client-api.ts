@@ -28,14 +28,23 @@ export async function requestJson<T>(
     );
   return data;
 }
-export function errorText(error: unknown) {
+const isoTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+export function detailText(value: string | number, timeZone = "UTC") {
+  return typeof value === "string" &&
+    isoTime.test(value) &&
+    !Number.isNaN(Date.parse(value))
+    ? dateLabel(value, timeZone)
+    : String(value);
+}
+export function errorText(error: unknown, timeZone = "UTC") {
   const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
   const message =
     t.errors[code as keyof typeof t.errors] ?? t.errors.NETWORK_ERROR;
   const details = error instanceof RequestError ? error.details : {};
-  return message.replace(/\{(\w+)\}/g, (match, key: string) =>
-    key in details ? String(details[key]) : match,
-  );
+  return message.replace(/\{(\w+)\}/g, (match, key: string) => {
+    const value = details[key];
+    return value === undefined ? match : detailText(value, timeZone);
+  });
 }
 export const label = (key: string) => {
   const value = t[key as keyof typeof t];

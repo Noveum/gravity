@@ -15,6 +15,32 @@ const sectionPaths: Record<Section, string> = {
   settings: "/settings",
 };
 const recordSections: ReadonlySet<Section> = new Set(["people", "companies"]);
+export const outreachTabs = [
+  "today",
+  "drafts",
+  "approved",
+  "sent",
+  "paused",
+  "sequences",
+  "pipeline",
+] as const;
+export type OutreachTab = (typeof outreachTabs)[number];
+export const touchTabs: ReadonlySet<OutreachTab> = new Set([
+  "today",
+  "drafts",
+  "approved",
+  "sent",
+]);
+export const isOutreachTab = (value: string): value is OutreachTab =>
+  (outreachTabs as readonly string[]).includes(value);
+export const outreachPath = (tab: OutreachTab) =>
+  `${sectionPaths.outreach}/${tab}`;
+export function outreachTabFor(pathname: string): OutreachTab | null {
+  const [first, second, ...rest] = pathname.split("/").filter(Boolean);
+  if (`/${first}` !== sectionPaths.outreach || rest.length) return null;
+  if (second === undefined) return null;
+  return isOutreachTab(second) ? second : null;
+}
 const sections = Object.keys(sectionPaths) as Section[];
 
 export const homePath = sectionPaths.actions;
@@ -65,6 +91,10 @@ export function routeFor(pathname: string): Route | null {
   const section = sections.find((id) => sectionPaths[id] === `/${first}`);
   if (!section) return null;
   if (second === undefined) return { section, recordId: "" };
+  if (section === "outreach")
+    return !rest.length && isOutreachTab(second)
+      ? { section, recordId: "" }
+      : null;
   if (!recordSections.has(section) || rest.length) return null;
   try {
     return { section, recordId: decodeURIComponent(second) };

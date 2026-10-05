@@ -128,6 +128,10 @@ export function dueToday(dueAt: string, now: number, timeZone: string) {
   return dayNumber(Date.parse(dueAt), timeZone) <= dayNumber(now, timeZone);
 }
 
+export function overdueDay(dueAt: string, now: number, timeZone: string) {
+  return dayNumber(Date.parse(dueAt), timeZone) < dayNumber(now, timeZone);
+}
+
 export function snoozeLabel(target: number, now: number, timeZone: string) {
   if (dayNumber(target, timeZone) - dayNumber(now, timeZone) === 1)
     return t.snoozeTomorrow;

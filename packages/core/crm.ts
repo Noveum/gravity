@@ -1,11 +1,29 @@
-import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import t from "../i18n/translations/en.json";
+import { draftHash, draftSubject } from "./drafts";
 import { authorize, DomainError, type Principal } from "./policy";
+import {
+  activeCompany,
+  assertActiveRelationships,
+  companyVisible,
+  emailTaken,
+  personVisible,
+} from "./visibility";
 
 export const scopeSchema = z.object({
   organizationId: z.uuid(),
@@ -16,6 +34,31 @@ export const actionChangeSchema = scopeSchema.extend({
   version: z.number().int().positive(),
   command: z.enum(["save", "approve", "complete", "rework"]),
   draft: z.string().max(20000).optional(),
+});
+export const actionPlanSchema = scopeSchema.extend({
+  items: z
+    .array(
+      z
+        .object({
+          actionId: z.uuid(),
+          version: z.number().int().positive(),
+          status: z.enum(["open", "completed"]).optional(),
+          dueAt: z.iso.datetime().optional(),
+          ownerId: z.string().min(1).optional(),
+        })
+        .refine(
+          (item) =>
+            item.status !== undefined ||
+            item.dueAt !== undefined ||
+            item.ownerId !== undefined,
+        ),
+    )
+    .min(1)
+    .max(100)
+    .refine(
+      (items) =>
+        new Set(items.map((item) => item.actionId)).size === items.length,
+    ),
 });
 export const scheduleActionSchema = scopeSchema.extend({
   relationshipId: z.uuid(),
@@ -71,6 +114,40 @@ export const workspaceSchema = z.object({
     }),
 });
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+export function defaultStages(organizationId: string, productId: string) {
+  return [
+    { name: t.discovery, category: "open" as const },
+    { name: t.evaluation, category: "open" as const },
+    { name: t.proposal, category: "open" as const },
+    { name: t.won, category: "won" as const },
+    { name: t.lost, category: "lost" as const },
+  ].map((stage, position) => ({
+    organizationId,
+    productId,
+    position,
+    ...stage,
+  }));
+}
+export function outreachStages(organizationId: string, productId: string) {
+  const names = t.outreachStages;
+  return [
+    { name: names.new, category: "open" as const },
+    { name: names.researching, category: "open" as const },
+    { name: names.contacted, category: "open" as const },
+    { name: names.followUp, category: "open" as const },
+    { name: names.replied, category: "open" as const },
+    { name: names.meeting, category: "open" as const },
+    { name: names.won, category: "won" as const },
+    { name: names.lost, category: "lost" as const },
+    { name: names.notNow, category: "hold" as const },
+  ].map((stage, position) => ({
+    organizationId,
+    productId,
+    position,
+    pipeline: "outreach" as const,
+    ...stage,
+  }));
+}
 async function insertProduct(
   tx: Transaction,
   organizationId: string,
@@ -88,14 +165,12 @@ async function insertProduct(
   await tx
     .insert(s.folders)
     .values({ organizationId, productId: product.id, name: t.defaultFolder });
-  await tx.insert(s.stages).values(
-    [t.discovery, t.evaluation, t.proposal, t.won].map((name, position) => ({
-      organizationId,
-      productId: product.id,
-      name,
-      position,
-    })),
-  );
+  await tx
+    .insert(s.stages)
+    .values([
+      ...defaultStages(organizationId, product.id),
+      ...outreachStages(organizationId, product.id),
+    ]);
   await tx.insert(s.changeEvents).values({
     organizationId,
     productId: product.id,
@@ -135,6 +210,9 @@ export class CrmService {
       );
       if (input.productId && input.productId !== relationship.productId)
         throw new DomainError("FORBIDDEN", 403);
+      await assertActiveRelationships(tx, input.organizationId, [
+        relationship.id,
+      ]);
       // Assignees must currently be able to see the task's product, even if the creator is an admin.
       try {
         await authorize(
@@ -155,7 +233,8 @@ export class CrmService {
           and(
             eq(s.enrollments.organizationId, input.organizationId),
             eq(s.enrollments.relationshipId, relationship.id),
-            eq(s.enrollments.status, "paused_reply"),
+            eq(s.enrollments.status, "paused"),
+            eq(s.enrollments.pauseReason, "reply"),
           ),
         );
       const [action] = await tx
@@ -209,38 +288,36 @@ export class CrmService {
         .where(eq(s.organizations.id, input.organizationId))
         .for("update");
       let personId = input.personId;
-      if (personId || input.companyId) {
-        const [visible] = await tx
-          .select({ personId: s.people.id })
+      const productIds = permission.products.map((p) => p.id);
+      if (personId) {
+        const [existing] = await tx
+          .select({ archivedAt: s.people.archivedAt })
           .from(s.people)
-          .innerJoin(s.relationships, eq(s.relationships.personId, s.people.id))
           .where(
             and(
+              eq(s.people.id, personId),
               eq(s.people.organizationId, input.organizationId),
-              inArray(
-                s.relationships.productId,
-                permission.products.map((p) => p.id),
-              ),
-              personId
-                ? eq(s.people.id, personId)
-                : eq(s.people.companyId, input.companyId ?? ""),
             ),
           );
-        if (!visible) throw new DomainError("NOT_FOUND", 404);
-      }
+        if (
+          !existing ||
+          !(await personVisible(tx, productIds, input.organizationId, personId))
+        )
+          throw new DomainError("NOT_FOUND", 404);
+        if (existing.archivedAt) throw new DomainError("RECORD_ARCHIVED", 409);
+      } else if (input.companyId)
+        await activeCompany(
+          tx,
+          productIds,
+          input.organizationId,
+          input.companyId,
+        );
       if (!personId) {
-        if (input.email) {
-          const [existing] = await tx
-            .select({ id: s.people.id })
-            .from(s.people)
-            .where(
-              and(
-                eq(s.people.organizationId, input.organizationId),
-                sql`lower(${s.people.email}) = ${input.email.toLowerCase()}`,
-              ),
-            );
-          if (existing) throw new DomainError("PERSON_EXISTS", 409);
-        }
+        if (
+          input.email &&
+          (await emailTaken(tx, input.organizationId, [input.email]))
+        )
+          throw new DomainError("PERSON_EXISTS", 409);
         const [person] = await tx
           .insert(s.people)
           .values({
@@ -253,6 +330,19 @@ export class CrmService {
           .returning();
         personId = person.id;
       }
+      const [firstStage] = await tx
+        .select({ id: s.stages.id })
+        .from(s.stages)
+        .where(
+          and(
+            eq(s.stages.organizationId, input.organizationId),
+            eq(s.stages.productId, input.productId),
+            eq(s.stages.pipeline, "outreach"),
+            isNull(s.stages.archivedAt),
+          ),
+        )
+        .orderBy(asc(s.stages.position))
+        .limit(1);
       const [relationship] = await tx
         .insert(s.relationships)
         .values({
@@ -262,6 +352,7 @@ export class CrmService {
           ownerId: principal.userId,
           purpose: input.purpose,
           context: input.context,
+          stageId: firstStage?.id ?? null,
         })
         .onConflictDoNothing()
         .returning();
@@ -399,7 +490,11 @@ export class CrmService {
         .select()
         .from(s.stages)
         .where(scoped(s.stages))
-        .orderBy(asc(s.stages.position), asc(s.stages.id)),
+        .orderBy(
+          asc(s.stages.pipeline),
+          asc(s.stages.position),
+          asc(s.stages.id),
+        ),
       this.db.select().from(s.meetings).where(scoped(s.meetings)),
       this.db.select().from(s.opportunities).where(scoped(s.opportunities)),
       this.db
@@ -445,7 +540,7 @@ export class CrmService {
           ),
         ),
     ]);
-    const people = await this.db
+    const everyone = await this.db
       .select()
       .from(s.people)
       .where(
@@ -457,32 +552,99 @@ export class CrmService {
           ),
         ),
       );
-    const companies = await this.db
+    const people = everyone.filter((person) => !person.archivedAt);
+    const activePeople = new Set(people.map((person) => person.id));
+    const activeRelationships = relationships.filter((relationship) =>
+      activePeople.has(relationship.personId),
+    );
+    const activeRelationshipIds = new Set(
+      activeRelationships.map((relationship) => relationship.id),
+    );
+    const active = <T extends { relationshipId: string }>(rows: T[]) =>
+      rows.filter((row) => activeRelationshipIds.has(row.relationshipId));
+    const archivedPeople = everyone.filter((person) => person.archivedAt);
+    const companyIds = (rows: typeof everyone) =>
+      rows.flatMap((person) => (person.companyId ? [person.companyId] : []));
+    const peopleAt = (archived: "active" | "any") =>
+      this.db
+        .select({ id: s.people.id })
+        .from(s.people)
+        .where(
+          and(
+            eq(s.people.companyId, s.companies.id),
+            archived === "active" ? isNull(s.people.archivedAt) : undefined,
+          ),
+        );
+    const allCompanies = await this.db
       .select()
       .from(s.companies)
       .where(
         and(
           eq(s.companies.organizationId, scope.organizationId),
-          inArray(
-            s.companies.id,
-            people.flatMap((p) => (p.companyId ? [p.companyId] : [])),
+          or(
+            inArray(s.companies.id, companyIds(people)),
+            and(
+              notExists(peopleAt("active")),
+              or(
+                notExists(peopleAt("any")),
+                inArray(s.companies.id, companyIds(archivedPeople)),
+              ),
+            ),
           ),
         ),
+      )
+      .orderBy(asc(s.companies.name));
+    const productsOf = (rows: typeof everyone) => [
+      ...new Set(
+        relationships
+          .filter((relationship) =>
+            rows.some((person) => person.id === relationship.personId),
+          )
+          .map((relationship) => relationship.productId),
+      ),
+    ];
+    const companyProducts = (companyId: string) => {
+      const current = people.filter((person) => person.companyId === companyId);
+      return productsOf(
+        current.length
+          ? current
+          : archivedPeople.filter((person) => person.companyId === companyId),
       );
+    };
     return {
       products: permission.products,
       people,
-      companies,
-      relationships,
-      actions,
+      companies: allCompanies.filter((company) => !company.archivedAt),
+      archived: {
+        people: archivedPeople.map((person) => ({
+          id: person.id,
+          name: person.name,
+          title: person.title,
+          companyId: person.companyId,
+          archivedAt: person.archivedAt,
+          productIds: productsOf([person]),
+        })),
+        companies: allCompanies
+          .filter((company) => company.archivedAt)
+          .map((company) => ({
+            id: company.id,
+            name: company.name,
+            domain: company.domain,
+            archivedAt: company.archivedAt,
+            productIds: companyProducts(company.id),
+          })),
+      },
+      relationships: activeRelationships,
+      actions: active(actions),
       sequences,
-      enrollments,
+      enrollments: active(enrollments),
       folders,
       assets,
       assetStages,
-      stages,
-      meetings,
-      opportunities,
+      stages: stages.filter((stage) => stage.pipeline === "deal"),
+      outreachStages: stages.filter((stage) => stage.pipeline === "outreach"),
+      meetings: active(meetings),
+      opportunities: active(opportunities),
       members: members.map((member) => ({
         ...member,
         productIds:
@@ -657,10 +819,13 @@ export class CrmService {
     companyId: string,
   ) {
     const snapshot = await this.snapshot(principal, scope);
-    const company = snapshot.companies.find(
-      (company) => company.id === companyId,
-    );
-    if (!company) throw new DomainError("NOT_FOUND", 404);
+    const company =
+      snapshot.companies.find((company) => company.id === companyId) ??
+      (await this.archivedCompany(
+        snapshot.products.map((product) => product.id),
+        scope.organizationId,
+        companyId,
+      ));
     const people = snapshot.people.filter(
       (person) => person.companyId === company.id,
     );
@@ -687,6 +852,51 @@ export class CrmService {
       asOf: snapshot.asOf,
     };
   }
+  private async archivedCompany(
+    productIds: string[],
+    organizationId: string,
+    companyId: string,
+  ) {
+    const [company] = await this.db
+      .select()
+      .from(s.companies)
+      .where(
+        and(
+          eq(s.companies.id, companyId),
+          eq(s.companies.organizationId, organizationId),
+        ),
+      );
+    if (
+      !company?.archivedAt ||
+      !(await companyVisible(this.db, productIds, organizationId, companyId))
+    )
+      throw new DomainError("NOT_FOUND", 404);
+    return company;
+  }
+  async personContext(
+    principal: Principal,
+    organizationId: string,
+    personId: string,
+  ) {
+    const permission = await authorize(this.db, principal, organizationId);
+    const [relationship] = await this.db
+      .select({ id: s.relationships.id })
+      .from(s.relationships)
+      .where(
+        and(
+          eq(s.relationships.organizationId, organizationId),
+          eq(s.relationships.personId, personId),
+          inArray(
+            s.relationships.productId,
+            permission.products.map((product) => product.id),
+          ),
+        ),
+      )
+      .orderBy(asc(s.relationships.id))
+      .limit(1);
+    if (!relationship) throw new DomainError("NOT_FOUND", 404);
+    return this.context(principal, organizationId, relationship.id);
+  }
   async changeAction(
     principal: Principal,
     input: z.infer<typeof actionChangeSchema>,
@@ -694,35 +904,24 @@ export class CrmService {
     if (principal.source === "mcp" && principal.readOnly !== false)
       throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
     return this.db.transaction(async (tx) => {
-      const [action] = await tx
-        .select()
-        .from(s.actions)
-        .where(
-          and(
-            eq(s.actions.id, input.actionId),
-            eq(s.actions.organizationId, input.organizationId),
-          ),
-        )
-        .for("update");
-      if (!action) throw new DomainError("NOT_FOUND", 404);
-      await authorize(
-        tx,
-        principal,
-        input.organizationId,
-        action.productId,
-        true,
-      );
-      if (action.sourceConversationId) {
-        const [source] = await tx
+      const actionRow = () =>
+        tx
           .select()
-          .from(s.conversations)
-          .where(eq(s.conversations.id, action.sourceConversationId));
-        if (
-          source.visibility === "private" &&
-          source.ownerId !== principal.userId
-        )
-          throw new DomainError("FORBIDDEN", 403);
-      }
+          .from(s.actions)
+          .where(
+            and(
+              eq(s.actions.id, input.actionId),
+              eq(s.actions.organizationId, input.organizationId),
+            ),
+          );
+      const [found] = await actionRow();
+      if (!found) throw new DomainError("NOT_FOUND", 404);
+      await authorizeAction(tx, principal, found);
+      await assertActiveRelationships(tx, input.organizationId, [
+        found.relationshipId,
+      ]);
+      const [action] = await actionRow().for("update");
+      if (!action) throw new DomainError("NOT_FOUND", 404);
       if (action.version !== input.version)
         throw new DomainError("CONFLICT", 409);
       if (action.status === "completed")
@@ -738,17 +937,14 @@ export class CrmService {
         .select()
         .from(s.people)
         .where(eq(s.people.id, relationship.personId));
-      const hash = createHash("sha256")
-        .update(
-          JSON.stringify({
-            draft,
-            personId: person.id,
-            email: person.email,
-            channel: action.channel,
-            productId: action.productId,
-          }),
-        )
-        .digest("hex");
+      const hash = draftHash({
+        draft,
+        ...(await draftSubject(tx, person)),
+        channel: action.channel,
+        productId: action.productId,
+      });
+      const keepsApproval =
+        input.command === "complete" && action.approvedHash === hash;
       if (input.command === "approve" && !draft.trim())
         throw new DomainError("DRAFT_REQUIRED", 400);
       const [result] = await tx
@@ -756,8 +952,18 @@ export class CrmService {
         .set({
           draft,
           draftHash: hash,
-          approvedHash: input.command === "approve" ? hash : null,
-          approvedBy: input.command === "approve" ? principal.userId : null,
+          approvedHash:
+            input.command === "approve"
+              ? hash
+              : keepsApproval
+                ? action.approvedHash
+                : null,
+          approvedBy:
+            input.command === "approve"
+              ? principal.userId
+              : keepsApproval
+                ? action.approvedBy
+                : null,
           kind: input.command === "rework" ? "reply" : action.kind,
           title: input.command === "rework" ? t.newReplyAction : action.title,
           status: input.command === "complete" ? "completed" : "open",
@@ -780,6 +986,139 @@ export class CrmService {
         entityId: action.id,
       });
       return result;
+    });
+  }
+  async planActions(
+    principal: Principal,
+    input: z.infer<typeof actionPlanSchema>,
+  ) {
+    if (principal.source === "mcp")
+      throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
+    return this.db.transaction(async (tx) => {
+      const items = [...input.items].sort((a, b) =>
+        a.actionId < b.actionId ? -1 : a.actionId > b.actionId ? 1 : 0,
+      );
+      const selectRows = () =>
+        tx
+          .select()
+          .from(s.actions)
+          .where(
+            and(
+              inArray(
+                s.actions.id,
+                items.map((item) => item.actionId),
+              ),
+              eq(s.actions.organizationId, input.organizationId),
+            ),
+          )
+          .orderBy(asc(s.actions.id));
+      const found = await selectRows();
+      if (found.length !== items.length)
+        throw new DomainError("NOT_FOUND", 404);
+      const products = new Set(found.map((row) => row.productId));
+      if (input.productId && [...products].some((id) => id !== input.productId))
+        throw new DomainError("FORBIDDEN", 403);
+      for (const productId of products)
+        await authorize(tx, principal, input.organizationId, productId, true);
+      await assertActiveRelationships(
+        tx,
+        input.organizationId,
+        found.map((row) => row.relationshipId),
+      );
+      const rows = await selectRows().for("update");
+      if (rows.length !== items.length) throw new DomainError("NOT_FOUND", 404);
+      const sourceIds = [
+        ...new Set(
+          rows.flatMap((row) =>
+            row.sourceConversationId ? [row.sourceConversationId] : [],
+          ),
+        ),
+      ];
+      const sources = new Map(
+        (sourceIds.length
+          ? await tx
+              .select()
+              .from(s.conversations)
+              .where(inArray(s.conversations.id, sourceIds))
+          : []
+        ).map((source) => [source.id, source]),
+      );
+      const privateOwner = (action: typeof s.actions.$inferSelect) => {
+        const source = sources.get(action.sourceConversationId ?? "");
+        return source?.visibility === "private" ? source.ownerId : null;
+      };
+      const assignees = new Map<string, boolean>();
+      const changed: (typeof s.actions.$inferSelect)[] = [];
+      for (const item of items) {
+        const action = rows.find((row) => row.id === item.actionId);
+        if (!action) throw new DomainError("NOT_FOUND", 404);
+        const owner = privateOwner(action);
+        if (owner && owner !== principal.userId)
+          throw new DomainError("FORBIDDEN", 403);
+        if (action.version !== item.version)
+          throw new DomainError("CONFLICT", 409);
+        if (action.status === "blocked" && item.status)
+          throw new DomainError("REPLY_BLOCKED", 409);
+        if (action.status === "completed" && item.status !== "open")
+          throw new DomainError("ACTION_COMPLETED", 409);
+        if (item.ownerId) {
+          if (owner && owner !== item.ownerId)
+            throw new DomainError("ASSIGNEE_PRIVATE_SOURCE", 403);
+          const key = `${item.ownerId}:${action.productId}`;
+          if (!assignees.has(key)) {
+            try {
+              await authorize(
+                tx,
+                { userId: item.ownerId, source: "session" },
+                input.organizationId,
+                action.productId,
+              );
+              assignees.set(key, true);
+            } catch (error) {
+              if (error instanceof DomainError)
+                throw new DomainError("OWNER_NOT_ALLOWED", 403);
+              throw error;
+            }
+          }
+        }
+        const [result] = await tx
+          .update(s.actions)
+          .set({
+            ...(item.status ? { status: item.status } : {}),
+            ...(item.dueAt ? { dueAt: new Date(item.dueAt) } : {}),
+            ...(item.ownerId ? { ownerId: item.ownerId } : {}),
+            version: action.version + 1,
+          })
+          .where(
+            and(
+              eq(s.actions.id, action.id),
+              eq(s.actions.version, item.version),
+            ),
+          )
+          .returning();
+        if (!result) throw new DomainError("CONFLICT", 409);
+        const types = [
+          item.status === "completed" ? "action.complete" : "",
+          item.status === "open" && action.status === "completed"
+            ? "action.reopen"
+            : "",
+          item.dueAt ? "action.snooze" : "",
+          item.ownerId ? "action.assign" : "",
+        ].filter(Boolean);
+        if (types.length)
+          await tx.insert(s.changeEvents).values(
+            types.map((type) => ({
+              organizationId: action.organizationId,
+              productId: action.productId,
+              sourceConversationId: action.sourceConversationId,
+              actorId: principal.userId,
+              type,
+              entityId: action.id,
+            })),
+          );
+        changed.push(result);
+      }
+      return changed;
     });
   }
   async createFolder(
@@ -848,6 +1187,9 @@ export class CrmService {
       );
       if (meeting.version !== input.version)
         throw new DomainError("CONFLICT", 409);
+      await assertActiveRelationships(tx, input.organizationId, [
+        meeting.relationshipId,
+      ]);
       if (meeting.commitmentActionId)
         return { actionId: meeting.commitmentActionId };
       if (meeting.status !== "held" || !meeting.proposedCommitment)
@@ -921,9 +1263,12 @@ export class CrmService {
             isNull(s.changeEvents.sourceConversationId),
             inArray(s.changeEvents.sourceConversationId, readable),
           ),
-          inArray(
-            s.changeEvents.productId,
-            permission.products.map((p) => p.id),
+          or(
+            isNull(s.changeEvents.productId),
+            inArray(
+              s.changeEvents.productId,
+              permission.products.map((p) => p.id),
+            ),
           ),
         ),
       );
@@ -1009,3 +1354,18 @@ export type Snapshot = Awaited<ReturnType<CrmService["snapshot"]>>;
 export type PersonContext = Awaited<ReturnType<CrmService["context"]>>;
 
 export type CompanyContext = Awaited<ReturnType<CrmService["companyContext"]>>;
+
+async function authorizeAction(
+  db: Database,
+  principal: Principal,
+  action: typeof s.actions.$inferSelect,
+) {
+  await authorize(db, principal, action.organizationId, action.productId, true);
+  if (!action.sourceConversationId) return;
+  const [source] = await db
+    .select()
+    .from(s.conversations)
+    .where(eq(s.conversations.id, action.sourceConversationId));
+  if (source.visibility === "private" && source.ownerId !== principal.userId)
+    throw new DomainError("FORBIDDEN", 403);
+}

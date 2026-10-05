@@ -188,6 +188,45 @@ test("while a modal dialog is open the toasts live inside it, stay usable, and r
   dialog.remove();
 });
 
+test("the dialog watcher reads the page only when a dialog opens, closes, mounts or unmounts", async () => {
+  render(<Harness />);
+  const queries = vi.spyOn(document, "querySelectorAll");
+  const watched = () =>
+    queries.mock.calls.filter(([selector]) => selector === "dialog[open]")
+      .length;
+  const busy = document.createElement("div");
+  await act(async () => {
+    document.body.append(busy);
+    busy.setAttribute("data-state", "open");
+    busy.append(document.createElement("span"));
+  });
+  expect(watched()).toBe(0);
+  const wrapper = document.createElement("div");
+  const dialog = document.createElement("dialog");
+  dialog.setAttribute("open", "");
+  wrapper.append(dialog);
+  await act(async () => {
+    document.body.append(wrapper);
+  });
+  expect(watched()).toBe(1);
+  expect(dialog.contains(region())).toBe(true);
+  await act(async () => {
+    dialog.removeAttribute("open");
+  });
+  expect(watched()).toBe(2);
+  expect(dialog.contains(region())).toBe(false);
+  await act(async () => {
+    dialog.setAttribute("open", "");
+  });
+  await act(async () => {
+    wrapper.remove();
+  });
+  expect(watched()).toBe(4);
+  expect(document.body.contains(region())).toBe(true);
+  queries.mockRestore();
+  busy.remove();
+});
+
 test("dismissing a focused toast with the keyboard does not hold later toasts", async () => {
   vi.useRealTimers();
   const user = userEvent.setup();

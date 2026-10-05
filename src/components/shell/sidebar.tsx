@@ -1,4 +1,9 @@
 "use client";
+import {
+  type ShortcutId,
+  shortcutFor,
+  shortcutLabel,
+} from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import {
   ChevronRight,
@@ -15,6 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { isEditable, keyInput } from "../keyboard-navigation";
 import { ShortcutHint } from "../ui/shortcut-hint";
 
 const focusableSelector =
@@ -35,7 +41,7 @@ export interface SidebarItem {
   icon?: LucideIcon;
   dot?: string;
   count?: number;
-  hint?: string;
+  hint?: ShortcutId | undefined;
   active: boolean;
   kind?: "page" | "view" | "filter";
   href?: string;
@@ -55,13 +61,14 @@ function NavItem({
   collapsed: boolean;
 }) {
   const Icon = item.icon;
+  const hint = item.hint ? shortcutLabel(item.hint) : "";
   const shared = {
     className: "nav-item",
     "data-nav-item": item.id,
     "aria-label": collapsed ? item.label : undefined,
     title: collapsed
-      ? [item.label, item.hint].filter(Boolean).join(" ")
-      : [item.label, item.hint].filter(Boolean).join(" · "),
+      ? [item.label, hint].filter(Boolean).join(" ")
+      : [item.label, hint].filter(Boolean).join(" · "),
     onClick: item.onSelect,
   };
   const content = (
@@ -78,10 +85,7 @@ function NavItem({
       )}
       <span className="nav-label-text">{item.label}</span>
       {item.hint && !collapsed && (
-        <ShortcutHint
-          keys={item.hint}
-          className="nav-shortcut nav-label-text"
-        />
+        <ShortcutHint id={item.hint} className="nav-shortcut nav-label-text" />
       )}
       {item.count !== undefined && (
         <span className="nav-count nav-label-text">{item.count}</span>
@@ -169,7 +173,11 @@ export function Sidebar({
   }, [drawerOpen]);
   function trapFocus(event: KeyboardEvent<HTMLElement>) {
     if (!drawerOpen || !panel.current) return;
-    if (event.key === "Escape") {
+    if (
+      event.key === "Escape" ||
+      shortcutFor(keyInput(event), ["global"], isEditable(event.target)) ===
+        "sidebar"
+    ) {
       event.preventDefault();
       event.stopPropagation();
       onCloseDrawer();
@@ -234,7 +242,7 @@ export function Sidebar({
       >
         <Search size={14} aria-hidden />
         <span className="nav-label-text">{t.searchShort}</span>
-        <ShortcutHint className="nav-label-text" keys={t.keys.commands} />
+        <ShortcutHint className="nav-label-text" id="palette" />
       </button>
       <nav className="sidebar-nav" aria-label={t.mainNavigation}>
         <div className="sidebar-scroll">

@@ -2,9 +2,9 @@
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { Download, FileText, Folder, Plus, Upload, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { dateLabel, errorText, requestJson } from "./client-api";
-import { submitOnModEnter, useModalLifecycle } from "./modal-lifecycle";
+import { submitOnSaveKey, useModalLifecycle } from "./modal-lifecycle";
 import { EmptyState } from "./ui/states";
 
 export function Materials({
@@ -14,6 +14,7 @@ export function Materials({
   refresh,
   onNotice,
   timeZone,
+  registerCreate,
 }: {
   data: ClientSnapshot;
   organizationId: string;
@@ -21,6 +22,7 @@ export function Materials({
   refresh: () => Promise<void>;
   onNotice: (text: string) => void;
   timeZone: string;
+  registerCreate?: (run: () => boolean) => () => void;
 }) {
   const [folderId, setFolderId] = useState("");
   const [stageId, setStageId] = useState("");
@@ -47,6 +49,18 @@ export function Materials({
     setError("");
     setDialog(value);
   }
+  const openUpload = useRef(() => {});
+  useEffect(() => {
+    openUpload.current = () => open("upload");
+  });
+  useEffect(
+    () =>
+      registerCreate?.(() => {
+        openUpload.current();
+        return true;
+      }),
+    [registerCreate],
+  );
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting.current) return;
@@ -273,7 +287,7 @@ export function Materials({
               <X size={16} />
             </button>
           </div>
-          <form onSubmit={submit} onKeyDown={submitOnModEnter}>
+          <form onSubmit={submit} onKeyDown={submitOnSaveKey}>
             <fieldset className="dialog-fields" disabled={busy}>
               <label>
                 {t.product}

@@ -76,7 +76,7 @@ test("modifier hints match the platform and stay out of action accessible names"
   const { container, rerender } = render(
     <button type="button">
       Save
-      <ShortcutHint keys={t.keys.submit} />
+      <ShortcutHint id="save" />
     </button>,
   );
   expect(container.querySelector("kbd")?.textContent).toBe("⌘ Enter");
@@ -85,7 +85,7 @@ test("modifier hints match the platform and stay out of action accessible names"
   rerender(
     <button type="button">
       Save
-      <ShortcutHint key="windows" keys={t.keys.submit} />
+      <ShortcutHint key="windows" id="save" />
     </button>,
   );
   expect(container.querySelector("kbd")?.textContent).toBe("Ctrl Enter");

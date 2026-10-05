@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { errorText, requestJson } from "./client-api";
 import { useDialogSnapshot } from "./dialog-snapshot";
 import {
-  submitOnModEnter,
+  submitOnSaveKey,
   useModalLifecycle,
   useReadyFocus,
 } from "./modal-lifecycle";
@@ -77,7 +77,7 @@ export function PersonDialog({
         </button>
       </div>
       <form
-        onKeyDown={submitOnModEnter}
+        onKeyDown={submitOnSaveKey}
         key={String(existing)}
         onSubmit={async (event) => {
           event.preventDefault();
@@ -227,7 +227,7 @@ export function PersonDialog({
             disabled={busy}
             onClick={onClose}
           >
-            {t.cancel} <ShortcutHint keys={t.keys.close} />
+            {t.cancel} <ShortcutHint id="back" />
           </button>
           <button
             type="submit"
@@ -238,7 +238,7 @@ export function PersonDialog({
             disabled={busy || loading || !!loadError || !data.products.length}
           >
             {busy ? t.saving : t.create}
-            <ShortcutHint keys={t.keys.submit} />
+            <ShortcutHint id="save" />
           </button>
         </div>
       </form>

@@ -64,6 +64,20 @@
       "when": 1791197061540,
       "tag": "0008_redundant_joshua_kane",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791202186803,
+      "tag": "0009_record_editing",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791208772502,
+      "tag": "0010_outreach",
+      "breakpoints": true
     }
   ]
 }

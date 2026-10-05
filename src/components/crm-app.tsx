@@ -1,4 +1,5 @@
 "use client";
+import { bindingLabel, type ShortcutId, shortcut } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import { Plus } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -15,15 +16,19 @@ import { setSidebarCollapsed, toggleTheme, useAppearance } from "./appearance";
 import { label } from "./client-api";
 import { Commands } from "./commands";
 import { type CrmProps, CrmProvider, useCrm } from "./crm/crm-context";
-import { focusRecord, useKeyboardNavigation } from "./keyboard-navigation";
+import { useActionVerbs } from "./crm/use-action-verbs";
+import { focusedRecord, navigableRecords } from "./keyboard-navigation";
+import { EnrollDialog } from "./outreach/enroll-dialog";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
 import { PersonDialog } from "./person-dialog";
 import { ProductDialog } from "./product-dialog";
 import { PeekPanel } from "./records/peek-panel";
+import { RecordDialogHost } from "./records/record-dialog-host";
 import {
   actionFilters,
   actionsPath,
   homePath,
+  outreachTabFor,
   type Section,
   sectionPath,
 } from "./routes";
@@ -33,17 +38,22 @@ import {
   listedViews,
   pinnedViews,
   sectionHint,
+  sectionShortcut,
   viewIcons,
   viewSections,
 } from "./shell/navigation";
+import { recordsForPalette } from "./shell/palette-records";
 import { Sidebar, type SidebarGroup, type SidebarItem } from "./shell/sidebar";
 import { TopBar } from "./shell/top-bar";
+import { useShellShortcuts } from "./shell/use-shell-shortcuts";
+import { UserMenu } from "./shell/user-menu";
 import { ViewToolbar } from "./shell/view-toolbar";
 import { WorkspaceMenu } from "./shell/workspace-menu";
-import { Shortcuts } from "./shortcuts";
+import { macPlatform, Shortcuts } from "./shortcuts";
 import { ShortcutHint } from "./ui/shortcut-hint";
 import { EmptyState, ErrorState, LoadingState } from "./ui/states";
 import { Toaster } from "./ui/toaster";
+import { AssignMenu } from "./views/assign-menu";
 
 const compactQuery = "(max-width: 760px)";
 const compactScreen = () =>
@@ -57,6 +67,7 @@ const toolbarSections: ReadonlySet<Section> = new Set([
   "meetings",
   "opportunities",
   "materials",
+  "outreach",
 ]);
 const savedViews = [
   { id: "reply", name: t.replies, href: actionsPath({ kind: "reply" }) },
@@ -84,10 +95,18 @@ function CrmShell({ children }: { children: ReactNode }) {
   const { data, sourceData, route, peek, organizationId } = crm;
   const appearance = useAppearance();
   const panels = usePanelLayout(appearance.sidebarCollapsed);
-  const filters = actionFilters(useSearchParams());
+  const query = useSearchParams();
+  const filters = actionFilters(query);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [enrolling, setEnrolling] = useState<readonly string[] | null>(null);
+  const paletteFocus = useRef("");
+  function openPalette() {
+    paletteFocus.current =
+      focusedRecord()?.getAttribute("data-nav-record") ?? "";
+    setCommandsOpen(true);
+  }
   const [productDialog, setProductDialog] = useState("");
   const canCreateProduct = !!organizationId && !!data && crm.isAdmin;
   function openProductDialog() {
@@ -99,18 +118,35 @@ function CrmShell({ children }: { children: ReactNode }) {
   const searchInput = useRef<HTMLInputElement>(null);
   const section: Section = route?.section ?? "actions";
   const recordId = route?.recordId ?? "";
-  const { pathname, titleFocus } = crm;
+  const { pathname, titleFocus, rowFocus } = crm;
   useEffect(() => {
     if (!titleFocus.current || titleFocus.current !== pathname) return;
     titleFocus.current = "";
+    const row = rowFocus.current;
+    rowFocus.current = "";
+    const focusedAtNavigation = document.activeElement;
     requestAnimationFrame(() => {
       if (document.querySelector("dialog[open]")) return;
-      (
-        document.querySelector<HTMLElement>("[data-record-heading]") ??
-        document.querySelector<HTMLElement>(".view-title")
-      )?.focus();
+      const moved = document.activeElement;
+      if (
+        moved &&
+        moved !== focusedAtNavigation &&
+        moved !== document.body &&
+        moved.isConnected &&
+        !moved.matches(".view-title, [data-record-heading]")
+      )
+        return;
+      const target =
+        (row &&
+          navigableRecords().find(
+            (element) => element.getAttribute("data-nav-record") === row,
+          )) ||
+        document.querySelector<HTMLElement>("[data-record-heading]") ||
+        document.querySelector<HTMLElement>(".view-title");
+      target?.focus();
+      if (row) target?.scrollIntoView({ block: "nearest" });
     });
-  }, [pathname, titleFocus]);
+  }, [pathname, titleFocus, rowFocus]);
 
   function toggleSidebar() {
     if (compactScreen()) setDrawerOpen((open) => !open);
@@ -137,92 +173,76 @@ function CrmShell({ children }: { children: ReactNode }) {
     setDrawerOpen(false);
     crm.goToSection(next);
   }
-  useKeyboardNavigation((command) => {
-    if (["next", "previous", "first", "last"].includes(command)) {
-      if (
-        !document.activeElement?.classList.contains("view-title") &&
-        document.activeElement?.closest(
-          "#record-inspector, .sidebar, .resize-handle, header, .toolbar",
+  const showPeek = !!data && (!!peek.relationshipId || !!peek.companyId);
+  const personRelationships =
+    section === "people" && recordId
+      ? (sourceData?.relationships ?? []).filter(
+          (relationship) => relationship.personId === recordId,
         )
-      )
-        return false;
-      return focusRecord(command);
-    }
-    if (command === "commands") setCommandsOpen(true);
-    else if (command === "help") setHelpOpen(true);
-    else if (command === "search") {
-      if (!searchInput.current) return false;
-      searchInput.current.focus();
-    } else if (command === "sidebar") toggleSidebar();
-    else if (command === "organization") {
-      if (compactScreen()) setDrawerOpen(true);
-      requestAnimationFrame(() =>
-        document
-          .querySelector<HTMLElement>("[data-workspace-trigger]")
-          ?.focus(),
-      );
-    } else if (command === "product") {
-      const filter = document.querySelector<HTMLSelectElement>(
-        `select[aria-label="${t.product}"]`,
-      );
-      if (!filter) return false;
-      filter.focus();
-    } else if (command === "createProduct") return openProductDialog();
-    else if (command === "createOrganization") crm.go("/onboarding");
-    else if (command === "create") {
-      if (!data?.products.length) return false;
-      crm.setPersonDialog(true);
-    } else if (command === "schedule") {
-      if (!data?.relationships.length) return false;
-      crm.setActionDialog(true);
-    } else if (command === "close") {
-      const target = document.activeElement;
-      if (drawerOpen) closeDrawer();
-      else if (target === searchInput.current) {
-        if (crm.search) crm.setSearch("");
-        else {
-          searchInput.current?.blur();
-          document.querySelector<HTMLElement>(".view-title")?.focus();
-        }
-      } else if (target?.closest("textarea, input, select, [contenteditable]"))
-        return false;
-      else crm.closePeek();
-    } else if (command === "listFocus") return focusRecord("next");
-    else if (command === "detailFocus") {
-      const target = document.querySelector<HTMLButtonElement>(
-        "#record-inspector button:not(:disabled)",
-      );
-      if (!target) return false;
-      target.focus();
-    } else if (command === "back") {
-      if (!crm.recordHistory.length) return false;
-      crm.previousRecord();
-    } else if (command === "expand") {
-      if (!peek.relationshipId && !peek.companyId) return false;
-      crm.setExpanded(!crm.expanded);
-    } else if (["timeline", "evidence", "draft"].includes(command)) {
-      const tab = document.querySelector<HTMLButtonElement>(
-        `[data-inspector-tab="${command}"]`,
-      );
-      if (!tab) return false;
-      crm.setTab(command as "timeline" | "evidence" | "draft");
-      tab.focus();
-    } else goToSection(command as Section);
-    return true;
+      : [];
+  const recordRelationship = (
+    personRelationships.find(
+      (relationship) => relationship.id === query.get("relationship"),
+    ) ??
+    personRelationships.find(
+      (relationship) => relationship.productId === crm.productId,
+    ) ??
+    personRelationships[0]
+  )?.id;
+  const verbs = useActionVerbs();
+  useShellShortcuts({
+    searchInput,
+    drawerOpen,
+    closeDrawer,
+    openDrawer: () => setDrawerOpen(true),
+    openPalette,
+    openGuide: () => setHelpOpen(true),
+    toggleSidebar,
+    goToSection,
+    showPeek,
+    recordRelationship,
+    compact: compactScreen,
+    verbs,
+    openProductDialog,
   });
 
-  const showPeek = !!data && (!!peek.relationshipId || !!peek.companyId);
+  const [mac] = useState(macPlatform);
+  const hint = (id: ShortcutId) =>
+    bindingLabel(shortcut(id).bindings[0] ?? "", mac);
+  const paletteRecords =
+    commandsOpen && sourceData ? recordsForPalette(sourceData, crm.go) : [];
+  const assigningProducts = new Set(
+    (verbs.assigning?.ids ?? []).map(
+      (id) => data?.actions.find((action) => action.id === id)?.productId ?? "",
+    ),
+  );
+  const assignableMembers = (data?.members ?? []).filter((member) =>
+    [...assigningProducts].every((id) => member.productIds.includes(id)),
+  );
+  const assigningOwners = new Set(
+    (verbs.assigning?.ids ?? []).map(
+      (id) => data?.actions.find((action) => action.id === id)?.ownerId,
+    ),
+  );
+  const assignedOwner =
+    assigningOwners.size === 1 ? ([...assigningOwners][0] ?? "") : "";
   const openCount =
     data?.actions.filter((action) => action.status !== "completed").length ?? 0;
+  const outreachTab = section === "outreach" ? outreachTabFor(pathname) : null;
   const pageItem = (id: Section): SidebarItem => {
     const href = sectionPath(id);
     return {
       id,
       label: label(id),
       icon: viewIcons[id],
-      hint: sectionHint(id),
+      hint: sectionShortcut(id),
       href,
-      active: section === id,
+      active:
+        id === "sequences"
+          ? section === "sequences" || outreachTab === "sequences"
+          : id === "outreach"
+            ? section === "outreach" && outreachTab !== "sequences"
+            : section === id,
       onSelect: () => leaveDrawer(href),
     };
   };
@@ -267,7 +287,7 @@ function CrmShell({ children }: { children: ReactNode }) {
                 id: "add-product",
                 label: t.newProduct,
                 icon: Plus,
-                hint: t.keys.createProduct,
+                hint: "create-product" as const,
                 active: false,
                 onSelect: openProductDialog,
               },
@@ -295,8 +315,14 @@ function CrmShell({ children }: { children: ReactNode }) {
   ];
   const recordName = recordId
     ? section === "people"
-      ? sourceData?.people.find((person) => person.id === recordId)?.name
-      : sourceData?.companies.find((company) => company.id === recordId)?.name
+      ? [
+          ...(sourceData?.people ?? []),
+          ...(sourceData?.archived.people ?? []),
+        ].find((person) => person.id === recordId)?.name
+      : [
+          ...(sourceData?.companies ?? []),
+          ...(sourceData?.archived.companies ?? []),
+        ].find((company) => company.id === recordId)?.name
     : peek.companyId
       ? sourceData?.companies.find((company) => company.id === peek.companyId)
           ?.name
@@ -308,10 +334,14 @@ function CrmShell({ children }: { children: ReactNode }) {
     : undefined;
   const crumbs = breadcrumbsFor({
     view: label(section),
-    ...(recordId ? { viewHref: sectionPath(section) } : {}),
+    ...(recordId || outreachTab ? { viewHref: sectionPath(section) } : {}),
     ...(crm.currentOrg ? { workspace: crm.currentOrg.name } : {}),
     ...(productName ? { product: productName } : {}),
-    ...(recordName ? { record: recordName } : {}),
+    ...(recordName
+      ? { record: recordName }
+      : outreachTab
+        ? { record: t.outreachTabs[outreachTab] }
+        : {}),
   });
   return (
     <div
@@ -333,7 +363,7 @@ function CrmShell({ children }: { children: ReactNode }) {
         onCloseDrawer={closeDrawer}
         onSearch={() => {
           setDrawerOpen(false);
-          setCommandsOpen(true);
+          openPalette();
         }}
         workspace={
           <WorkspaceMenu
@@ -348,23 +378,36 @@ function CrmShell({ children }: { children: ReactNode }) {
           />
         }
         footer={
-          <div className="sidebar-status" title={t.polling}>
-            <span className={`live-status sync-${crm.syncState}`}>
-              <span aria-hidden />
-            </span>
-            <span className="nav-label-text" aria-hidden>
-              {label(crm.syncState)}
-            </span>
-            <span className="sr-only">{label(crm.syncState)}</span>
-            {crm.demo && (
-              <span
-                className="badge status-badge nav-label-text"
-                title={t.demoDetail}
-              >
-                {t.demoMode}
+          <>
+            <UserMenu
+              name={crm.member(crm.userId)}
+              detail={crm.demo ? t.demo : t.brandSub}
+              demo={crm.demo}
+              onShortcuts={() => {
+                setDrawerOpen(false);
+                setHelpOpen(true);
+              }}
+              onNavigate={() => leaveDrawer(sectionPath("settings"))}
+              onError={(message) => crm.notify(message, "danger")}
+            />
+            <div className="sidebar-status" title={t.polling}>
+              <span className={`live-status sync-${crm.syncState}`}>
+                <span aria-hidden />
               </span>
-            )}
-          </div>
+              <span className="nav-label-text" aria-hidden>
+                {label(crm.syncState)}
+              </span>
+              <span className="sr-only">{label(crm.syncState)}</span>
+              {crm.demo && (
+                <span
+                  className="badge status-badge nav-label-text"
+                  title={t.demoDetail}
+                >
+                  {t.demoMode}
+                </span>
+              )}
+            </div>
+          </>
         }
       />
       {!appearance.sidebarCollapsed && (
@@ -391,32 +434,46 @@ function CrmShell({ children }: { children: ReactNode }) {
       <main className="main" inert={drawerOpen || undefined}>
         <TopBar
           crumbs={crumbs}
-          onSearch={() => setCommandsOpen(true)}
+          onSearch={openPalette}
           onHelp={() => setHelpOpen(true)}
           onOpenNavigation={() => setDrawerOpen(true)}
         />
         {data && !recordId && toolbarSections.has(section) && (
           <ViewToolbar
             searchInput={searchInput}
+            onEnroll={() => setEnrolling(crm.selection.selected)}
             onCreateProduct={openProductDialog}
+          />
+        )}
+        {enrolling && (
+          <EnrollDialog
+            personIds={enrolling}
+            onClose={() => setEnrolling(null)}
+            onEnrolled={() => {
+              setEnrolling(null);
+              crm.clearSelection();
+            }}
           />
         )}
         {helpOpen && (
           <Shortcuts
             onClose={() => setHelpOpen(false)}
-            canCreateProduct={canCreateProduct}
-            canCreatePerson={!!data?.products.length}
-            canSchedule={!!data?.relationships.length}
+            unavailable={[
+              ...(canCreateProduct ? [] : (["create-product"] as const)),
+              ...(data?.products.length ? [] : (["create"] as const)),
+              ...(data?.relationships.length ? [] : (["schedule"] as const)),
+            ]}
           />
         )}
         {commandsOpen && (
           <Commands
             onClose={() => setCommandsOpen(false)}
+            records={paletteRecords}
             commands={[
               {
                 id: "help",
                 title: t.keyboardHelp,
-                shortcut: "?",
+                shortcut: hint("help"),
                 run: () => setHelpOpen(true),
               },
               {
@@ -428,13 +485,13 @@ function CrmShell({ children }: { children: ReactNode }) {
               {
                 id: "theme",
                 title: t.toggleTheme,
-                shortcut: "",
+                shortcut: hint("theme"),
                 run: toggleTheme,
               },
               {
                 id: "sidebar",
                 title: t.toggleSidebar,
-                shortcut: t.keys.sidebar,
+                shortcut: hint("sidebar"),
                 run: toggleSidebar,
               },
               ...listedViews.map((id) => ({
@@ -446,27 +503,59 @@ function CrmShell({ children }: { children: ReactNode }) {
               {
                 id: "schedule",
                 title: t.scheduleAction,
-                shortcut: t.keys.schedule,
+                shortcut: hint("schedule"),
                 disabled: !data?.relationships.length,
-                run: () => crm.setActionDialog(true),
+                run: () =>
+                  crm.setActionDialog(
+                    true,
+                    recordRelationship ?? peek.relationshipId,
+                  ),
+              },
+              {
+                id: "enroll",
+                title: t.enrollCommand,
+                shortcut: "",
+                disabled:
+                  section !== "people" ||
+                  !(crm.selection.selected.length || paletteFocus.current),
+                run: () =>
+                  setEnrolling(
+                    crm.selection.selected.length
+                      ? crm.selection.selected
+                      : [paletteFocus.current],
+                  ),
+              },
+              {
+                id: "move-to",
+                title: t.moveToCommand,
+                shortcut: hint("move-to"),
+                disabled: outreachTab !== "pipeline" || !paletteFocus.current,
+                run: () => {
+                  document
+                    .querySelector<HTMLElement>(
+                      `#records-panel [data-nav-record="${paletteFocus.current}"]`,
+                    )
+                    ?.focus();
+                  crm.runVerb("move-to");
+                },
               },
               {
                 id: "product",
                 title: t.newProduct,
-                shortcut: t.keys.createProduct,
+                shortcut: hint("create-product"),
                 disabled: !canCreateProduct,
                 run: openProductDialog,
               },
               {
                 id: "organization",
                 title: t.createWorkspace,
-                shortcut: t.keys.createOrganization,
+                shortcut: hint("create-organization"),
                 run: () => crm.go("/onboarding"),
               },
               {
                 id: "person",
                 title: t.addPerson,
-                shortcut: t.keys.create,
+                shortcut: section === "people" ? hint("create") : "",
                 disabled: !data?.products.length,
                 run: () => {
                   goToSection("people");
@@ -474,6 +563,15 @@ function CrmShell({ children }: { children: ReactNode }) {
                 },
               },
             ]}
+          />
+        )}
+        {verbs.assigning && data && (
+          <AssignMenu
+            members={assignableMembers}
+            current={assignedOwner}
+            anchor={verbs.assigning.anchor}
+            onAssign={verbs.assignTo}
+            onClose={verbs.closeAssign}
           />
         )}
         {productDialog === organizationId && canCreateProduct && (
@@ -490,7 +588,7 @@ function CrmShell({ children }: { children: ReactNode }) {
             data={data}
             organizationId={organizationId}
             productId={crm.productId}
-            relationshipId={peek.relationshipId}
+            relationshipId={crm.actionDialogRelationship || peek.relationshipId}
             userId={crm.userId}
             onClose={() => crm.setActionDialog(false)}
             onCreated={async (result) => {
@@ -505,6 +603,7 @@ function CrmShell({ children }: { children: ReactNode }) {
             }}
           />
         )}
+        <RecordDialogHost />
         {crm.personDialog && data && (
           <PersonDialog
             key={`${organizationId}-${crm.productId}`}
@@ -564,8 +663,10 @@ function CrmShell({ children }: { children: ReactNode }) {
                 if (
                   target instanceof HTMLAnchorElement &&
                   target.origin === window.location.origin
-                )
+                ) {
+                  crm.rememberOrigin(target.pathname);
                   titleFocus.current = target.pathname;
+                }
               }}
             >
               {!data.products.length && section !== "settings" && (
@@ -583,7 +684,7 @@ function CrmShell({ children }: { children: ReactNode }) {
                       >
                         <Plus size={14} aria-hidden />
                         {t.newProduct}
-                        <ShortcutHint keys={t.keys.createProduct} />
+                        <ShortcutHint id="create-product" />
                       </button>
                     )
                   }

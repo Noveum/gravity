@@ -310,6 +310,7 @@ export function normalizeGmail(
     body: clip(gmailText(mail.payload) || mail.snippet),
     occurredAt: new Date(Number(mail.internalDate)).toISOString(),
     direction: outgoing ? "outbound" : "inbound",
+    ...(from[0] && from[0].length <= 320 ? { from: from[0] } : {}),
     participants: [
       ...new Set([
         ...from,

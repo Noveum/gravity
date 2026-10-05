@@ -1,7 +1,12 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
-import { useWorkspaceData } from "../crm/crm-context";
+import {
+  useCreate,
+  usePruneSelection,
+  useWorkspaceData,
+} from "../crm/crm-context";
+import { ArchivedList } from "../records/archived-list";
 import { peekOnSpace } from "../records/peek-keys";
 import { companyPath, personPath } from "../routes";
 import { EmptyState } from "../ui/states";
@@ -9,12 +14,15 @@ import { EmptyState } from "../ui/states";
 export function CompaniesView() {
   const crm = useWorkspaceData();
   const { data, search, product } = crm;
+  const selected = new Set(crm.selection.selected);
+  useCreate(() => crm.openRecordDialog({ kind: "company" }));
   const companies = data.companies.filter((company) =>
     [company.name, company.domain]
       .join(" ")
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
+  usePruneSelection(companies.map((item) => item.id));
   return (
     <div className="table-scroll">
       {!companies.length && <EmptyState title={t.noCompanies} compact />}
@@ -35,16 +43,22 @@ export function CompaniesView() {
               people.some((person) => person.id === relationship.personId),
             );
             return (
-              <tr key={company.id}>
+              <tr
+                key={company.id}
+                data-selected={selected.has(company.id) || undefined}
+              >
                 <td>
                   <Link
                     href={companyPath(company.id)}
                     className="text-button"
                     data-nav-record={company.id}
-                    aria-keyshortcuts="Space Enter"
+                    aria-keyshortcuts="Space Enter X"
                     onKeyDown={peekOnSpace(() => crm.openCompany(company.id))}
                   >
                     {company.name}
+                    {selected.has(company.id) && (
+                      <span className="sr-only">{t.selected}</span>
+                    )}
                   </Link>
                   <small>{company.domain}</small>
                 </td>
@@ -81,6 +95,14 @@ export function CompaniesView() {
           })}
         </tbody>
       </table>
+      <ArchivedList
+        records={data.archived.companies.map((company) => ({
+          id: company.id,
+          name: company.name,
+          detail: company.domain ?? "",
+          href: companyPath(company.id),
+        }))}
+      />
     </div>
   );
 }

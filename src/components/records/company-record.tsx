@@ -2,8 +2,9 @@
 import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
 import { dateLabel, label } from "../client-api";
-import { useWorkspaceData } from "../crm/crm-context";
+import { useEdit, useWorkspaceData } from "../crm/crm-context";
 import { useCompanyContext } from "../crm/record-context";
+import { useArchive } from "../crm/use-archive";
 import {
   CompanyPeople,
   CompanyProfile,
@@ -11,6 +12,7 @@ import {
 } from "../record-details";
 import { personPath, sectionPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
+import { ArchivedNotice, RecordActions } from "./record-actions";
 
 interface ActivityItem {
   id: string;
@@ -23,8 +25,15 @@ interface ActivityItem {
 export function CompanyRecord({ companyId }: { companyId: string }) {
   const crm = useWorkspaceData();
   const { sourceData, timeZone } = crm;
-  const company = sourceData.companies.find((item) => item.id === companyId);
+  const active = sourceData.companies.find((item) => item.id === companyId);
+  const company =
+    active ??
+    sourceData.archived.companies.find((item) => item.id === companyId);
   const { context, missing } = useCompanyContext(company ? companyId : "");
+  const archive = useArchive();
+  useEdit(() =>
+    active ? crm.openRecordDialog({ kind: "company", id: active.id }) : false,
+  );
   if (!company || missing)
     return (
       <EmptyState
@@ -78,7 +87,27 @@ export function CompanyRecord({ companyId }: { companyId: string }) {
   return (
     <div className="record-page" data-record={company.id}>
       <div className="record-attributes">
-        <CompanyProfile company={context?.company ?? company} recordHeading />
+        <CompanyProfile
+          company={context?.company ?? { description: "", ...company }}
+          recordHeading
+        />
+        {active ? (
+          <RecordActions
+            busy={crm.busy}
+            onEdit={() =>
+              crm.openRecordDialog({ kind: "company", id: active.id })
+            }
+            onArchive={() => void archive.archive("company", active)}
+          />
+        ) : (
+          <ArchivedNotice
+            note={t.archivedCompanyNote}
+            busy={crm.busy || !context}
+            onRestore={() => {
+              if (context) void archive.restore("company", context.company);
+            }}
+          />
+        )}
         {context ? (
           <>
             <CompanyPeople context={context} onPerson={openPerson} />

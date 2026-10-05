@@ -14,7 +14,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { errorText, requestJson } from "./client-api";
 import {
-  submitOnModEnter,
+  submitOnSaveKey,
   useModalLifecycle,
   useReadyFocus,
 } from "./modal-lifecycle";
@@ -169,7 +169,7 @@ export function UnipileSettings({
         </p>
       ) : (
         <form
-          onKeyDown={submitOnModEnter}
+          onKeyDown={submitOnSaveKey}
           onSubmit={(event) => {
             event.preventDefault();
             void submit();

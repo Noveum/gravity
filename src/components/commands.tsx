@@ -1,8 +1,9 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
+import { Building2, ListChecks, type LucideIcon, User } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { useModalLifecycle } from "./modal-lifecycle";
-import { ShortcutHint } from "./ui/shortcut-hint";
+
 export interface Command {
   id: string;
   title: string;
@@ -10,11 +11,63 @@ export interface Command {
   run: () => void;
   disabled?: boolean;
 }
+export type RecordKind = "person" | "company" | "action";
+export interface PaletteRecord {
+  id: string;
+  kind: RecordKind;
+  title: string;
+  detail: string;
+  run: () => void;
+}
+interface Item {
+  id: string;
+  title: string;
+  detail?: string;
+  shortcut?: string;
+  icon?: LucideIcon;
+  disabled?: boolean;
+  run: () => void;
+}
+
+const recordIcons: Record<RecordKind, LucideIcon> = {
+  person: User,
+  company: Building2,
+  action: ListChecks,
+};
+const recordLimit = 5;
+
+function termsOf(query: string) {
+  return query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+}
+const matches = (terms: string[], text: string) =>
+  terms.every((term) => text.toLowerCase().includes(term));
+
+const kinds: RecordKind[] = ["person", "company", "action"];
+
+export function matchingRecords(records: PaletteRecord[], query: string) {
+  const terms = termsOf(query);
+  if (!terms.length) return [];
+  const found = kinds.flatMap((kind) =>
+    records
+      .filter(
+        (record) =>
+          record.kind === kind &&
+          matches(terms, `${record.title} ${record.detail}`),
+      )
+      .slice(0, recordLimit),
+  );
+  const byTitle = (record: PaletteRecord) =>
+    matches(terms, record.title) ? 0 : 1;
+  return found.sort((a, b) => byTitle(a) - byTitle(b));
+}
+
 export function Commands({
   commands,
+  records = [],
   onClose,
 }: {
   commands: Command[];
+  records?: PaletteRecord[];
   onClose: () => void;
 }) {
   const modal = useRef<HTMLDialogElement>(null);
@@ -23,20 +76,29 @@ export function Commands({
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState("");
   useModalLifecycle(modal);
-  const filtered = commands.filter((command) =>
-    query
-      .toLowerCase()
-      .trim()
-      .split(/\s+/)
-      .every((term) => command.title.toLowerCase().includes(term)),
+  const terms = termsOf(query);
+  const recordItems: Item[] = matchingRecords(records, query).map((record) => ({
+    id: `${record.kind}-${record.id}`,
+    title: record.title,
+    detail: record.detail,
+    icon: recordIcons[record.kind],
+    run: record.run,
+  }));
+  const commandItems: Item[] = commands.filter((command) =>
+    matches(terms, command.title),
   );
-  const enabled = filtered.filter((command) => !command.disabled);
-  const active =
-    enabled.find((command) => command.id === activeId) || enabled[0];
-  function execute(command: Command | undefined) {
-    if (!command || command.disabled) return;
+  const groups = [
+    { id: "records", title: t.paletteRecords, items: recordItems },
+    { id: "commands", title: t.paletteCommands, items: commandItems },
+  ].filter((group) => group.items.length);
+  const enabled = groups
+    .flatMap((group) => group.items)
+    .filter((item) => !item.disabled);
+  const active = enabled.find((item) => item.id === activeId) || enabled[0];
+  function execute(item: Item | undefined) {
+    if (!item || item.disabled) return;
     onClose();
-    command.run();
+    item.run();
   }
   return (
     <dialog
@@ -55,9 +117,7 @@ export function Commands({
         const key = event.key;
         if (key === "ArrowDown" || key === "ArrowUp") {
           event.preventDefault();
-          const index = enabled.findIndex(
-            (command) => command.id === active?.id,
-          );
+          const index = enabled.findIndex((item) => item.id === active?.id);
           const next =
             enabled[
               (index + (key === "ArrowDown" ? 1 : -1) + enabled.length) %
@@ -85,7 +145,7 @@ export function Commands({
         aria-autocomplete="list"
         aria-controls={listId}
         aria-activedescendant={active ? `${listId}-${active.id}` : undefined}
-        placeholder={t.commandSearch}
+        placeholder={t.paletteSearch}
         value={query}
         onChange={(event) => {
           setQuery(event.target.value);
@@ -98,26 +158,50 @@ export function Commands({
         role="listbox"
         aria-label={t.commands}
       >
-        {filtered.map((command) => (
-          <button
-            id={`${listId}-${command.id}`}
-            key={command.id}
-            type="button"
-            role="option"
-            aria-selected={active?.id === command.id}
-            tabIndex={-1}
-            disabled={command.disabled}
-            onPointerMove={() => {
-              if (!command.disabled) setActiveId(command.id);
-            }}
-            onClick={() => execute(command)}
+        {groups.map((group) => (
+          <fieldset
+            key={group.id}
+            aria-labelledby={`${listId}-${group.id}-label`}
+            className="command-group"
           >
-            {command.title}
-            <ShortcutHint keys={command.shortcut} />
-          </button>
+            <div
+              id={`${listId}-${group.id}-label`}
+              className="command-group-title"
+              role="presentation"
+            >
+              {group.title}
+            </div>
+            {group.items.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  id={`${listId}-${item.id}`}
+                  key={item.id}
+                  type="button"
+                  role="option"
+                  aria-selected={active?.id === item.id}
+                  tabIndex={-1}
+                  disabled={item.disabled}
+                  onPointerMove={() => {
+                    if (!item.disabled) setActiveId(item.id);
+                  }}
+                  onClick={() => execute(item)}
+                >
+                  {Icon && (
+                    <Icon size={14} aria-hidden className="command-icon" />
+                  )}
+                  <span className="command-title">{item.title}</span>
+                  {item.detail && (
+                    <span className="command-detail">{item.detail}</span>
+                  )}
+                  {item.shortcut && <kbd>{item.shortcut}</kbd>}
+                </button>
+              );
+            })}
+          </fieldset>
         ))}
       </div>
-      {!filtered.length && (
+      {!groups.length && (
         <p role="status" className="muted">
           {t.noCommands}
         </p>

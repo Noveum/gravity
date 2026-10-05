@@ -12,10 +12,11 @@ import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import t from "../packages/i18n/translations/en.json";
 import { Commands } from "../src/components/commands";
 import {
+  type DispatchedShortcut,
   focusRecord,
   useKeyboardNavigation,
 } from "../src/components/keyboard-navigation";
-import { submitOnModEnter } from "../src/components/modal-lifecycle";
+import { submitOnSaveKey } from "../src/components/modal-lifecycle";
 
 beforeAll(() => {
   // jsdom has no top layer. Exercise application lifecycle here; verify native dialogs in the browser.
@@ -114,7 +115,11 @@ describe("command palette interaction", () => {
 });
 
 describe("record navigation and event ownership", () => {
-  function Navigation({ run }: { run: (command: string) => boolean }) {
+  function Navigation({
+    run,
+  }: {
+    run: (command: DispatchedShortcut) => boolean;
+  }) {
     useKeyboardNavigation(run);
     return (
       <>
@@ -157,24 +162,24 @@ describe("record navigation and event ownership", () => {
     expect(clicked).not.toHaveBeenCalled();
   });
   test("typing and a child's consumed keys stay local while go-to chords and modifiers work", async () => {
-    const run = vi.fn(() => true);
+    const run = vi.fn((_command: DispatchedShortcut) => true);
     const user = userEvent.setup();
     render(<Navigation run={run} />);
     const draft = screen.getByRole("textbox");
     await user.type(draft, "gn/?jk");
     expect(run).not.toHaveBeenCalled();
     await user.keyboard("{Control>}k{/Control}");
-    expect(run).toHaveBeenLastCalledWith("commands");
+    expect(run.mock.lastCall?.[0]).toBe("palette");
     run.mockClear();
     await user.click(screen.getByRole("button", { name: "Own keyboard" }));
     await user.keyboard("j");
     expect(run).not.toHaveBeenCalled();
     screen.getByRole("button", { name: "First" }).focus();
     await user.keyboard("gc");
-    expect(run).toHaveBeenLastCalledWith("companies");
+    expect(run.mock.lastCall?.[0]).toBe("go-companies");
   });
   test("a menu keeps ArrowDown and go-to chords instead of triggering global navigation", () => {
-    const run = vi.fn(() => true);
+    const run = vi.fn((_command: DispatchedShortcut) => true);
     render(<Navigation run={run} />);
     const menu = document.createElement("div");
     menu.setAttribute("role", "menu");
@@ -191,7 +196,7 @@ test("modifier Enter submits validated forms but does not submit composing input
   const submit = vi.fn();
   render(
     <form
-      onKeyDown={submitOnModEnter}
+      onKeyDown={submitOnSaveKey}
       onSubmit={(event) => {
         event.preventDefault();
         submit();

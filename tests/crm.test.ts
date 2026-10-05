@@ -6,7 +6,11 @@ import {
   normalizeUnipileV2,
   verifyUnipileSignature,
 } from "../packages/connectors/replies";
-import { CrmService, scheduleActionSchema } from "../packages/core/crm";
+import {
+  actionPlanSchema,
+  CrmService,
+  scheduleActionSchema,
+} from "../packages/core/crm";
 import type { Principal } from "../packages/core/policy";
 import { createLocalDatabase, isDemoMode } from "../packages/database/client";
 import * as s from "../packages/database/schema";
@@ -120,7 +124,10 @@ describe("intentional action handling", () => {
       .select()
       .from(s.enrollments)
       .where(eq(s.enrollments.id, demoId(500)));
-    expect(enrollment.status).toBe("paused_reply");
+    expect(enrollment).toMatchObject({
+      status: "paused",
+      pauseReason: "reply",
+    });
     expect(enrollment.step).toBe(3);
   });
   test("edits invalidate approval and stale writers cannot overwrite a new draft", async () => {
@@ -288,6 +295,35 @@ describe("reply ingestion", () => {
       }),
     ).toBeNull();
   });
+  test("an oversized Unipile sender address imports the reply without a sender hint", () => {
+    const sender = `${"a".repeat(329)}@example.test`;
+    expect(sender).toHaveLength(342);
+    const reply = normalizeUnipileV2(
+      {
+        id: "evt-long-sender",
+        account_id: "mailbox",
+        account_provider: "GOOGLE",
+        type: "email.new",
+        payload: {
+          folder_id: "inbox",
+          email: {
+            id: "mail-long-sender",
+            thread_id: "thread-long-sender",
+            body_plain: "Hello",
+            date: new Date().toISOString(),
+            from: [{ email: sender }],
+          },
+        },
+      },
+      {
+        selfEmail: "me@example.test",
+        inboxFolderIds: ["inbox"],
+        sentFolderIds: ["sent"],
+      },
+    );
+    expect(reply).toMatchObject({ direction: "inbound" });
+    expect(reply).not.toHaveProperty("from");
+  });
   test("Gmail folder moves are ignored and thread identity is required", () => {
     const event = {
       id: "evt-mail",
@@ -393,7 +429,10 @@ describe("reply ingestion", () => {
       .select()
       .from(s.enrollments)
       .where(eq(s.enrollments.id, demoId(501)));
-    expect(enrollment.status).toBe("paused_reply");
+    expect(enrollment).toMatchObject({
+      status: "paused",
+      pauseReason: "reply",
+    });
     expect(enrollment.version).toBe(2);
     const [blocked] = await local.db
       .select()
@@ -741,7 +780,10 @@ describe("explicit next-action scheduling", () => {
       .select()
       .from(s.enrollments)
       .where(eq(s.enrollments.id, demoId(500)));
-    expect(enrollment.status).toBe("paused_reply");
+    expect(enrollment).toMatchObject({
+      status: "paused",
+      pauseReason: "reply",
+    });
     const blocked = await service.scheduleAction(
       admin,
       input({ kind: "approval" }),
@@ -850,5 +892,313 @@ describe("connected record details", () => {
         )
       ).relationships.map((r) => r.id),
     ).toEqual([demoId(306)]);
+  });
+});
+
+describe("row verbs on actions", () => {
+  const plan = (items: object[], principal: Principal = admin) =>
+    service.planActions(
+      principal,
+      actionPlanSchema.parse({ organizationId: demoId(1), items }),
+    );
+  test("done, snooze and assign apply together and undo restores every field without touching approval", async () => {
+    const [before] = await local.db
+      .select()
+      .from(s.actions)
+      .where(eq(s.actions.id, demoId(603)));
+    const [other] = await local.db
+      .select()
+      .from(s.actions)
+      .where(eq(s.actions.id, demoId(604)));
+    const later = "2030-01-02T09:00:00.000Z";
+    const changed = await plan([
+      { actionId: demoId(603), version: before.version, status: "completed" },
+      {
+        actionId: demoId(604),
+        version: other.version,
+        dueAt: later,
+        ownerId: "demo-teammate",
+      },
+    ]);
+    expect(changed.map((action) => action.status)).toEqual([
+      "completed",
+      "open",
+    ]);
+    expect(changed[1]?.dueAt.toISOString()).toBe(later);
+    expect(changed[1]?.ownerId).toBe("demo-teammate");
+    expect(changed[0]?.draftHash).toBe(before.draftHash);
+    expect(changed[0]?.approvedHash).toBe(before.approvedHash);
+    const undone = await plan([
+      {
+        actionId: demoId(603),
+        version: changed[0]?.version,
+        status: "open",
+      },
+      {
+        actionId: demoId(604),
+        version: changed[1]?.version,
+        dueAt: other.dueAt.toISOString(),
+        ownerId: other.ownerId,
+      },
+    ]);
+    expect(undone[0]?.status).toBe("open");
+    expect(undone[1]?.dueAt.toISOString()).toBe(other.dueAt.toISOString());
+    expect(undone[1]?.ownerId).toBe(other.ownerId);
+    const events = await local.db
+      .select()
+      .from(s.changeEvents)
+      .where(eq(s.changeEvents.entityId, demoId(604)));
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["action.snooze", "action.assign"]),
+    );
+  });
+  test("a failing item rolls back the whole batch and stale, blocked or foreign writes are refused", async () => {
+    const [open] = await local.db
+      .select()
+      .from(s.actions)
+      .where(eq(s.actions.id, demoId(603)));
+    const { actionId: blocked } = await service.scheduleAction(
+      admin,
+      scheduleActionSchema.parse({
+        organizationId: demoId(1),
+        relationshipId: demoId(300),
+        ownerId: demoUser,
+        kind: "approval",
+        channel: "gmail",
+        owedBy: "us",
+        title: "Paused approval",
+        reason: "",
+        dueAt: new Date().toISOString(),
+      }),
+    );
+    await expect(
+      plan([
+        { actionId: demoId(603), version: open.version, status: "completed" },
+        { actionId: blocked, version: 1, status: "completed" },
+      ]),
+    ).rejects.toMatchObject({ code: "REPLY_BLOCKED" });
+    const [unchanged] = await local.db
+      .select()
+      .from(s.actions)
+      .where(eq(s.actions.id, demoId(603)));
+    expect(unchanged.status).toBe("open");
+    expect(unchanged.version).toBe(open.version);
+    await expect(
+      plan([{ actionId: blocked, version: 1, status: "open" }]),
+    ).rejects.toMatchObject({ code: "REPLY_BLOCKED" });
+    const [snoozedBlocked] = await plan([
+      { actionId: blocked, version: 1, dueAt: "2030-01-01T00:00:00.000Z" },
+    ]);
+    expect(snoozedBlocked?.status).toBe("blocked");
+    await expect(
+      plan([
+        { actionId: demoId(603), version: open.version + 5, status: "open" },
+      ]),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(
+      plan([
+        {
+          actionId: demoId(603),
+          version: open.version,
+          ownerId: "demo-restricted",
+        },
+      ]),
+    ).rejects.toMatchObject({ code: "OWNER_NOT_ALLOWED" });
+    await expect(
+      plan(
+        [{ actionId: demoId(603), version: open.version, status: "completed" }],
+        restricted,
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      plan(
+        [{ actionId: demoId(603), version: open.version, status: "completed" }],
+        { ...admin, source: "mcp" },
+      ),
+    ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
+    await expect(
+      service.planActions(
+        admin,
+        actionPlanSchema.parse({
+          organizationId: demoId(2),
+          items: [
+            {
+              actionId: demoId(603),
+              version: open.version,
+              dueAt: new Date().toISOString(),
+            },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(() =>
+      actionPlanSchema.parse({
+        organizationId: demoId(1),
+        items: [{ actionId: demoId(603), version: 1 }],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("row verb rules from the Task 3 review", () => {
+  const plan = (items: object[], principal: Principal = admin, extra = {}) =>
+    service.planActions(
+      principal,
+      actionPlanSchema.parse({ organizationId: demoId(1), items, ...extra }),
+    );
+  const current = async (id: string) =>
+    (await local.db.select().from(s.actions).where(eq(s.actions.id, id)))[0];
+  async function privateAction() {
+    const [found] = await local.db
+      .select()
+      .from(s.actions)
+      .where(eq(s.actions.sourceConversationId, demoId(711)));
+    if (found) return found;
+    await ingestReply(local.db, {
+      provider: "unipile",
+      accountId: "demo-linkedin",
+      messageId: "private-review",
+      threadId: "demo-theo",
+      direction: "inbound",
+      channel: "linkedin",
+      body: "Private body for the owner",
+      occurredAt: new Date().toISOString(),
+    });
+    const [created] = await local.db
+      .select()
+      .from(s.actions)
+      .where(eq(s.actions.sourceConversationId, demoId(711)));
+    if (!created) throw new Error("PRIVATE_ACTION_REQUIRED");
+    return created;
+  }
+  test("marking an approved draft complete keeps its approval record", async () => {
+    const { actionId } = await service.scheduleAction(
+      admin,
+      scheduleActionSchema.parse({
+        organizationId: demoId(1),
+        relationshipId: demoId(302),
+        ownerId: demoUser,
+        kind: "review",
+        channel: "gmail",
+        owedBy: "us",
+        title: "Approval survives completion",
+        reason: "",
+        dueAt: new Date().toISOString(),
+      }),
+    );
+    const saved = await service.changeAction(admin, {
+      organizationId: demoId(1),
+      actionId,
+      version: 1,
+      command: "save",
+      draft: "A reviewed note",
+    });
+    const approved = await service.changeAction(admin, {
+      organizationId: demoId(1),
+      actionId,
+      version: saved.version,
+      command: "approve",
+    });
+    const completed = await service.changeAction(admin, {
+      organizationId: demoId(1),
+      actionId,
+      version: approved.version,
+      command: "complete",
+    });
+    expect(completed.status).toBe("completed");
+    expect(completed.approvedHash).toBe(approved.approvedHash);
+    expect(completed.approvedBy).toBe(demoUser);
+  });
+  test("an assignee who cannot read a private source is refused with its own error", async () => {
+    const action = await privateAction();
+    await expect(
+      plan([
+        {
+          actionId: action.id,
+          version: action.version,
+          ownerId: "demo-teammate",
+        },
+      ]),
+    ).rejects.toMatchObject({ code: "ASSIGNEE_PRIVATE_SOURCE", status: 403 });
+    await expect(
+      plan(
+        [
+          {
+            actionId: action.id,
+            version: action.version,
+            dueAt: "2030-01-01T09:00:00.000Z",
+          },
+        ],
+        teammate,
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
+    expect((await current(action.id)).version).toBe(action.version);
+  });
+  test("a read-only principal and a scope naming another product are refused", async () => {
+    const action = await current(demoId(604));
+    await expect(
+      plan(
+        [
+          {
+            actionId: action.id,
+            version: action.version,
+            dueAt: "2030-01-01T09:00:00.000Z",
+          },
+        ],
+        { ...admin, source: "session", readOnly: true },
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      plan(
+        [
+          {
+            actionId: action.id,
+            version: action.version,
+            dueAt: "2030-01-01T09:00:00.000Z",
+          },
+        ],
+        admin,
+        { productId: demoId(11) },
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await current(action.id)).version).toBe(action.version);
+  });
+  test("overlapping batches in opposite orders settle without a partial write", async () => {
+    const a = await current(demoId(603));
+    const b = await current(demoId(604));
+    const due = "2031-02-03T09:00:00.000Z";
+    const results = await Promise.allSettled([
+      plan([
+        { actionId: a.id, version: a.version, dueAt: due },
+        { actionId: b.id, version: b.version, dueAt: due },
+      ]),
+      plan([
+        { actionId: b.id, version: b.version, ownerId: "demo-teammate" },
+        { actionId: a.id, version: a.version, ownerId: "demo-teammate" },
+      ]),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((r) => r.status === "rejected")).toMatchObject({
+      reason: { code: "CONFLICT" },
+    });
+    const [nextA, nextB] = [await current(a.id), await current(b.id)];
+    expect(nextA.version).toBe(a.version + 1);
+    expect(nextB.version).toBe(b.version + 1);
+    expect(
+      nextA.dueAt.toISOString() === due && nextB.dueAt.toISOString() === due
+        ? "dates"
+        : nextA.ownerId === "demo-teammate" && nextB.ownerId === "demo-teammate"
+          ? "owners"
+          : "mixed",
+    ).not.toBe("mixed");
+  });
+  test("the batch reads its rows in action id order", async () => {
+    const a = await current(demoId(603));
+    const b = await current(demoId(604));
+    const changed = await plan([
+      { actionId: b.id, version: b.version, dueAt: "2031-03-03T09:00:00.000Z" },
+      { actionId: a.id, version: a.version, dueAt: "2031-03-03T09:00:00.000Z" },
+    ]);
+    expect(changed.map((row) => row.id)).toEqual([a.id, b.id].sort());
   });
 });

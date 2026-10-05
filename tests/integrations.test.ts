@@ -22,9 +22,14 @@ import {
   verifyFirefliesSignature,
 } from "../packages/connectors/security";
 import { IntegrationService } from "../packages/connectors/service";
-import type { ImportRecord } from "../packages/connectors/types";
+import {
+  type ImportRecord,
+  importRecordSchema,
+} from "../packages/connectors/types";
 import { CrmService } from "../packages/core/crm";
+import { OutreachService } from "../packages/core/outreach";
 import type { Principal } from "../packages/core/policy";
+import { RecordService } from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
@@ -413,6 +418,161 @@ test("meeting updates and cancellations modify one CRM record and require an exp
   expect(unchanged.version).toBe(meeting.version);
 });
 
+test("linking an unmatched message or meeting to an archived person writes nothing", async () => {
+  const service = new IntegrationService(local.db, authTransport);
+  const records = new RecordService(local.db);
+  const [mira] = await local.db
+    .select()
+    .from(s.people)
+    .where(eq(s.people.id, demoId(200)));
+  const archived = await records.archivePerson(admin, {
+    organizationId: scope.organizationId,
+    personId: demoId(200),
+    version: mira?.version ?? 1,
+    archived: true,
+  });
+  const [gmail] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.externalAccountId, "integration-google-user"));
+  const [fireflies] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.externalAccountId, "fireflies-test-user"));
+  await service.importRecord(gmail, {
+    externalId: "archived-thread-message",
+    threadId: "archived-thread",
+    kind: "message",
+    title: "Archived thread",
+    body: "Should not attach",
+    occurredAt: "2026-10-03T12:00:00.000Z",
+    direction: "inbound",
+    participants: ["nobody@example.test"],
+  });
+  await service.importRecord(fireflies, {
+    externalId: "archived-note",
+    kind: "meeting",
+    title: "Archived review",
+    body: "Should not attach",
+    occurredAt: "2026-10-03T15:00:00.000Z",
+    participants: ["nobody@example.test"],
+  });
+  const items = await local.db
+    .select()
+    .from(s.integrationItems)
+    .where(
+      inArray(s.integrationItems.externalId, [
+        "archived-thread-message",
+        "archived-note",
+      ]),
+    );
+  expect(items).toHaveLength(2);
+  const meetingsBefore = await local.db.select().from(s.meetings);
+  for (const item of items)
+    await expect(
+      service.link(admin, scope.organizationId, item.id, demoId(300)),
+    ).rejects.toMatchObject({ code: "RECORD_ARCHIVED" });
+  expect(
+    await local.db
+      .select()
+      .from(s.conversations)
+      .where(eq(s.conversations.externalThreadId, "archived-thread")),
+  ).toHaveLength(0);
+  expect(
+    await local.db
+      .select()
+      .from(s.messages)
+      .where(eq(s.messages.providerMessageId, "archived-thread-message")),
+  ).toHaveLength(0);
+  expect(await local.db.select().from(s.meetings)).toHaveLength(
+    meetingsBefore.length,
+  );
+  const after = await local.db
+    .select()
+    .from(s.integrationItems)
+    .where(
+      inArray(
+        s.integrationItems.id,
+        items.map((item) => item.id),
+      ),
+    );
+  expect(after.map((item) => item.status)).toEqual(["unmatched", "unmatched"]);
+  expect(after.every((item) => item.relationshipId === null)).toBe(true);
+  await records.archivePerson(admin, {
+    organizationId: scope.organizationId,
+    personId: demoId(200),
+    version: archived.version,
+    archived: false,
+  });
+});
+
+test("new mail on an archived person's linked thread is still stored and matched", async () => {
+  const service = new IntegrationService(local.db, authTransport);
+  const records = new RecordService(local.db);
+  const [gmail] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.externalAccountId, "integration-google-user"));
+  const message = (externalId: string, occurredAt: string): ImportRecord => ({
+    externalId,
+    threadId: "kept-thread",
+    kind: "message",
+    title: "Kept thread",
+    body: `Fictional note ${externalId}`,
+    occurredAt,
+    direction: "inbound",
+    participants: ["person0@example.test"],
+  });
+  await service.importRecord(
+    gmail,
+    message("kept-thread-1", "2026-10-03T09:00:00.000Z"),
+  );
+  const [first] = await local.db
+    .select()
+    .from(s.integrationItems)
+    .where(eq(s.integrationItems.externalId, "kept-thread-1"));
+  await service.link(admin, scope.organizationId, first.id, demoId(300));
+  const [mira] = await local.db
+    .select()
+    .from(s.people)
+    .where(eq(s.people.id, demoId(200)));
+  const archived = await records.archivePerson(admin, {
+    organizationId: scope.organizationId,
+    personId: demoId(200),
+    version: mira?.version ?? 1,
+    archived: true,
+  });
+  try {
+    await expect(
+      service.importRecord(
+        gmail,
+        message("kept-thread-2", "2026-10-04T09:00:00.000Z"),
+      ),
+    ).resolves.toBeUndefined();
+    expect(
+      await local.db
+        .select()
+        .from(s.messages)
+        .where(eq(s.messages.providerMessageId, "kept-thread-2")),
+    ).toHaveLength(1);
+    const [second] = await local.db
+      .select()
+      .from(s.integrationItems)
+      .where(eq(s.integrationItems.externalId, "kept-thread-2"));
+    expect(second).toMatchObject({
+      status: "matched",
+      relationshipId: demoId(300),
+    });
+  } finally {
+    await records.archivePerson(admin, {
+      organizationId: scope.organizationId,
+      personId: demoId(200),
+      version: archived.version,
+      archived: false,
+    });
+  }
+});
+
 test("disconnect during provider fetch cancels imports and does not restore credentials", async () => {
   const [connection] = await local.db
     .select()
@@ -460,6 +620,34 @@ test("disconnect during provider fetch cancels imports and does not restore cred
   ).toEqual([]);
 });
 
+test("an oversized Gmail From header imports the message without a sender hint", () => {
+  const sender = `${"a".repeat(329)}@example.test`;
+  expect(sender).toHaveLength(342);
+  const record = normalizeGmail(
+    {
+      id: "long-sender",
+      threadId: "long-sender-thread",
+      internalDate: "1790859600000",
+      labelIds: ["INBOX"],
+      payload: {
+        mimeType: "text/plain",
+        headers: [
+          { name: "From", value: sender },
+          { name: "To", value: "owner@example.test" },
+          { name: "Subject", value: "Fictional long sender" },
+        ],
+        body: { data: Buffer.from("Hello").toString("base64url") },
+      },
+    },
+    "owner@example.test",
+  );
+  expect(record).not.toHaveProperty("from");
+  expect(importRecordSchema.parse(record)).toMatchObject({
+    externalId: "long-sender",
+    direction: "inbound",
+  });
+});
+
 test("provider normalization preserves direction, MIME text, all-day dates and chat-scoped message IDs", () => {
   const record = normalizeGmail(
     {
@@ -485,6 +673,7 @@ test("provider normalization preserves direction, MIME text, all-day dates and c
     "owner@example.test",
   );
   expect(record?.direction).toBe("outbound");
+  expect(record?.from).toBe("owner@example.test");
   expect(record?.body).toBe("Plain message");
   expect(record?.participants).toEqual(["contact@example.test"]);
   expect(
@@ -851,4 +1040,132 @@ test("private review pages preserve microseconds and tied timestamps while filte
       .delete(s.connections)
       .where(inArray(s.connections.id, connectionIds));
   }
+});
+
+test("a synced reply from a secondary address on an unlinked thread pauses that person in every brand, and a backfill pauses nothing", async () => {
+  const service = new IntegrationService(local.db, authTransport);
+  const crm = new CrmService(local.db);
+  const outreach = new OutreachService(local.db);
+  const records = new RecordService(local.db);
+  const [gmail] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.externalAccountId, "integration-google-user"));
+  gmail.syncCursor = { connectedAt: "2026-10-01T00:00:00.000Z" };
+  await local.db
+    .update(s.connections)
+    .set({ syncCursor: gmail.syncCursor })
+    .where(eq(s.connections.id, gmail.id));
+  const enrolled = async (name: string, email: string, other: string) => {
+    const first = await crm.createPerson(admin, {
+      organizationId: scope.organizationId,
+      productId: demoId(10),
+      name,
+      email,
+      title: "",
+      purpose: "buyer",
+      context: "",
+      review: false,
+      channel: "gmail",
+    });
+    const second = await crm.createPerson(admin, {
+      organizationId: scope.organizationId,
+      productId: demoId(12),
+      personId: first.personId,
+      title: "",
+      purpose: "buyer",
+      context: "",
+      review: false,
+      channel: "gmail",
+    });
+    const [person] = await local.db
+      .select()
+      .from(s.people)
+      .where(eq(s.people.id, first.personId));
+    await records.updatePerson(admin, {
+      organizationId: scope.organizationId,
+      productId: demoId(10),
+      personId: first.personId,
+      version: person?.version ?? 1,
+      name,
+      title: "",
+      email,
+      otherEmails: [other],
+      phone: "",
+      linkedinUrl: "",
+      summary: "",
+    });
+    for (const [sequenceId, relationshipId] of [
+      [demoId(400), first.relationshipId],
+      [demoId(402), second.relationshipId],
+    ] as const)
+      await outreach.enroll(admin, {
+        organizationId: scope.organizationId,
+        sequenceId,
+        relationshipIds: [relationshipId],
+        dryRun: false,
+      });
+    return [first.relationshipId, second.relationshipId];
+  };
+  const statuses = async (relationshipIds: string[]) =>
+    (
+      await local.db
+        .select()
+        .from(s.enrollments)
+        .where(inArray(s.enrollments.relationshipId, relationshipIds))
+    ).map((row) => [row.status, row.pauseReason]);
+  const live = await enrolled(
+    "Synced reply fixture",
+    "synced-primary@example.test",
+    "synced-secondary@example.test",
+  );
+  const backfilled = await enrolled(
+    "Backfill fixture",
+    "backfill-primary@example.test",
+    "backfill-secondary@example.test",
+  );
+  const reply = (
+    externalId: string,
+    from: string,
+    occurredAt: string,
+  ): ImportRecord => ({
+    externalId,
+    threadId: `${externalId}-thread`,
+    kind: "message",
+    title: "Fictional reply",
+    body: "Fictional reply body",
+    occurredAt,
+    direction: "inbound",
+    participants: [from],
+    from,
+  });
+  await service.importRecord(
+    gmail,
+    reply(
+      "backfill-reply",
+      "Backfill-Secondary@Example.test",
+      "2026-09-20T09:00:00.000Z",
+    ),
+  );
+  expect(await statuses(backfilled)).toEqual([
+    ["running", null],
+    ["running", null],
+  ]);
+  await service.importRecord(
+    gmail,
+    reply(
+      "synced-reply",
+      "Synced-Secondary@Example.TEST",
+      "2026-10-04T09:00:00.000Z",
+    ),
+  );
+  expect(await statuses(live)).toEqual([
+    ["paused", "reply"],
+    ["paused", "reply"],
+  ]);
+  const [item] = await local.db
+    .select()
+    .from(s.integrationItems)
+    .where(eq(s.integrationItems.externalId, "synced-reply"));
+  expect(item?.status).toBe("unmatched");
 });

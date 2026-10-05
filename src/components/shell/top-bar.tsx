@@ -1,4 +1,5 @@
 "use client";
+import { shortcutLabel } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import { Keyboard, Menu, Search } from "lucide-react";
 import Link from "next/link";
@@ -69,18 +70,18 @@ export function TopBar({
         >
           <Search size={14} aria-hidden />
           <span className="search-pill-label">{t.searchShort}</span>
-          <ShortcutHint keys={t.keys.commands} />
+          <ShortcutHint id="palette" />
         </button>
         <button
           type="button"
           className="ghost keyboard-help-button"
           aria-label={t.keyboardHelp}
           aria-keyshortcuts="Shift+/"
-          title={`${t.keyboardHelp} (${t.keys.help})`}
+          title={`${t.keyboardHelp} (${shortcutLabel("help")})`}
           onClick={onHelp}
         >
           <Keyboard size={15} aria-hidden />
-          <ShortcutHint keys={t.keys.help} />
+          <ShortcutHint id="help" />
         </button>
         <ThemeToggle />
       </div>

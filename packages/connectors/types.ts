@@ -15,6 +15,7 @@ export const importRecordSchema = z.object({
   occurredAt: z.iso.datetime(),
   participants: z.array(z.string().max(500)).max(100),
   direction: z.enum(["inbound", "outbound"]).optional(),
+  from: z.string().trim().max(320).optional(),
   canceled: z.boolean().optional(),
   proposedCommitment: z.string().max(20000).optional(),
 });

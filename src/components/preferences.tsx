@@ -77,6 +77,7 @@ export function ThemeToggle() {
       className="ghost icon-button"
       aria-label={t.toggleTheme}
       aria-pressed={dark}
+      aria-keyshortcuts="Meta+Shift+L Control+Shift+L"
       title={dark ? t.useLightTheme : t.useDarkTheme}
       onClick={toggleTheme}
     >

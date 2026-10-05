@@ -7,6 +7,8 @@ import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import {
   actionFilters,
   actionsPath,
+  outreachPath,
+  outreachTabs,
   personPath,
   routeFor,
   type Section,
@@ -88,9 +90,14 @@ describe("route table", () => {
   test("every view and record has a path that parses back to it", () => {
     for (const section of Object.keys(listPages) as Section[])
       expect(routeFor(sectionPath(section))).toEqual({
-        section,
+        section: section === "sequences" ? "outreach" : section,
         recordId: "",
       });
+    expect(sectionPath("sequences")).toBe("/outreach/sequences");
+    expect(routeFor("/sequences")).toEqual({
+      section: "sequences",
+      recordId: "",
+    });
     expect(sectionPath("integrations")).toBe("/connections");
     expect(routeFor("/people/abc")).toEqual({
       section: "people",
@@ -128,6 +135,7 @@ describe("route table", () => {
 
   test("each route has a page file that renders its view", async () => {
     for (const [folder, name] of Object.values(listPages)) {
+      if (folder === "outreach" || folder === "sequences") continue;
       const path = `src/app/(crm)/${folder}/page.tsx`;
       expect(existsSync(path), path).toBe(true);
       const page = (await import(`../src/app/(crm)/${folder}/page.tsx`)) as {
@@ -135,6 +143,25 @@ describe("route table", () => {
       };
       expect(componentName(page.default()), path).toBe(name);
     }
+    const sequences = await import("../src/app/(crm)/sequences/page");
+    expect(() => sequences.default()).toThrow("NEXT_REDIRECT");
+    const outreach = await import("../src/app/(crm)/outreach/page");
+    expect(() => outreach.default()).toThrow("NEXT_REDIRECT");
+    const outreachTab = await import("../src/app/(crm)/outreach/[tab]/page");
+    for (const tab of outreachTabs) {
+      const tabPage = await outreachTab.default({
+        params: Promise.resolve({ tab }),
+      });
+      expect(componentName(tabPage)).toBe("OutreachView");
+      expect(routeFor(outreachPath(tab))).toEqual({
+        section: "outreach",
+        recordId: "",
+      });
+    }
+    await expect(
+      outreachTab.default({ params: Promise.resolve({ tab: "nowhere" }) }),
+    ).rejects.toThrow("NEXT_HTTP_ERROR_FALLBACK;404");
+    expect(routeFor("/outreach/nowhere")).toBeNull();
     const person = await import("../src/app/(crm)/people/[id]/page");
     const personPage = await person.default({
       params: Promise.resolve({ id: demoId(200) }),
@@ -290,7 +317,7 @@ describe("signed-out deep links", () => {
     for (const section of Object.keys(listPages) as Section[])
       expect(
         config.matcher.some((pattern) =>
-          pattern.startsWith(sectionPath(section)),
+          pattern.startsWith(`/${sectionPath(section).split("/")[1]}`),
         ),
         section,
       ).toBe(true);

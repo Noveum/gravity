@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import {
   createRefreshCoordinator,
@@ -5,7 +6,9 @@ import {
 } from "../packages/core/client-state";
 import { CrmService } from "../packages/core/crm";
 import { serialize } from "../packages/core/dto";
+import { RecordService } from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
+import * as schema from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
@@ -53,6 +56,50 @@ describe("instant authorized product projection", () => {
     expect(full.relationships.some((row) => row.productId === demoId(12))).toBe(
       true,
     );
+  });
+  test("the archived lists follow the brand filter like the server does", async () => {
+    const principal = { userId: demoUser, source: "demo" as const };
+    const records = new RecordService(local.db);
+    for (const id of [201, 204]) {
+      const [row] = await local.db
+        .select()
+        .from(schema.people)
+        .where(eq(schema.people.id, demoId(id)));
+      await records.archivePerson(principal, {
+        organizationId: demoId(1),
+        personId: demoId(id),
+        version: row?.version ?? 1,
+        archived: true,
+      });
+    }
+    const [vale] = await local.db
+      .select()
+      .from(schema.companies)
+      .where(eq(schema.companies.id, demoId(105)));
+    await records.archiveCompany(principal, {
+      organizationId: demoId(1),
+      companyId: demoId(105),
+      version: vale?.version ?? 1,
+      archived: true,
+    });
+    const full = serialize(
+      await service.snapshot(principal, { organizationId: demoId(1) }),
+    );
+    expect(full.archived.people).toHaveLength(2);
+    for (const product of full.products) {
+      const server = serialize(
+        await service.snapshot(principal, {
+          organizationId: demoId(1),
+          productId: product.id,
+        }),
+      );
+      expect(productSnapshot(full, product.id).archived).toEqual(
+        server.archived,
+      );
+    }
+    expect(
+      productSnapshot(full, demoId(12)).archived.people.map((row) => row.id),
+    ).toEqual([]);
   });
   test("cannot widen a restricted user's products or enumerate unknown scopes", async () => {
     const restricted = serialize(

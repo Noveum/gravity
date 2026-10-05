@@ -1,6 +1,7 @@
 import type { Article as ArticleContent } from "@crm/public-site/content";
 import { siteCopy as t } from "@crm/public-site/content";
 import Link from "next/link";
+import { DeployButton } from "./deploy-button";
 export function Article({
   article,
   kind,
@@ -19,6 +20,11 @@ export function Article({
         </p>
         <h1>{article.title}</h1>
         <p className="site-lede">{article.description}</p>
+        {kind === "docs" && article.slug === "deploy-on-vercel" && (
+          <div className="site-actions">
+            <DeployButton />
+          </div>
+        )}
         {kind === "blog" && <time dateTime="2026-10-04">{t.articleDate}</time>}
       </header>
       <div className="site-article-layout">

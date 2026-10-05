@@ -13,9 +13,17 @@ The daily action queue is the center of the app. A person can have separate buye
 
 ## Use the hosted app
 
-Open [gravity.noveum.ai](https://gravity.noveum.ai), choose **Start using Gravity**, and sign in with Google, GitHub or an email code. Create an organization and its first product, then add contacts and next actions. Connect your own Gmail, Calendar, Unipile and Fireflies accounts from Connections. No local installation or database credentials are needed.
+Open [gravity.noveum.ai](https://gravity.noveum.ai), choose **Sign in**, and sign in with Google, GitHub or an email code. Create an organization and its first product, then add contacts and next actions. Connect your own Gmail, Calendar, Unipile and Fireflies accounts from Connections. No local installation or database credentials are needed.
 
 The remote OAuth MCP endpoint is `https://gravity.noveum.ai/mcp`. Assistant access includes CRM read/write tools and is scoped to the organization and products you authorize.
+
+## Deploy your own instance on Vercel
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FNoveum%2Fgravity&project-name=gravity&repository-name=gravity&env=APP_URL%2CDATABASE_URL%2CBETTER_AUTH_SECRET%2CRESEND_API_KEY%2CEMAIL_FROM%2CINTEGRATION_ENCRYPTION_KEY%2CCRON_SECRET%2CCRM_DEMO_MODE%2CDATABASE_SSL_MODE%2CPUBLIC_SITE_INDEXING&envDefaults=%7B%22CRM_DEMO_MODE%22%3A%22false%22%2C%22DATABASE_SSL_MODE%22%3A%22verify-full%22%2C%22PUBLIC_SITE_INDEXING%22%3A%22false%22%7D&envLink=https%3A%2F%2Fgithub.com%2FNoveum%2Fgravity%2Fblob%2Fmain%2Fdocs%2Fvercel.md%23environment)
+
+The button creates **your own repository and Vercel project**. Bring your own PostgreSQL database, secrets and verified Resend sender for email-code login. It does not reuse Noveum's database or provider credentials, apply database migrations, or configure your domain automatically. [Vercel setup](docs/vercel.md) covers restricted database roles, environment values, Google/GitHub callbacks and release checks. For social-only login, import your fork and set those provider credentials instead of Resend.
+
+The default `vercel.json` uses manual provider sync and has no plan-dependent cron. For automatic five-minute sync on a compatible Vercel plan, deploy with `--local-config vercel.scheduled.json`; alternatively use your own authenticated scheduler. Automatic Git deployments remain disabled until you configure a reviewed CI deployment gate.
 
 ## Develop locally or self-host
 
@@ -53,7 +61,7 @@ Open `/` for the public landing page (`/welcome` permanently redirects there), `
 
 After deploying, run `bun run test:deployment https://your-gravity-domain.example`
 to check the actual uploaded public routes, authentication page, readiness,
-branding assets and OAuth MCP challenge. Deployment exclusions for root docs
+branding assets, favicon, app icons and OAuth MCP challenge. Deployment exclusions for root docs
 are anchored so they do not remove the application's `/docs` routes.
 
 ## Explore the development demo

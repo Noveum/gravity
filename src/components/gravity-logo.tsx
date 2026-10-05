@@ -1,10 +1,14 @@
-/** Native vector counterpart of the generated orbital G concept. */
+import { gravityIdentity as identity } from "@crm/brand/identity";
+
+/** Shared orbital G geometry, including static brand and app-icon exports. */
 export function GravityMark({
   size = 32,
   className = "",
+  color = "currentColor",
 }: {
   size?: number;
   className?: string;
+  color?: string;
 }) {
   return (
     <svg
@@ -17,12 +21,12 @@ export function GravityMark({
       focusable="false"
     >
       <path
-        d="M104.27 40.75A46.5 46.5 0 1 0 110.5 64H85"
-        stroke="currentColor"
-        strokeWidth="17"
+        d={identity.path}
+        stroke={color}
+        strokeWidth={identity.strokeWidth}
         strokeLinejoin="round"
       />
-      <circle cx="64" cy="64" r="15" fill="currentColor" />
+      <circle cx="64" cy="64" r={identity.coreRadius} fill={color} />
     </svg>
   );
 }

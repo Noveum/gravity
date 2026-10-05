@@ -462,7 +462,7 @@
     "eyebrow": "Open-source CRM for founders and small sales teams",
     "heroTitle": "Know who to follow up with next.",
     "heroDescription": "Turn outreach, replies and meeting follow-ups into a clear next step. Keep every person, conversation and product relationship together, so your team and AI assistant can pick up where you left off.",
-    "tryDemo": "Open workspace",
+    "tryDemo": "Sign in to the workspace",
     "readSetup": "Read the setup guide",
     "heroNote": "Use the hosted app. Self-host when you need to. Open source under Apache 2.0.",
     "previewLabel": "Illustrative workflow with fictional data",
@@ -596,7 +596,7 @@
             "id": "hosted",
             "title": "Start in the hosted app",
             "paragraphs": [
-              "Open https://gravity.noveum.ai and choose Start using Gravity. Sign in with Google, GitHub or an email verification code. No local setup or database credentials are needed to use the hosted app.",
+              "Open https://gravity.noveum.ai and choose Sign in. Use Google, GitHub or an email verification code. No local setup or database credentials are needed to use the hosted app.",
               "New users go through workspace onboarding. Returning users open their daily action queue. Your organization keeps its people, products and conversations separate from other workspaces."
             ]
           },
@@ -604,7 +604,7 @@
             "id": "workspace",
             "title": "Create an organization and its first product",
             "paragraphs": [
-              "Open /onboarding. Name the organization, choose its first product and set the organization time zone. Gravity creates your admin membership, an Overview material folder and four sales stages in one transaction.",
+              "Open /onboarding. Name the organization, choose its first product and set the organization time zone. Gravity creates your admin membership, an Overview material folder, five sales stages and nine outreach stages in one transaction.",
               "An organization contains its own people and companies. A product contains relationships, next actions, sequences, opportunities and materials. Add another product from Organization settings."
             ]
           },
@@ -753,6 +753,81 @@
             ]
           }
         ]
+      },
+      {
+        "slug": "deploy-on-vercel",
+        "title": "Deploy Gravity on Vercel",
+        "description": "Create your own Gravity instance with managed PostgreSQL, email or social login, and your own provider accounts.",
+        "sections": [
+          {
+            "id": "choose",
+            "title": "Choose hosted access or your own instance",
+            "paragraphs": [
+              "To use the hosted app, sign in at https://gravity.noveum.ai. These steps are for an independent installation in your own Vercel account.",
+              "The Deploy with Vercel button clones the public repository and creates your project. It asks for your own environment values; it does not copy Noveum credentials or migrate your database. The guided button uses Resend email-code login. For Google/GitHub-only login, import your fork in Vercel and configure the appropriate client instead."
+            ]
+          },
+          {
+            "id": "database",
+            "title": "Prepare managed PostgreSQL",
+            "paragraphs": [
+              "Use a separate PostgreSQL database for your installation. Review the target and backup policy, clone the repository, and run bun run db:migrate with DATABASE_MIGRATION_URL in an ignored local environment file. Do not seed fictional demo records in production.",
+              "The migrations create gravity_app as the protected server group. Create a dedicated login role inheriting gravity_app and use its connection URL as DATABASE_URL. The runtime user must not own tables, create schemas, truncate tables or bypass RLS. Keep the migration URL outside the deployed application. For Supabase, use the session pooler on port 5432 and the provider CA in DATABASE_SSL_CA; the transaction pooler on 6543 is unsupported."
+            ],
+            "code": "git clone https://github.com/Noveum/gravity.git\ncd gravity\nbun install --frozen-lockfile\n# Set DATABASE_MIGRATION_URL and required TLS configuration in .env.local.\nbun run db:migrate\n# Set DATABASE_URL to your restricted runtime role.\nbun run db:check"
+          },
+          {
+            "id": "environment",
+            "title": "Supply your own environment values",
+            "paragraphs": [
+              "Set APP_URL to your stable HTTPS origin and BETTER_AUTH_SECRET to a random secret of at least 32 characters. DATABASE_URL is the restricted runtime connection. The guided deploy button requests RESEND_API_KEY and EMAIL_FROM for email-code sign-in with a verified sender.",
+              "INTEGRATION_ENCRYPTION_KEY must be a persistent 64-character hexadecimal key. CRON_SECRET is a random bearer secret of at least 32 characters. Keep both stable and private. The button defaults CRM_DEMO_MODE=false, DATABASE_SSL_MODE=verify-full and PUBLIC_SITE_INDEXING=false; none of its defaults contains a secret.",
+              "For a provider that needs a custom certificate authority, add DATABASE_SSL_CA. Set PUBLIC_SITE_URL to the same HTTPS origin as APP_URL before enabling indexing. Supply optional Google/GitHub and private object-storage settings in Vercel when you enable those features."
+            ],
+            "code": "# Generate each value separately, then save it in your secret manager.\nopenssl rand -hex 32"
+          },
+          {
+            "id": "deploy",
+            "title": "Create the Vercel project",
+            "paragraphs": [
+              "Choose Deploy with Vercel on the landing page, fill in your environment values and create the cloned repository. Use the root application, Next.js and the committed Bun install/build commands. Select Node.js 22 in your Vercel project settings. If you already have a fork, import it as a project instead.",
+              "The default vercel.json has no scheduled cron and works with manual sync. For automatic five-minute sync on a compatible Vercel plan, deploy with --local-config vercel.scheduled.json. Otherwise call GET /api/integrations/cron from your own scheduler with Authorization: Bearer <CRON_SECRET>. Do not put the secret in a query string."
+            ]
+          },
+          {
+            "id": "domain",
+            "title": "Bind the domain and login callbacks",
+            "paragraphs": [
+              "Add your domain to the Vercel project, configure its DNS, and set APP_URL and PUBLIC_SITE_URL to that HTTPS origin. Redeploy after changing environment values.",
+              "For Google login, register <APP_URL>/api/auth/callback/google and set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET. For GitHub, use <APP_URL>/api/auth/callback/github with GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET. Email-code login needs no social callback. Google mailbox/calendar consent uses the separate <APP_URL>/api/integrations/callback/google callback."
+            ]
+          },
+          {
+            "id": "accounts",
+            "title": "Connect only your own accounts",
+            "paragraphs": [
+              "Sign in and create your organization and first product. In Connections, authorize Gmail and Google Calendar separately from login. Each user enters their own Unipile setup for LinkedIn and Fireflies key for meeting notes. Credentials are encrypted and scoped to their owner and organization.",
+              "For assistant access, add <APP_URL>/mcp to Codex, Claude Code or another OAuth MCP client. Review the organization and product grant before approving CRM read/write access. No CRM API key is required. Connecting a provider or approving a draft does not enable outbound sending."
+            ]
+          },
+          {
+            "id": "verify",
+            "title": "Check the actual deployment",
+            "paragraphs": [
+              "The health endpoint must report ready. Confirm the landing page and icons, sign in, create your workspace, add a contact and verify that a deal edit persists after refresh. Test a second user’s product restrictions and assistant revocation before relying on real sales data.",
+              "Files require separate private object storage; configure and qualify its transfer path before enabling uploads. Database backups do not include uploaded files. Test recovery for both stores."
+            ],
+            "code": "bun run test:deployment https://your-gravity-domain.example"
+          },
+          {
+            "id": "updates",
+            "title": "Release reviewed updates",
+            "paragraphs": [
+              "Gravity CI runs checks on pull requests and main. Automatic Git deployments are disabled in the template so a push cannot silently publish unchecked code. Use a reviewed CI deployment or the Vercel CLI to deploy the tested source. Review database migrations separately; they never run from the web build or runtime.",
+              "Build a production artifact with vercel deploy --prod --skip-domain, verify it, then use vercel promote to switch the domain. If you enable Git deployments in your fork, configure deployment checks that enforce your CI before production promotion."
+            ]
+          }
+        ]
       }
     ],
     "articles": [
@@ -856,7 +931,23 @@
       }
     ],
     "selfHost": "Self-hosting guide",
-    "startUsing": "Start using Gravity"
+    "startUsing": "Start using Gravity",
+    "signIn": "Sign in",
+    "signInToGravity": "Sign in to Gravity",
+    "brandHome": "Gravity home",
+    "deployNav": "Deploy",
+    "deployWithVercel": "Deploy with Vercel",
+    "deploymentGuide": "Deployment guide",
+    "deployEnvironmentDescription": "Use your own PostgreSQL database, auth and encryption secrets, and verified Resend sender. Follow the guide to migrate the database and configure the HTTPS origin.",
+    "deploymentEyebrow": "Hosted or self-hosted",
+    "deploymentTitle": "Your team. Your choice of deployment.",
+    "deploymentDescription": "Use Gravity in your browser today, or run your own instance on Vercel with your database and accounts.",
+    "hostedTitle": "Use the hosted app",
+    "hostedDescription": "Sign in with Google, GitHub or an email code. Create a workspace and connect the accounts you use for sales. No installation required.",
+    "hostedNote": "Organizations and product permissions keep each workspace separate.",
+    "vercelTitle": "Run your own Gravity",
+    "vercelDescription": "Deploy the open-source app to your Vercel account. Bring your PostgreSQL database, login configuration and provider accounts.",
+    "vercelNote": "The deploy button starts setup. Database migrations and your own credentials are required."
   },
   "orEmail": "Or continue with email",
   "emailAddress": "Email address",

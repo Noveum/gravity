@@ -442,12 +442,21 @@ export async function seedDemo(db: Database) {
     for (const [i, p] of [10, 11, 12, 13].entries()) {
       const org = demoId(p === 13 ? 2 : 1);
       await tx.insert(s.stages).values(
-        ["Discovery", "Evaluation", "Proposal", "Won"].map((name, j) => ({
+        (
+          [
+            ["Discovery", "open"],
+            ["Evaluation", "open"],
+            ["Proposal", "open"],
+            ["Won", "won"],
+            ["Lost", "lost"],
+          ] as const
+        ).map(([name, category], j) => ({
           id: demoId(800 + i * 10 + j),
           organizationId: org,
           productId: demoId(p),
           name,
           position: j,
+          category,
         })),
       );
       await tx.insert(s.folders).values(

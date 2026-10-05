@@ -1,11 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import t from "../i18n/translations/en.json";
 import { authorize, DomainError, type Principal } from "./policy";
+import { activeCompany, companyVisible, personVisible } from "./visibility";
 
 export const scopeSchema = z.object({
   organizationId: z.uuid(),
@@ -96,6 +107,20 @@ export const workspaceSchema = z.object({
     }),
 });
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+export function defaultStages(organizationId: string, productId: string) {
+  return [
+    { name: t.discovery, category: "open" as const },
+    { name: t.evaluation, category: "open" as const },
+    { name: t.proposal, category: "open" as const },
+    { name: t.won, category: "won" as const },
+    { name: t.lost, category: "lost" as const },
+  ].map((stage, position) => ({
+    organizationId,
+    productId,
+    position,
+    ...stage,
+  }));
+}
 async function insertProduct(
   tx: Transaction,
   organizationId: string,
@@ -113,14 +138,7 @@ async function insertProduct(
   await tx
     .insert(s.folders)
     .values({ organizationId, productId: product.id, name: t.defaultFolder });
-  await tx.insert(s.stages).values(
-    [t.discovery, t.evaluation, t.proposal, t.won].map((name, position) => ({
-      organizationId,
-      productId: product.id,
-      name,
-      position,
-    })),
-  );
+  await tx.insert(s.stages).values(defaultStages(organizationId, product.id));
   await tx.insert(s.changeEvents).values({
     organizationId,
     productId: product.id,
@@ -234,25 +252,30 @@ export class CrmService {
         .where(eq(s.organizations.id, input.organizationId))
         .for("update");
       let personId = input.personId;
-      if (personId || input.companyId) {
-        const [visible] = await tx
-          .select({ personId: s.people.id })
+      const productIds = permission.products.map((p) => p.id);
+      if (personId) {
+        const [existing] = await tx
+          .select({ archivedAt: s.people.archivedAt })
           .from(s.people)
-          .innerJoin(s.relationships, eq(s.relationships.personId, s.people.id))
           .where(
             and(
+              eq(s.people.id, personId),
               eq(s.people.organizationId, input.organizationId),
-              inArray(
-                s.relationships.productId,
-                permission.products.map((p) => p.id),
-              ),
-              personId
-                ? eq(s.people.id, personId)
-                : eq(s.people.companyId, input.companyId ?? ""),
             ),
           );
-        if (!visible) throw new DomainError("NOT_FOUND", 404);
-      }
+        if (
+          !existing ||
+          !(await personVisible(tx, productIds, input.organizationId, personId))
+        )
+          throw new DomainError("NOT_FOUND", 404);
+        if (existing.archivedAt) throw new DomainError("RECORD_ARCHIVED", 409);
+      } else if (input.companyId)
+        await activeCompany(
+          tx,
+          productIds,
+          input.organizationId,
+          input.companyId,
+        );
       if (!personId) {
         if (input.email) {
           const [existing] = await tx
@@ -470,7 +493,7 @@ export class CrmService {
           ),
         ),
     ]);
-    const people = await this.db
+    const everyone = await this.db
       .select()
       .from(s.people)
       .where(
@@ -482,32 +505,75 @@ export class CrmService {
           ),
         ),
       );
-    const companies = await this.db
+    const people = everyone.filter((person) => !person.archivedAt);
+    const activePeople = new Set(people.map((person) => person.id));
+    const activeRelationships = relationships.filter((relationship) =>
+      activePeople.has(relationship.personId),
+    );
+    const activeRelationshipIds = new Set(
+      activeRelationships.map((relationship) => relationship.id),
+    );
+    const active = <T extends { relationshipId: string }>(rows: T[]) =>
+      rows.filter((row) => activeRelationshipIds.has(row.relationshipId));
+    const allCompanies = await this.db
       .select()
       .from(s.companies)
       .where(
         and(
           eq(s.companies.organizationId, scope.organizationId),
-          inArray(
-            s.companies.id,
-            people.flatMap((p) => (p.companyId ? [p.companyId] : [])),
+          or(
+            inArray(
+              s.companies.id,
+              people.flatMap((p) => (p.companyId ? [p.companyId] : [])),
+            ),
+            notExists(
+              this.db
+                .select({ id: s.people.id })
+                .from(s.people)
+                .where(
+                  and(
+                    eq(s.people.companyId, s.companies.id),
+                    isNull(s.people.archivedAt),
+                  ),
+                ),
+            ),
           ),
         ),
-      );
+      )
+      .orderBy(asc(s.companies.name));
     return {
       products: permission.products,
       people,
-      companies,
-      relationships,
-      actions,
+      companies: allCompanies.filter((company) => !company.archivedAt),
+      archived: {
+        people: everyone
+          .filter((person) => person.archivedAt)
+          .map((person) => ({
+            id: person.id,
+            name: person.name,
+            title: person.title,
+            companyId: person.companyId,
+            archivedAt: person.archivedAt,
+          })),
+        companies: allCompanies
+          .filter((company) => company.archivedAt)
+          .map((company) => ({
+            id: company.id,
+            name: company.name,
+            domain: company.domain,
+            archivedAt: company.archivedAt,
+          })),
+      },
+      relationships: activeRelationships,
+      actions: active(actions),
       sequences,
-      enrollments,
+      enrollments: active(enrollments),
       folders,
       assets,
       assetStages,
       stages,
-      meetings,
-      opportunities,
+      meetings: active(meetings),
+      opportunities: active(opportunities),
       members: members.map((member) => ({
         ...member,
         productIds:
@@ -682,10 +748,13 @@ export class CrmService {
     companyId: string,
   ) {
     const snapshot = await this.snapshot(principal, scope);
-    const company = snapshot.companies.find(
-      (company) => company.id === companyId,
-    );
-    if (!company) throw new DomainError("NOT_FOUND", 404);
+    const company =
+      snapshot.companies.find((company) => company.id === companyId) ??
+      (await this.archivedCompany(
+        snapshot.products.map((product) => product.id),
+        scope.organizationId,
+        companyId,
+      ));
     const people = snapshot.people.filter(
       (person) => person.companyId === company.id,
     );
@@ -711,6 +780,51 @@ export class CrmService {
       stages: snapshot.stages,
       asOf: snapshot.asOf,
     };
+  }
+  private async archivedCompany(
+    productIds: string[],
+    organizationId: string,
+    companyId: string,
+  ) {
+    const [company] = await this.db
+      .select()
+      .from(s.companies)
+      .where(
+        and(
+          eq(s.companies.id, companyId),
+          eq(s.companies.organizationId, organizationId),
+        ),
+      );
+    if (
+      !company?.archivedAt ||
+      !(await companyVisible(this.db, productIds, organizationId, companyId))
+    )
+      throw new DomainError("NOT_FOUND", 404);
+    return company;
+  }
+  async personContext(
+    principal: Principal,
+    organizationId: string,
+    personId: string,
+  ) {
+    const permission = await authorize(this.db, principal, organizationId);
+    const [relationship] = await this.db
+      .select({ id: s.relationships.id })
+      .from(s.relationships)
+      .where(
+        and(
+          eq(s.relationships.organizationId, organizationId),
+          eq(s.relationships.personId, personId),
+          inArray(
+            s.relationships.productId,
+            permission.products.map((product) => product.id),
+          ),
+        ),
+      )
+      .orderBy(asc(s.relationships.id))
+      .limit(1);
+    if (!relationship) throw new DomainError("NOT_FOUND", 404);
+    return this.context(principal, organizationId, relationship.id);
   }
   async changeAction(
     principal: Principal,
@@ -1010,9 +1124,12 @@ export class CrmService {
             isNull(s.changeEvents.sourceConversationId),
             inArray(s.changeEvents.sourceConversationId, readable),
           ),
-          inArray(
-            s.changeEvents.productId,
-            permission.products.map((p) => p.id),
+          or(
+            isNull(s.changeEvents.productId),
+            inArray(
+              s.changeEvents.productId,
+              permission.products.map((p) => p.id),
+            ),
           ),
         ),
       );

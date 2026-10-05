@@ -101,7 +101,9 @@ export const companies = pgTable(
     name: text("name").notNull(),
     domain: text("domain"),
     description: text("description").notNull().default(""),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: createdAt(),
+    version: version(),
   },
   (t) => [serverAccessPolicy(), unique().on(t.organizationId, t.id)],
 ).enableRLS();
@@ -114,7 +116,11 @@ export const people = pgTable(
     name: text("name").notNull(),
     title: text("title").notNull().default(""),
     email: text("email"),
+    otherEmails: jsonb("other_emails").$type<string[]>().notNull().default([]),
+    phone: text("phone").notNull().default(""),
+    linkedinUrl: text("linkedin_url").notNull().default(""),
     summary: text("summary").notNull().default(""),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: createdAt(),
     version: version(),
   },
@@ -446,6 +452,9 @@ export const stages = pgTable(
     productId: productId(),
     name: text("name").notNull(),
     position: integer("position").notNull(),
+    category: text("category", { enum: ["open", "won", "lost"] })
+      .notNull()
+      .default("open"),
   },
   (t) => [
     serverAccessPolicy(),

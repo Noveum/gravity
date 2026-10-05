@@ -235,6 +235,8 @@
     "SYNC_IN_PROGRESS": "A sync is already running for this account. Please wait.",
     "UNIPILE_SETUP_REQUIRED": "Set up your own Unipile API key and signed webhook before connecting LinkedIn.",
     "STALE_CONFIGURATION": "Your provider setup changed. Reload Connections and try again.",
+    "RECORD_ARCHIVED": "This record is archived. Restore it before changing it.",
+    "COMPANY_EXISTS": "A company with this domain already exists in this organization.",
     "PROVIDER_CONFIGURATION_IN_USE": "This setup already has linked accounts. Remove it first to replace the credentials; this will disconnect those accounts and preserve imported history."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
@@ -325,6 +327,7 @@
   "evaluation": "Evaluation",
   "proposal": "Proposal",
   "won": "Won",
+  "lost": "Lost",
   "commandNavigation": "\u2191 / \u2193 to choose \u00b7 Enter to open \u00b7 Esc to close",
   "keyboardSafety": "Single-key shortcuts pause while you type, compose text, or use a dialog or menu. The palette and theme shortcuts also work from text fields. G shortcuts are typed as two keys. No shortcut sends messages or approves drafts.",
   "shortcutSearch": "Search shortcuts\u2026",

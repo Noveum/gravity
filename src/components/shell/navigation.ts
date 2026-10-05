@@ -1,6 +1,7 @@
 import { bindingLabel, shortcuts } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import {
+  Bot,
   Building2,
   CalendarDays,
   FolderOpen,
@@ -25,6 +26,7 @@ export const viewIcons: Record<Section, LucideIcon> = {
   materials: FolderOpen,
   outreach: Send,
   integrations: Plug,
+  assistants: Bot,
   settings: Settings2,
 };
 
@@ -37,7 +39,11 @@ export const viewSections: { id: string; title: string; views: Section[] }[] = [
     views: ["people", "companies", "opportunities", "materials"],
   },
 ];
-export const pinnedViews: Section[] = ["integrations", "settings"];
+export const pinnedViews: Section[] = [
+  "assistants",
+  "integrations",
+  "settings",
+];
 export const listedViews: Section[] = [
   ...viewSections.flatMap((section) => section.views),
   ...pinnedViews,

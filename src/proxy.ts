@@ -21,6 +21,7 @@ export const config = {
     "/materials",
     "/outreach/:path*",
     "/connections",
+    "/assistants",
     "/settings/:path*",
   ],
 };

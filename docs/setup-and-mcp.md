@@ -49,10 +49,10 @@ Connection sequence after deployment:
 2. The client discovers OAuth metadata and starts authorization-code flow with S256 PKCE.
 3. Sign into the CRM through Google, GitHub or an email code, according to the installation's enabled providers.
 4. Select one organization and the products to share. The signed OAuth request binds that selection to this flow and session; parallel consent tabs cannot overwrite each other's tenant selection.
-5. Review the client, organization/products and read-only permission at consent.
+5. Review the client, organization/products and CRM read/write permission at consent.
 6. The client exchanges the code and stores its tokens. Revoke the grant from Connections when needed.
 
-Tokens are resource-bound to the MCP URL and expire after five minutes. On each request, the library validates signature, issuer, audience and required scope; domain code checks the current OAuth client, active user session, active grant and memberships. Revocation applies immediately even to an otherwise valid JWT. Grants are immutable; future product memberships do not silently widen an existing grant. New access requires another grant. The test suite verifies PKCE, consent, refresh preserving the original grant, product isolation and revocation. Actual Codex/Claude interoperability and Google/GitHub sign-in remain live verification gates.
+Tokens are resource-bound to the MCP URL and expire after five minutes. On each request, the library validates signature, issuer, audience and required scope; domain code checks the current OAuth client, active user session, active grant and memberships. Revocation applies immediately even to an otherwise valid JWT. Organization grants are immutable. All-products grants explicitly cover current and future products the user can access; specific-product grants remain fixed. Empty product lists grant no product access. Existing read-only clients must reconnect to consent to `crm:write`; their old tokens are never silently elevated. The test suite verifies PKCE, consent, refresh preserving the original grant, product isolation and revocation. Actual Codex/Claude interoperability and Google/GitHub sign-in remain live verification gates.
 
 | Tool | Current purpose |
 |---|---|
@@ -66,7 +66,9 @@ Tokens are resource-bound to the MCP URL and expire after five minutes. On each 
 | `list_materials` | Private material metadata for permitted products/stages |
 | `read_material` | Bounded text/Markdown, or PDF metadata with extraction unavailable |
 
-There are no MCP sending, draft-approval or membership-changing tools in this release. Later write tools need separate scopes, audit and idempotency contracts, with approval remaining a human decision.
+The endpoint requires `crm:read crm:write`; include `offline_access` for refresh. OAuth scope challenges advertise these permissions. AI assistants is a dedicated sidebar option (`G X`), and the MCP card appears first in Connections.
+
+Write tools use the same domain services as the UI: `create_person`, `schedule_next_action`, `change_action` (save, approve, complete, rework), `accept_meeting_commitment`, `create_material_folder`, `create_material` (text/Markdown), and `create_product`. `get_workspace` supplies current records and versions. Product creation requires an organization admin with an all-products grant. Changes are audited and publish the same real-time wake-up hints as UI changes. Stale action/meeting versions are rejected. Approval is bound to the exact draft and is invalidated by edits or replies. Message dispatch and membership administration are not implemented as MCP tools.
 
 Primary implementation references: [Better Auth MCP](https://better-auth.com/docs/plugins/mcp), [OAuth provider](https://better-auth.com/docs/plugins/oauth-provider), and [official MCP authorization specification](https://modelcontextprotocol.io/specification/latest/basic/authorization).
 

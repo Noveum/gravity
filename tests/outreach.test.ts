@@ -32,6 +32,7 @@ const agent: Principal = {
   userId: demoUser,
   source: "mcp",
   organizationId: demoId(1),
+  readOnly: false,
 };
 const org = demoId(1);
 const steps = [0, 3, 5, 5].map((delayDays, index) => ({

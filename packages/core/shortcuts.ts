@@ -9,6 +9,7 @@ export const views = [
   "opportunities",
   "materials",
   "integrations",
+  "assistants",
   "settings",
   "outreach",
 ] as const;
@@ -72,6 +73,7 @@ const definitions = {
   "go-opportunities": goTo("o", "opportunities"),
   "go-materials": goTo("f", "materials"),
   "go-integrations": goTo("i", "integrations"),
+  "go-assistants": goTo("x", "assistants"),
   "go-settings": goTo("t", "settings"),
   palette: define(["mod+k"], "global", "general", labels.palette),
   help: define(["?"], "global", "general", labels.help),

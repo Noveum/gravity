@@ -1,6 +1,7 @@
 import { act, cleanup, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
+import { AssistantsView } from "@/components/views/assistants-view";
 import {
   actionChangeSchema,
   actionPlanSchema,
@@ -89,6 +90,7 @@ function page(route: Route | null): ReactNode {
     materials: MaterialsView,
     outreach: OutreachView,
     integrations: ConnectionsView,
+    assistants: AssistantsView,
     settings: SettingsView,
   };
   const View = views[route.section];

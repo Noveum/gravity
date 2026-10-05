@@ -1,6 +1,6 @@
 # MCP client qualification
 
-Gravity exposes read-only Streamable HTTP at `<APP_URL>/mcp`. OAuth is the supported authentication path; no CRM API-key flow is implemented. Webhook HMAC is separate from user/assistant authorization.
+Gravity exposes CRM read/write Streamable HTTP at `<APP_URL>/mcp`. OAuth is the supported authentication path; no CRM API-key flow is implemented. Webhook HMAC is separate from user/assistant authorization.
 
 ## Evidence
 
@@ -10,7 +10,7 @@ Gravity exposes read-only Streamable HTTP at `<APP_URL>/mcp`. OAuth is the suppo
 | OAuth provider HTTP tests | Parallel flow binding, token resource, refresh retaining the immutable grant, disabled client/session rejection, grant revocation and unauthenticated discovery pass with actual SQL. | Live social login and hosted callback behavior. |
 | Codex | Official current instructions documented; installed shell CLI is legacy `0.1.2505172129` and lacks `mcp` commands. Desktop installation has not been authenticated against Gravity. | Current desktop/CLI registration, sign-in, product selection, tool calls, refresh and revocation. |
 | Claude Code | Installed `2.1.283` supports HTTP MCP registration/login; official commands documented. | Actual user authorization on configured staging, including reconnect/refresh/revoke. |
-| Other agents | Standard OAuth discovery, dynamic registration and read-only tools provide a protocol path. | Qualify each actual client's OAuth and HTTP implementation; SDK success is not blanket client certification. |
+| Other agents | Standard OAuth discovery, dynamic registration and CRM read/write tools provide a protocol path. | Qualify each actual client's OAuth and HTTP implementation; SDK success is not blanket client certification. |
 
 The automated fixture uses a fictional email/password test identity and in-memory credentials; it does not send email, configure a personal assistant or access a live inbox. Production login remains Google/GitHub configuration. Client Metadata Document support is configured through the official Better Auth CIMD plugin but is **not yet exercised against Codex's live metadata document**. Do not describe the DCR SDK test as CIMD qualification.
 
@@ -32,7 +32,7 @@ claude mcp login gravity
 
 If prompted in a Claude session, `/mcp` also opens connection management. The uppercase hostname is a placeholder, not a functioning server. The old Twenty Cloud Run bridge is a separate installation.
 
-Sign in, select one organization and allowed products, and accept read-only consent. Run `get_me`, `get_capabilities`, and `list_products`. Confirm the granted organization/product IDs; request an ungranted product and verify denial. Revoke the grant in Connections and verify that an existing token no longer reads records. Reauthorize rather than widening an existing grant. Ask the assistant to list capabilities before expecting Gmail synchronization or sending.
+Sign in, select one organization and allowed products, and accept CRM read/write consent. Run `get_me`, `get_capabilities`, and `list_products`. Confirm the granted organization/product IDs; request an ungranted product and verify denial. Revoke the grant in Connections and verify that an existing token no longer reads records. All-products grants include future permitted products; specific-product grants stay fixed. Reconnect existing read-only clients to authorize `crm:write`. Ask the assistant to list capabilities before expecting Gmail synchronization or sending.
 
 ## Authentication direction
 

@@ -15,7 +15,7 @@ The daily action queue is the center of the app. A person can have separate buye
 
 Open [gravity.noveum.ai](https://gravity.noveum.ai), choose **Start using Gravity**, and sign in with Google, GitHub or an email code. Create an organization and its first product, then add contacts and next actions. Connect your own Gmail, Calendar, Unipile and Fireflies accounts from Connections. No local installation or database credentials are needed.
 
-The remote OAuth MCP endpoint is `https://gravity.noveum.ai/mcp`. Assistant access is read-only and scoped to the organization and products you select.
+The remote OAuth MCP endpoint is `https://gravity.noveum.ai/mcp`. Assistant access includes CRM read/write tools and is scoped to the organization and products you authorize.
 
 ## Develop locally or self-host
 
@@ -41,7 +41,7 @@ Stop the dev server before running `bun run db:migrate` against local PGlite. It
 - Reviewed meeting commitments with owner and due date, created once. Calendar/Fireflies notes enter a private import queue and require an explicit relationship selection before entering shared product context.
 - Private PDF, Markdown, and text materials, nested folders per product, associations with one or several product stages, authenticated download, and content hashes. Files start as drafts; approval/version replacement and PDF extraction are pending.
 - Tested Unipile v2 event normalization and signed webhook entry point. Incoming replies pause enrollments and invalidate approved drafts; several replies in one conversation keep one pending reply task; retries do not duplicate messages. Unknown threads enter an owner-private review queue with title/participant search, source filters and cursor pagination.
-- Read-only MCP using OAuth authorization-code flow with PKCE, resource-bound JWTs, organization/product selection, client consent, refresh, and revocable immutable grants. The OAuth flow is exercised against real local HTTP and SQL in tests. The deployed Codex connection has been exercised; Claude Code and each new installation still require live qualification.
+- CRM read/write MCP using OAuth authorization-code flow with PKCE, resource-bound JWTs, organization/product selection, client consent, refresh, and revocable immutable grants. The OAuth flow is exercised against real local HTTP and SQL in tests. The deployed Codex connection has been exercised; Claude Code and each new installation still require live qualification.
 - Orbit’s blue light/dark palettes, system preference, compact row density, a searchable command menu, complete shortcut guide and keyboard navigation across record views.
 - Explicit next-action scheduling with product-authorized owners, channels, owed-by party and UTC deadlines.
 - Authenticated SSE revision delivery with immediate same-runtime wakeups, one-second reconciliation across runtimes and fallback recovery. Unsaved drafts keep their edited version across live updates; distributed fan-out and large-list pagination remain future work.
@@ -74,7 +74,7 @@ packages/core/           Authorized domain services and common permissions
 packages/database/       Drizzle schema, PostgreSQL/PGlite adapters, fictional seed
 packages/auth/           Social sign-in, OAuth flow binding, resource configuration
 packages/connectors/     Signed event normalization and idempotent reply ingestion
-packages/mcp/            Read-only tools over the same domain services
+packages/mcp/            Read/write tools over the same domain services
 packages/storage/        Private file access and content validation
 packages/i18n/           Interface strings
 Drizzle migrations:      drizzle/

@@ -5,7 +5,13 @@ import {
   getAuth,
 } from "@crm/auth/server";
 import { errorResponse, limitedBody } from "@crm/core/http";
-import { authorize, DomainError } from "@crm/core/policy";
+import {
+  allProductsGrant,
+  authorize,
+  DomainError,
+  grantedProductIds,
+  isAllProductsGrant,
+} from "@crm/core/policy";
 import { getDatabase } from "@crm/database/client";
 import {
   mcpGrants,
@@ -48,7 +54,7 @@ export async function GET(request: Request) {
         userId: session.user.id,
         source: "mcp",
         organizationId: selection.grant.organizationId,
-        productIds: selection.grant.productIds,
+        productIds: grantedProductIds(selection.grant.productIds),
         readOnly: true,
       },
       selection.grant.organizationId,
@@ -60,6 +66,7 @@ export async function GET(request: Request) {
     return Response.json(
       {
         organization: selection.organization.name,
+        allProducts: isAllProductsGrant(selection.grant.productIds),
         products: products.map((p) => p.name),
         clientName: client?.name ?? params.get("client_id"),
       },
@@ -78,7 +85,8 @@ export async function POST(request: Request) {
     const body = z
       .object({
         organizationId: z.uuid(),
-        productIds: z.array(z.uuid()).min(1).max(100),
+        productIds: z.array(z.uuid()).max(100),
+        allProducts: z.boolean().default(false),
         oauth_query: z.string().min(1).max(10000),
       })
       .parse(
@@ -88,6 +96,7 @@ export async function POST(request: Request) {
     const principal = { userId: session.user.id, source: "session" as const };
     const { products } = await authorize(db, principal, body.organizationId);
     if (
+      (!body.allProducts && !body.productIds.length) ||
       body.productIds.some(
         (id) => !products.some((product) => product.id === id),
       )
@@ -98,7 +107,7 @@ export async function POST(request: Request) {
         .insert(mcpGrants)
         .values({
           organizationId: body.organizationId,
-          productIds: body.productIds,
+          productIds: body.allProducts ? allProductsGrant : body.productIds,
           userId: principal.userId,
         })
         .returning();

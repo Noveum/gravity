@@ -77,6 +77,7 @@ const listPages: Record<Section, [string, string]> = {
   materials: ["materials", "MaterialsView"],
   outreach: ["outreach", "OutreachView"],
   integrations: ["connections", "ConnectionsView"],
+  assistants: ["assistants", "AssistantsView"],
   settings: ["settings", "SettingsView"],
 };
 const componentName = (element: unknown) => {

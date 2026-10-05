@@ -125,7 +125,7 @@ test("organization changes discard old products and ignore a late product respon
   await act(async () => fresh.resolve(products("new", "New product")));
   expect(
     (screen.getByLabelText("New product") as HTMLInputElement).checked,
-  ).toBe(false);
+  ).toBe(true);
   expect(screen.queryByLabelText("Old product")).toBeNull();
 });
 
@@ -138,6 +138,7 @@ test("grant submission captures one selection, locks pending fields and never co
   request.mockReturnValueOnce(pending.promise);
   const view = render(<Authorization />);
   await waitFor(() => expect(screen.getByLabelText("Product")).toBeTruthy());
+  fireEvent.click(screen.getByLabelText(t.allProductsAndFuture));
   fireEvent.click(screen.getByLabelText("Product"));
   const form = screen
     .getByLabelText(t.workspace)
@@ -151,6 +152,7 @@ test("grant submission captures one selection, locks pending fields and never co
   expect(JSON.parse(String(request.mock.calls[2][1]?.body))).toEqual({
     organizationId: "org",
     productIds: ["p"],
+    allProducts: false,
     oauth_query: "sig=first&client_id=assistant",
   });
   query = new URLSearchParams("sig=second&client_id=assistant");
@@ -354,6 +356,11 @@ test("connections render a canonical endpoint on the server, disclose offline pr
     value: { writeText },
   });
   render(<Connections {...props} />);
+  expect(
+    document
+      .querySelector(".integration-grid > :first-child")
+      ?.classList.contains("mcp-card"),
+  ).toBe(true);
   expect(screen.getByRole("heading", { name: t.calendar })).toBeTruthy();
   expect(screen.getAllByText(t.notConnected)).toHaveLength(4);
   expect((screen.getByLabelText(t.mcpEndpoint) as HTMLInputElement).value).toBe(
@@ -430,4 +437,41 @@ test("first-time assistant setup preserves its request through onboarding instea
   expect(
     workspaceDestination(result, "redirect_uri=https://evil.example"),
   ).toBe("/?organizationId=org&productId=product");
+});
+
+test("new assistant grants default to all permitted current and future products and disclose write consent", async () => {
+  query = new URLSearchParams(
+    "sig=signed&client_id=assistant&scope=crm%3Aread+crm%3Awrite",
+  );
+  request
+    .mockResolvedValueOnce([{ id: "org", name: "Org" }])
+    .mockResolvedValueOnce(products("p", "Product"));
+  const pending = deferred();
+  request.mockReturnValueOnce(pending.promise);
+  const view = render(<Authorization />);
+  await waitFor(() => expect(screen.getByLabelText("Product")).toBeTruthy());
+  expect(
+    (screen.getByLabelText(t.allProductsAndFuture) as HTMLInputElement).checked,
+  ).toBe(true);
+  fireEvent.submit(
+    screen.getByLabelText(t.workspace).closest("form") as HTMLFormElement,
+  );
+  expect(JSON.parse(String(request.mock.calls[2][1]?.body))).toMatchObject({
+    organizationId: "org",
+    productIds: [],
+    allProducts: true,
+  });
+  await act(async () => pending.resolve({}));
+  request.mockResolvedValueOnce({
+    organization: "Org",
+    products: ["Product"],
+    allProducts: true,
+    clientName: "Assistant",
+  });
+  view.unmount();
+  render(<Consent />);
+  await waitFor(() =>
+    expect(screen.getByText(t.consentReadWrite)).toBeTruthy(),
+  );
+  expect(screen.getByText(new RegExp(t.allProductsAndFuture))).toBeTruthy();
 });

@@ -129,6 +129,7 @@ export function useShellShortcuts({
     "go-opportunities": goTo("opportunities"),
     "go-materials": goTo("materials"),
     "go-integrations": goTo("integrations"),
+    "go-assistants": goTo("assistants"),
     "go-settings": goTo("settings"),
     palette: () => {
       openPalette();

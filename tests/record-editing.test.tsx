@@ -238,6 +238,33 @@ describe("fix round 1", () => {
   });
 });
 
+describe("the actions list", () => {
+  test("an action due on an earlier calendar day is marked overdue even within 24 hours", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-05T08:00:00Z"));
+    try {
+      const [action] = await harness.local.db
+        .update(s.actions)
+        .set({
+          title: "Fictional late-night follow-up",
+          dueAt: new Date("2026-10-04T23:00:00Z"),
+        })
+        .where(eq(s.actions.id, demoId(606)))
+        .returning();
+      expect(action).toBeTruthy();
+      await mountCrm(harness, "/actions");
+      const row = (
+        await screen.findByText("Fictional late-night follow-up")
+      ).closest("button");
+      expect(
+        row?.querySelector(".row-due")?.classList.contains("overdue"),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("companies", () => {
   test("a company is edited and archived from its record, then restored from the archive", async () => {
     await mountCrm(harness, `/companies/${demoId(103)}`);

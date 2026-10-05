@@ -1,5 +1,5 @@
 "use client";
-import { dueToday } from "@crm/core/calendar";
+import { dueToday, overdueDay } from "@crm/core/calendar";
 import t from "@crm/i18n/translations/en.json";
 import { CircleHelp, Hourglass, UserRound } from "lucide-react";
 import Link from "next/link";
@@ -17,7 +17,6 @@ import { initials } from "../shell/workspace-menu";
 import { EmptyState } from "../ui/states";
 
 const owedIcons = { us: UserRound, them: Hourglass, unknown: CircleHelp };
-const day = 86400000;
 
 export function ActionsView() {
   const crm = useWorkspaceData();
@@ -133,7 +132,7 @@ export function ActionsView() {
                     </span>
                   </span>
                   <span
-                    className={`row-due${new Date(action.dueAt).getTime() < now - day ? " overdue" : ""}`}
+                    className={`row-due${overdueDay(action.dueAt, now, crm.timeZone) ? " overdue" : ""}`}
                   >
                     {dateLabel(action.dueAt, crm.timeZone)}
                   </span>

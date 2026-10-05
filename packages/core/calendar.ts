@@ -30,7 +30,7 @@ function formatter(timeZone: string) {
   return created;
 }
 
-function wallClock(instant: number, timeZone: string): WallClock {
+export function wallClock(instant: number, timeZone: string): WallClock {
   const parts = Object.fromEntries(
     formatter(timeZone)
       .formatToParts(instant)
@@ -58,7 +58,7 @@ function offset(instant: number, timeZone: string) {
   return asUtc - Math.floor(instant / 60000) * 60000;
 }
 
-function zonedInstant(
+export function zonedInstant(
   year: number,
   month: number,
   date: number,
@@ -74,6 +74,14 @@ function zonedInstant(
 function dayNumber(instant: number, timeZone: string) {
   const clock = wallClock(instant, timeZone);
   return Date.UTC(clock.year, clock.month - 1, clock.day) / day;
+}
+
+export function zonedDayBounds(instant: number, timeZone: string) {
+  const clock = wallClock(instant, timeZone);
+  return [
+    zonedInstant(clock.year, clock.month, clock.day, 0, timeZone),
+    zonedInstant(clock.year, clock.month, clock.day + 1, 0, timeZone),
+  ] as const;
 }
 
 export function nextWorkingMorning(now: number, timeZone: string) {

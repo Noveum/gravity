@@ -65,7 +65,7 @@ export function ViewToolbar({
           <ShortcutHint id="create-product" />
         </button>
       )}
-      {section !== "materials" && (
+      {section !== "materials" && section !== "overview" && (
         <label className="search">
           <Search size={14} aria-hidden />
           <input

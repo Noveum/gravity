@@ -651,7 +651,11 @@ export function patchRecords(
         result as Snapshot["meetings"][number],
       ),
     };
-  if (operation === "opportunity" || operation === "opportunity-change")
+  if (
+    operation === "deal" ||
+    operation === "opportunity" ||
+    operation === "opportunity-change"
+  )
     return {
       ...snapshot,
       opportunities: upsert(

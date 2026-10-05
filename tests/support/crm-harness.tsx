@@ -6,6 +6,7 @@ import {
   actionChangeSchema,
   actionPlanSchema,
   CrmService,
+  opportunitySchema,
   personSchema,
   scheduleActionSchema,
 } from "../../packages/core/crm";
@@ -49,6 +50,7 @@ import { MaterialsView } from "../../src/components/views/materials-view";
 import { MeetingsView } from "../../src/components/views/meetings-view";
 import { OpportunitiesView } from "../../src/components/views/opportunities-view";
 import { OutreachView } from "../../src/components/views/outreach-view";
+import { OverviewView } from "../../src/components/views/overview-view";
 import { PeopleView } from "../../src/components/views/people-view";
 import { SequencesView } from "../../src/components/views/sequences-view";
 import { SettingsView } from "../../src/components/views/settings-view";
@@ -81,6 +83,7 @@ function page(route: Route | null): ReactNode {
       <CompanyRecord key={route.recordId} companyId={route.recordId} />
     );
   const views = {
+    overview: OverviewView,
     actions: ActionsView,
     people: PeopleView,
     companies: CompaniesView,
@@ -187,6 +190,8 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
       return service.createPerson(principal, personSchema.parse(body));
     const records = new RecordService(harness.local.db);
     const operations: Record<string, () => Promise<unknown>> = {
+      deal: () =>
+        service.saveOpportunity(principal, opportunitySchema.parse(body)),
       "person-update": () =>
         records.updatePerson(principal, personUpdateSchema.parse(body)),
       "person-archive": () =>

@@ -21,6 +21,7 @@ import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { dateLabel, requestJson } from "../src/components/client-api";
+import { adjacentOpenStage } from "../src/components/crm/use-stage-moves";
 import { outreachPath, sectionPath } from "../src/components/routes";
 import { Shortcuts } from "../src/components/shortcuts";
 import {
@@ -1091,10 +1092,35 @@ describe("dialogs and safety", () => {
 });
 
 describe("record editing keys", () => {
+  test("keyboard stage moves stay inside the deal's pipeline", async () => {
+    const snapshot = await harness.service.snapshot(
+      { userId: demoUser, source: "demo" },
+      { organizationId: demoId(1) },
+    );
+    const deal = snapshot.opportunities.find(
+      (item) => item.id === demoId(1100),
+    );
+    expect(deal).toBeTruthy();
+    const stages = JSON.parse(JSON.stringify(snapshot.stages));
+    const opportunity = JSON.parse(JSON.stringify(deal));
+    const evaluation = stages.find(
+      (stage: { id: string }) => stage.id === opportunity.stageId,
+    );
+    const other = {
+      ...evaluation,
+      id: "other-pipeline",
+      pipelineId: "other-pipeline",
+      position: 2,
+    };
+    expect(
+      adjacentOpenStage([evaluation, other], opportunity, "next"),
+    ).toMatchObject({ stage: undefined, reason: t.openStageEnd });
+  });
+
   const card = (name: string) => screen.getByRole("button", { name });
   const column = (name: string, product = "AI Platform") => {
     const pipeline = screen
-      .getByRole("heading", { name: product, level: 2 })
+      .getByRole("heading", { name: `${product} / Sales pipeline`, level: 2 })
       .closest(".product-pipeline") as HTMLElement;
     return within(pipeline).getByRole("region", { name });
   };

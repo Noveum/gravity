@@ -1,6 +1,7 @@
 import t from "../i18n/translations/en.json";
 
 export const views = [
+  "overview",
   "actions",
   "people",
   "companies",
@@ -64,6 +65,7 @@ const define = (
 const repeatable = { repeatable: true };
 
 const definitions = {
+  "go-overview": goTo("v", "overview"),
   "go-actions": goTo("a", "actions"),
   "go-meetings": goTo("m", "meetings"),
   "go-outreach": goTo("r", "outreach"),

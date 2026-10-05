@@ -6,7 +6,10 @@ import {
   CrmService,
   folderSchema,
   meetingChangeSchema,
+  messageActivitySchema,
+  opportunitySchema,
   personSchema,
+  pipelineSchema,
   scheduleActionSchema,
   scopeSchema,
   workspaceSchema,
@@ -38,6 +41,8 @@ export async function GET(request: Request) {
       "company",
       "revision",
       "snapshot",
+      "messageActivity",
+      "overview",
     ])
       .optional()
       .parse(query.operation);
@@ -46,7 +51,26 @@ export async function GET(request: Request) {
       result = await service.organizations(principal);
     else {
       const scope = scopeSchema.parse(query);
-      if (query.operation === "context")
+      if (query.operation === "overview")
+        result = await service.overview(principal, {
+          ...scope,
+          days: z.coerce
+            .number()
+            .refine((v) => [7, 30, 90].includes(v))
+            .default(30)
+            .parse(query.days),
+          ownerId: query.ownerId,
+          channel: z
+            .enum(["gmail", "linkedin"])
+            .optional()
+            .parse(query.channel),
+        });
+      else if (query.operation === "messageActivity")
+        result = await service.messageActivity(
+          principal,
+          messageActivitySchema.parse(query),
+        );
+      else if (query.operation === "context")
         result = await service.context(
           principal,
           scope.organizationId,
@@ -89,6 +113,10 @@ export async function POST(request: Request) {
     const nameSchema = z.string().trim().min(1).max(100);
     const records = new RecordService(database);
     const operations = {
+      deal: () =>
+        service.saveOpportunity(principal, opportunitySchema.parse(body)),
+      pipeline: () =>
+        service.createPipeline(principal, pipelineSchema.parse(body)),
       workspace: () =>
         service.createWorkspace(principal, workspaceSchema.parse(body)),
       schedule: () =>

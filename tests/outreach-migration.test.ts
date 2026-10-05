@@ -17,15 +17,13 @@ describe("the outreach migration", () => {
       await cp(join(process.cwd(), "drizzle"), folder, { recursive: true });
       const journalPath = join(folder, "meta", "_journal.json");
       const journal = JSON.parse(await readFile(journalPath, "utf8")) as {
-        entries: { tag: string }[];
+        entries: { idx: number; tag: string }[];
       };
       await writeFile(
         journalPath,
         JSON.stringify({
           ...journal,
-          entries: journal.entries.filter(
-            (entry) => entry.tag !== "0010_outreach",
-          ),
+          entries: journal.entries.filter((entry) => entry.idx <= 9),
         }),
       );
       const db = drizzle(client);
@@ -73,7 +71,13 @@ describe("the outreach migration", () => {
           ('${org}', '${demoId(10)}', '${demoId(710)}', '${demoId(700)}', 'in-1', 'inbound', 'Fictional', '2026-09-02T10:00:00Z'),
           ('${org}', '${demoId(10)}', '${demoId(710)}', '${demoId(700)}', 'in-2', 'inbound', 'Fictional', '2026-09-03T10:00:00Z');
       `);
-      await writeFile(journalPath, JSON.stringify(journal));
+      await writeFile(
+        journalPath,
+        JSON.stringify({
+          ...journal,
+          entries: journal.entries.filter((entry) => entry.idx <= 10),
+        }),
+      );
       await migrate(db, { migrationsFolder: folder });
 
       const stages = await client.query<{

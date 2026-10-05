@@ -1,4 +1,5 @@
 "use client";
+import { parseMoney } from "@crm/core/analytics";
 import { instantFromZonedInput, zonedInputValue } from "@crm/core/calendar";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
@@ -6,7 +7,7 @@ import { useState } from "react";
 import { label } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { pipelineStages } from "../crm/use-stage-moves";
-import { fromMinor, minorStep, toMinor } from "../money";
+import { fromMinor, minorStep } from "../money";
 import { RecordDialog, text } from "./record-dialog";
 
 type Snapshot = ClientSnapshot;
@@ -359,18 +360,34 @@ export function OpportunityDialog({
   onClose: () => void;
 }) {
   const crm = useCrm();
-  const snapshot = crm.data;
+  const snapshot = crm.sourceData;
   const [currency, setCurrency] = useState(opportunity?.currency ?? "USD");
   const [relationshipId, setRelationshipId] = useState(
     opportunity?.relationshipId ?? "",
   );
+  const [pipelineId, setPipeline] = useState("");
+  const [stageId, setStage] = useState(opportunity?.stageId ?? "");
+  const [probability, setProbability] = useState(
+    opportunity?.probability?.toString() ?? "",
+  );
   if (!snapshot) return null;
-  const productId =
-    opportunity?.productId ??
-    snapshot.relationships.find((item) => item.id === relationshipId)
-      ?.productId ??
-    "";
-  const stages = pipelineStages(snapshot.stages, productId);
+  const relationship = snapshot.relationships.find(
+    (item) => item.id === relationshipId,
+  );
+  const productId = opportunity?.productId ?? relationship?.productId ?? "";
+  const pipelines = snapshot.pipelines.filter((p) => p.productId === productId);
+  const pipeline =
+    pipelines.find((p) => p.id === pipelineId) ??
+    pipelines.find(
+      (p) => p.id === snapshot.stages.find((s) => s.id === stageId)?.pipelineId,
+    ) ??
+    pipelines[0];
+  const stages = pipelineStages(snapshot.stages, productId).filter(
+    (s) => !s.archivedAt && (!pipeline || s.pipelineId === pipeline.id),
+  );
+  const stage =
+    stages.find((s) => s.id === stageId) ??
+    stages.find((s) => s.category === "open");
   return (
     <RecordDialog
       title={opportunity ? t.editOpportunity : t.newOpportunity}
@@ -380,24 +397,26 @@ export function OpportunityDialog({
         failure(
           await crm.send(
             {
+              operation: "deal",
               organizationId: crm.organizationId,
-              ...(opportunity
-                ? {
-                    operation: "opportunity-change",
-                    opportunityId: opportunity.id,
-                    version: opportunity.version,
-                  }
-                : {
-                    operation: "opportunity",
-                    relationshipId: text(fields, "relationshipId"),
-                  }),
+              productId,
+              id: opportunity?.id,
+              version: opportunity?.version,
+              relationshipId:
+                opportunity?.relationshipId ?? text(fields, "relationshipId"),
               name: text(fields, "name"),
-              stageId: text(fields, "stageId"),
-              amountMinor: toMinor(
-                text(fields, "amount"),
-                text(fields, "currency") || "USD",
-              ),
-              currency: text(fields, "currency") || "USD",
+              stageId: stage?.id,
+              status: stage?.category,
+              ownerId: text(fields, "ownerId"),
+              amountMinor: parseMoney(text(fields, "amount"), currency),
+              currency,
+              probability:
+                text(fields, "probability") === ""
+                  ? null
+                  : Number(text(fields, "probability")),
+              expectedCloseDate: text(fields, "expectedCloseDate") || null,
+              description: text(fields, "description"),
+              lostReason: text(fields, "lostReason"),
             },
             t.opportunitySaved,
             false,
@@ -410,62 +429,163 @@ export function OpportunityDialog({
           {relationshipLabel(snapshot, opportunity.relationshipId)}
         </p>
       ) : (
-        <RelationshipField snapshot={snapshot} onChange={setRelationshipId} />
+        <RelationshipField
+          snapshot={snapshot}
+          onChange={(id) => {
+            setRelationshipId(id);
+            setPipeline("");
+            setStage("");
+          }}
+        />
       )}
       <label>
         {t.name}
         <input
-          {...(opportunity ? { "data-primary-field": "" } : {})}
+          data-primary-field
           name="name"
           required
           maxLength={200}
           defaultValue={opportunity?.name ?? ""}
         />
       </label>
+      <div className="form-columns">
+        <label>
+          {t.pipeline}
+          <select
+            value={pipeline?.id ?? ""}
+            onChange={(e) => {
+              setPipeline(e.target.value);
+              setStage("");
+            }}
+            required
+          >
+            {!pipelines.length && (
+              <option value="">{t.chooseRelationship}</option>
+            )}
+            {pipelines.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {t.stage}
+          <select
+            value={stage?.id ?? ""}
+            onChange={(e) => setStage(e.target.value)}
+            required
+          >
+            {!stages.length && <option value="">{t.chooseRelationship}</option>}
+            {stages.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <label>
-        {t.stage}
+        {t.owner}
         <select
           key={productId}
-          name="stageId"
+          name="ownerId"
           required
-          defaultValue={opportunity?.stageId ?? stages[0]?.id ?? ""}
+          defaultValue={
+            opportunity?.ownerId ?? relationship?.ownerId ?? crm.userId
+          }
         >
-          {stages.map((stage) => (
-            <option key={stage.id} value={stage.id}>
-              {stage.name}
-            </option>
-          ))}
+          {snapshot.members
+            .filter((m) => m.productIds.includes(productId))
+            .map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
         </select>
       </label>
-      <label>
-        {t.amount}
-        <input
-          name="amount"
-          type="number"
-          min={0}
-          step={minorStep(currency)}
-          inputMode="decimal"
-          aria-describedby="amount-hint"
-          defaultValue={
-            opportunity
-              ? fromMinor(opportunity.amountMinor, opportunity.currency)
-              : ""
-          }
-        />
-      </label>
+      <div className="form-columns">
+        <label>
+          {t.amount}
+          <input
+            name="amount"
+            type="number"
+            min={0}
+            step={minorStep(currency)}
+            inputMode="decimal"
+            aria-describedby="amount-hint"
+            placeholder={t.amountPlaceholder}
+            defaultValue={
+              opportunity
+                ? fromMinor(opportunity.amountMinor, opportunity.currency)
+                : ""
+            }
+          />
+        </label>
+        <label>
+          {t.currency}
+          <input
+            name="currency"
+            required
+            maxLength={3}
+            pattern="[A-Za-z]{3}"
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+          />
+        </label>
+      </div>
       <small id="amount-hint" className="muted field-hint">
         {t.amountHint}
       </small>
+      <div className="form-columns">
+        <label>
+          {t.probability}
+          <input
+            name="probability"
+            type="number"
+            min={0}
+            max={100}
+            step={1}
+            value={
+              stage?.category === "won"
+                ? "100"
+                : stage?.category === "lost"
+                  ? "0"
+                  : probability
+            }
+            readOnly={stage?.category === "won" || stage?.category === "lost"}
+            onChange={(e) => setProbability(e.target.value)}
+            placeholder={t.unspecified}
+          />
+        </label>
+        <label>
+          {t.expectedCloseDate}
+          <input
+            name="expectedCloseDate"
+            type="date"
+            defaultValue={opportunity?.expectedCloseDate ?? ""}
+          />
+        </label>
+      </div>
       <label>
-        {t.currency}
-        <input
-          name="currency"
-          maxLength={3}
-          pattern="[A-Za-z]{3}"
-          value={currency}
-          onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+        {t.dealDescription}
+        <textarea
+          name="description"
+          rows={3}
+          maxLength={10000}
+          defaultValue={opportunity?.description ?? ""}
         />
       </label>
+      {stage?.category === "lost" && (
+        <label>
+          {t.lostReason}
+          <textarea
+            name="lostReason"
+            maxLength={2000}
+            defaultValue={opportunity?.lostReason ?? ""}
+          />
+        </label>
+      )}
     </RecordDialog>
   );
 }

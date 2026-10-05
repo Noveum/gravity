@@ -1,6 +1,7 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import { type ReactNode, useId, useRef, useState } from "react";
+import { errorText } from "../client-api";
 import {
   submitOnSaveKey,
   useModalLifecycle,
@@ -51,6 +52,8 @@ export function RecordDialog({
             const failure = await onSubmit(fields);
             if (failure === null) onClose();
             else setError(failure);
+          } catch (cause) {
+            setError(errorText(cause));
           } finally {
             submitting.current = false;
             setBusy(false);

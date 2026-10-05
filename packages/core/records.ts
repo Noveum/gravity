@@ -148,6 +148,7 @@ async function writableRelationship(
     .select({
       id: s.relationships.id,
       productId: s.relationships.productId,
+      ownerId: s.relationships.ownerId,
     })
     .from(s.relationships)
     .where(
@@ -682,7 +683,7 @@ export class RecordService {
         input.relationshipId,
         input.productId,
       );
-      await stageFor(
+      const stage = await stageFor(
         tx,
         input.organizationId,
         relationship.productId,
@@ -698,6 +699,25 @@ export class RecordService {
           name: input.name,
           amountMinor: input.amountMinor,
           currency: input.currency,
+          ownerId: relationship.ownerId,
+          status:
+            stage.category === "won"
+              ? "won"
+              : stage.category === "lost"
+                ? "lost"
+                : "open",
+          probability:
+            stage.category === "won"
+              ? 100
+              : stage.category === "lost"
+                ? 0
+                : null,
+          closedAt:
+            stage.category === "won" || stage.category === "lost"
+              ? new Date()
+              : null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         })
         .returning();
       await tx.insert(s.changeEvents).values({
@@ -762,7 +782,30 @@ export class RecordService {
         .update(s.opportunities)
         .set({
           ...(input.name !== undefined ? { name: input.name } : {}),
-          ...(moved ? { stageId: moved.id } : {}),
+          ...(moved
+            ? {
+                stageId: moved.id,
+                status:
+                  moved.category === "won"
+                    ? ("won" as const)
+                    : moved.category === "lost"
+                      ? ("lost" as const)
+                      : ("open" as const),
+                probability:
+                  moved.category === "won"
+                    ? 100
+                    : moved.category === "lost"
+                      ? 0
+                      : opportunity.probability,
+                closedAt:
+                  moved.category === "won" || moved.category === "lost"
+                    ? opportunity.status === moved.category
+                      ? opportunity.closedAt
+                      : new Date()
+                    : null,
+              }
+            : {}),
+          updatedAt: new Date(),
           ...(input.amountMinor !== undefined
             ? { amountMinor: input.amountMinor }
             : {}),

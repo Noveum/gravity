@@ -8,7 +8,10 @@ import {
   CrmService,
   folderSchema,
   meetingChangeSchema,
+  messageActivitySchema,
+  opportunitySchema,
   personSchema,
+  pipelineSchema,
   scheduleActionSchema,
 } from "../core/crm";
 import {
@@ -136,6 +139,8 @@ export function mcpHandler(
             readContext: true,
             readCompanyContext: true,
             readMaterials: true,
+            readSalesAnalytics: true,
+            writeDeals: principal.readOnly === false,
             materialPdfExtraction: false,
             sendMessages: false,
             approveDrafts: principal.readOnly === false,
@@ -330,12 +335,89 @@ export function mcpHandler(
             await service.snapshot(principal, { organizationId, productId }),
           ),
       );
+      server.registerTool(
+        "get_overview",
+        {
+          description:
+            "Read live sales and outreach analytics: current pipeline and pending follow-ups, period message counts, won/lost outcomes, team activity and missing deal fields. Currencies are separate; drafts are not sent messages.",
+          inputSchema: z.object({
+            productId: z.uuid().optional(),
+            days: z
+              .union([z.literal(7), z.literal(30), z.literal(90)])
+              .default(30),
+            ownerId: z.string().optional(),
+            channel: z.enum(["gmail", "linkedin"]).optional(),
+          }),
+          annotations: { readOnlyHint: true },
+        },
+        async (input) =>
+          result(
+            await service.overview(principal, { ...input, organizationId }),
+          ),
+      );
+      server.registerTool(
+        "get_message_activity",
+        {
+          description:
+            "Page through synced message activity behind analytics, respecting product and private conversation access. Times use the organization's timezone.",
+          inputSchema: z
+            .object(messageActivitySchema.shape)
+            .omit({ organizationId: true }),
+          annotations: { readOnlyHint: true },
+        },
+        async (input) =>
+          result(
+            await service.messageActivity(
+              principal,
+              messageActivitySchema.parse({ ...input, organizationId }),
+            ),
+          ),
+      );
       if (principal.readOnly === false) {
         const changed = async (operation: Promise<unknown>) => {
           const value = await operation;
           publishChange(organizationId);
           return result(value);
         };
+        server.registerTool(
+          "save_deal",
+          {
+            description:
+              "Create or update a deal with value, currency, owner, probability, expected close date, stage, outcome and context. Updates require the current ID and version; the product and relationship cannot be moved.",
+            inputSchema: z
+              .object(opportunitySchema.shape)
+              .omit({ organizationId: true }),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: true,
+              idempotentHint: false,
+            },
+          },
+          async (input) =>
+            changed(
+              service.saveOpportunity(
+                principal,
+                opportunitySchema.parse({ ...input, organizationId }),
+              ),
+            ),
+        );
+        server.registerTool(
+          "create_pipeline",
+          {
+            description:
+              "Create a separate product sales pipeline with open, won and lost stages. Requires organization admin access to that product.",
+            inputSchema: pipelineSchema.omit({ organizationId: true }),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: false,
+              idempotentHint: false,
+            },
+          },
+          async (input) =>
+            changed(
+              service.createPipeline(principal, { ...input, organizationId }),
+            ),
+        );
         server.registerTool(
           "create_person",
           {

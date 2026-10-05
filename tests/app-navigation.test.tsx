@@ -19,7 +19,13 @@ import {
   test,
   vi,
 } from "vitest";
-import { CrmService, personSchema } from "../packages/core/crm";
+import {
+  CrmService,
+  messageActivitySchema,
+  opportunitySchema,
+  personSchema,
+  pipelineSchema,
+} from "../packages/core/crm";
 import { type ClientSnapshot, serialize } from "../packages/core/dto";
 import { shortcutLabel } from "../packages/core/shortcuts";
 import { createLocalDatabase } from "../packages/database/client";
@@ -40,6 +46,7 @@ import { MaterialsView } from "../src/components/views/materials-view";
 import { MeetingsView } from "../src/components/views/meetings-view";
 import { OpportunitiesView } from "../src/components/views/opportunities-view";
 import { OutreachView } from "../src/components/views/outreach-view";
+import { OverviewView } from "../src/components/views/overview-view";
 import { PeopleView } from "../src/components/views/people-view";
 import { SequencesView } from "../src/components/views/sequences-view";
 import { SettingsView } from "../src/components/views/settings-view";
@@ -185,6 +192,7 @@ function page(route: Route | null): ReactNode {
       <CompanyRecord key={route.recordId} companyId={route.recordId} />
     );
   const views = {
+    overview: OverviewView,
     actions: ActionsView,
     people: PeopleView,
     companies: CompaniesView,
@@ -706,6 +714,7 @@ test("results arrive as dismissible toasts instead of a footer status strip", as
 
 test("deep links render the view or record they name", async () => {
   const views: [string, string, string][] = [
+    ["/overview", "overview", t.overview],
     ["/actions", "actions", t.actions],
     ["/people", "people", t.people],
     ["/companies", "companies", t.companies],
@@ -1390,5 +1399,141 @@ test("visible go-to hints include Outreach and the help button opens the map", a
     within(screen.getByRole("dialog", { name: t.keyboardHelp })).getByText(
       shortcutLabel("create-product"),
     ),
+  ).toBeTruthy();
+});
+
+test("Overview metrics drill into real deals and message history with keyboard navigation", async () => {
+  const regular = request.getMockImplementation();
+  if (!regular) throw new Error("Missing request mock");
+  request.mockImplementation(async (url, init) => {
+    const query = new URL(url, "http://localhost").searchParams;
+    if (query.get("operation") === "messageActivity")
+      return serialize(
+        await service.messageActivity(
+          principal,
+          messageActivitySchema.parse(Object.fromEntries(query)),
+        ),
+      );
+    return regular(url, init);
+  });
+  mount();
+  fireEvent.keyDown(document.body, { key: "g" });
+  fireEvent.keyDown(document.body, { key: "v" });
+  await waitFor(() => expect(window.location.pathname).toBe("/overview"));
+  fireEvent.click(
+    screen.getByRole("button", { name: new RegExp(`^${t.pipelineValue}`) }),
+  );
+  const drawer = screen.getByRole("dialog", { name: t.openPipeline });
+  fireEvent.click(
+    within(drawer).getByRole("button", { name: /Cedar workflow pilot/ }),
+  );
+  await waitFor(() =>
+    expect(window.location.search).toContain(`deal=${demoId(1100)}`),
+  );
+  expect(screen.getByRole("dialog", { name: t.editOpportunity })).toBeTruthy();
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: t.editOpportunity })).getByRole(
+      "button",
+      { name: t.cancel },
+    ),
+  );
+  fireEvent.keyDown(document.body, { key: "g" });
+  fireEvent.keyDown(document.body, { key: "v" });
+  await waitFor(() => expect(window.location.pathname).toBe("/overview"));
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: new RegExp(`^${t.messagesSent}`),
+    }),
+  );
+  const messages = screen.getByRole("dialog", { name: t.messagesSent });
+  await within(messages).findByRole("button", {
+    name: /evaluation workflow we discussed/,
+  });
+  fireEvent.click(
+    within(messages).getByRole("button", {
+      name: /evaluation workflow we discussed/,
+    }),
+  );
+  await screen.findByRole("heading", { name: "Mira Chen" });
+});
+
+test("deal form retains typed value when currency changes and saves all fields with a version", async () => {
+  const regular = request.getMockImplementation();
+  if (!regular) throw new Error("Missing request mock");
+  request.mockImplementation(async (url, init) =>
+    init?.method === "POST"
+      ? serialize(
+          await service.saveOpportunity(
+            principal,
+            opportunitySchema.parse(JSON.parse(String(init.body))),
+          ),
+        )
+      : regular(url, init),
+  );
+  mount(`/opportunities?deal=${demoId(1100)}`);
+  const dialog = screen.getByRole("dialog", { name: t.editOpportunity });
+  const amount = within(dialog).getByLabelText(t.amount);
+  await waitFor(() => expect(amount.hasAttribute("disabled")).toBe(false));
+  await waitFor(() =>
+    expect(dialog.querySelector("fieldset")?.disabled).toBe(false),
+  );
+  fireEvent.change(amount, { target: { value: "1234.50" } });
+  fireEvent.change(within(dialog).getByLabelText(t.currency), {
+    target: { value: "EUR" },
+  });
+  expect((amount as HTMLInputElement).value).toBe("1234.50");
+  fireEvent.change(within(dialog).getByLabelText(t.probability), {
+    target: { value: "75" },
+  });
+  fireEvent.change(within(dialog).getByLabelText(t.expectedCloseDate), {
+    target: { value: "2026-12-31" },
+  });
+  fireEvent.change(within(dialog).getByLabelText(t.dealDescription), {
+    target: { value: "Fictional context" },
+  });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: t.editOpportunity }),
+    ).toBeNull(),
+  );
+  const saved = (
+    await service.snapshot(principal, { organizationId: demoId(1) })
+  ).opportunities.find((d) => d.id === demoId(1100));
+  expect(saved).toMatchObject({
+    amountMinor: 123450,
+    currency: "EUR",
+    probability: 75,
+    expectedCloseDate: "2026-12-31",
+    description: "Fictional context",
+    version: 2,
+  });
+});
+
+test("pipeline form creates a second pipeline and refreshes the board", async () => {
+  const regular = request.getMockImplementation();
+  if (!regular) throw new Error("Missing request mock");
+  request.mockImplementation(async (url, init) =>
+    init?.method === "POST"
+      ? serialize(
+          await service.createPipeline(
+            principal,
+            pipelineSchema.parse(JSON.parse(String(init.body))),
+          ),
+        )
+      : regular(url, init),
+  );
+  mount("/opportunities");
+  fireEvent.click(screen.getByRole("button", { name: t.newPipeline }));
+  const dialog = screen.getByRole("dialog", { name: t.newPipeline });
+  fireEvent.change(within(dialog).getByLabelText(t.name), {
+    target: { value: "Fictional enterprise sales" },
+  });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: t.newPipeline })).toBeNull(),
+  );
+  expect(
+    screen.getByRole("option", { name: /Fictional enterprise sales/ }),
   ).toBeTruthy();
 });

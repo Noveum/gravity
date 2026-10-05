@@ -762,6 +762,12 @@ export async function seedDemo(db: Database) {
     }
     for (const [i, p] of [10, 11, 12, 13].entries()) {
       const org = demoId(p === 13 ? 2 : 1);
+      await tx.insert(s.pipelines).values({
+        id: demoId(1200 + p),
+        organizationId: org,
+        productId: demoId(p),
+        name: "Sales pipeline",
+      });
       await tx.insert(s.stages).values(
         (
           [
@@ -778,6 +784,7 @@ export async function seedDemo(db: Database) {
           name,
           position: j,
           category,
+          pipelineId: demoId(1200 + p),
         })),
       );
       await tx.insert(s.stages).values(
@@ -846,6 +853,11 @@ export async function seedDemo(db: Database) {
         stageId: demoId(821),
         name: "Cedar workflow pilot",
         amountMinor: 500000,
+        ownerId: demoUser,
+        probability: 60,
+        expectedCloseDate: due(14).toISOString().slice(0, 10),
+        createdAt: due(-15),
+        updatedAt: due(-1),
       },
       {
         id: demoId(1101),

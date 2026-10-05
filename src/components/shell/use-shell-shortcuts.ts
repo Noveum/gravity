@@ -120,6 +120,7 @@ export function useShellShortcuts({
     return true;
   };
   const shortcutHandlers: Record<DispatchedShortcut, () => boolean> = {
+    "go-overview": goTo("overview"),
     "go-actions": goTo("actions"),
     "go-meetings": goTo("meetings"),
     "go-outreach": goTo("outreach"),

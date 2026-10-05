@@ -3,6 +3,7 @@ import type { View } from "@crm/core/shortcuts";
 export type Section = View | "outreach";
 
 const sectionPaths: Record<Section, string> = {
+  overview: "/overview",
   actions: "/actions",
   people: "/people",
   companies: "/companies",

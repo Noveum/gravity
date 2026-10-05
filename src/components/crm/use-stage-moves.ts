@@ -18,7 +18,12 @@ export function adjacentOpenStage(
   opportunity: Opportunity,
   direction: "next" | "previous",
 ) {
-  const pipeline = pipelineStages(stages, opportunity.productId);
+  const pipelineId = stages.find(
+    (stage) => stage.id === opportunity.stageId,
+  )?.pipelineId;
+  const pipeline = pipelineStages(stages, opportunity.productId).filter(
+    (stage) => stage.pipelineId === pipelineId && !stage.archivedAt,
+  );
   const current = pipeline.find((stage) => stage.id === opportunity.stageId);
   if (current?.category !== "open")
     return { stage: undefined, reason: t.closedStageMove };

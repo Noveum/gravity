@@ -1,7 +1,7 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { type ReactNode, useEffect, useRef } from "react";
 import { useVerbs, useWorkspaceData } from "../crm/crm-context";
 import {
   type PausedEnrollment,
@@ -38,6 +38,8 @@ import { SequencesView } from "./sequences-view";
 export function OutreachView() {
   const crm = useWorkspaceData();
   const router = useRouter();
+  const queryTouch = useSearchParams().get("touch");
+  const openedQuery = useRef("");
   const tab = outreachTabFor(crm.pathname);
   useEffect(() => {
     if (!tab) router.replace(outreachPath("today"));
@@ -50,9 +52,18 @@ export function OutreachView() {
       ...(due?.groups.flatMap((group) => group.touches) ?? []),
       ...(queue?.drafts ?? []),
       ...(queue?.approved ?? []),
+      ...(queue?.sent ?? []),
     ].map((touch) => [touch.id, touch]),
   );
   const verbs = useTouchVerbs({ touches, reload: outreach.reload });
+  useEffect(() => {
+    const key = `${crm.organizationId}:${queryTouch}`;
+    if (!queryTouch || openedQuery.current === key) return;
+    const touch = touches.get(queryTouch);
+    if (!touch) return;
+    openedQuery.current = key;
+    verbs.peek(touch);
+  }, [crm.organizationId, queryTouch, touches, verbs]);
   useVerbs(verbs.keys);
   if (!tab) return null;
   const search = crm.search;

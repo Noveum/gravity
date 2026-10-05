@@ -212,7 +212,7 @@ describe("fix round 1", () => {
       await screen.findByRole("button", { name: "Fictional yen deal" }),
     ).toBeTruthy();
     expect(
-      harness.posts.find((body) => body.operation === "opportunity"),
+      harness.posts.find((body) => body.operation === "deal"),
     ).toMatchObject({ amountMinor: 1250, currency: "JPY" });
     const card = screen
       .getByRole("button", { name: "Fictional yen deal" })
@@ -331,7 +331,7 @@ describe("meetings and opportunities", () => {
       await screen.findByRole("button", { name: "Fictional API deal" }),
     ).toBeTruthy();
     expect(
-      harness.posts.find((post) => post.operation === "opportunity"),
+      harness.posts.find((post) => post.operation === "deal"),
     ).toMatchObject({ amountMinor: 125050, currency: "USD" });
   });
 });

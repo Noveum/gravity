@@ -836,5 +836,6 @@
   "outreachSoon": "Outreach is on its way",
   "outreachSoonDetail": "Due touches, drafts awaiting approval and recent sends will gather here. Sequences stay available in the meantime.",
   "openRecord": "Open record",
-  "activity": "Activity"
+  "activity": "Activity",
+  "past": "Earlier"
 }

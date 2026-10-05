@@ -25,9 +25,10 @@ import {
 
 function PersonPeek() {
   const crm = useWorkspaceData();
-  const context = usePersonContext(crm.peek.relationshipId);
+  const { context, missing } = usePersonContext(crm.peek.relationshipId);
   const action = findAction(crm.peek.actionId, crm.sourceData, context);
   const draft = useDraft(action);
+  if (missing) return <EmptyState title={t.recordUnavailable} compact />;
   if (!context) return <LoadingState rows={4} />;
   return (
     <>

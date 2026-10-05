@@ -1587,6 +1587,14 @@ body:has(.resize-handle[data-dragging]) {
 .record-timeline-title {
   margin-bottom: 8px;
 }
+ul.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.activity-group + .activity-group {
+  margin-top: 12px;
+}
 [data-record-heading]:focus {
   outline: none;
 }

@@ -30,7 +30,7 @@ export function PersonRecord({ personId }: { personId: string }) {
     relationships.find((item) => item.id === query.get("relationship")) ??
     relationships.find((item) => item.productId === productId) ??
     relationships[0];
-  const context = usePersonContext(relationship?.id ?? "");
+  const { context, missing } = usePersonContext(relationship?.id ?? "");
   const requestedAction = findAction(
     query.get("action") ?? "",
     sourceData,
@@ -73,6 +73,7 @@ export function PersonRecord({ personId }: { personId: string }) {
     else crm.go(href);
   };
   const toCompany = (companyId: string) => crm.go(companyPath(companyId));
+  const unavailable = <EmptyState title={t.recordUnavailable} compact />;
   return (
     <div className="record-page" data-record={person.id}>
       <div className="record-attributes">
@@ -103,6 +104,8 @@ export function PersonRecord({ personId }: { personId: string }) {
               onReveal={crm.reveal}
             />
           </>
+        ) : missing ? (
+          unavailable
         ) : (
           <LoadingState rows={5} />
         )}
@@ -110,6 +113,8 @@ export function PersonRecord({ personId }: { personId: string }) {
       <section className="record-timeline" aria-label={t.activity}>
         {context ? (
           <PersonActivity context={context} action={action} draft={draft} />
+        ) : missing ? (
+          unavailable
         ) : (
           <LoadingState rows={4} />
         )}

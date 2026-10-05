@@ -14,7 +14,7 @@ import { EmptyState, LoadingState } from "../ui/states";
 
 interface ActivityItem {
   id: string;
-  at: string;
+  at: number;
   title: string;
   detail: string;
   open: () => void;
@@ -46,20 +46,35 @@ export function CompanyRecord({ companyId }: { companyId: string }) {
     ? [
         ...context.actions.map((action) => ({
           id: action.id,
-          at: action.dueAt,
+          at: Date.parse(action.dueAt),
           title: action.title,
           detail: `${crm.personFor(action.relationshipId)?.name ?? t.unknown} · ${label(action.kind)} · ${label(action.status)}`,
           open: () => openPerson(action.relationshipId, action.id),
         })),
         ...context.meetings.map((meeting) => ({
           id: meeting.id,
-          at: meeting.startsAt,
+          at: Date.parse(meeting.startsAt),
           title: meeting.title,
           detail: `${t.meetings} · ${label(meeting.status)}`,
           open: () => crm.reveal("meetings", meeting.id),
         })),
-      ].sort((a, b) => b.at.localeCompare(a.at))
+      ]
     : [];
+  const now = Date.now();
+  const groups = [
+    {
+      label: t.upcoming,
+      items: activity
+        .filter((item) => item.at > now)
+        .sort((a, b) => a.at - b.at),
+    },
+    {
+      label: t.past,
+      items: activity
+        .filter((item) => item.at <= now)
+        .sort((a, b) => b.at - a.at),
+    },
+  ].filter((group) => group.items.length);
   return (
     <div className="record-page" data-record={company.id}>
       <div className="record-attributes">
@@ -82,26 +97,40 @@ export function CompanyRecord({ companyId }: { companyId: string }) {
         <h3 className="record-timeline-title">{t.activity}</h3>
         {!context ? (
           <LoadingState rows={4} />
-        ) : activity.length ? (
-          <div className="timeline">
-            {activity.map((item) => (
-              <article className="timeline-event" key={item.id}>
-                <span className="event-dot" />
-                <div className="event-title">
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={item.open}
+        ) : groups.length ? (
+          groups.map((group) => (
+            <section
+              key={group.label}
+              aria-label={group.label}
+              className="activity-group"
+            >
+              <h4 className="group-title">{group.label}</h4>
+              <ul className="timeline">
+                {group.items.map((item) => (
+                  <li
+                    className="timeline-event"
+                    key={item.id}
+                    data-at={item.at}
                   >
-                    {item.title}
-                  </button>
-                  <small>
-                    {item.detail} · {dateLabel(item.at, timeZone)}
-                  </small>
-                </div>
-              </article>
-            ))}
-          </div>
+                    <span className="event-dot" />
+                    <div className="event-title">
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={item.open}
+                      >
+                        {item.title}
+                      </button>
+                      <small>
+                        {item.detail} ·{" "}
+                        {dateLabel(new Date(item.at).toISOString(), timeZone)}
+                      </small>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
         ) : (
           <p className="muted">{t.noMessages}</p>
         )}

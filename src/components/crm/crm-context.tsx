@@ -14,9 +14,17 @@ import {
   useState,
 } from "react";
 import { errorText, type Organization, requestJson } from "../client-api";
-import { homePath, routeFor, type Section, sectionPath } from "../routes";
+import {
+  actionFilters,
+  actionsPath,
+  homePath,
+  routeFor,
+  type Section,
+  sectionPath,
+} from "../routes";
 import { useToasts } from "../ui/toaster";
 import { rememberBrand, rememberWorkspace } from "../workspace-preference";
+import { DraftBuffersProvider, useDraftBufferActions } from "./draft-buffers";
 import { isAccessError, useLiveSnapshot } from "./use-live-snapshot";
 
 export type RecordTab = "timeline" | "evidence" | "draft";
@@ -24,10 +32,6 @@ export interface Peek {
   relationshipId: string;
   companyId: string;
   actionId: string;
-}
-export interface DraftBuffer {
-  text: string;
-  version: number;
 }
 const noPeek: Peek = { relationshipId: "", companyId: "", actionId: "" };
 type Snapshot = ClientSnapshot;
@@ -53,7 +57,8 @@ function useCrmState({
 }: CrmProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const unfiltered = !useSearchParams().toString();
+  const query = useSearchParams();
+  const unfiltered = !query.toString();
   const route = routeFor(pathname);
   const { toasts, notify, dismiss, pause, resume } = useToasts();
   const [organizations, setOrganizations] = useState(initialOrganizations);
@@ -86,27 +91,15 @@ function useCrmState({
   const mutating = useRef(false);
   const returnFocus = useRef<HTMLElement | null>(null);
   const titleFocus = useRef("");
-  const [draftBuffers, setDraftBuffers] = useState<
-    ReadonlyMap<string, DraftBuffer>
-  >(() => new Map());
-  const dropDraftBuffers = useCallback((...ids: string[]) => {
-    setDraftBuffers((current) => {
-      if (!ids.some((id) => current.has(id))) return current;
-      const next = new Map(current);
-      for (const id of ids) next.delete(id);
-      return next;
-    });
-  }, []);
-  const saveDraftBuffer = useCallback((id: string, buffer: DraftBuffer) => {
-    setDraftBuffers((current) => new Map(current).set(id, buffer));
-  }, []);
+  const draftBuffers = useDraftBufferActions();
+  const clearDrafts = draftBuffers.clear;
   const contextCache = useRef(new Map<string, ClientContext>());
   const clearRecords = useCallback(() => {
     setPeekState((current) => ({ ...current, ...noPeek }));
     setRecordHistory([]);
-    setDraftBuffers(new Map());
+    clearDrafts();
     contextCache.current.clear();
-  }, []);
+  }, [clearDrafts]);
   const live = useLiveSnapshot({
     initial,
     organizationId,
@@ -153,7 +146,7 @@ function useCrmState({
   function switchOrganization(id: string) {
     resetRecordState();
     fetchGeneration.current++;
-    setDraftBuffers(new Map());
+    draftBuffers.clear();
     contextCache.current.clear();
     setOrganizationId(id);
     setProductId("");
@@ -164,6 +157,10 @@ function useCrmState({
     const slug = organizations.find((org) => org.id === id)?.slug;
     if (slug) rememberWorkspace(slug);
     if (route?.recordId) router.push(sectionPath(route.section));
+    else if (route?.section === "actions" && query.has("owner")) {
+      const { kind, waiting } = actionFilters(query);
+      router.replace(actionsPath({ kind, waiting }));
+    }
   }
   function switchProduct(id: string) {
     resetRecordState();
@@ -233,7 +230,7 @@ function useCrmState({
       const changed = body as { operation?: string; actionId?: string };
       if (changed.operation === "action") {
         const updatedAction = result as Snapshot["actions"][number];
-        dropDraftBuffers(updatedAction.id, changed.actionId ?? "");
+        draftBuffers.drop(updatedAction.id, changed.actionId ?? "");
         setData((previous) =>
           previous
             ? {
@@ -358,9 +355,6 @@ function useCrmState({
     goToSection,
     titleFocus,
     returnFocus: returnFocus as RefObject<HTMLElement | null>,
-    draftBuffers,
-    saveDraftBuffer,
-    dropDraftBuffers,
     contextCache,
   };
 }
@@ -368,12 +362,20 @@ function useCrmState({
 export type Crm = ReturnType<typeof useCrmState>;
 const CrmContext = createContext<Crm | null>(null);
 
+function CrmState({ children, ...props }: CrmProps & { children: ReactNode }) {
+  const crm = useCrmState(props);
+  return <CrmContext.Provider value={crm}>{children}</CrmContext.Provider>;
+}
+
 export function CrmProvider({
   children,
   ...props
 }: CrmProps & { children: ReactNode }) {
-  const crm = useCrmState(props);
-  return <CrmContext.Provider value={crm}>{children}</CrmContext.Provider>;
+  return (
+    <DraftBuffersProvider>
+      <CrmState {...props}>{children}</CrmState>
+    </DraftBuffersProvider>
+  );
 }
 
 export function useCrm() {

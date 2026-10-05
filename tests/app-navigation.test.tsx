@@ -30,6 +30,7 @@ import { CrmApp } from "../src/components/crm-app";
 import { CompanyRecord } from "../src/components/records/company-record";
 import { PersonRecord } from "../src/components/records/person-record";
 import { type Route, routeFor } from "../src/components/routes";
+import * as shellNavigation from "../src/components/shell/navigation";
 import { ActionsView } from "../src/components/views/actions-view";
 import { CompaniesView } from "../src/components/views/companies-view";
 import { ConnectionsView } from "../src/components/views/connections-view";
@@ -62,6 +63,7 @@ const organizations = [
   { id: demoId(2), name: "Lunar Studio", slug: "lunar", timezone: "UTC" },
 ];
 const request = vi.mocked(requestJson);
+const missingContexts = new Set<string>();
 beforeAll(async () => {
   local = await createLocalDatabase();
   await seedDemo(local.db);
@@ -122,10 +124,16 @@ beforeEach(() => {
   document.documentElement.className = "";
   delete document.documentElement.dataset.sidebar;
   setCompactScreen(false);
+  missingContexts.clear();
   request.mockReset();
   request.mockImplementation(async (url) => {
     const params = new URL(url, "http://localhost").searchParams;
     const organizationId = params.get("organizationId") || demoId(1);
+    if (
+      params.get("operation") === "context" &&
+      missingContexts.has(params.get("relationshipId") ?? "")
+    )
+      throw new Error("NOT_FOUND");
     if (params.get("operation") === "context")
       return serialize(
         await service.context(
@@ -138,7 +146,12 @@ beforeEach(() => {
       return serialize(
         await service.companyContext(
           principal,
-          { organizationId },
+          {
+            organizationId,
+            ...(params.get("productId")
+              ? { productId: params.get("productId") ?? "" }
+              : {}),
+          },
           params.get("companyId") || "",
         ),
       );
@@ -909,4 +922,193 @@ test("the header search pill is named by the text it shows", async () => {
   expect(pill.textContent?.startsWith(t.searchShort)).toBe(true);
   fireEvent.click(pill);
   expect(screen.getByRole("dialog", { name: t.commands })).toBeTruthy();
+});
+
+const writes = () =>
+  request.mock.calls
+    .filter(([, init]) => init?.method === "POST")
+    .map(([, init]) => JSON.parse(String(init?.body)));
+function persistWrites() {
+  const regular = request.getMockImplementation();
+  if (!regular) throw new Error("Missing request implementation");
+  request.mockImplementation(async (url, init) =>
+    init?.method === "POST"
+      ? serialize(
+          await service.changeAction(principal, JSON.parse(String(init.body))),
+        )
+      : regular(url, init),
+  );
+}
+
+test("under a remembered brand a person's company still opens as a full record", async () => {
+  mount("/people");
+  fireEvent.click(screen.getByRole("button", { name: "Services" }));
+  act(() => visit(`/people/${demoId(200)}`));
+  expect(heading("Mira Chen", 2)).toBeTruthy();
+  const main = within(screen.getByRole("main"));
+  expect(
+    await main.findByRole("button", { name: /AI Platform/, pressed: true }),
+  ).toBeTruthy();
+  expect(main.getByRole("button", { name: /API Marketplace/ })).toBeTruthy();
+  fireEvent.click(
+    main.getAllByRole("button", { name: "Northstar Labs" })[0] as HTMLElement,
+  );
+  expect(window.location.pathname).toBe(`/companies/${demoId(100)}`);
+  expect(heading("Northstar Labs", 2)).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Mira Chen" })).toBeTruthy();
+  expect(
+    within(screen.getByRole("region", { name: t.activity })).getByRole(
+      "button",
+      { name: "Coordinate across products" },
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText(t.errors.NOT_FOUND)).toBeNull();
+  expect(screen.queryByText(t.recordUnavailable)).toBeNull();
+  const companyReads = request.mock.calls
+    .map(([url]) => url)
+    .filter((url) => url.includes("operation=company"));
+  expect(companyReads.length).toBeGreaterThan(0);
+  for (const url of companyReads) expect(url).not.toContain("productId");
+});
+
+test("a person whose context is gone shows the unavailable state instead of loading forever", async () => {
+  missingContexts.add(demoId(300));
+  mount(`/people/${demoId(200)}?relationship=${demoId(300)}`);
+  expect(heading("Mira Chen", 2)).toBeTruthy();
+  await waitFor(() =>
+    expect(screen.getAllByText(t.recordUnavailable).length).toBeGreaterThan(0),
+  );
+  expect(document.querySelector(".record-page [aria-busy=true]")).toBeNull();
+  cleanup();
+  mount("/actions");
+  const peek = await screen.findByRole("complementary", {
+    name: t.recordDetails,
+  });
+  await waitFor(() =>
+    expect(within(peek).getByText(t.recordUnavailable)).toBeTruthy(),
+  );
+  expect(peek.querySelector("[aria-busy=true]")).toBeNull();
+});
+
+test("the company timeline puts upcoming work first and past work newest first", async () => {
+  mount(`/companies/${demoId(100)}`);
+  const activity = screen.getByRole("region", { name: t.activity });
+  await within(activity).findByRole("button", {
+    name: "Coordinate across products",
+  });
+  const groups = within(activity).getAllByRole("region");
+  expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual([
+    t.upcoming,
+    t.past,
+  ]);
+  const titles = (group: HTMLElement) =>
+    within(group)
+      .getAllByRole("button")
+      .map((button) => button.textContent);
+  expect(titles(groups[0] as HTMLElement)).toEqual(["Evaluation review"]);
+  const past = within(groups[1] as HTMLElement).getAllByRole("listitem");
+  const times = past.map((item) => Number(item.dataset.at));
+  expect(times).toEqual([...times].sort((a, b) => b - a));
+});
+
+test("switching workspace drops an owner filter that names a member of the old workspace", async () => {
+  mount("/actions?owner=demo-teammate&kind=reply");
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: `${t.switchOrganization}: Northstar Collective`,
+    }),
+  );
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Lunar Studio" }));
+  expect(window.location.pathname).toBe("/actions");
+  expect(window.location.search).toBe("?kind=reply");
+});
+
+test("a stale draft on a record page warns, and reload brings back the saved text", async () => {
+  mount(
+    `/people/${demoId(201)}?relationship=${demoId(301)}&action=${demoId(601)}`,
+  );
+  const draft = (await screen.findByRole("textbox", {
+    name: t.draftLabel,
+  })) as HTMLTextAreaElement;
+  fireEvent.change(draft, { target: { value: "Fictional local edit" } });
+  const current = serialize(
+    await service.snapshot(principal, { organizationId: demoId(1) }),
+  ).actions.find((action) => action.id === demoId(601));
+  await service.changeAction(principal, {
+    organizationId: demoId(1),
+    actionId: demoId(601),
+    version: current?.version ?? 1,
+    command: "save",
+    draft: "Fictional teammate rewrite",
+  });
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  fireEvent.click(await screen.findByRole("option", { name: t.refresh }));
+  const callout = await screen.findByRole("button", { name: t.reloadDraft });
+  expect(screen.getAllByText(t.errors.CONFLICT).length).toBeGreaterThan(0);
+  expect(draft.value).toBe("Fictional local edit");
+  fireEvent.click(callout);
+  expect(
+    (screen.getByRole("textbox", { name: t.draftLabel }) as HTMLTextAreaElement)
+      .value,
+  ).toBe("Fictional teammate rewrite");
+  expect(screen.queryByRole("button", { name: t.reloadDraft })).toBeNull();
+});
+
+test("the record page saves, approves and reworks drafts through the same commands", async () => {
+  mount(
+    `/people/${demoId(202)}?relationship=${demoId(302)}&action=${demoId(602)}`,
+  );
+  persistWrites();
+  fireEvent.click(await screen.findByRole("button", { name: t.draft }));
+  fireEvent.change(screen.getByRole("textbox", { name: t.draftLabel }), {
+    target: { value: "Fictional record page proposal" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: t.saveDraft }));
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: t.approveDraft,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: t.approveDraft }));
+  await waitFor(() => expect(writes()).toHaveLength(2));
+  expect(writes().map((write) => write.command)).toEqual(["save", "approve"]);
+  await waitFor(() => expect(screen.getByText(t.approved)).toBeTruthy());
+  cleanup();
+  request.mockClear();
+  mount(
+    `/people/${demoId(200)}?relationship=${demoId(300)}&action=${demoId(600)}`,
+  );
+  persistWrites();
+  fireEvent.change(await screen.findByRole("textbox", { name: t.draftLabel }), {
+    target: { value: "Fictional answer with the shortlist" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: t.rework }));
+  await waitFor(() => expect(writes()).toHaveLength(1));
+  expect(writes()[0]).toMatchObject({
+    command: "rework",
+    actionId: demoId(600),
+    draft: "Fictional answer with the shortlist",
+  });
+  const reworked = serialize(
+    await service.snapshot(principal, { organizationId: demoId(1) }),
+  ).actions.find((action) => action.id === demoId(600));
+  expect(reworked).toMatchObject({ status: "open", kind: "reply" });
+});
+
+test("typing a draft re-renders the draft, not the whole shell", async () => {
+  mount(
+    `/people/${demoId(201)}?relationship=${demoId(301)}&action=${demoId(601)}`,
+  );
+  const draft = await screen.findByRole("textbox", { name: t.draftLabel });
+  await act(async () => {});
+  const shellRenders = vi.spyOn(shellNavigation, "breadcrumbsFor");
+  for (const value of ["F", "Fi", "Fic"])
+    fireEvent.change(draft, { target: { value } });
+  expect((draft as HTMLTextAreaElement).value).toBe("Fic");
+  expect(shellRenders).not.toHaveBeenCalled();
+  shellRenders.mockRestore();
 });

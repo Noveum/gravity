@@ -131,4 +131,13 @@ ALTER TABLE "enrollments" ADD CONSTRAINT "enrollment_pause_reason" CHECK (("enro
 ALTER TABLE "relationships" ADD CONSTRAINT "relationship_stage_outreach" CHECK ("relationships"."stage_pipeline" = 'outreach');--> statement-breakpoint
 ALTER TABLE "relationships" ADD CONSTRAINT "relationship_touch_count" CHECK ("relationships"."touch_count" >= 0);--> statement-breakpoint
 CREATE POLICY "gravity_server_access" ON "contact_rules" AS PERMISSIVE FOR ALL TO "gravity_app" USING (true) WITH CHECK (true);--> statement-breakpoint
-CREATE POLICY "gravity_server_access" ON "touches" AS PERMISSIVE FOR ALL TO "gravity_app" USING (true) WITH CHECK (true);
+CREATE POLICY "gravity_server_access" ON "touches" AS PERMISSIVE FOR ALL TO "gravity_app" USING (true) WITH CHECK (true);--> statement-breakpoint
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.contact_rules, public.touches TO gravity_app;
+--> statement-breakpoint
+REVOKE ALL ON TABLE public.contact_rules, public.touches FROM PUBLIC;
+--> statement-breakpoint
+DO $$ DECLARE api_role text; BEGIN
+  FOR api_role IN SELECT rolname FROM pg_roles WHERE rolname IN ('anon', 'authenticated', 'service_role') LOOP
+    EXECUTE format('REVOKE ALL ON TABLE public.contact_rules, public.touches FROM %I', api_role);
+  END LOOP;
+END $$;

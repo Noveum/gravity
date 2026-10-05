@@ -7,6 +7,8 @@ import { migrate as localMigrate } from "drizzle-orm/pglite/migrator";
 import { drizzle as postgresDrizzle } from "drizzle-orm/postgres-js";
 import { migrate as postgresMigrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
+import { databaseOptions } from "./config";
+import { allowIdleDatabaseRelease } from "./lifecycle";
 import * as schema from "./schema";
 
 export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
@@ -31,11 +33,10 @@ export async function createLocalDatabase(path?: string) {
   return { db, client };
 }
 export async function migrateDatabase() {
-  if (process.env.DATABASE_URL) {
-    const client = postgres(process.env.DATABASE_URL, {
-      max: 1,
-      prepare: false,
-    });
+  const migrationUrl =
+    process.env.DATABASE_MIGRATION_URL || process.env.DATABASE_URL;
+  if (migrationUrl) {
+    const client = postgres(migrationUrl, databaseOptions(migrationUrl));
     try {
       await postgresMigrate(postgresDrizzle(client, { schema }), {
         migrationsFolder: "drizzle",
@@ -54,11 +55,15 @@ declare global {
   var crmDatabase: Promise<Database> | undefined;
 }
 export async function getDatabase(): Promise<Database> {
+  allowIdleDatabaseRelease();
   if (!globalThis.crmDatabase) {
     globalThis.crmDatabase = (async () => {
       if (process.env.DATABASE_URL)
         return postgresDrizzle(
-          postgres(process.env.DATABASE_URL, { max: 5, prepare: false }),
+          postgres(
+            process.env.DATABASE_URL,
+            databaseOptions(process.env.DATABASE_URL),
+          ),
           { schema },
         );
       if (!isDemoMode()) throw new Error("DATABASE_URL_REQUIRED");

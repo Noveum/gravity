@@ -9,6 +9,7 @@ import {
   useModalLifecycle,
   useReadyFocus,
 } from "./modal-lifecycle";
+import { LoadingState } from "./ui/states";
 
 export function PersonDialog({
   data: initialData,
@@ -208,9 +209,11 @@ export function PersonDialog({
           </label>
         </fieldset>
         <p className="muted">{t.personCreateNote}</p>
-        <p role={error || loadError ? "alert" : "status"}>
-          {error || loadError || (loading ? t.loading : "")}
-        </p>
+        {error || loadError ? (
+          <p role="alert">{error || loadError}</p>
+        ) : (
+          loading && <LoadingState rows={2} />
+        )}
         {loadError && (
           <button type="button" onClick={retry}>
             {t.retry}

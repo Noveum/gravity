@@ -9,19 +9,24 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { serverAccessPolicy } from "./access-policy";
 
-export const user = pgTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").default(false).notNull(),
-  image: text("image"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-});
+export const user = pgTable(
+  "user",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    email: text("email").notNull().unique(),
+    emailVerified: boolean("email_verified").default(false).notNull(),
+    image: text("image"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  () => [serverAccessPolicy()],
+).enableRLS();
 
 export const session = pgTable(
   "session",
@@ -39,8 +44,11 @@ export const session = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
   },
-  (table) => [index("session_userId_idx").on(table.userId)],
-);
+  (table) => [
+    serverAccessPolicy(),
+    index("session_userId_idx").on(table.userId),
+  ],
+).enableRLS();
 
 export const account = pgTable(
   "account",
@@ -63,8 +71,11 @@ export const account = pgTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [index("account_userId_idx").on(table.userId)],
-);
+  (table) => [
+    serverAccessPolicy(),
+    index("account_userId_idx").on(table.userId),
+  ],
+).enableRLS();
 
 export const verification = pgTable(
   "verification",
@@ -79,18 +90,25 @@ export const verification = pgTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [index("verification_identifier_idx").on(table.identifier)],
-);
+  (table) => [
+    serverAccessPolicy(),
+    index("verification_identifier_idx").on(table.identifier),
+  ],
+).enableRLS();
 
-export const jwks = pgTable("jwks", {
-  id: text("id").primaryKey(),
-  publicKey: text("public_key").notNull(),
-  privateKey: text("private_key").notNull(),
-  createdAt: timestamp("created_at").notNull(),
-  expiresAt: timestamp("expires_at"),
-  alg: text("alg"),
-  crv: text("crv"),
-});
+export const jwks = pgTable(
+  "jwks",
+  {
+    id: text("id").primaryKey(),
+    publicKey: text("public_key").notNull(),
+    privateKey: text("private_key").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    expiresAt: timestamp("expires_at"),
+    alg: text("alg"),
+    crv: text("crv"),
+  },
+  () => [serverAccessPolicy()],
+).enableRLS();
 
 export const oauthClient = pgTable(
   "oauth_client",
@@ -136,28 +154,35 @@ export const oauthClient = pgTable(
     referenceId: text("reference_id"),
     metadata: jsonb("metadata"),
   },
-  (table) => [index("oauthClient_userId_idx").on(table.userId)],
-);
+  (table) => [
+    serverAccessPolicy(),
+    index("oauthClient_userId_idx").on(table.userId),
+  ],
+).enableRLS();
 
-export const oauthResource = pgTable("oauth_resource", {
-  id: text("id").primaryKey(),
-  identifier: text("identifier").notNull().unique(),
-  name: text("name").notNull(),
-  accessTokenTtl: integer("access_token_ttl"),
-  refreshTokenTtl: integer("refresh_token_ttl"),
-  signingAlgorithm: text("signing_algorithm"),
-  signingKeyId: text("signing_key_id"),
-  allowedScopes: text("allowed_scopes").array(),
-  customClaims: jsonb("custom_claims"),
-  dpopBoundAccessTokensRequired: boolean(
-    "dpop_bound_access_tokens_required",
-  ).default(false),
-  disabled: boolean("disabled").default(false),
-  createdAt: timestamp("created_at"),
-  updatedAt: timestamp("updated_at"),
-  policyVersion: integer("policy_version").default(1),
-  metadata: jsonb("metadata"),
-});
+export const oauthResource = pgTable(
+  "oauth_resource",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull().unique(),
+    name: text("name").notNull(),
+    accessTokenTtl: integer("access_token_ttl"),
+    refreshTokenTtl: integer("refresh_token_ttl"),
+    signingAlgorithm: text("signing_algorithm"),
+    signingKeyId: text("signing_key_id"),
+    allowedScopes: text("allowed_scopes").array(),
+    customClaims: jsonb("custom_claims"),
+    dpopBoundAccessTokensRequired: boolean(
+      "dpop_bound_access_tokens_required",
+    ).default(false),
+    disabled: boolean("disabled").default(false),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+    policyVersion: integer("policy_version").default(1),
+    metadata: jsonb("metadata"),
+  },
+  () => [serverAccessPolicy()],
+).enableRLS();
 
 export const oauthClientResource = pgTable(
   "oauth_client_resource",
@@ -173,6 +198,7 @@ export const oauthClientResource = pgTable(
     createdAt: timestamp("created_at"),
   },
   (table) => [
+    serverAccessPolicy(),
     uniqueIndex("oauthClientResource_clientId_resourceId_uidx").on(
       table.clientId,
       table.resourceId,
@@ -180,7 +206,7 @@ export const oauthClientResource = pgTable(
     index("oauthClientResource_clientId_idx").on(table.clientId),
     index("oauthClientResource_resourceId_idx").on(table.resourceId),
   ],
-);
+).enableRLS();
 
 export const oauthRefreshToken = pgTable(
   "oauth_refresh_token",
@@ -211,6 +237,7 @@ export const oauthRefreshToken = pgTable(
     scopes: text("scopes").array().notNull(),
   },
   (table) => [
+    serverAccessPolicy(),
     index("oauthRefreshToken_clientId_idx").on(table.clientId),
     index("oauthRefreshToken_sessionId_idx").on(table.sessionId),
     index("oauthRefreshToken_userId_idx").on(table.userId),
@@ -218,7 +245,7 @@ export const oauthRefreshToken = pgTable(
       table.authorizationCodeId,
     ),
   ],
-);
+).enableRLS();
 
 export const oauthAccessToken = pgTable(
   "oauth_access_token",
@@ -246,6 +273,7 @@ export const oauthAccessToken = pgTable(
     scopes: text("scopes").array().notNull(),
   },
   (table) => [
+    serverAccessPolicy(),
     index("oauthAccessToken_clientId_idx").on(table.clientId),
     index("oauthAccessToken_sessionId_idx").on(table.sessionId),
     index("oauthAccessToken_userId_idx").on(table.userId),
@@ -254,7 +282,7 @@ export const oauthAccessToken = pgTable(
     ),
     index("oauthAccessToken_refreshId_idx").on(table.refreshId),
   ],
-);
+).enableRLS();
 
 export const oauthConsent = pgTable(
   "oauth_consent",
@@ -272,15 +300,20 @@ export const oauthConsent = pgTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
+    serverAccessPolicy(),
     index("oauthConsent_clientId_idx").on(table.clientId),
     index("oauthConsent_userId_idx").on(table.userId),
   ],
-);
+).enableRLS();
 
-export const oauthClientAssertion = pgTable("oauth_client_assertion", {
-  id: text("id").primaryKey(),
-  expiresAt: timestamp("expires_at").notNull(),
-});
+export const oauthClientAssertion = pgTable(
+  "oauth_client_assertion",
+  {
+    id: text("id").primaryKey(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  () => [serverAccessPolicy()],
+).enableRLS();
 
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),

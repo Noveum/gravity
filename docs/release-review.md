@@ -5,7 +5,7 @@ Reviewed application, permissions, SQL migrations, OAuth/MCP, connectors, privat
 | Dimension | Assessment | Evidence and remaining work |
 |---|---|---|
 | Security | Foundation boundaries tested; production review pending | Composite tenant/product constraints, current membership and immutable MCP grants, private-source filtering, exact-body HMAC, bounded request bodies and origin checks. Distributed rate limits, provider credential encryption, role hardening and operational review remain gates. |
-| Correctness | Tested foundation flows | 64 SQL/HTTP/OAuth/UI tests, including retries, concurrent operations, stale drafts, cross-account replies and route errors. Live providers, actual assistant compatibility, sender execution and meeting imports are unqualified. |
+| Correctness | Tested foundation flows | 76 SQL/HTTP/OAuth/UI tests, including retries, concurrent operations, stale drafts, cross-account replies and route errors. Live providers, actual assistant compatibility, sender execution and meeting imports are unqualified. |
 | Performance | Local responsiveness verified; scale unqualified | Immediate local interaction and revision delivery, bounded local context cache and cross-runtime polling. Snapshots still load complete permitted lists; pagination, durable jobs, fan-out and realistic high-volume qualification are required. |
 | Maintainability | Clear domain boundaries; frontend needs further separation | HTTP and MCP share policy/services. Shared client helpers now avoid circular imports; keyboard routing, modal lifecycle, settings forms and snapshot projection have separate modules. The main app component remains large and should be split along view/controller boundaries before broad feature expansion. |
 
@@ -28,7 +28,7 @@ Arrow-driven command selection skips disabled commands and exposes its active op
 
 ## Known unfinished flows
 
-Settings creates organizations/products and displays members; editing organization/time zone, invitations and permission management are not implemented. Records show company/person/related work but editing/imports are pending. Sequences are planning/review views, not an execution worker. Connections explicitly show providers as disconnected. Signed synthetic HTTP events verify the adapter contract, not a live Gmail/LinkedIn account or provider subscription. The OAuth tests use a test identity provider on local HTTP; actual Google/GitHub and Codex/Claude consent must still be qualified.
+Guided onboarding creates an organization/first product/defaults atomically. Settings creates additional organizations/products and displays members; editing organization/time zone, invitations and permission management are not implemented. Records show company/person/related work but editing/imports are pending. Sequences are planning/review views, not an execution worker. Connections explicitly show providers as disconnected. Signed synthetic HTTP events verify the adapter contract, not a live Gmail/LinkedIn account or provider subscription. The OAuth tests use a test identity provider on local HTTP; actual Google/GitHub and Codex/Claude consent must still be qualified.
 
 Historical inbound events currently follow the same reply-pause logic as new events. Before enabling backfill, add a historical-event policy so old imported messages cannot pause a new enrollment. Durable ingestion/reconciliation and unmatched-thread triage must precede live high-volume operation. Function-proxied material transfer must be replaced with direct private object transfer on Vercel.
 
@@ -37,3 +37,7 @@ Historical inbound events currently follow the same reply-pause logic as new eve
 The repository is application source, intentionally `private: true` in package.json to prevent accidental npm publication. It includes Apache-2.0, fictional seed data and the lockfile; local databases/uploads, pulled deployment settings and credentials are ignored. Current source and committed history were screened for common credential/private-key patterns before push. Pattern screening cannot prove absence of every secret.
 
 CI runs without provider/database credentials. Preview deployment is manually enabled and target-bound; production deployment, real database migrations and paid provider accounts remain unconfigured. See [verification](verification.md), [deployment setup](ci-and-deployment.md), [roadmap](roadmap.md) and [dependency notices](../THIRD_PARTY_NOTICES.md).
+
+## Full-flow review, 4 October
+
+The follow-up [flow review](flow-review-2026-10-04.md) resolves first-time onboarding and assistant-flow continuity, stale OAuth choices/consent, canonical MCP rendering and pending grant controls. Nine onboarding/auth/connection interaction tests, one app-level first-workspace test and two SQL HTTP setup tests augment the previous suite; the current total is 76 tests. Live providers remain unconfigured.

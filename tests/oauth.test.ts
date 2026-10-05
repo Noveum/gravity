@@ -1,6 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { requireMcpAuth } from "@better-auth/mcp";
+import {
+  Client,
+  type OAuthClientProvider,
+  type OAuthDiscoveryState,
+  type StoredOAuthClientInformation,
+  type StoredOAuthTokens,
+  StreamableHTTPClientTransport,
+  UnauthorizedError,
+} from "@modelcontextprotocol/client";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { eq } from "drizzle-orm";
@@ -39,7 +48,12 @@ const server = createServer(async (incoming, outgoing) => {
       ...(incoming.method === "POST" ? { body: Buffer.concat(bytes) } : {}),
     });
     let response: Response;
-    if (incoming.url?.startsWith("/mcp"))
+    if (incoming.url?.startsWith("/mcp") && incoming.method !== "POST")
+      response = new Response(null, {
+        status: 405,
+        headers: { Allow: "POST" },
+      });
+    else if (incoming.url?.startsWith("/mcp"))
       response = await requireMcpAuth(
         auth,
         async (request, claims) => {
@@ -339,4 +353,149 @@ test("MCP requests without credentials receive OAuth discovery instead of data",
   const configuration = await discovery.json();
   expect(configuration.issuer).toBe(metadata.authorization_servers[0]);
   expect(configuration.code_challenge_methods_supported).toContain("S256");
+});
+
+test("official MCP client discovers OAuth, registers, completes PKCE and reads only its selected product", async () => {
+  const service = new CrmService(local.db);
+  const principal = { userId, source: "session" as const };
+  const organization = await service.createOrganization(principal, "SDK Org");
+  const product = await service.createProduct(
+    principal,
+    organization.id,
+    "SDK Selected Product",
+  );
+  const hiddenProduct = await service.createProduct(
+    principal,
+    organization.id,
+    "SDK Hidden Product",
+  );
+  let clientInformation: StoredOAuthClientInformation | undefined;
+  let tokens: StoredOAuthTokens | undefined;
+  let verifier = "";
+  let authorizationUrl: URL | undefined;
+  let discoveryState: OAuthDiscoveryState | undefined;
+  const provider: OAuthClientProvider = {
+    redirectUrl: `${origin}/sdk-callback`,
+    clientMetadata: {
+      client_name: "Fictional SDK assistant",
+      redirect_uris: [`${origin}/sdk-callback`],
+      token_endpoint_auth_method: "none",
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      scope: "crm:read offline_access",
+    },
+    state: () => "sdk-state",
+    clientInformation: () => clientInformation,
+    saveClientInformation: (value) => {
+      clientInformation = value;
+    },
+    tokens: () => tokens,
+    saveTokens: (value) => {
+      tokens = value;
+    },
+    saveCodeVerifier: (value) => {
+      verifier = value;
+    },
+    codeVerifier: () => verifier,
+    discoveryState: () => discoveryState,
+    saveDiscoveryState: (value) => {
+      discoveryState = value;
+    },
+    redirectToAuthorization: (url) => {
+      authorizationUrl = url;
+    },
+  };
+  const transport = new StreamableHTTPClientTransport(
+    new URL(`${origin}/mcp`),
+    { authProvider: provider },
+  );
+  const client = new Client({
+    name: "gravity-sdk-qualification",
+    version: "1.0.0",
+  });
+  try {
+    await expect(client.connect(transport)).rejects.toBeInstanceOf(
+      UnauthorizedError,
+    );
+    expect(clientInformation?.client_id).toBeTruthy();
+    expect(authorizationUrl).toBeDefined();
+    if (!authorizationUrl) throw new Error("TEST_AUTHORIZATION_MISSING");
+    expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe(
+      "S256",
+    );
+    expect(authorizationUrl.searchParams.get("resource")).toBe(`${origin}/mcp`);
+    const start = await call(
+      authorizationUrl.pathname.replace("/api/auth", "") +
+        authorizationUrl.search,
+    );
+    expect(start.url).toContain("/authorize?");
+    const signed = new URL(start.url, origin).search.slice(1);
+    const [grant] = await local.db
+      .insert(schema.mcpGrants)
+      .values({
+        organizationId: organization.id,
+        userId,
+        productIds: [product.id],
+      })
+      .returning();
+    await local.db
+      .insert(schema.oauthSelections)
+      .values({ sessionId, flowKey: flowKey(signed), grantId: grant.id });
+    const continued = await call("/oauth2/continue", {
+      postLogin: true,
+      oauth_query: signed,
+    });
+    const consent = await call("/oauth2/consent", {
+      accept: true,
+      oauth_query: new URL(continued.url, origin).search.slice(1),
+    });
+    const callback = new URL(consent.url);
+    expect(callback.searchParams.get("state")).toBe("sdk-state");
+    await transport.finishAuth(callback.searchParams);
+    expect(tokens?.access_token).toBeTruthy();
+  } finally {
+    await client.close();
+  }
+  const connected = new Client({
+    name: "gravity-sdk-qualification",
+    version: "1.0.0",
+  });
+  const authenticatedTransport = new StreamableHTTPClientTransport(
+    new URL(`${origin}/mcp`),
+    { authProvider: provider },
+  );
+  try {
+    await connected.connect(authenticatedTransport);
+    const tools = await connected.listTools();
+    expect(tools.tools.map((tool) => tool.name)).toContain("list_products");
+    expect(
+      tools.tools.every((tool) => tool.annotations?.readOnlyHint === true),
+    ).toBe(true);
+    const products = await connected.callTool({
+      name: "list_products",
+      arguments: {},
+    });
+    expect(JSON.stringify(products)).toContain("SDK Selected Product");
+    expect(JSON.stringify(products)).not.toContain("SDK Hidden Product");
+    const forbidden = await connected.callTool({
+      name: "list_next_actions",
+      arguments: { productId: hiddenProduct.id },
+    });
+    expect(forbidden.isError).toBe(true);
+    expect(JSON.stringify(forbidden)).toContain("FORBIDDEN");
+    const capabilities = await connected.callTool({
+      name: "get_capabilities",
+      arguments: {},
+    });
+    expect(capabilities.isError).not.toBe(true);
+    await local.db
+      .update(schema.mcpGrants)
+      .set({ active: false })
+      .where(eq(schema.mcpGrants.userId, userId));
+    await expect(
+      connected.callTool({ name: "list_products", arguments: {} }),
+    ).rejects.toThrow();
+  } finally {
+    await connected.close();
+  }
 });

@@ -6,20 +6,28 @@ The local fictional demo works without credentials. `CRM_DEMO_MODE=false` or any
 
 | Variable | Purpose |
 |---|---|
+| `PUBLIC_SITE_URL`, `PUBLIC_SITE_INDEXING` | Optional HTTPS marketing origin and explicit production SEO opt-in; never indexes CRM/auth/API routes |
 | `APP_URL` | Canonical origin, e.g. `https://crm.example.com`; no path/query |
 | `DATABASE_URL` | Managed PostgreSQL connection, with provider-approved TLS and pooling |
 | `BETTER_AUTH_SECRET` | Stable auth/encryption secret, generated and stored securely |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional Google login app |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Optional GitHub login app |
-| `UNIPILE_WEBHOOK_SECRET` | Per-endpoint v2 signature secret; handler remains disabled in demo |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Optional passwordless email sign-in; sender must be verified in Resend |
+| `INTEGRATION_ENCRYPTION_KEY`, `CRON_SECRET` | Stable provider encryption key and private scheduled-sync credential |
 | `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Private object storage credentials |
 | `S3_ENDPOINT`, `S3_REGION` | Provider endpoint/region; region defaults to `auto` |
 
-No Unipile API key or Gmail mailbox refresh token is consumed by the foundation because hosted connection setup and synchronization clients are not implemented. Do not add credentials that no adapter uses. Resend invitation mail is also pending.
+Users set up their own Unipile API key and webhook signing secret in Connections; deployment-wide Unipile keys are not used. Gmail/calendar use separate user consent and encrypted refresh tokens. Fireflies keys are entered by each account owner. See [connector setup and limits](connectors.md). Resend sends requested login codes; teammate invitations are still pending.
 
-The social-login callback paths are `/api/auth/callback/google` and `/api/auth/callback/github`, under the exact configured origin. Register a distinct CRM client or explicitly review an additional callback in an existing app. Do not copy credentials from another project into code. Gmail connection scopes/callbacks will be separate from login, and require the Google verification/security requirements relevant to the chosen scope.
+Email sign-in uses six-digit, single-use OTP codes that expire after five minutes, with three incorrect attempts allowed. Codes are hashed in the protected verification store. Atomic database rate limits work across serverless instances; each recipient can request one code per minute. A rejected resend leaves the original code usable. The browser handles delivery failures, code errors and resend cooldowns without losing the recipient or assistant authorization request. Login-code delivery is awaited, and its bounded log events never include the code, recipient or provider response body.
 
-Review `drizzle/` before applying `bun run db:migrate` to the supplied database. Confirm database/project/region, backups, restore procedure, pooling and least-privileged access first. Never use `db:seed` on a real database. Build with `bun run build`, then run on Node with production environment variables. Vercel production verification is still a roadmap gate.
+The social-login callback paths are `/api/auth/callback/google` and `/api/auth/callback/github`, under the exact configured origin. Register a distinct CRM client or explicitly review an additional callback in an existing app. Do not copy credentials from another project into code. Gmail connection scopes/callbacks are separate from login, and require the Google verification/security requirements relevant to the chosen scope.
+
+Review `drizzle/` before applying `bun run db:migrate` to the supplied database. Confirm database/project/region, backups, restore procedure, pooling and least-privileged access first. Never use `db:seed` on a real database. Build with `bun run build`, then run on Node with production environment variables. See [Supabase PostgreSQL](supabase.md) for separate migration/runtime credentials, verified TLS, RLS, recovery and the production health check. Provider sign-in and client consent still require qualification on the actual production origin.
+
+## Workspace onboarding
+
+An authenticated user without organizations opens `/onboarding`. The native form creates the organization, first product, administrator membership, default material folder and four stages in one transaction, with the chosen organization time zone. It opens that organization/product after save. If initiated from assistant authorization, setup returns to the original OAuth selection request. Existing users can create another workspace from Settings. Invites and membership editing are still pending.
 
 ## MCP contract
 
@@ -33,7 +41,7 @@ Connection sequence after deployment:
 
 1. Add the remote HTTP server `<APP_URL>/mcp` in an OAuth-capable assistant client.
 2. The client discovers OAuth metadata and starts authorization-code flow with S256 PKCE.
-3. Sign into the CRM through the configured Google/GitHub provider.
+3. Sign into the CRM through Google, GitHub or an email code, according to the installation's enabled providers.
 4. Select one organization and the products to share. The signed OAuth request binds that selection to this flow and session; parallel consent tabs cannot overwrite each other's tenant selection.
 5. Review the client, organization/products and read-only permission at consent.
 6. The client exchanges the code and stores its tokens. Revoke the grant from Connections when needed.
@@ -55,3 +63,5 @@ Tokens are resource-bound to the MCP URL and expire after five minutes. On each 
 There are no MCP sending, draft-approval or membership-changing tools in this release. Later write tools need separate scopes, audit and idempotency contracts, with approval remaining a human decision.
 
 Primary implementation references: [Better Auth MCP](https://better-auth.com/docs/plugins/mcp), [OAuth provider](https://better-auth.com/docs/plugins/oauth-provider), and [official MCP authorization specification](https://modelcontextprotocol.io/specification/latest/basic/authorization).
+
+[Client qualification and current Codex/Claude commands](mcp-client-qualification.md) distinguish official SDK protocol tests from live client sign-in. OAuth remains the first supported path; API keys are not implemented.

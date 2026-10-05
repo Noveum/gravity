@@ -4,18 +4,17 @@ import { useEffect, useRef, useState } from "react";
 function bound(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
-export function usePanelLayout() {
+export function usePanelLayout(collapsed = false) {
   const frame = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1280);
-  const [navigation, setNavigation] = useState(214);
+  const [navigation, setNavigation] = useState(232);
   const [inspector, setInspector] = useState(400);
-  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     try {
       const left = Number(localStorage.getItem("gravity-navigation-width"));
-      const right = Number(localStorage.getItem("gravity-inspector-width"));
       if (Number.isFinite(left) && left >= 176 && left <= 340)
         setNavigation(left);
+      const right = Number(localStorage.getItem("gravity-inspector-width"));
       if (Number.isFinite(right) && right >= 300 && right <= 960)
         setInspector(right);
     } catch {}
@@ -31,7 +30,7 @@ export function usePanelLayout() {
   const actualNavigation = bound(navigation, 176, navigationMax);
   const inspectorMax = Math.max(
     300,
-    Math.min(960, width - actualNavigation - 320),
+    Math.min(960, width - (collapsed ? 56 : actualNavigation) - 320),
   );
   function resizeNavigation(value: number) {
     const next = bound(value, 176, navigationMax);
@@ -50,13 +49,11 @@ export function usePanelLayout() {
   return {
     frame,
     navigation: actualNavigation,
-    inspector: bound(inspector, 300, inspectorMax),
     navigationMax,
-    inspectorMax,
     resizeNavigation,
+    inspector: bound(inspector, 300, inspectorMax),
+    inspectorMax,
     resizeInspector,
-    expanded,
-    setExpanded,
   };
 }
 export function ResizeHandle({

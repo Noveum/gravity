@@ -22,6 +22,7 @@ const shortcuts = [
     [t.workspace, "O"],
     [t.product, "P"],
     [t.keyboardSubmit, "⌘ / Ctrl Enter"],
+    [t.toggleSidebar, t.keys.sidebar],
   ].map(([name, keys]) => ({ label: name, keys, section: t.keyboardGeneral })),
   ...[
     [t.expandInspector, "E"],

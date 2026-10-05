@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { serverAccessPolicy } from "./access-policy";
@@ -284,6 +285,31 @@ export const actions = pgTable(
     }),
   ],
 ).enableRLS();
+export const providerConfigurations = pgTable(
+  "provider_configurations",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    ownerId: text("owner_id").notNull(),
+    provider: text("provider", { enum: ["unipile"] }).notNull(),
+    encryptedCredentials: text("encrypted_credentials"),
+    webhookReady: boolean("webhook_ready").notNull().default(false),
+    active: boolean("active").notNull().default(true),
+    version: version(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.organizationId, t.ownerId, t.id),
+    uniqueIndex("provider_configurations_active_owner")
+      .on(t.organizationId, t.ownerId, t.provider)
+      .where(sql`${t.active} = true`),
+    foreignKey({
+      columns: [t.organizationId, t.ownerId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+  ],
+).enableRLS();
 export const connections = pgTable(
   "connections",
   {
@@ -294,6 +320,7 @@ export const connections = pgTable(
       enum: ["gmail", "unipile", "calendar", "fireflies"],
     }).notNull(),
     externalAccountId: text("external_account_id").notNull(),
+    providerConfigurationId: uuid("provider_configuration_id"),
     productId: uuid("product_id"),
     displayName: text("display_name").notNull().default(""),
     encryptedCredentials: text("encrypted_credentials"),
@@ -325,7 +352,18 @@ export const connections = pgTable(
       foreignColumns: [products.organizationId, products.id],
     }),
     unique().on(t.organizationId, t.id),
-    unique().on(t.provider, t.externalAccountId),
+    unique().on(t.provider, t.providerConfigurationId, t.externalAccountId),
+    uniqueIndex("connections_legacy_provider_account")
+      .on(t.provider, t.externalAccountId)
+      .where(sql`${t.providerConfigurationId} IS NULL`),
+    foreignKey({
+      columns: [t.organizationId, t.ownerId, t.providerConfigurationId],
+      foreignColumns: [
+        providerConfigurations.organizationId,
+        providerConfigurations.ownerId,
+        providerConfigurations.id,
+      ],
+    }),
     foreignKey({
       columns: [t.organizationId, t.ownerId],
       foreignColumns: [memberships.organizationId, memberships.userId],

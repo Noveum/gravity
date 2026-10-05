@@ -4,17 +4,20 @@ import type { IntegrationProvider } from "@crm/connectors/types";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import {
+  ArrowRight,
   CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
   Copy,
+  KeyRound,
   Mail,
   MessageSquare,
   Mic,
   Plug,
   RefreshCw,
   Search,
+  Settings2,
   Unplug,
   X,
 } from "lucide-react";
@@ -25,6 +28,7 @@ import {
   useModalLifecycle,
   useReadyFocus,
 } from "./modal-lifecycle";
+import { UnipileSettings } from "./unipile-settings";
 
 const providers = ["gmail", "calendar", "linkedin", "fireflies"] as const;
 const icons = {
@@ -56,6 +60,7 @@ export function IntegrationCards({
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState(initialNotice);
   const [modal, setModal] = useState<IntegrationProvider | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [existing, setExisting] = useState<string | undefined>();
   const [search, setSearch] = useState("");
   const [reviewQuery, setReviewQuery] = useState("");
@@ -216,7 +221,9 @@ export function IntegrationCards({
                     {data.products.find((p) => p.id === row.productId)?.name} ·{" "}
                     {row.status === "connected"
                       ? t.connected
-                      : t.reconnectRequired}
+                      : row.status === "disconnected"
+                        ? t.disconnected
+                        : t.reconnectRequired}
                   </small>
                   <small className="connection-meta">
                     {row.lastSyncedAt
@@ -249,7 +256,13 @@ export function IntegrationCards({
                   </button>
                   <button
                     type="button"
-                    disabled={!!busy || !configured}
+                    disabled={
+                      !!busy ||
+                      !configured ||
+                      (provider === "linkedin" &&
+                        row.providerConfigurationId !==
+                          overview?.unipileConfiguration?.id)
+                    }
                     onClick={() => {
                       setExisting(row.id);
                       setModal(provider);
@@ -275,24 +288,48 @@ export function IntegrationCards({
                 </div>
               </div>
             ))}
-            <button
-              type="button"
-              className="primary"
-              disabled={
-                demo ||
-                loading ||
-                !configured ||
-                !!busy ||
-                !data.products.length
-              }
-              onClick={() => {
-                setExisting(undefined);
-                setModal(provider);
-              }}
-            >
-              <Plug size={15} aria-hidden="true" />
-              {t.connectProvider.replace("{provider}", t[provider])}
-            </button>
+            <div className="integration-card-actions">
+              {provider === "linkedin" && !configured ? (
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={demo || loading || !!busy}
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <KeyRound size={15} aria-hidden="true" />
+                  {t.unipileSetUp}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={
+                    demo ||
+                    loading ||
+                    !configured ||
+                    !!busy ||
+                    !data.products.length
+                  }
+                  onClick={() => {
+                    setExisting(undefined);
+                    setModal(provider);
+                  }}
+                >
+                  <Plug size={15} aria-hidden="true" />
+                  {t.connectProvider.replace("{provider}", t[provider])}
+                </button>
+              )}
+              {provider === "linkedin" && configured && (
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <Settings2 size={15} aria-hidden="true" />
+                  {t.unipileManage}
+                </button>
+              )}
+            </div>
             {demo ? (
               <p className="connection-note">{t.integrationDemo}</p>
             ) : !loading && !configured ? (
@@ -486,6 +523,17 @@ export function IntegrationCards({
             </div>
           </div>
         </article>
+      )}
+      {settingsOpen && (
+        <UnipileSettings
+          organizationId={organizationId}
+          configuration={overview?.unipileConfiguration ?? null}
+          onClose={() => setSettingsOpen(false)}
+          onChanged={async () => {
+            await currentLoad.current();
+            await onChanged();
+          }}
+        />
       )}
       {modal && (
         <ConnectDialog
@@ -703,6 +751,7 @@ function ConnectDialog({
               {t.cancel}
             </button>
             <button type="submit" className="primary" disabled={busy}>
+              <ArrowRight size={15} aria-hidden="true" />
               {busy
                 ? t.connecting
                 : provider === "fireflies"

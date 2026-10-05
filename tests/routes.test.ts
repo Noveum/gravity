@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { seal } from "../packages/connectors/security";
 import type { Principal } from "../packages/core/policy";
 import { DomainError } from "../packages/core/policy";
 import type { Database } from "../packages/database/client";
@@ -44,11 +45,28 @@ beforeAll(async () => {
   db = local.db;
   await seedDemo(db);
   vi.stubEnv("UNIPILE_WEBHOOK_SECRET", secret);
+  vi.stubEnv("INTEGRATION_ENCRYPTION_KEY", "ab".repeat(32));
+  await db.insert(s.providerConfigurations).values({
+    id: demoId(990),
+    organizationId: demoId(1),
+    ownerId: demoUser,
+    provider: "unipile",
+    webhookReady: true,
+    encryptedCredentials: seal(
+      { apiKey: "fictional-route-api-key", signingSecret: secret },
+      `${demoId(1)}:${demoUser}:${demoId(990)}:provider`,
+    ),
+  });
+  await db
+    .update(s.connections)
+    .set({ providerConfigurationId: demoId(990) })
+    .where(eq(s.connections.id, demoId(701)));
   // One provider account owns a Gmail channel independently of the LinkedIn account.
   await db
     .update(s.connections)
     .set({
       provider: "unipile",
+      providerConfigurationId: demoId(990),
       externalAccountId: "route-gmail",
       selfEmail: "alex@example.test",
       inboxFolderIds: ["INBOX"],
@@ -109,11 +127,14 @@ function signed(
   const signature = createHmac("sha256", secret)
     .update(`${timestamp}.${raw}`)
     .digest("hex");
-  return new Request("http://localhost/api/webhooks/unipile", {
-    method: "POST",
-    headers: { "unipile-signature": `t=${timestamp},v0=${signature}` },
-    body: options.tamper ? `${raw} ` : raw,
-  });
+  return new Request(
+    `http://localhost/api/webhooks/unipile?configurationId=${demoId(990)}`,
+    {
+      method: "POST",
+      headers: { "unipile-signature": `t=${timestamp},v0=${signature}` },
+      body: options.tamper ? `${raw} ` : raw,
+    },
+  );
 }
 const events = () => db.select().from(s.connectorEvents);
 describe("CRM HTTP contracts", () => {
@@ -335,11 +356,17 @@ describe("signed integration HTTP contracts", () => {
     } finally {
       demo = false;
     }
-    vi.stubEnv("UNIPILE_WEBHOOK_SECRET", "");
+    await db
+      .update(s.providerConfigurations)
+      .set({ webhookReady: false })
+      .where(eq(s.providerConfigurations.id, demoId(990)));
     try {
-      expect((await webhook(signed(linkedIn()))).status).toBe(503);
+      expect((await webhook(signed(linkedIn()))).status).toBe(401);
     } finally {
-      vi.stubEnv("UNIPILE_WEBHOOK_SECRET", secret);
+      await db
+        .update(s.providerConfigurations)
+        .set({ webhookReady: true })
+        .where(eq(s.providerConfigurations.id, demoId(990)));
     }
     expect(await events()).toHaveLength(before.length);
   });
@@ -411,5 +438,112 @@ describe("workspace onboarding HTTP transaction", () => {
       ).rejects.toMatchObject({ status: 403 });
     }
     expect(await db.select().from(s.organizations)).toHaveLength(before.length);
+  });
+});
+
+describe("owner-scoped Unipile webhooks", () => {
+  test("a signature for one setup cannot authenticate another setup or claim its account", async () => {
+    const id = demoId(991),
+      otherSecret = "fictional-other-owner-secret";
+    await db.insert(s.providerConfigurations).values({
+      id,
+      organizationId: demoId(1),
+      ownerId: "demo-teammate",
+      provider: "unipile",
+      webhookReady: true,
+      encryptedCredentials: seal(
+        { apiKey: "fictional-other-key", signingSecret: otherSecret },
+        `${demoId(1)}:demo-teammate:${id}:provider`,
+      ),
+    });
+    const before = await events();
+    const first = signed(linkedIn());
+    expect(
+      (
+        await webhook(
+          new Request(
+            `http://localhost/api/webhooks/unipile?configurationId=${id}`,
+            first,
+          ),
+        )
+      ).status,
+    ).toBe(401);
+    const raw = JSON.stringify(linkedIn());
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = createHmac("sha256", otherSecret)
+      .update(`${timestamp}.${raw}`)
+      .digest("hex");
+    expect(
+      (
+        await webhook(
+          new Request(
+            `http://localhost/api/webhooks/unipile?configurationId=${id}`,
+            {
+              method: "POST",
+              headers: {
+                "unipile-signature": `t=${timestamp},v0=${signature}`,
+              },
+              body: raw,
+            },
+          ),
+        )
+      ).status,
+    ).toBe(422);
+    expect(await events()).toHaveLength(before.length);
+    await db
+      .update(s.providerConfigurations)
+      .set({ active: false, encryptedCredentials: null })
+      .where(eq(s.providerConfigurations.id, id));
+    expect(
+      (
+        await webhook(
+          new Request(
+            `http://localhost/api/webhooks/unipile?configurationId=${id}`,
+            {
+              method: "POST",
+              headers: {
+                "unipile-signature": `t=${timestamp},v0=${signature}`,
+              },
+              body: raw,
+            },
+          ),
+        )
+      ).status,
+    ).toBe(401);
+  });
+  test("provider-settings mutations reject cross-origin and unauthenticated requests", async () => {
+    const { POST: integrations } = await import(
+      "../src/app/api/integrations/route"
+    );
+    const body = JSON.stringify({
+      operation: "configure-unipile",
+      organizationId: demoId(1),
+      apiKey: "fictional-user-key",
+    });
+    expect(
+      (
+        await integrations(
+          new Request("http://localhost/api/integrations", {
+            method: "POST",
+            headers: {
+              origin: "http://untrusted.test",
+              "x-test-user": demoUser,
+            },
+            body,
+          }),
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await integrations(
+          new Request("http://localhost/api/integrations", {
+            method: "POST",
+            headers: { origin: "http://localhost" },
+            body,
+          }),
+        )
+      ).status,
+    ).toBe(401);
   });
 });

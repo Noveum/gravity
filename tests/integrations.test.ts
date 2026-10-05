@@ -41,6 +41,22 @@ const json = (value: unknown, status = 200) =>
 beforeAll(async () => {
   local = await createLocalDatabase();
   await seedDemo(local.db);
+  vi.stubEnv("INTEGRATION_ENCRYPTION_KEY", "ab".repeat(32));
+  await local.db.insert(s.providerConfigurations).values({
+    id: demoId(980),
+    organizationId: scope.organizationId,
+    ownerId: demoUser,
+    provider: "unipile",
+    webhookReady: true,
+    encryptedCredentials: seal(
+      {
+        apiKey: "owner-unipile-key",
+        signingSecret: "fictional-signing-secret",
+      },
+      `${scope.organizationId}:${demoUser}:${demoId(980)}:provider`,
+    ),
+  });
+  vi.unstubAllEnvs();
 });
 afterAll(async () => local.client.close());
 beforeEach(() => {
@@ -168,23 +184,31 @@ test("LinkedIn redirect cannot claim an account; only a matching signed webhook 
   await expect(
     service.linkedInCallback(another, request.state),
   ).rejects.toThrow();
-  const connected = await service.linkedInAccount(request.state, {
-    id: "acc_test_linkedin",
-    name: "Test account",
-    provider: "linkedin",
-    status: "running",
-  });
+  const connected = await service.linkedInAccount(
+    request.state,
+    {
+      id: "acc_test_linkedin",
+      name: "Test account",
+      provider: "linkedin",
+      status: "running",
+    },
+    demoId(980),
+  );
   expect(connected.ownerId).toBe(demoUser);
   expect((await service.linkedInCallback(admin, request.state)).pending).toBe(
     false,
   );
   await expect(
-    service.linkedInAccount(request.state, {
-      id: "acc_another",
-      name: "Another",
-      provider: "linkedin",
-      status: "running",
-    }),
+    service.linkedInAccount(
+      request.state,
+      {
+        id: "acc_another",
+        name: "Another",
+        provider: "linkedin",
+        status: "running",
+      },
+      demoId(980),
+    ),
   ).rejects.toMatchObject({ code: "CONNECTION_FLOW_EXPIRED" });
   await expect(
     service.own(another, scope.organizationId, connected.id),
@@ -541,10 +565,14 @@ test("LinkedIn signed callback retries are idempotent and cannot revive a discon
     name: "Fictional account",
     status: "running",
   };
-  const first = await service.linkedInAccount(state, account);
-  expect((await service.linkedInAccount(state, account)).id).toBe(first.id);
+  const first = await service.linkedInAccount(state, account, demoId(980));
+  expect((await service.linkedInAccount(state, account, demoId(980))).id).toBe(
+    first.id,
+  );
   await service.disconnect(admin, scope.organizationId, first.id);
-  await expect(service.linkedInAccount(state, account)).rejects.toMatchObject({
+  await expect(
+    service.linkedInAccount(state, account, demoId(980)),
+  ).rejects.toMatchObject({
     code: "CONNECTION_FLOW_EXPIRED",
   });
 });
@@ -559,12 +587,16 @@ test("durable webhook receipts deduplicate deliveries, retry sanitized failures,
   const service = new IntegrationService(local.db, transport);
   await service.connect(admin, { ...scope, provider: "linkedin" });
   const { state } = JSON.parse(String(transport.mock.calls[0][1]?.body));
-  const connection = await service.linkedInAccount(state, {
-    id: "receipt-account",
-    provider: "linkedin",
-    name: "Fictional",
-    status: "running",
-  });
+  const connection = await service.linkedInAccount(
+    state,
+    {
+      id: "receipt-account",
+      provider: "linkedin",
+      name: "Fictional",
+      status: "running",
+    },
+    demoId(980),
+  );
   const payload = {
     id: "receipt-message",
     chat_id: "receipt-chat",

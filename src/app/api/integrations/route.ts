@@ -1,5 +1,9 @@
 import { assertMutationOrigin, currentPrincipal } from "@crm/auth/server";
 import {
+  ProviderConfigurationService,
+  unipileSettingsInput,
+} from "@crm/connectors/configuration";
+import {
   connectInput,
   IntegrationService,
   integrationOverviewInput,
@@ -39,11 +43,31 @@ export async function POST(request: Request) {
       new TextDecoder().decode(await limitedBody(request, 5000)),
     );
     const operation = z
-      .enum(["connect", "sync", "disconnect", "link", "ignore"])
+      .enum([
+        "connect",
+        "sync",
+        "disconnect",
+        "link",
+        "ignore",
+        "configure-unipile",
+        "remove-unipile",
+      ])
       .parse(body.operation);
     const service = new IntegrationService(await getDatabase());
     let result: unknown;
-    if (operation === "connect")
+    if (operation === "configure-unipile")
+      result = await new ProviderConfigurationService(
+        await getDatabase(),
+      ).configure(principal, unipileSettingsInput.parse(body));
+    else if (operation === "remove-unipile")
+      result = await new ProviderConfigurationService(
+        await getDatabase(),
+      ).remove(
+        principal,
+        z.uuid().parse(body.organizationId),
+        z.uuid().parse(body.configurationId),
+      );
+    else if (operation === "connect")
       result = await service.connect(principal, connectInput.parse(body));
     else {
       const { organizationId } = integrationScope.parse(body);

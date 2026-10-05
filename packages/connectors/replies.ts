@@ -9,6 +9,7 @@ import t from "../i18n/translations/en.json";
 export const replySchema = z.object({
   provider: z.enum(["gmail", "unipile"]),
   accountId: z.string().min(1).max(500),
+  connectionId: z.uuid().optional(),
   messageId: z.string().min(1).max(500),
   threadId: z.string().min(1).max(500),
   direction: z.enum(["inbound", "outbound"]),
@@ -115,16 +116,21 @@ export function normalizeUnipileV2(
 export async function ingestReply(db: Database, input: ReplyEvent) {
   const event = replySchema.parse(input);
   return db.transaction(async (tx) => {
-    const [connection] = await tx
+    const candidates = await tx
       .select()
       .from(s.connections)
       .where(
         and(
           eq(s.connections.provider, event.provider),
           eq(s.connections.externalAccountId, event.accountId),
+          event.connectionId
+            ? eq(s.connections.id, event.connectionId)
+            : undefined,
         ),
       )
+      .limit(2)
       .for("update");
+    const connection = candidates.length === 1 ? candidates[0] : undefined;
     if (!connection || !["connected", "demo"].includes(connection.status))
       throw new DomainError("CONNECTION_UNAVAILABLE", 422);
     const [receipt] = await tx

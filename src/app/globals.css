@@ -2678,3 +2678,160 @@ body:has(.resize-handle[data-dragging]) {
     grid-column: 1 / -1;
   }
 }
+
+/* Provider setup uses the same compact controls in both themes. */
+.integration-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+.integration-card-actions button,
+.provider-settings button,
+.connection-buttons button,
+.dialog-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  border-radius: 7px;
+}
+.integration-card-actions svg,
+.provider-settings svg,
+.connection-buttons svg {
+  flex-shrink: 0;
+}
+.integration-card > :where(p) {
+  line-height: 1.65;
+}
+.provider-settings {
+  width: min(560px, calc(100vw - 32px));
+}
+.provider-settings-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.provider-settings-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.provider-settings-heading :where(p) {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.provider-settings-heading > .icon-button {
+  margin-left: auto;
+  padding: 8px;
+}
+.provider-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.provider-privacy {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 12px;
+}
+.provider-privacy :where(p) {
+  margin: 0;
+  line-height: 1.65;
+}
+.provider-privacy svg {
+  margin-top: 2px;
+  color: var(--accent);
+}
+.provider-steps {
+  list-style: none;
+  display: flex;
+  gap: 20px;
+  padding: 0;
+  margin: 24px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.provider-steps li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.provider-steps li > span {
+  width: 23px;
+  height: 23px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.provider-steps .current,
+.provider-steps .completed {
+  color: var(--accent);
+}
+.provider-steps .current > span,
+.provider-steps .completed > span {
+  background: var(--soft);
+  border-color: var(--accent);
+}
+.provider-settings form > p,
+.provider-settings > label,
+.provider-settings form > label {
+  margin-top: 16px;
+}
+.provider-settings :where(p) {
+  line-height: 1.65;
+}
+.provider-docs-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 16px;
+  font-size: 12px;
+}
+.provider-ready {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--accent);
+  padding: 14px 0;
+}
+.provider-remove {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 20px;
+}
+.provider-settings .danger-link {
+  color: var(--orbit-danger);
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0;
+}
+@media (max-width: 600px) {
+  .provider-steps {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .connection-buttons {
+    width: 100%;
+  }
+}
+
+.integration-card .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}

@@ -182,7 +182,21 @@
 :where(button, a) {
   -webkit-tap-highlight-color: transparent;
 }
-:where(button, a.button, a.nav-item, a.text-button) {
+:where(
+  button,
+  .button,
+  .primary,
+  .secondary,
+  .accent-soft,
+  .ghost,
+  .danger,
+  .icon-button,
+  .text-button,
+  .chip,
+  .nav-item,
+  .menu-item
+) {
+  --button-current: initial;
   --button-fill: var(--gravity-surface);
   --button-hover: var(--gravity-surface-2);
   --button-ink: var(--gravity-text);
@@ -199,9 +213,10 @@
   cursor: pointer;
   text-align: left;
   font-size: var(--text-dense);
+  text-decoration: none;
   transition: var(--transition-colors);
 }
-:where(button:not(:disabled):hover, a.button:hover, a.nav-item:hover) {
+:where(button:not(:disabled):hover, a:hover) {
   --button-current: var(--button-hover);
 }
 :where(button:disabled) {
@@ -265,10 +280,6 @@
 :where(a) {
   color: var(--gravity-accent);
 }
-:where(a.button, a.nav-item, a.text-button) {
-  color: var(--button-ink);
-  text-decoration: none;
-}
 :where(kbd) {
   font:
     var(--text-2xs) ui-monospace,
@@ -311,6 +322,21 @@
   border: 0;
 }
 
+.button,
+.primary,
+.secondary,
+.accent-soft,
+.ghost,
+.danger,
+.icon-button,
+.text-button,
+.chip,
+.nav-item,
+.menu-item {
+  display: inline-flex;
+  background-color: var(--button-current, var(--button-fill));
+  color: var(--button-ink);
+}
 .primary {
   --button-fill: var(--gravity-accent);
   --button-hover: var(--gravity-accent-hover);
@@ -457,6 +483,12 @@
 .sidebar-search > .nav-label-text:first-of-type {
   flex: 1;
 }
+.sidebar-nav {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .sidebar-scroll {
   flex: 1;
   min-height: 0;
@@ -554,12 +586,15 @@
   background: var(--gravity-faint);
   flex-shrink: 0;
 }
-.sidebar-bottom {
+.sidebar-pinned {
   border-top: 1px solid var(--gravity-border-subtle);
-  padding: 8px;
+  padding: 8px 8px 2px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+.sidebar-footer {
+  padding: 0 8px 8px;
 }
 .sidebar-status {
   display: flex;
@@ -612,10 +647,8 @@
 }
 
 .menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 60;
+  position: fixed;
+  z-index: 80;
   width: 256px;
   padding: 4px;
   background: var(--gravity-popover);
@@ -656,15 +689,12 @@
   display: flex;
   align-items: center;
   border-radius: var(--gravity-radius);
-  text-decoration: none;
-  color: var(--gravity-text);
   font-size: var(--text-dense);
   transition: var(--transition-row);
 }
-a.menu-item:hover,
 .menu-item:focus-visible {
-  background-color: var(--gravity-menu-row);
-  outline: none;
+  outline: var(--gravity-ring-width) solid var(--gravity-ring);
+  outline-offset: calc(var(--gravity-ring-width) * -1);
 }
 .menu-item-label {
   flex: 1;
@@ -811,6 +841,8 @@ a.menu-item:hover,
 }
 .search:focus-within {
   border-color: var(--gravity-ring);
+  outline: var(--gravity-ring-width) solid var(--gravity-ring);
+  outline-offset: var(--gravity-ring-offset);
 }
 .search input {
   border: 0;
@@ -1166,14 +1198,24 @@ td small {
 
 .toaster {
   position: fixed;
-  left: 16px;
-  bottom: 16px;
+  inset: auto auto 16px 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  background: transparent;
+  color: inherit;
   z-index: 100;
   display: flex;
   flex-direction: column-reverse;
   gap: 8px;
   max-width: calc(100vw - 32px);
   pointer-events: none;
+}
+.toast-lane {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
 }
 .toast {
   pointer-events: auto;
@@ -2598,6 +2640,15 @@ td .badge + .badge {
   }
 }
 @media (max-width: 760px) {
+  :root,
+  :root[data-density] {
+    --gravity-list-row: 40px;
+  }
+  .toolbar select,
+  .toolbar .search,
+  .toolbar :where(button, .button) {
+    min-height: 40px;
+  }
   .app-shell,
   :root[data-sidebar="collapsed"] .app-shell {
     grid-template-columns: minmax(0, 1fr);
@@ -2731,9 +2782,7 @@ td .badge + .badge {
     padding: 22px;
   }
   .toaster {
-    left: 8px;
-    right: 8px;
-    bottom: 8px;
+    inset: auto 8px 8px 8px;
   }
   .toast {
     width: 100%;

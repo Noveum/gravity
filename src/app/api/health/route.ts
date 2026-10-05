@@ -16,6 +16,10 @@ export async function GET() {
     const db = await getDatabase();
     await db.execute(sql`SELECT id FROM public.organizations LIMIT 0`);
     await db.execute(sql`SELECT id FROM public.session LIMIT 0`);
+    await db.execute(sql`SELECT id FROM public.pipelines LIMIT 0`);
+    await db.execute(
+      sql`SELECT owner_id, probability, expected_close_date, closed_at FROM public.opportunities LIMIT 0`,
+    );
     isReady = true;
   } catch {
     // Errors can contain SQL, URLs or credentials. Log only bounded status.

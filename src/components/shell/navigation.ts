@@ -3,6 +3,7 @@ import {
   Bot,
   Building2,
   CalendarDays,
+  ChartNoAxesCombined,
   FolderOpen,
   GitBranch,
   Layers,
@@ -16,6 +17,7 @@ import {
 import type { Section } from "../routes";
 
 export const viewIcons: Record<Section, LucideIcon> = {
+  overview: ChartNoAxesCombined,
   actions: ListChecks,
   people: Users,
   companies: Building2,
@@ -30,7 +32,7 @@ export const viewIcons: Record<Section, LucideIcon> = {
 };
 
 export const viewSections: { id: string; title: string; views: Section[] }[] = [
-  { id: "work", title: t.navWork, views: ["actions", "meetings"] },
+  { id: "work", title: t.navWork, views: ["overview", "actions", "meetings"] },
   { id: "outreach", title: t.navOutreach, views: ["outreach", "sequences"] },
   {
     id: "records",

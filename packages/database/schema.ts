@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -423,6 +424,12 @@ export const messages = pgTable(
   },
   (t) => [
     serverAccessPolicy(),
+    index("messages_activity_idx").on(
+      t.organizationId,
+      t.productId,
+      t.occurredAt,
+      t.id,
+    ),
     unique().on(t.connectionId, t.providerMessageId),
     foreignKey({
       columns: [t.organizationId, t.productId, t.conversationId],
@@ -438,17 +445,48 @@ export const messages = pgTable(
     }),
   ],
 ).enableRLS();
+export const pipelines = pgTable(
+  "pipelines",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    name: text("name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.organizationId, t.productId, t.id),
+    unique().on(t.organizationId, t.productId, t.name),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+  ],
+).enableRLS();
 export const stages = pgTable(
   "stages",
   {
     id: id(),
     organizationId: organizationId(),
     productId: productId(),
+    pipelineId: uuid("pipeline_id"),
+    kind: text("kind", { enum: ["open", "won", "lost"] })
+      .notNull()
+      .default("open"),
     name: text("name").notNull(),
     position: integer("position").notNull(),
   },
   (t) => [
     serverAccessPolicy(),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.pipelineId],
+      foreignColumns: [
+        pipelines.organizationId,
+        pipelines.productId,
+        pipelines.id,
+      ],
+    }),
     unique().on(t.organizationId, t.productId, t.id),
     foreignKey({
       columns: [t.organizationId, t.productId],
@@ -608,10 +646,35 @@ export const opportunities = pgTable(
     name: text("name").notNull(),
     amountMinor: integer("amount_minor"),
     currency: text("currency").notNull().default("USD"),
+    ownerId: text("owner_id"),
+    status: text("status", { enum: ["open", "won", "lost"] })
+      .notNull()
+      .default("open"),
+    probability: integer("probability"),
+    expectedCloseDate: date("expected_close_date"),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    description: text("description").notNull().default(""),
+    lostReason: text("lost_reason").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
     version: version(),
   },
   (t) => [
     serverAccessPolicy(),
+    check(
+      "deal_amount_nonnegative",
+      sql`${t.amountMinor} IS NULL OR ${t.amountMinor} >= 0`,
+    ),
+    check(
+      "deal_probability_valid",
+      sql`${t.probability} IS NULL OR (${t.probability} >= 0 AND ${t.probability} <= 100)`,
+    ),
+    check("deal_status_valid", sql`${t.status} IN ('open', 'won', 'lost')`),
+    check("deal_currency_valid", sql`${t.currency} ~ '^[A-Z]{3}$'`),
+    foreignKey({
+      columns: [t.organizationId, t.ownerId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
     foreignKey({
       columns: [t.organizationId, t.productId, t.relationshipId],
       foreignColumns: [

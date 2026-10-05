@@ -1,10 +1,23 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import t from "../i18n/translations/en.json";
+import { overview as calculateOverview } from "./analytics";
+import { serialize } from "./dto";
 import { authorize, DomainError, type Principal } from "./policy";
 
 export const scopeSchema = z.object({
@@ -54,6 +67,59 @@ export const personSchema = scopeSchema
   .refine((value) => !!value.personId !== !!value.name, {
     message: "Provide a new name or existing person",
   });
+export const opportunitySchema = scopeSchema
+  .extend({
+    id: z.uuid().optional(),
+    version: z.number().int().positive().optional(),
+    productId: z.uuid(),
+    relationshipId: z.uuid(),
+    stageId: z.uuid(),
+    name: z.string().trim().min(1).max(200),
+    ownerId: z.string().min(1),
+    amountMinor: z
+      .number()
+      .int()
+      .min(0)
+      .max(2147483647)
+      .nullable()
+      .default(null),
+    currency: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{3}$/)
+      .refine((value) => {
+        try {
+          return Intl.supportedValuesOf("currency").includes(value);
+        } catch {
+          return false;
+        }
+      }),
+    probability: z.number().int().min(0).max(100).nullable().default(null),
+    status: z.enum(["open", "won", "lost"]).default("open"),
+    expectedCloseDate: z.iso.date().nullable().default(null),
+    description: z.string().trim().max(10000).default(""),
+    lostReason: z.string().trim().max(2000).default(""),
+  })
+  .refine((value) => Boolean(value.id) === Boolean(value.version), {
+    message: "Updates require an ID and version",
+  });
+export const pipelineSchema = scopeSchema.extend({
+  productId: z.uuid(),
+  name: z.string().trim().min(1).max(100),
+});
+export const messageActivitySchema = scopeSchema
+  .extend({
+    from: z.iso.date(),
+    through: z.iso.date(),
+    ownerId: z.string().max(200).optional(),
+    channel: z.enum(["gmail", "linkedin"]).optional(),
+    direction: z.enum(["inbound", "outbound"]).optional(),
+    page: z.coerce.number().int().min(0).max(10000).default(0),
+  })
+  .refine((value) => value.from <= value.through, {
+    message: "Invalid date range",
+  });
 export const workspaceSchema = z.object({
   name: z.string().trim().min(1).max(100),
   productName: z.string().trim().min(1).max(100),
@@ -88,13 +154,26 @@ async function insertProduct(
   await tx
     .insert(s.folders)
     .values({ organizationId, productId: product.id, name: t.defaultFolder });
+  const [pipeline] = await tx
+    .insert(s.pipelines)
+    .values({ organizationId, productId: product.id, name: t.salesPipeline })
+    .returning();
   await tx.insert(s.stages).values(
-    [t.discovery, t.evaluation, t.proposal, t.won].map((name, position) => ({
-      organizationId,
-      productId: product.id,
-      name,
-      position,
-    })),
+    [t.discovery, t.evaluation, t.proposal, t.won, t.lost].map(
+      (name, position) => ({
+        organizationId,
+        productId: product.id,
+        pipelineId: pipeline.id,
+        kind:
+          position === 3
+            ? ("won" as const)
+            : position === 4
+              ? ("lost" as const)
+              : ("open" as const),
+        name,
+        position,
+      }),
+    ),
   );
   await tx.insert(s.changeEvents).values({
     organizationId,
@@ -343,6 +422,11 @@ export class CrmService {
         eq(table.organizationId, scope.organizationId),
         inArray(table.productId, ids),
       );
+    const [organization] = await this.db
+      .select({ timezone: s.organizations.timezone })
+      .from(s.organizations)
+      .where(eq(s.organizations.id, scope.organizationId));
+    const messageDay = sql<string>`to_char(${s.messages.occurredAt} AT TIME ZONE ${organization.timezone}, 'YYYY-MM-DD')`;
     const [
       relationships,
       actions,
@@ -358,6 +442,8 @@ export class CrmService {
       connections,
       grants,
       memberProducts,
+      pipelines,
+      messageStats,
     ] = await Promise.all([
       this.db.select().from(s.relationships).where(scoped(s.relationships)),
       this.db
@@ -444,6 +530,40 @@ export class CrmService {
             inArray(s.productMemberships.productId, ids),
           ),
         ),
+      this.db.select().from(s.pipelines).where(scoped(s.pipelines)),
+      this.db
+        .select({
+          day: messageDay,
+          productId: s.messages.productId,
+          channel: s.conversations.channel,
+          ownerId: s.conversations.ownerId,
+          inbound: sql<number>`count(*) FILTER (WHERE ${s.messages.direction}='inbound')::integer`,
+          outbound: sql<number>`count(*) FILTER (WHERE ${s.messages.direction}='outbound')::integer`,
+        })
+        .from(s.messages)
+        .innerJoin(
+          s.conversations,
+          eq(s.messages.conversationId, s.conversations.id),
+        )
+        .where(
+          and(
+            scoped(s.messages),
+            inArray(
+              s.messages.conversationId,
+              readableConversations.map((c) => c.id),
+            ),
+            gte(s.messages.occurredAt, new Date(Date.now() - 90 * 86400000)),
+            lte(s.messages.occurredAt, new Date()),
+          ),
+        )
+        .groupBy(
+          // Group by the selected day: repeating the timezone expression emits
+          // a different bind parameter, which PostgreSQL treats as distinct.
+          sql`1`,
+          s.messages.productId,
+          s.conversations.channel,
+          s.conversations.ownerId,
+        ),
     ]);
     const people = await this.db
       .select()
@@ -483,6 +603,8 @@ export class CrmService {
       stages,
       meetings,
       opportunities,
+      pipelines,
+      messageStats,
       members: members.map((member) => ({
         ...member,
         productIds:
@@ -982,6 +1104,244 @@ export class CrmService {
       });
       return organization;
     });
+  }
+  async overview(
+    principal: Principal,
+    input: z.infer<typeof scopeSchema> & {
+      days: number;
+      ownerId?: string;
+      channel?: string;
+    },
+  ) {
+    const snapshot = await this.snapshot(principal, input);
+    const [organization] = await this.db
+      .select()
+      .from(s.organizations)
+      .where(eq(s.organizations.id, input.organizationId));
+    return {
+      ...calculateOverview(serialize(snapshot), {
+        days: input.days,
+        ownerId: input.ownerId,
+        channel: input.channel,
+        timeZone: organization.timezone,
+      }),
+      asOf: snapshot.asOf,
+      timeZone: organization.timezone,
+    };
+  }
+  async saveOpportunity(
+    principal: Principal,
+    input: z.infer<typeof opportunitySchema>,
+  ) {
+    return this.db.transaction(async (tx) => {
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
+      const [relationship] = await tx
+        .select()
+        .from(s.relationships)
+        .where(
+          and(
+            eq(s.relationships.id, input.relationshipId),
+            eq(s.relationships.organizationId, input.organizationId),
+            eq(s.relationships.productId, input.productId),
+          ),
+        );
+      const [stage] = await tx
+        .select()
+        .from(s.stages)
+        .where(
+          and(
+            eq(s.stages.id, input.stageId),
+            eq(s.stages.organizationId, input.organizationId),
+            eq(s.stages.productId, input.productId),
+          ),
+        );
+      if (!relationship || !stage) throw new DomainError("FORBIDDEN", 403);
+      if (stage.kind !== input.status)
+        throw new DomainError("DEAL_STAGE_OUTCOME", 400);
+      try {
+        await authorize(
+          tx,
+          { userId: input.ownerId, source: "session" },
+          input.organizationId,
+          input.productId,
+        );
+      } catch {
+        throw new DomainError("OWNER_NOT_ALLOWED", 403);
+      }
+      const [existing] = input.id
+        ? await tx
+            .select()
+            .from(s.opportunities)
+            .where(
+              and(
+                eq(s.opportunities.id, input.id),
+                eq(s.opportunities.organizationId, input.organizationId),
+              ),
+            )
+            .for("update")
+        : [];
+      if (input.id && !existing) throw new DomainError("NOT_FOUND", 404);
+      if (
+        existing &&
+        (existing.productId !== input.productId ||
+          existing.relationshipId !== input.relationshipId)
+      )
+        throw new DomainError("FORBIDDEN", 403);
+      if (existing && existing.version !== input.version)
+        throw new DomainError("CONFLICT", 409);
+      const { id, version: _version, ...values } = input;
+      const now = new Date();
+      const fields = {
+        ...values,
+        probability:
+          input.status === "won"
+            ? 100
+            : input.status === "lost"
+              ? 0
+              : input.probability,
+        closedAt:
+          input.status === "open"
+            ? null
+            : existing?.status === input.status
+              ? existing.closedAt
+              : now,
+        updatedAt: now,
+      };
+      const [deal] = existing
+        ? await tx
+            .update(s.opportunities)
+            .set({ ...fields, version: existing.version + 1 })
+            .where(eq(s.opportunities.id, existing.id))
+            .returning()
+        : await tx
+            .insert(s.opportunities)
+            .values({ ...fields, createdAt: now })
+            .returning();
+      await tx.insert(s.changeEvents).values({
+        organizationId: input.organizationId,
+        productId: input.productId,
+        actorId: principal.userId,
+        type: existing ? "opportunity.updated" : "opportunity.created",
+        entityId: deal.id,
+      });
+      return deal;
+    });
+  }
+  async createPipeline(
+    principal: Principal,
+    input: z.infer<typeof pipelineSchema>,
+  ) {
+    const { membership } = await authorize(
+      this.db,
+      principal,
+      input.organizationId,
+      input.productId,
+      true,
+    );
+    if (membership.role !== "admin") throw new DomainError("FORBIDDEN", 403);
+    return this.db.transaction(async (tx) => {
+      const [pipeline] = await tx
+        .insert(s.pipelines)
+        .values(input)
+        .onConflictDoNothing()
+        .returning();
+      if (!pipeline) throw new DomainError("PIPELINE_EXISTS", 409);
+      await tx.insert(s.stages).values(
+        [t.discovery, t.evaluation, t.proposal, t.won, t.lost].map(
+          (name, position) => ({
+            organizationId: input.organizationId,
+            productId: input.productId,
+            pipelineId: pipeline.id,
+            name,
+            position,
+            kind:
+              position === 3
+                ? ("won" as const)
+                : position === 4
+                  ? ("lost" as const)
+                  : ("open" as const),
+          }),
+        ),
+      );
+      await tx.insert(s.changeEvents).values({
+        organizationId: input.organizationId,
+        productId: input.productId,
+        actorId: principal.userId,
+        type: "pipeline.created",
+        entityId: pipeline.id,
+      });
+      return pipeline;
+    });
+  }
+  async messageActivity(
+    principal: Principal,
+    input: z.infer<typeof messageActivitySchema>,
+  ) {
+    const permission = await authorize(
+      this.db,
+      principal,
+      input.organizationId,
+      input.productId,
+    );
+    const ids = permission.products
+      .filter((p) => !input.productId || p.id === input.productId)
+      .map((p) => p.id);
+    const [organization] = await this.db
+      .select()
+      .from(s.organizations)
+      .where(eq(s.organizations.id, input.organizationId));
+    const rows = await this.db
+      .select({
+        id: s.messages.id,
+        productId: s.messages.productId,
+        relationshipId: s.conversations.relationshipId,
+        ownerId: s.conversations.ownerId,
+        channel: s.conversations.channel,
+        direction: s.messages.direction,
+        occurredAt: s.messages.occurredAt,
+        preview: sql<string>`left(${s.messages.body},200)`,
+      })
+      .from(s.messages)
+      .innerJoin(
+        s.conversations,
+        eq(s.messages.conversationId, s.conversations.id),
+      )
+      .where(
+        and(
+          lte(s.messages.occurredAt, new Date()),
+          eq(s.messages.organizationId, input.organizationId),
+          inArray(s.messages.productId, ids),
+          or(
+            eq(s.conversations.visibility, "product"),
+            eq(s.conversations.ownerId, principal.userId),
+          ),
+          sql`${s.messages.occurredAt} >= (${input.from}::date::timestamp AT TIME ZONE ${organization.timezone})`,
+          sql`${s.messages.occurredAt} < ((${input.through}::date + 1)::timestamp AT TIME ZONE ${organization.timezone})`,
+          input.ownerId
+            ? eq(s.conversations.ownerId, input.ownerId)
+            : undefined,
+          input.direction
+            ? eq(s.messages.direction, input.direction)
+            : undefined,
+          input.channel
+            ? eq(s.conversations.channel, input.channel)
+            : undefined,
+        ),
+      )
+      .orderBy(desc(s.messages.occurredAt), desc(s.messages.id))
+      .limit(51)
+      .offset(input.page * 50);
+    return {
+      items: rows.slice(0, 50),
+      hasMore: rows.length > 50,
+      page: input.page,
+    };
   }
   async createProduct(
     principal: Principal,

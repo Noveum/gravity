@@ -1,4 +1,5 @@
 export const navigationKeys = {
+  v: "overview",
   a: "actions",
   p: "people",
   c: "companies",

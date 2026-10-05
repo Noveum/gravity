@@ -441,14 +441,29 @@ export async function seedDemo(db: Database) {
     }
     for (const [i, p] of [10, 11, 12, 13].entries()) {
       const org = demoId(p === 13 ? 2 : 1);
+      await tx.insert(s.pipelines).values({
+        id: demoId(1200 + p),
+        organizationId: org,
+        productId: demoId(p),
+        name: "Sales pipeline",
+      });
       await tx.insert(s.stages).values(
-        ["Discovery", "Evaluation", "Proposal", "Won"].map((name, j) => ({
-          id: demoId(800 + i * 10 + j),
-          organizationId: org,
-          productId: demoId(p),
-          name,
-          position: j,
-        })),
+        ["Discovery", "Evaluation", "Proposal", "Won", "Lost"].map(
+          (name, j) => ({
+            id: demoId(800 + i * 10 + j),
+            organizationId: org,
+            productId: demoId(p),
+            name,
+            position: j,
+            pipelineId: demoId(1200 + p),
+            kind:
+              j === 3
+                ? ("won" as const)
+                : j === 4
+                  ? ("lost" as const)
+                  : ("open" as const),
+          }),
+        ),
       );
       await tx.insert(s.folders).values(
         ["Overview", "Proof & case studies", "Commercial"].map((name, j) => ({
@@ -492,6 +507,11 @@ export async function seedDemo(db: Database) {
         stageId: demoId(821),
         name: "Cedar workflow pilot",
         amountMinor: 500000,
+        ownerId: demoUser,
+        probability: 60,
+        expectedCloseDate: due(14).toISOString().slice(0, 10),
+        createdAt: due(-15),
+        updatedAt: due(-1),
       },
       {
         id: demoId(1101),

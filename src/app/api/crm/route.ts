@@ -5,7 +5,10 @@ import {
   CrmService,
   folderSchema,
   meetingChangeSchema,
+  messageActivitySchema,
+  opportunitySchema,
   personSchema,
+  pipelineSchema,
   scheduleActionSchema,
   scopeSchema,
   workspaceSchema,
@@ -20,7 +23,15 @@ export async function GET(request: Request) {
     const principal = await currentPrincipal(request.headers);
     const service = new CrmService(await getDatabase());
     const query = Object.fromEntries(new URL(request.url).searchParams);
-    z.enum(["organizations", "context", "company", "revision", "snapshot"])
+    z.enum([
+      "organizations",
+      "context",
+      "company",
+      "revision",
+      "snapshot",
+      "messageActivity",
+      "overview",
+    ])
       .optional()
       .parse(query.operation);
     let result: unknown;
@@ -28,7 +39,26 @@ export async function GET(request: Request) {
       result = await service.organizations(principal);
     else {
       const scope = scopeSchema.parse(query);
-      if (query.operation === "context")
+      if (query.operation === "overview")
+        result = await service.overview(principal, {
+          ...scope,
+          days: z.coerce
+            .number()
+            .refine((v) => [7, 30, 90].includes(v))
+            .default(30)
+            .parse(query.days),
+          ownerId: query.ownerId,
+          channel: z
+            .enum(["gmail", "linkedin"])
+            .optional()
+            .parse(query.channel),
+        });
+      else if (query.operation === "messageActivity")
+        result = await service.messageActivity(
+          principal,
+          messageActivitySchema.parse(query),
+        );
+      else if (query.operation === "context")
         result = await service.context(
           principal,
           scope.organizationId,
@@ -71,44 +101,59 @@ export async function POST(request: Request) {
         "product",
         "person",
         "schedule",
+        "opportunity",
+        "pipeline",
       ])
       .parse(body.operation);
     const nameSchema = z.string().trim().min(1).max(100);
     const result =
-      operation === "workspace"
-        ? await service.createWorkspace(principal, workspaceSchema.parse(body))
-        : operation === "schedule"
-          ? await service.scheduleAction(
-              principal,
-              scheduleActionSchema.parse(body),
-            )
-          : operation === "person"
-            ? await service.createPerson(principal, personSchema.parse(body))
-            : operation === "action"
-              ? await service.changeAction(
+      operation === "opportunity"
+        ? await service.saveOpportunity(
+            principal,
+            opportunitySchema.parse(body),
+          )
+        : operation === "pipeline"
+          ? await service.createPipeline(principal, pipelineSchema.parse(body))
+          : operation === "workspace"
+            ? await service.createWorkspace(
+                principal,
+                workspaceSchema.parse(body),
+              )
+            : operation === "schedule"
+              ? await service.scheduleAction(
                   principal,
-                  actionChangeSchema.parse(body),
+                  scheduleActionSchema.parse(body),
                 )
-              : operation === "folder"
-                ? await service.createFolder(
+              : operation === "person"
+                ? await service.createPerson(
                     principal,
-                    folderSchema.parse(body),
+                    personSchema.parse(body),
                   )
-                : operation === "commitment"
-                  ? await service.acceptCommitment(
+                : operation === "action"
+                  ? await service.changeAction(
                       principal,
-                      meetingChangeSchema.parse(body),
+                      actionChangeSchema.parse(body),
                     )
-                  : operation === "organization"
-                    ? await service.createOrganization(
+                  : operation === "folder"
+                    ? await service.createFolder(
                         principal,
-                        nameSchema.parse(body.name),
+                        folderSchema.parse(body),
                       )
-                    : await service.createProduct(
-                        principal,
-                        z.uuid().parse(body.organizationId),
-                        nameSchema.parse(body.name),
-                      );
+                    : operation === "commitment"
+                      ? await service.acceptCommitment(
+                          principal,
+                          meetingChangeSchema.parse(body),
+                        )
+                      : operation === "organization"
+                        ? await service.createOrganization(
+                            principal,
+                            nameSchema.parse(body.name),
+                          )
+                        : await service.createProduct(
+                            principal,
+                            z.uuid().parse(body.organizationId),
+                            nameSchema.parse(body.name),
+                          );
     const affected = result as { organizationId?: string; id?: string };
     publishChange(
       (operation === "workspace"

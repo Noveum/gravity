@@ -99,6 +99,67 @@ function read(query: string, user = demoUser) {
     }),
   );
 }
+
+test("analytics HTTP reads and versioned deal mutations enforce scope and return usable fields", async () => {
+  const report = await read(
+    `operation=overview&organizationId=${demoId(1)}&days=7`,
+  );
+  expect(report.status).toBe(200);
+  expect(report.headers.get("cache-control")).toBe("private, no-store");
+  const data = await report.json();
+  expect(data).toMatchObject({
+    sent: 1,
+    received: 2,
+    timeZone: "Asia/Kolkata",
+  });
+  expect(
+    (await read(`operation=overview&organizationId=${demoId(1)}&days=365`))
+      .status,
+  ).toBe(400);
+  expect(
+    (
+      await read(
+        `operation=overview&organizationId=${demoId(1)}&productId=${demoId(10)}`,
+        "demo-restricted",
+      )
+    ).status,
+  ).toBe(403);
+  const messages = await read(
+    `operation=messageActivity&organizationId=${demoId(1)}&from=${data.from}&through=${data.through}`,
+  );
+  expect((await messages.json()).items).toHaveLength(3);
+  const body = {
+    operation: "opportunity",
+    organizationId: demoId(1),
+    productId: demoId(10),
+    relationshipId: demoId(300),
+    stageId: demoId(800),
+    ownerId: demoUser,
+    name: "Fictional HTTP deal",
+    amountMinor: 12500,
+    currency: "INR",
+    probability: 50,
+    expectedCloseDate: "2026-12-31",
+  };
+  expect(
+    (await crm(body, demoUser, "https://untrusted.example.test")).status,
+  ).toBe(403);
+  const response = await crm(body);
+  expect(response.status).toBe(200);
+  const saved = await response.json();
+  expect(saved).toMatchObject({
+    amountMinor: 12500,
+    currency: "INR",
+    probability: 50,
+    version: 1,
+  });
+  expect(
+    (await crm({ ...body, id: saved.id, version: 1, amountMinor: 15000 }))
+      .status,
+  ).toBe(200);
+  expect((await crm({ ...body, id: saved.id, version: 1 })).status).toBe(409);
+  expect((await crm({ ...body, amountMinor: -1 })).status).toBe(400);
+});
 function linkedIn(
   id = randomUUID(),
   account = "demo-linkedin",
@@ -192,7 +253,7 @@ describe("CRM HTTP contracts", () => {
         .select()
         .from(s.stages)
         .where(eq(s.stages.productId, product.id)),
-    ).toHaveLength(4);
+    ).toHaveLength(5);
     expect(
       await db
         .select()
@@ -404,7 +465,8 @@ describe("workspace onboarding HTTP transaction", () => {
       snapshot.members.find((m: { id: string }) => m.id === demoUser).role,
     ).toBe("admin");
     expect(snapshot.folders).toHaveLength(1);
-    expect(snapshot.stages).toHaveLength(4);
+    expect(snapshot.stages).toHaveLength(5);
+    expect(snapshot.pipelines).toHaveLength(1);
     expect(
       (await read(`organizationId=${created.organizationId}`, "demo-teammate"))
         .status,

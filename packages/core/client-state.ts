@@ -30,6 +30,8 @@ export function productSnapshot(
     stages: scoped(snapshot.stages),
     meetings: scoped(snapshot.meetings),
     opportunities: scoped(snapshot.opportunities),
+    pipelines: scoped(snapshot.pipelines),
+    messageStats: scoped(snapshot.messageStats),
     members: snapshot.members.map((member) => ({
       ...member,
       productIds: member.productIds.filter((id) => id === productId),

@@ -66,6 +66,7 @@ afterAll(async () => {
 });
 
 const listPages: Record<Section, [string, string]> = {
+  overview: ["overview", "OverviewView"],
   actions: ["actions", "ActionsView"],
   people: ["people", "PeopleView"],
   companies: ["companies", "CompaniesView"],

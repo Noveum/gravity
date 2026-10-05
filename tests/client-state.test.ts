@@ -44,6 +44,8 @@ describe("instant authorized product projection", () => {
         "stages",
         "meetings",
         "opportunities",
+        "pipelines",
+        "messageStats",
       ] as const) {
         expect(projected[key]).toEqual(sql[key]);
       }
@@ -77,6 +79,8 @@ describe("instant authorized product projection", () => {
         "stages",
         "meetings",
         "opportunities",
+        "pipelines",
+        "messageStats",
       ] as const)
         expect(projected[key]).toEqual([]);
     }

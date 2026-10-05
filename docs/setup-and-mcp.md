@@ -33,7 +33,7 @@ Review `drizzle/` before applying `bun run db:migrate` to the supplied database.
 
 ## Workspace onboarding
 
-An authenticated user without organizations opens `/onboarding`. The native form creates the organization, first product, administrator membership, default material folder and four stages in one transaction, with the chosen organization time zone. It opens that organization/product after save. If initiated from assistant authorization, setup returns to the original OAuth selection request. Existing users can create another workspace from Settings. Invites and membership editing are still pending.
+An authenticated user without organizations opens `/onboarding`. The native form creates the organization, first product, administrator membership, default material folder and a sales pipeline with five stages in one transaction, with the chosen organization time zone. It opens that organization/product after save. If initiated from assistant authorization, setup returns to the original OAuth selection request. Existing users can create another workspace from Settings. Invites and membership editing are still pending.
 
 ## MCP contract
 
@@ -68,7 +68,7 @@ Tokens are resource-bound to the MCP URL and expire after five minutes. On each 
 
 The endpoint requires `crm:read crm:write`; include `offline_access` for refresh. OAuth scope challenges advertise these permissions. AI assistants is a dedicated sidebar option (`G X`), and the MCP card appears first in Connections.
 
-Write tools use the same domain services as the UI: `create_person`, `schedule_next_action`, `change_action` (save, approve, complete, rework), `accept_meeting_commitment`, `create_material_folder`, `create_material` (text/Markdown), and `create_product`. `get_workspace` supplies current records and versions. Product creation requires an organization admin with an all-products grant. Changes are audited and publish the same real-time wake-up hints as UI changes. Stale action/meeting versions are rejected. Approval is bound to the exact draft and is invalidated by edits or replies. Message dispatch and membership administration are not implemented as MCP tools.
+Write tools use the same domain services as the UI: `create_person`, `schedule_next_action`, `change_action` (save, approve, complete, rework), `accept_meeting_commitment`, `create_material_folder`, `create_material` (text/Markdown), `create_product`, `save_deal`, and `create_pipeline`. `get_workspace` supplies current records and versions; `get_overview` reports sales/outreach metrics and `get_message_activity` pages through their underlying synced messages. Product creation requires an organization admin with an all-products grant; pipeline creation requires an admin with access to that product. Changes are audited and publish the same real-time wake-up hints as UI changes. Stale action, meeting and deal versions are rejected. Approval is bound to the exact draft and is invalidated by edits or replies. Message dispatch and membership administration are not implemented as MCP tools. [Analytics definitions](analytics.md).
 
 Primary implementation references: [Better Auth MCP](https://better-auth.com/docs/plugins/mcp), [OAuth provider](https://better-auth.com/docs/plugins/oauth-provider), and [official MCP authorization specification](https://modelcontextprotocol.io/specification/latest/basic/authorization).
 

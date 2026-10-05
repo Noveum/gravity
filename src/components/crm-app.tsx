@@ -50,6 +50,7 @@ const compactScreen = () =>
   typeof window.matchMedia === "function" &&
   window.matchMedia(compactQuery).matches;
 const toolbarSections: ReadonlySet<Section> = new Set([
+  "overview",
   "actions",
   "people",
   "companies",

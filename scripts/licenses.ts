@@ -85,6 +85,19 @@ if (missingDirect.length)
   throw new Error(
     `Uninstalled direct dependencies: ${missingDirect.join(", ")}`,
   );
+const undeclared = dependencies.filter(
+  (dependency) => dependency.license === "UNDECLARED",
+);
+if (process.argv.includes("--check")) {
+  if (undeclared.length)
+    throw new Error(
+      `Undeclared dependency licenses: ${undeclared.map((item) => `${item.name}@${item.version}`).join(", ")}`,
+    );
+  console.log(
+    `Checked ${dependencies.length} installed locked packages; all direct packages are present and all declare a license. Review the inventory before distribution; this is not license-policy approval.`,
+  );
+  process.exit(0);
+}
 writeFileSync(
   "docs/dependency-licenses.json",
   `${JSON.stringify({ coverage: "Declared package licenses for locked dependencies installed on the generating platform. Optional packages for other platforms may be absent; inspect their licenses before distributing those binaries. This inventory does not replace upstream license text and notices.", missingLockedPackages: [...locked].filter((key) => !inventory.has(key)).sort(), dependencies }, null, 2)}\n`,

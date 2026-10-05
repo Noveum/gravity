@@ -6,6 +6,7 @@ The local fictional demo works without credentials. `CRM_DEMO_MODE=false` or any
 
 | Variable | Purpose |
 |---|---|
+| `PUBLIC_SITE_URL`, `PUBLIC_SITE_INDEXING` | Optional HTTPS marketing origin and explicit production SEO opt-in; never indexes CRM/auth/API routes |
 | `APP_URL` | Canonical origin, e.g. `https://crm.example.com`; no path/query |
 | `DATABASE_URL` | Managed PostgreSQL connection, with provider-approved TLS and pooling |
 | `BETTER_AUTH_SECRET` | Stable auth/encryption secret, generated and stored securely |
@@ -59,3 +60,5 @@ Tokens are resource-bound to the MCP URL and expire after five minutes. On each 
 There are no MCP sending, draft-approval or membership-changing tools in this release. Later write tools need separate scopes, audit and idempotency contracts, with approval remaining a human decision.
 
 Primary implementation references: [Better Auth MCP](https://better-auth.com/docs/plugins/mcp), [OAuth provider](https://better-auth.com/docs/plugins/oauth-provider), and [official MCP authorization specification](https://modelcontextprotocol.io/specification/latest/basic/authorization).
+
+[Client qualification and current Codex/Claude commands](mcp-client-qualification.md) distinguish official SDK protocol tests from live client sign-in. OAuth remains the first supported path; API keys are not implemented.

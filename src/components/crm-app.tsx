@@ -113,8 +113,18 @@ function CrmShell({ children }: { children: ReactNode }) {
     titleFocus.current = "";
     const row = rowFocus.current;
     rowFocus.current = "";
+    const focusedAtNavigation = document.activeElement;
     requestAnimationFrame(() => {
       if (document.querySelector("dialog[open]")) return;
+      const moved = document.activeElement;
+      if (
+        moved &&
+        moved !== focusedAtNavigation &&
+        moved !== document.body &&
+        moved.isConnected &&
+        !moved.matches(".view-title, [data-record-heading]")
+      )
+        return;
       const target =
         (row &&
           navigableRecords().find(

@@ -13,20 +13,13 @@ import t from "@crm/i18n/translations/en.json";
 import {
   ArrowLeft,
   ArrowUpRight,
-  Building2,
-  CalendarDays,
-  FolderOpen,
-  GitBranch,
-  Layers,
-  ListChecks,
+  CircleHelp,
+  Hourglass,
   Maximize2,
   Minimize2,
-  Plug,
   Plus,
-  RotateCw,
   Search,
-  Settings2,
-  Users,
+  UserRound,
   X,
 } from "lucide-react";
 import {
@@ -38,6 +31,7 @@ import {
   useState,
 } from "react";
 import { ActionDialog } from "./action-dialog";
+import { setSidebarCollapsed, toggleTheme, useAppearance } from "./appearance";
 import {
   dateLabel,
   errorText,
@@ -47,31 +41,31 @@ import {
 } from "./client-api";
 import { Commands } from "./commands";
 import { Connections } from "./connections";
-import { GravityMark } from "./gravity-logo";
 import { focusRecord, useKeyboardNavigation } from "./keyboard-navigation";
 import { Materials } from "./materials";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
 import { PersonDialog } from "./person-dialog";
-import { ViewOptions } from "./preferences";
+import { Preferences } from "./preferences";
 import { CompanyDetails, PersonDetails, RelatedWork } from "./record-details";
 import { SettingsForm } from "./settings-form";
+import {
+  breadcrumbsFor,
+  listedViews,
+  pinnedViews,
+  viewIcons,
+  viewSections,
+} from "./shell/navigation";
+import { Sidebar, type SidebarGroup } from "./shell/sidebar";
+import { TopBar } from "./shell/top-bar";
+import { initials, WorkspaceMenu } from "./shell/workspace-menu";
 import { Shortcuts } from "./shortcuts";
+import { EmptyState, ErrorState, LoadingState } from "./ui/states";
+import { Toaster, useToasts } from "./ui/toaster";
 
-const nav = [
-  { id: "actions", icon: ListChecks },
-  { id: "people", icon: Users },
-  { id: "companies", icon: Building2 },
-  { id: "sequences", icon: GitBranch },
-  { id: "meetings", icon: CalendarDays },
-  { id: "opportunities", icon: Layers },
-  { id: "materials", icon: FolderOpen },
-] as const;
-const initialLetters = (name: string) =>
-  name
-    .split(" ")
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("");
+const owedIcons = { us: UserRound, them: Hourglass, unknown: CircleHelp };
+const compactScreen = () =>
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(max-width: 760px)").matches;
 export function CrmApp({
   initial,
   organizations: initialOrganizations,
@@ -129,7 +123,9 @@ export function CrmApp({
   const [tab, setTab] = useState<"timeline" | "evidence" | "draft">("timeline");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("");
+  const { toasts, notify, dismiss } = useToasts();
+  const appearance = useAppearance();
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [personDialog, setPersonDialog] = useState(false);
   const [actionDialog, setActionDialog] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
@@ -175,7 +171,7 @@ export function CrmApp({
             generation === fetchGeneration.current
           ) {
             setLoadFailed(true);
-            setNotice(errorText(error));
+            notify(errorText(error), "danger");
             if (
               error instanceof Error &&
               ["FORBIDDEN", "UNAUTHORIZED"].includes(error.message)
@@ -193,7 +189,7 @@ export function CrmApp({
           }
         }
       }),
-    [organizationId, refreshCoordinator],
+    [organizationId, refreshCoordinator, notify],
   );
   useEffect(() => {
     void refresh();
@@ -276,7 +272,7 @@ export function CrmApp({
       })
       .catch((error) => {
         if (!controller.signal.aborted) {
-          setNotice(errorText(error));
+          notify(errorText(error), "danger");
           if (
             error instanceof Error &&
             ["FORBIDDEN", "UNAUTHORIZED", "NOT_FOUND"].includes(error.message)
@@ -287,7 +283,7 @@ export function CrmApp({
         }
       });
     return () => controller.abort();
-  }, [selected, organizationId, data?.asOf]);
+  }, [selected, organizationId, data?.asOf, notify]);
   useEffect(() => {
     const scope = `${organizationId}/${productId}/${selectedCompany}`;
     if (companyScope.current !== scope) {
@@ -305,7 +301,7 @@ export function CrmApp({
       })
       .catch((error) => {
         if (!controller.signal.aborted) {
-          setNotice(errorText(error));
+          notify(errorText(error), "danger");
           if (
             error instanceof Error &&
             ["FORBIDDEN", "UNAUTHORIZED", "NOT_FOUND"].includes(error.message)
@@ -317,7 +313,7 @@ export function CrmApp({
         }
       });
     return () => controller.abort();
-  }, [selectedCompany, organizationId, productId, data?.asOf]);
+  }, [selectedCompany, organizationId, productId, data?.asOf, notify]);
   useEffect(() => {
     if (!focusedRecord) return;
     const target = document.querySelector<HTMLElement>(
@@ -339,14 +335,13 @@ export function CrmApp({
     setDraft(buffer?.text ?? action.draft ?? "");
     setDraftVersion(buffer?.version ?? action.version);
     if (buffer && buffer.version !== action.version && !mutating.current)
-      setNotice(t.errors.CONFLICT);
-  }, [action?.draft, action?.id, action?.version]);
+      notify(t.errors.CONFLICT, "danger");
+  }, [action?.draft, action?.id, action?.version, notify]);
   async function mutate(body: object) {
     if (mutating.current) return false;
     mutating.current = true;
     const submittedOrganization = organizationId;
     setBusy(true);
-    setNotice("");
     try {
       const result = await requestJson<unknown>("/api/crm", {
         method: "POST",
@@ -379,11 +374,11 @@ export function CrmApp({
       if (changed.operation === "action" && changed.actionId)
         draftBuffers.current.delete(changed.actionId);
       void refresh();
-      setNotice(t.updated);
+      notify(t.updated, "success");
       return true;
     } catch (error) {
       if (activeOrganization.current === submittedOrganization) {
-        setNotice(errorText(error));
+        notify(errorText(error), "danger");
         if (
           error instanceof Error &&
           ["CONFLICT", "FORBIDDEN", "UNAUTHORIZED"].includes(error.message)
@@ -415,7 +410,6 @@ export function CrmApp({
     setSelected("");
     setSelectedAction("");
     setSearch("");
-    setNotice("");
     revision.current = "";
   }
   function switchProduct(id: string) {
@@ -430,7 +424,6 @@ export function CrmApp({
     setSelected("");
     setSelectedAction("");
     setContext(null);
-    setNotice("");
   }
   function navigate(next: View) {
     setSelectedCompany("");
@@ -438,6 +431,7 @@ export function CrmApp({
     setRecordHistory([]);
     setFocusedRecord("");
     panels.setExpanded(false);
+    setDrawerOpen(false);
     setView(next);
     requestAnimationFrame(() => {
       if (!document.querySelector("dialog[open]"))
@@ -447,11 +441,14 @@ export function CrmApp({
     setOwner("");
     setKind("");
     setAwaitingThem(false);
-    setNotice("");
     if (next !== "actions" && next !== "people") {
       setSelected("");
       setSelectedAction("");
     }
+  }
+  function toggleSidebar() {
+    if (compactScreen()) setDrawerOpen((open) => !open);
+    else setSidebarCollapsed(!appearance.sidebarCollapsed);
   }
   function closeInspector() {
     returnFocus.current?.focus();
@@ -557,7 +554,7 @@ export function CrmApp({
       if (
         !document.activeElement?.classList.contains("view-title") &&
         document.activeElement?.closest(
-          "#record-inspector, .sidebar, .resize-handle, header",
+          "#record-inspector, .sidebar, .resize-handle, header, .toolbar",
         )
       )
         return false;
@@ -568,12 +565,21 @@ export function CrmApp({
     else if (command === "search") {
       if (!searchInput.current) return false;
       searchInput.current.focus();
-    } else if (command === "organization" || command === "product") {
-      document
-        .querySelector<HTMLSelectElement>(
-          `select[aria-label="${command === "organization" ? t.workspace : t.product}"]`,
-        )
-        ?.focus();
+    } else if (command === "sidebar") {
+      toggleSidebar();
+    } else if (command === "organization") {
+      if (compactScreen()) setDrawerOpen(true);
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLElement>("[data-workspace-trigger]")
+          ?.focus(),
+      );
+    } else if (command === "product") {
+      const filter = document.querySelector<HTMLSelectElement>(
+        `select[aria-label="${t.product}"]`,
+      );
+      if (!filter) return false;
+      filter.focus();
     } else if (command === "create" && view === "people") {
       if (!data?.products.length) return false;
       setPersonDialog(true);
@@ -582,7 +588,10 @@ export function CrmApp({
       setActionDialog(true);
     } else if (command === "close") {
       const target = document.activeElement;
-      if (target === searchInput.current) {
+      if (drawerOpen) {
+        setDrawerOpen(false);
+        document.querySelector<HTMLElement>(".drawer-trigger")?.focus();
+      } else if (target === searchInput.current) {
         if (search) setSearch("");
         else {
           searchInput.current?.blur();
@@ -618,248 +627,261 @@ export function CrmApp({
     return true;
   });
   const showInspector = !!selected || !!selectedCompany;
-  const subtitle = t[`${view}Subtitle` as keyof typeof t] as string;
+  const isAdmin =
+    data?.members.find((member) => member.id === userId)?.role === "admin";
   const currentOrg = organizations.find((org) => org.id === organizationId);
+  const openCount =
+    data?.actions.filter((a) => a.status !== "completed").length ?? 0;
+  const savedViews = [
+    { id: "reply", name: t.replies },
+    { id: "commitment", name: t.promises },
+    { id: "waiting", name: t.waiting },
+  ];
+  const savedActive = (id: string) =>
+    view === "actions" &&
+    (id === "waiting" ? awaitingThem : !awaitingThem && kind === id);
+  const sidebarProducts = (data?.products ?? initial?.products ?? []).filter(
+    (p) => p.organizationId === organizationId,
+  );
+  const sidebarGroups: SidebarGroup[] = [
+    ...viewSections.map((section) => ({
+      id: section.id,
+      title: section.title,
+      items: section.views.map((id) => ({
+        id,
+        label: label(id),
+        icon: viewIcons[id],
+        hint: t.keys[id],
+        active: view === id,
+        onSelect: () => navigate(id),
+        ...(id === "actions" ? { count: openCount } : {}),
+      })),
+    })),
+    {
+      id: "products",
+      title: t.products,
+      items: sidebarProducts.length
+        ? [
+            {
+              id: "all-products",
+              label: t.allProducts,
+              kind: "filter" as const,
+              active: !productId,
+              onSelect: () => switchProduct(""),
+            },
+            ...sidebarProducts.map((p) => ({
+              id: `product-${p.id}`,
+              label: p.name,
+              dot: p.color,
+              kind: "filter" as const,
+              active: productId === p.id,
+              onSelect: () => switchProduct(p.id),
+            })),
+          ]
+        : [],
+    },
+    {
+      id: "saved",
+      title: t.savedViews,
+      items: savedViews.map((saved) => ({
+        id: `saved-${saved.id}`,
+        label: saved.name,
+        dot: `var(--saved-${saved.id})`,
+        kind: "filter" as const,
+        active: savedActive(saved.id),
+        onSelect: () => {
+          navigate("actions");
+          setKind(saved.id === "waiting" ? "" : saved.id);
+          setAwaitingThem(saved.id === "waiting");
+        },
+      })),
+    },
+  ];
+  const recordName = selectedCompany
+    ? companyContext?.company?.name
+    : selected
+      ? context?.person?.name
+      : undefined;
+  const crumbs = breadcrumbsFor({
+    view: label(view),
+    ...(currentOrg ? { workspace: currentOrg.name } : {}),
+    ...(productId && product(productId)
+      ? { product: product(productId)?.name ?? "" }
+      : {}),
+    ...(recordName ? { record: recordName } : {}),
+  });
+  const showProductFilter = !["integrations", "settings"].includes(view);
+  const showSearch = !["integrations", "settings", "materials"].includes(view);
   return (
     <div
       ref={panels.frame}
       className="app-shell"
+      data-collapsed={appearance.sidebarCollapsed || undefined}
       style={
         {
-          "--navigation-width": `${panels.navigation}px`,
           "--inspector-width": `${panels.inspector}px`,
         } as CSSProperties
       }
     >
-      <aside className="sidebar" id="navigation-panel">
-        <div className="brand">
-          <GravityMark size={34} />
-          <span>
-            {t.brand}
-            <small>{t.brandSub}</small>
-          </span>
-        </div>
-        <label className="org-switch">
-          <span className="sr-only">{t.workspace}</span>
-          <select
-            aria-label={t.workspace}
-            value={organizationId}
-            onChange={(event) => switchOrganization(event.target.value)}
-          >
-            {organizations.map((org) => (
-              <option key={org.id} value={org.id}>
-                {org.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="nav-label">{t.myWork}</div>
-        <nav aria-label={t.myWork}>
-          {nav.map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              onClick={() => navigate(item.id)}
-              aria-current={view === item.id ? "page" : undefined}
-            >
-              <item.icon size={16} />
-              <span>{label(item.id)}</span>
-              {item.id === "actions" && (
-                <span className="nav-count">
-                  {data?.actions.filter((a) => a.status !== "completed")
-                    .length ?? 0}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
-        <div className="nav-label saved-label">{t.savedViews}</div>
-        <nav aria-label={t.savedViews}>
-          {[
-            [t.replies, "reply"],
-            [t.promises, "commitment"],
-            [t.waiting, "waiting"],
-          ].map(([name, value]) => (
-            <button
-              type="button"
-              key={value}
-              onClick={() => {
-                navigate("actions");
-                setKind(value === "waiting" ? "" : value);
-                setAwaitingThem(value === "waiting");
-              }}
-            >
-              <span className={`tiny-dot ${value}`} />
-              {name}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <nav>
-            <button
-              type="button"
-              onClick={() => navigate("integrations")}
-              aria-current={view === "integrations" ? "page" : undefined}
-            >
-              <Plug size={16} />
-              {t.integrations}
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("settings")}
-              aria-current={view === "settings" ? "page" : undefined}
-            >
-              <Settings2 size={16} />
-              {t.settings}
-            </button>
-          </nav>
-          <div className="user">
-            <span className="avatar">{initialLetters(member(userId))}</span>
-            <div>
-              {member(userId)}
-              <small>{demo ? t.demo : t.brandSub}</small>
-            </div>
+      <Sidebar
+        groups={sidebarGroups}
+        pinned={pinnedViews.map((id) => ({
+          id,
+          label: label(id),
+          icon: viewIcons[id],
+          hint: t.keys[id],
+          active: view === id,
+          onSelect: () => navigate(id),
+        }))}
+        collapsed={appearance.sidebarCollapsed}
+        drawerOpen={drawerOpen}
+        onToggleCollapsed={toggleSidebar}
+        onCloseDrawer={() => setDrawerOpen(false)}
+        onSearch={() => {
+          setDrawerOpen(false);
+          setCommandsOpen(true);
+        }}
+        workspace={
+          <WorkspaceMenu
+            organizations={organizations}
+            organizationId={organizationId}
+            userName={member(userId)}
+            userDetail={demo ? t.demo : t.brandSub}
+            onSwitch={(id) => {
+              setDrawerOpen(false);
+              switchOrganization(id);
+            }}
+          />
+        }
+        footer={
+          <div className="sidebar-status" title={t.polling}>
+            <span className={`live-status sync-${syncState}`}>
+              <span aria-hidden />
+            </span>
+            <span className="nav-label-text">{label(syncState)}</span>
+            {demo && (
+              <span
+                className="badge status-badge nav-label-text"
+                title={t.demoDetail}
+              >
+                {t.demoMode}
+              </span>
+            )}
           </div>
-        </div>
-      </aside>
-      <ResizeHandle
-        className="navigation-resize"
-        controls="navigation-panel"
-        label={t.resizeNavigation}
-        hint={t.resizeHint}
-        value={panels.navigation}
-        min={176}
-        max={panels.navigationMax}
-        direction={1}
-        onChange={panels.resizeNavigation}
-        onReset={() => panels.resizeNavigation(214)}
+        }
       />
+      {drawerOpen && (
+        <button
+          type="button"
+          className="drawer-overlay"
+          aria-label={t.closeNavigation}
+          tabIndex={-1}
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
       <main className="main">
-        <header className="topbar">
-          <h1 tabIndex={-1} className="view-title" title={subtitle}>
-            {label(view)}
-          </h1>
-          <div className="top-controls">
+        <TopBar
+          crumbs={crumbs}
+          onSearch={() => setCommandsOpen(true)}
+          onOpenNavigation={() => setDrawerOpen(true)}
+        />
+        {showProductFilter && (
+          <div className="toolbar">
             <select
               aria-label={t.product}
               value={productId}
               onChange={(event) => switchProduct(event.target.value)}
             >
               <option value="">{t.allProducts}</option>
-              {(data?.products ?? initial?.products ?? [])
-                .filter((p) => p.organizationId === organizationId)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
+              {sidebarProducts.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
             </select>
-            {!["integrations", "settings", "materials"].includes(view) && (
-              <div className="toolbar-filters">
-                <label className="search">
-                  <Search size={15} />
-                  <input
-                    ref={searchInput}
-                    type="search"
-                    aria-label={t.search}
-                    placeholder={t.searchPlaceholder}
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                </label>
-                {view === "people" && (
+            {showSearch && (
+              <label className="search">
+                <Search size={14} aria-hidden />
+                <input
+                  ref={searchInput}
+                  type="search"
+                  aria-label={t.search}
+                  placeholder={t.searchPlaceholder}
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </label>
+            )}
+            {view === "actions" && (
+              <>
+                <select
+                  aria-label={t.owner}
+                  value={owner}
+                  onChange={(event) => setOwner(event.target.value)}
+                >
+                  <option value="">{t.everyone}</option>
+                  <option value={userId}>{t.mine}</option>
+                  {data?.members
+                    .filter((m) => m.id !== userId)
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                </select>
+                <select
+                  aria-label={t.actionType}
+                  value={kind}
+                  onChange={(event) => setKind(event.target.value)}
+                >
+                  <option value="">{t.allTypes}</option>
+                  {[
+                    "reply",
+                    "approval",
+                    "review",
+                    "commitment",
+                    "research",
+                  ].map((k) => (
+                    <option key={k} value={k}>
+                      {label(k)}
+                    </option>
+                  ))}
+                </select>
+                {awaitingThem && (
                   <button
                     type="button"
-                    className="primary"
-                    disabled={!data?.products.length}
-                    onClick={() => setPersonDialog(true)}
+                    className="chip"
+                    aria-label={`${t.waiting}: ${t.clearFilters}`}
+                    onClick={() => setAwaitingThem(false)}
                   >
-                    <Plus size={14} />
-                    {t.addPerson}
+                    {t.waiting} <X size={12} aria-hidden />
                   </button>
                 )}
-                {view === "actions" && (
-                  <>
-                    <button
-                      type="button"
-                      className="primary"
-                      aria-label={t.scheduleAction}
-                      disabled={!data?.relationships.length}
-                      onClick={() => setActionDialog(true)}
-                    >
-                      <Plus size={14} />
-                      {t.newAction}
-                    </button>
-                    <select
-                      aria-label={t.owner}
-                      value={owner}
-                      onChange={(event) => setOwner(event.target.value)}
-                    >
-                      <option value="">{t.everyone}</option>
-                      <option value={userId}>{t.mine}</option>
-                      {data?.members
-                        .filter((m) => m.id !== userId)
-                        .map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}
-                          </option>
-                        ))}
-                    </select>
-                    <select
-                      aria-label={t.actionType}
-                      value={kind}
-                      onChange={(event) => setKind(event.target.value)}
-                    >
-                      <option value="">{t.allTypes}</option>
-                      {[
-                        "reply",
-                        "approval",
-                        "review",
-                        "commitment",
-                        "research",
-                      ].map((k) => (
-                        <option key={k} value={k}>
-                          {label(k)}
-                        </option>
-                      ))}
-                    </select>
-                    {awaitingThem && (
-                      <button
-                        type="button"
-                        className="badge"
-                        aria-label={`${t.waiting}: ${t.clearFilters}`}
-                        onClick={() => setAwaitingThem(false)}
-                      >
-                        {t.waiting} <X size={12} />
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
+                <button
+                  type="button"
+                  className="primary toolbar-primary"
+                  aria-label={t.scheduleAction}
+                  disabled={!data?.relationships.length}
+                  onClick={() => setActionDialog(true)}
+                >
+                  <Plus size={14} aria-hidden />
+                  {t.newAction}
+                </button>
+              </>
             )}
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t.commands}
-              onClick={() => setCommandsOpen(true)}
-            >
-              <Search size={15} />
-            </button>
-            <ViewOptions />
-            <span className={`live-status sync-${syncState}`} title={t.polling}>
-              <span />
-              <span className="sr-only">{label(syncState)}</span>
-            </span>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t.refresh}
-              onClick={() => void refresh()}
-            >
-              <RotateCw size={15} />
-            </button>
+            {view === "people" && (
+              <button
+                type="button"
+                className="primary toolbar-primary"
+                disabled={!data?.products.length}
+                onClick={() => setPersonDialog(true)}
+              >
+                <Plus size={14} aria-hidden />
+                {t.addPerson}
+              </button>
+            )}
           </div>
-        </header>
+        )}
         {helpOpen && <Shortcuts onClose={() => setHelpOpen(false)} />}
         {commandsOpen && (
           <Commands
@@ -877,11 +899,23 @@ export function CrmApp({
                 shortcut: "",
                 run: () => void refresh(),
               },
-              ...nav.map((item) => ({
-                id: item.id,
-                title: label(item.id),
-                shortcut: t.keys[item.id],
-                run: () => navigate(item.id),
+              {
+                id: "theme",
+                title: t.toggleTheme,
+                shortcut: "",
+                run: toggleTheme,
+              },
+              {
+                id: "sidebar",
+                title: t.toggleSidebar,
+                shortcut: t.keys.sidebar,
+                run: toggleSidebar,
+              },
+              ...listedViews.map((id) => ({
+                id,
+                title: label(id),
+                shortcut: t.keys[id],
+                run: () => navigate(id),
               })),
               {
                 id: "schedule",
@@ -899,18 +933,6 @@ export function CrmApp({
                   navigate("people");
                   setPersonDialog(true);
                 },
-              },
-              {
-                id: "integrations",
-                title: t.integrations,
-                shortcut: t.keys.integrations,
-                run: () => navigate("integrations"),
-              },
-              {
-                id: "settings",
-                title: t.settings,
-                shortcut: t.keys.settings,
-                run: () => navigate("settings"),
               },
             ]}
           />
@@ -935,7 +957,7 @@ export function CrmApp({
               setAwaitingThem(false);
               setOwner("");
               setSearch("");
-              setNotice(t.scheduledAction);
+              notify(t.scheduledAction, "success");
             }}
           />
         )}
@@ -953,21 +975,23 @@ export function CrmApp({
               setSelected(result.relationshipId);
               setSelectedAction("");
               setTab("timeline");
-              setNotice(t.updated);
+              notify(t.updated, "success");
             }}
           />
         )}
         {!data ? (
-          <div className="empty">
-            {organizationId
-              ? loadFailed
-                ? t.viewLoadError
-                : t.loading
-              : t.organizationIsolation}
-            {organizationId && loadFailed && (
-              <button type="button" onClick={() => void refresh()}>
-                {t.retry}
-              </button>
+          <div className="workspace-state">
+            {organizationId ? (
+              loadFailed ? (
+                <ErrorState
+                  title={t.viewLoadError}
+                  onRetry={() => void refresh()}
+                />
+              ) : (
+                <LoadingState />
+              )
+            ) : (
+              <EmptyState title={t.organizationIsolation} compact />
             )}
             {!organizationId && (
               <SettingsForm
@@ -1000,25 +1024,21 @@ export function CrmApp({
               }}
             >
               {!data.products.length && view !== "settings" && (
-                <div className="setup-empty">
-                  <h2>{t.noProductsAvailable}</h2>
-                  <p>
-                    {data.members.find((member) => member.id === userId)
-                      ?.role === "admin"
-                      ? t.setupAddProduct
-                      : t.setupAskAccess}
-                  </p>
-                  {data.members.find((member) => member.id === userId)?.role ===
-                    "admin" && (
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={() => navigate("settings")}
-                    >
-                      {t.newProduct}
-                    </button>
-                  )}
-                </div>
+                <EmptyState
+                  title={t.noProductsAvailable}
+                  description={isAdmin ? t.setupAddProduct : t.setupAskAccess}
+                  action={
+                    isAdmin && (
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => navigate("settings")}
+                      >
+                        {t.newProduct}
+                      </button>
+                    )
+                  }
+                />
               )}
               {view === "actions" && (
                 <>
@@ -1036,6 +1056,9 @@ export function CrmApp({
                         </div>
                         {list.map((a) => {
                           const person = personFor(a.relationshipId);
+                          const OwedIcon =
+                            owedIcons[a.owedBy as keyof typeof owedIcons] ??
+                            CircleHelp;
                           return (
                             <button
                               type="button"
@@ -1051,31 +1074,21 @@ export function CrmApp({
                                 openPerson(a.relationshipId, a.id);
                               }}
                             >
-                              <span
-                                className="avatar"
-                                style={{
-                                  background: `${product(a.productId)?.color}18`,
-                                  color: product(a.productId)?.color,
-                                }}
-                              >
-                                {initialLetters(person?.name ?? "?")}
+                              <span className="row-avatar" aria-hidden>
+                                {initials(person?.name ?? "?")}
                               </span>
-                              <div className="row-copy">
-                                <div className="row-name">
-                                  {person?.name}
-                                  <span className="row-company">
-                                    {companyFor(person?.id ?? "")?.name}
-                                  </span>
-                                </div>
-                                <div className="row-action">
-                                  {a.title}
-                                  {a.status === "blocked" && (
-                                    <span className="badge warning">
-                                      {t.blocked}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="row-meta">
+                              <span className="row-name">{person?.name}</span>
+                              <span className="row-company">
+                                {companyFor(person?.id ?? "")?.name}
+                              </span>
+                              <span className="row-action">{a.title}</span>
+                              {a.status === "blocked" && (
+                                <span className="badge warning">
+                                  {t.blocked}
+                                </span>
+                              )}
+                              <span className="row-meta">
+                                <span className="row-product">
                                   <span
                                     className="product-dot"
                                     style={{
@@ -1083,63 +1096,80 @@ export function CrmApp({
                                     }}
                                   />
                                   {product(a.productId)?.name}
-                                  <span>·</span>
-                                  {label(a.kind)}
-                                  <span>·</span>
-                                  {member(a.ownerId)}
-                                </div>
-                              </div>
-                              <div className="row-due">
-                                <span
-                                  className={
-                                    new Date(a.dueAt).getTime() <
-                                    Date.now() - 86400000
-                                      ? "overdue"
-                                      : ""
-                                  }
-                                >
-                                  {dateLabel(a.dueAt, currentOrg?.timezone)}
                                 </span>
-                                <small>{label(a.owedBy)}</small>
-                              </div>
+                                <span className="row-kind">
+                                  {label(a.kind)}
+                                </span>
+                                <span
+                                  className="row-owner"
+                                  title={member(a.ownerId)}
+                                >
+                                  <span aria-hidden>
+                                    {initials(member(a.ownerId))}
+                                  </span>
+                                  <span className="sr-only">
+                                    {member(a.ownerId)}
+                                  </span>
+                                </span>
+                              </span>
+                              <span
+                                className={`row-owed owed-${a.owedBy}`}
+                                title={`${t.owedBy} ${label(a.owedBy)}`}
+                              >
+                                <OwedIcon size={13} aria-hidden />
+                                <span className="sr-only">
+                                  {t.owedBy} {label(a.owedBy)}
+                                </span>
+                              </span>
+                              <span
+                                className={`row-due${
+                                  new Date(a.dueAt).getTime() <
+                                  Date.now() - 86400000
+                                    ? " overdue"
+                                    : ""
+                                }`}
+                              >
+                                {dateLabel(a.dueAt, currentOrg?.timezone)}
+                              </span>
                             </button>
                           );
                         })}
                       </div>
                     ) : null;
                   })}
-                  {!visibleActions.length && (
-                    <div className="empty">
-                      {!data.people.length && data.products.length ? (
-                        <>
-                          <h2>{t.workspaceReady}</h2>
-                          <p>{t.workspaceNextStep}</p>
-                          <button
-                            type="button"
-                            className="primary"
-                            onClick={() => setPersonDialog(true)}
-                          >
-                            {t.addPerson}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => navigate("integrations")}
-                          >
-                            {t.connectTools}
-                          </button>
-                        </>
-                      ) : (
-                        t.noResults
-                      )}
-                    </div>
-                  )}
+                  {!visibleActions.length &&
+                    (!data.people.length && data.products.length ? (
+                      <EmptyState
+                        title={t.workspaceReady}
+                        description={t.workspaceNextStep}
+                        action={
+                          <>
+                            <button
+                              type="button"
+                              className="primary"
+                              onClick={() => setPersonDialog(true)}
+                            >
+                              {t.addPerson}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => navigate("integrations")}
+                            >
+                              {t.connectTools}
+                            </button>
+                          </>
+                        }
+                      />
+                    ) : data.products.length ? (
+                      <EmptyState title={t.noResults} compact />
+                    ) : null)}
                 </>
               )}
               {view === "people" && (
                 <div className="table-scroll">
                   {!data.people.some((p) =>
                     matches(p.name, p.title, companyFor(p.id)?.name),
-                  ) && <p className="empty">{t.noPeople}</p>}
+                  ) && <EmptyState title={t.noPeople} compact />}
                   <table>
                     <thead>
                       <tr>
@@ -1211,9 +1241,9 @@ export function CrmApp({
                                 ))}
                               </td>
                               <td>
-                                {relationships.map((r) => (
-                                  <div key={r.id}>{label(r.qualification)}</div>
-                                ))}
+                                {relationships
+                                  .map((r) => label(r.qualification))
+                                  .join(" · ")}
                               </td>
                             </tr>
                           );
@@ -1225,7 +1255,7 @@ export function CrmApp({
               {view === "companies" && (
                 <div className="table-scroll">
                   {!data.companies.some((c) => matches(c.name, c.domain)) && (
-                    <p className="empty">{t.noCompanies}</p>
+                    <EmptyState title={t.noCompanies} compact />
                   )}
                   <table>
                     <thead>
@@ -1296,7 +1326,7 @@ export function CrmApp({
                 <div className="page-content">
                   {!data.sequences.some((s) =>
                     matches(s.name, product(s.productId)?.name),
-                  ) && <p className="empty">{t.noSequences}</p>}
+                  ) && <EmptyState title={t.noSequences} compact />}
                   {data.sequences
                     .filter((sequence) =>
                       matches(sequence.name, product(sequence.productId)?.name),
@@ -1356,7 +1386,7 @@ export function CrmApp({
                   <p className="callout">{t.meetingNote}</p>
                   {!data.meetings.some((m) =>
                     matches(m.title, personFor(m.relationshipId)?.name),
-                  ) && <p className="empty">{t.noMeetings}</p>}
+                  ) && <EmptyState title={t.noMeetings} compact />}
                   {data.meetings
                     .filter((meeting) =>
                       matches(
@@ -1558,7 +1588,7 @@ export function CrmApp({
                   organizationId={organizationId}
                   productId={productId}
                   refresh={refresh}
-                  onNotice={setNotice}
+                  onNotice={(text) => notify(text, "success")}
                   timeZone={currentOrg?.timezone ?? "UTC"}
                 />
               )}
@@ -1572,6 +1602,11 @@ export function CrmApp({
               )}
               {view === "settings" && (
                 <div className="page-content">
+                  <section className="settings-section">
+                    <h2>{t.preferences}</h2>
+                    <p className="muted">{t.preferencesDetail}</p>
+                    <Preferences labelled />
+                  </section>
                   <p className="callout">{t.organizationIsolation}</p>
                   <a className="auth-link" href="/onboarding">
                     {t.createWorkspace}
@@ -1692,15 +1727,15 @@ export function CrmApp({
                       timeZone={currentOrg?.timezone || "UTC"}
                     />
                   ) : (
-                    <p className="muted">{t.loading}</p>
+                    <LoadingState rows={4} />
                   )
                 ) : !context ? (
-                  <p className="muted">{t.loading}</p>
+                  <LoadingState rows={4} />
                 ) : (
                   <>
                     <div className="profile">
                       <span className="profile-avatar">
-                        {initialLetters(context.person?.name ?? "")}
+                        {initials(context.person?.name ?? "")}
                       </span>
                       <div>
                         <h2>{context.person?.name}</h2>
@@ -1992,15 +2027,8 @@ export function CrmApp({
             )}
           </div>
         )}
-        <footer className="statusbar">
-          <span role="status">
-            {notice || (demo ? t.demoDetail : t.brandSub)}
-          </span>
-          <span>
-            {t.brand} · {t.brandSub}
-          </span>
-        </footer>
       </main>
+      <Toaster toasts={toasts} onDismiss={dismiss} />
     </div>
   );
   async function revokeGrant(grantId: string) {
@@ -2013,11 +2041,11 @@ export function CrmApp({
       });
       if (activeOrganization.current !== submittedOrganization) return true;
       await refresh();
-      setNotice(t.updated);
+      notify(t.updated, "success");
       return true;
     } catch (error) {
       if (activeOrganization.current === submittedOrganization)
-        setNotice(errorText(error));
+        notify(errorText(error), "danger");
       return false;
     }
   }

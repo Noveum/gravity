@@ -22,6 +22,7 @@ import { type ClientSnapshot, serialize } from "../packages/core/dto";
 import { createLocalDatabase } from "../packages/database/client";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { appearanceBootScript } from "../src/components/appearance-boot";
 import { requestJson } from "../src/components/client-api";
 import { CrmApp } from "../src/components/crm-app";
 
@@ -81,7 +82,18 @@ afterAll(async () => {
   vi.unstubAllGlobals();
 });
 afterEach(cleanup);
+function setCompactScreen(compact: boolean) {
+  window.matchMedia = vi.fn((query: string) => ({
+    matches: compact && query.includes("max-width"),
+    addEventListener() {},
+    removeEventListener() {},
+  })) as unknown as typeof window.matchMedia;
+}
 beforeEach(() => {
+  localStorage.clear();
+  document.documentElement.className = "";
+  delete document.documentElement.dataset.sidebar;
+  setCompactScreen(false);
   request.mockReset();
   request.mockImplementation(async (url) => {
     const params = new URL(url, "http://localhost").searchParams;
@@ -177,9 +189,12 @@ test("a delayed previous-organization snapshot cannot reappear after switching o
       : regular(url, init),
   );
   mount();
-  fireEvent.change(screen.getByRole("combobox", { name: t.workspace }), {
-    target: { value: demoId(2) },
-  });
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: `${t.switchOrganization}: Northstar Collective`,
+    }),
+  );
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Lunar Studio" }));
   expect(screen.queryByText("Mira Chen")).toBeNull();
   await act(async () => release(snapshot));
   await waitFor(() =>
@@ -225,7 +240,8 @@ test("a confirmed action updates the queue before refresh and an older read cann
     }
     return regular(url, init);
   });
-  fireEvent.click(screen.getByRole("button", { name: t.refresh }));
+  fireEvent.click(screen.getByRole("button", { name: t.commands }));
+  fireEvent.click(screen.getByRole("option", { name: t.refresh }));
   fireEvent.click(screen.getByRole("button", { name: t.markDone }));
   await waitFor(() => expect(row()).toBeNull());
   expect(reads).toBe(1);
@@ -386,4 +402,120 @@ test("a fresh workspace opens its first product and offers working contact and i
     "https://gravity.example.test/mcp",
   );
   expect(screen.getByRole("heading", { name: t.calendar })).toBeTruthy();
+});
+
+test("the header theme toggle persists across a reload and agrees with preferences", async () => {
+  mount();
+  const toggle = () => screen.getByRole("button", { name: t.toggleTheme });
+  expect(toggle().getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(toggle());
+  expect(document.documentElement.classList.contains("dark")).toBe(true);
+  expect(localStorage.getItem("gravity-theme")).toBe("dark");
+  expect(toggle().getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: t.settings }));
+  const preference = screen.getByRole("combobox", {
+    name: t.appearance,
+  }) as HTMLSelectElement;
+  expect(preference.value).toBe("dark");
+  cleanup();
+  document.documentElement.className = "";
+  new Function(appearanceBootScript)();
+  expect(document.documentElement.classList.contains("dark")).toBe(true);
+  mount();
+  expect(toggle().getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(toggle());
+  expect(document.documentElement.classList.contains("dark")).toBe(false);
+  expect(localStorage.getItem("gravity-theme")).toBe("light");
+  fireEvent.click(screen.getByRole("button", { name: t.settings }));
+  fireEvent.change(screen.getByRole("combobox", { name: t.appearance }), {
+    target: { value: "system" },
+  });
+  expect(localStorage.getItem("gravity-theme")).toBe("system");
+  expect(toggle().getAttribute("aria-pressed")).toBe("false");
+});
+
+test("the bracket key collapses the sidebar, the choice survives a reload, and every destination keeps its name", async () => {
+  mount();
+  const collapse = () => screen.getByRole("button", { name: t.toggleSidebar });
+  expect(collapse().getAttribute("aria-expanded")).toBe("true");
+  fireEvent.keyDown(document.body, { key: "[" });
+  expect(document.documentElement.dataset.sidebar).toBe("collapsed");
+  expect(localStorage.getItem("gravity-sidebar")).toBe("collapsed");
+  expect(collapse().getAttribute("aria-expanded")).toBe("false");
+  const people = screen.getByRole("button", { name: t.people });
+  expect(people.getAttribute("aria-label")).toBe(t.people);
+  fireEvent.click(people);
+  expect(
+    screen.getByRole("heading", { name: t.people, level: 1 }),
+  ).toBeTruthy();
+  cleanup();
+  delete document.documentElement.dataset.sidebar;
+  new Function(appearanceBootScript)();
+  expect(document.documentElement.dataset.sidebar).toBe("collapsed");
+  mount();
+  expect(collapse().getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(collapse());
+  expect(document.documentElement.dataset.sidebar).toBe("expanded");
+  expect(collapse().getAttribute("aria-expanded")).toBe("true");
+  expect(
+    screen.getByRole("button", { name: t.people }).getAttribute("aria-label"),
+  ).toBeNull();
+});
+
+test("on a narrow screen the bracket key opens the navigation drawer and Escape closes it", async () => {
+  setCompactScreen(true);
+  mount();
+  const sidebar = document.getElementById("navigation-panel");
+  expect(sidebar?.dataset.drawer).toBe("closed");
+  fireEvent.keyDown(document.body, { key: "[" });
+  expect(sidebar?.dataset.drawer).toBe("open");
+  expect(localStorage.getItem("gravity-sidebar")).toBeNull();
+  fireEvent.keyDown(document.body, { key: "Escape" });
+  expect(sidebar?.dataset.drawer).toBe("closed");
+  fireEvent.click(screen.getByRole("button", { name: t.openNavigation }));
+  expect(sidebar?.dataset.drawer).toBe("open");
+  fireEvent.click(screen.getByRole("button", { name: t.companies }));
+  expect(sidebar?.dataset.drawer).toBe("closed");
+});
+
+test("results arrive as dismissible toasts instead of a footer status strip", async () => {
+  mount();
+  expect(document.querySelector("footer")).toBeNull();
+  expect(screen.queryByText(t.demoDetail, { exact: true })).toBeNull();
+  const notifications = screen.getByRole("region", { name: t.notifications });
+  expect(notifications.children).toHaveLength(0);
+  const row = () =>
+    screen.queryByRole("button", {
+      name: /Theo Grant.*Review their promised introduction/,
+    });
+  await waitFor(() => expect(row()).toBeTruthy());
+  fireEvent.click(row() as HTMLButtonElement);
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: t.markDone }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  const regular = request.getMockImplementation();
+  if (!regular) throw new Error("Missing request implementation");
+  request.mockImplementation(async (url, init) => {
+    if (init?.method === "POST") throw new Error("INTERNAL_ERROR");
+    return regular(url, init);
+  });
+  fireEvent.click(screen.getByRole("button", { name: t.markDone }));
+  const failure = await within(notifications).findByRole("alert");
+  expect(failure.textContent).toBe(t.errors.INTERNAL_ERROR);
+  request.mockImplementation(async (url, init) =>
+    init?.method === "POST"
+      ? serialize(
+          await service.changeAction(principal, JSON.parse(String(init.body))),
+        )
+      : regular(url, init),
+  );
+  fireEvent.click(screen.getByRole("button", { name: t.markDone }));
+  const success = await within(notifications).findByRole("status");
+  expect(success.textContent).toBe(t.updated);
+  fireEvent.click(within(success).getByRole("button", { name: t.dismiss }));
+  expect(within(notifications).queryByRole("status")).toBeNull();
+  expect(within(notifications).getByRole("alert")).toBeTruthy();
 });

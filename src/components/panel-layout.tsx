@@ -1,21 +1,18 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
+const sidebarWidth = 232;
 function bound(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 export function usePanelLayout() {
   const frame = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1280);
-  const [navigation, setNavigation] = useState(214);
   const [inspector, setInspector] = useState(400);
   const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     try {
-      const left = Number(localStorage.getItem("gravity-navigation-width"));
       const right = Number(localStorage.getItem("gravity-inspector-width"));
-      if (Number.isFinite(left) && left >= 176 && left <= 340)
-        setNavigation(left);
       if (Number.isFinite(right) && right >= 300 && right <= 960)
         setInspector(right);
     } catch {}
@@ -27,19 +24,7 @@ export function usePanelLayout() {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const navigationMax = Math.max(176, Math.min(340, width - 660));
-  const actualNavigation = bound(navigation, 176, navigationMax);
-  const inspectorMax = Math.max(
-    300,
-    Math.min(960, width - actualNavigation - 320),
-  );
-  function resizeNavigation(value: number) {
-    const next = bound(value, 176, navigationMax);
-    setNavigation(next);
-    try {
-      localStorage.setItem("gravity-navigation-width", String(next));
-    } catch {}
-  }
+  const inspectorMax = Math.max(300, Math.min(960, width - sidebarWidth - 320));
   function resizeInspector(value: number) {
     const next = bound(value, 300, inspectorMax);
     setInspector(next);
@@ -49,11 +34,8 @@ export function usePanelLayout() {
   }
   return {
     frame,
-    navigation: actualNavigation,
     inspector: bound(inspector, 300, inspectorMax),
-    navigationMax,
     inspectorMax,
-    resizeNavigation,
     resizeInspector,
     expanded,
     setExpanded,

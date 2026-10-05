@@ -1359,7 +1359,7 @@
   "assistants": "MCP access",
   "allProductsAndFuture": "All current and future products",
   "assistantProductScope": "Access follows your current organization membership and product permissions. Turn this off to choose specific products.",
-  "consentReadWrite": "Allow this assistant to read and update CRM records, schedule follow-ups, manage drafts and approvals, and create sales materials. Your organization and product permissions still apply.",
+  "consentReadWrite": "Allow this assistant to use all current CRM business APIs: manage clients, companies, deals, meetings, follow-ups, sequences, drafts and approvals, documents, your connections and imports, and assistant access. Organization, product and account-owner permissions apply. Provider consent remains separate; no messages are sent.",
   "overview": "Overview",
   "overviewOutreachQueue": "Outreach queue",
   "outreachDueNow": "Outreach due today or earlier",

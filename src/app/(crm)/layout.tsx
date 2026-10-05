@@ -9,6 +9,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { CrmApp } from "@/components/crm-app";
+import { requestPathHeader, signInPath } from "@/components/routes";
 import {
   brandCookie,
   chooseBrand,
@@ -19,10 +20,12 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export default async function CrmLayout({ children }: { children: ReactNode }) {
   let principal: Principal;
+  const request = await headers();
   try {
-    principal = await currentPrincipal(await headers());
+    principal = await currentPrincipal(request);
   } catch (error) {
-    if (error instanceof DomainError) redirect("/sign-in");
+    if (error instanceof DomainError)
+      redirect(signInPath(request.get(requestPathHeader)));
     throw error;
   }
   const service = new CrmService(await getDatabase());

@@ -18,6 +18,12 @@ const recordSections: ReadonlySet<Section> = new Set(["people", "companies"]);
 const sections = Object.keys(sectionPaths) as Section[];
 
 export const homePath = sectionPaths.actions;
+export const requestPathHeader = "x-gravity-path";
+const unsafeCharacter = (character: string) => {
+  const code = character.charCodeAt(0);
+  return code < 32 || code === 127 || character === "\\";
+};
+const originProbe = "http://gravity.invalid";
 
 export interface Route {
   section: Section;
@@ -83,4 +89,25 @@ export function actionsPath(filters: Partial<ActionFilters> = {}) {
     owner: filters.owner,
     waiting: filters.waiting ? "1" : undefined,
   });
+}
+
+export function appPath(value: string | null | undefined) {
+  if (
+    !value?.startsWith("/") ||
+    value.startsWith("//") ||
+    [...value].some(unsafeCharacter)
+  )
+    return null;
+  try {
+    const url = new URL(value, originProbe);
+    if (url.origin !== originProbe || !routeFor(url.pathname)) return null;
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return null;
+  }
+}
+
+export function signInPath(requested: string | null | undefined) {
+  const path = appPath(requested);
+  return path ? `/sign-in?callbackURL=${encodeURIComponent(path)}` : "/sign-in";
 }

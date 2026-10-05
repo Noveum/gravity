@@ -22,19 +22,24 @@ import {
 
 let db: Database;
 let requestCookies = new Map<string, string>();
+let requestHeaders = new Headers();
+let anonymous = false;
 vi.mock("@crm/database/client", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getDatabase: async () => db,
   isDemoMode: () => true,
 }));
-vi.mock("@crm/auth/server", () => ({
-  currentPrincipal: async (): Promise<Principal> => ({
-    userId: demoUser,
-    source: "demo",
-  }),
-}));
+vi.mock("@crm/auth/server", async () => {
+  const { DomainError } = await import("../packages/core/policy");
+  return {
+    currentPrincipal: async (): Promise<Principal> => {
+      if (anonymous) throw new DomainError("UNAUTHORIZED", 401);
+      return { userId: demoUser, source: "demo" };
+    },
+  };
+});
 vi.mock("next/headers", () => ({
-  headers: async () => new Headers(),
+  headers: async () => requestHeaders,
   cookies: async () => ({
     get: (name: string) =>
       requestCookies.has(name)
@@ -203,5 +208,63 @@ describe("workspace preference", () => {
     const fallback = await Layout({ children: null });
     expect(fallback.props.initialOrganizationId).toBe(demoId(1));
     expect(fallback.props.initialProductId).toBe("");
+  });
+});
+
+describe("signed-out deep links", () => {
+  async function redirectOf(run: () => Promise<unknown>) {
+    try {
+      await run();
+    } catch (error) {
+      return (error as { digest?: string }).digest?.split(";")[2] ?? "";
+    }
+    return "";
+  }
+  test("the proxy forwards the requested path and query to the server render", async () => {
+    const { NextRequest } = await import("next/server");
+    const { proxy, config } = await import("../src/proxy");
+    const response = proxy(
+      new NextRequest(
+        `http://localhost/people/${demoId(200)}?relationship=${demoId(306)}`,
+        { headers: { "x-gravity-path": "/forged" } },
+      ),
+    );
+    expect(response.headers.get("x-middleware-request-x-gravity-path")).toBe(
+      `/people/${demoId(200)}?relationship=${demoId(306)}`,
+    );
+    for (const section of Object.keys(listPages) as Section[])
+      expect(
+        config.matcher.some((pattern) =>
+          pattern.startsWith(sectionPath(section)),
+        ),
+        section,
+      ).toBe(true);
+  });
+  test("an anonymous visit to a record returns there after sign-in", async () => {
+    const { default: Layout } = await import("../src/app/(crm)/layout");
+    const { signInDestination } = await import(
+      "../src/components/sign-in-destination"
+    );
+    anonymous = true;
+    try {
+      const path = `/people/${demoId(200)}?relationship=${demoId(306)}`;
+      requestHeaders = new Headers({ "x-gravity-path": path });
+      const target = await redirectOf(() => Layout({ children: null }));
+      const signIn = new URL(target, "http://localhost");
+      expect(signIn.pathname).toBe("/sign-in");
+      expect(signIn.searchParams.get("callbackURL")).toBe(path);
+      expect(signInDestination(signIn.searchParams, "http://localhost")).toBe(
+        path,
+      );
+      for (const unsafe of ["//evil.example/x", "/api/crm", "/people/a\tb"]) {
+        requestHeaders = new Headers({ "x-gravity-path": unsafe });
+        expect(await redirectOf(() => Layout({ children: null }))).toBe(
+          "/sign-in",
+        );
+      }
+    } finally {
+      anonymous = false;
+      requestHeaders = new Headers();
+    }
   });
 });

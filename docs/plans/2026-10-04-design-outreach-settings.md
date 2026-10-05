@@ -1,6 +1,6 @@
 # Design, outreach and settings plan
 
-Branch `claude/design-outreach` (based on `codex/production-authentication` 212b867). Production runs at crm.noveum.ai on Supabase with Google and GitHub sign-in working.
+Branch `claude/design-outreach` (based on `codex/production-authentication` 212b867). Production runs at gravity.noveum.ai on Supabase with Google and GitHub sign-in working.
 
 The owner's asks for this round:
 - fix the design, which has many problems (target: the larger build's header, shell and density at ~/Projects/Noveum/gravity);
@@ -150,4 +150,4 @@ Port the larger build's look and structure. Its tokens and components are in ~/P
 
 ## Review
 
-Each task gets an implementer, then a reviewer, then fix rounds until approved. A whole-branch review follows the last task. The owner sees progress on the local preview, and the controller asks before any migration reaches Supabase or any deploy reaches crm.noveum.ai.
+Each task gets an implementer, then a reviewer, then fix rounds until approved. A whole-branch review follows the last task. The owner sees progress on the local preview, and the controller asks before any migration reaches Supabase or any deploy reaches gravity.noveum.ai.

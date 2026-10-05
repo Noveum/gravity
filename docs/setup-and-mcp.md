@@ -4,7 +4,7 @@
 
 Gravity is hosted at [gravity.noveum.ai](https://gravity.noveum.ai). The public landing page is `/`; **Start using Gravity** opens `/actions` and prompts signed-out users to sign in. Google, GitHub and email-code sign-in are available on the hosted app. Users create their own organization and product through onboarding, then connect personal provider accounts from Connections. No local installation or environment variables are needed to use the hosted workspace.
 
-The hosted remote OAuth MCP endpoint is `https://gravity.noveum.ai/mcp`. When changing from the old `crm.noveum.ai` endpoint, update the assistant URL and authenticate again: tokens are bound to the exact origin and resource. Existing organizations, contacts and connected provider credentials remain in the same database.
+The hosted remote OAuth MCP endpoint is `https://gravity.noveum.ai/mcp`. When changing the application hostname, update the assistant URL and authenticate again: tokens are bound to the exact origin and resource. Existing organizations, contacts and connected provider credentials remain in the same database.
 
 ## Development and self-hosting configuration
 

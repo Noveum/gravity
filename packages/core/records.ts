@@ -435,7 +435,7 @@ export class RecordService {
         if (existing.archivedAt) throw new DomainError("RECORD_ARCHIVED", 409);
       }
       if (domain) {
-        const [duplicate] = await tx
+        const duplicates = await tx
           .select({ id: s.companies.id })
           .from(s.companies)
           .where(
@@ -446,7 +446,16 @@ export class RecordService {
               ...(existing ? [ne(s.companies.id, existing.id)] : []),
             ),
           );
-        if (duplicate) throw new DomainError("COMPANY_EXISTS", 409);
+        for (const duplicate of duplicates)
+          if (
+            await companyVisible(
+              tx,
+              productIds,
+              input.organizationId,
+              duplicate.id,
+            )
+          )
+            throw new DomainError("COMPANY_EXISTS", 409);
       }
       const values = {
         name: input.name,

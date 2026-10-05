@@ -376,6 +376,49 @@ describe("companies", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  test("a domain held by a company in a hidden brand does not reveal it to a restricted member", async () => {
+    const hiddenCompany = await records.saveCompany(
+      admin,
+      companySchema.parse({
+        organizationId: org,
+        name: "Fictional Hidden Domain Co",
+        domain: "hidden-domain.example.test",
+      }),
+    );
+    await crm.createPerson(admin, {
+      organizationId: org,
+      productId: demoId(10),
+      name: "Fictional Hidden Employee",
+      email: "hidden-employee@example.test",
+      title: "",
+      companyId: hiddenCompany.id,
+      purpose: "buyer",
+      context: "",
+      review: false,
+      channel: "gmail",
+    });
+    const created = await records.saveCompany(
+      restricted,
+      companySchema.parse({
+        organizationId: org,
+        name: "Fictional Same Domain Co",
+        domain: "hidden-domain.example.test",
+      }),
+    );
+    expect(created.id).not.toBe(hiddenCompany.id);
+    expect(created.domain).toBe("hidden-domain.example.test");
+    await expect(
+      records.saveCompany(
+        teammate,
+        companySchema.parse({
+          organizationId: org,
+          name: "Fictional Third Copy",
+          domain: "hidden-domain.example.test",
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "COMPANY_EXISTS" });
+  });
+
   test("companies are edited with a version check and archived out of lists", async () => {
     const [harbor] = await local.db
       .select()

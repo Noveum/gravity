@@ -2,7 +2,7 @@
 import type { JsonValue } from "@crm/core/dto";
 import type { DueTouches, OutreachQueue } from "@crm/core/outreach";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { errorText, requestJson } from "../client-api";
+import { errorText, RequestError, requestJson } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 
 type Due = JsonValue<DueTouches>;
@@ -21,6 +21,15 @@ interface Loaded {
 
 const remembered = new Map<string, Loaded>();
 
+export type OutreachResult<T> =
+  | { ok: true; result: T }
+  | {
+      ok: false;
+      error: string;
+      code: string;
+      details: Record<string, string | number>;
+    };
+
 export function postOutreach<T>(body: object) {
   return requestJson<T>("/api/outreach", {
     method: "POST",
@@ -32,9 +41,7 @@ export function postOutreach<T>(body: object) {
 export function useOutreachSend() {
   const crm = useCrm();
   return useCallback(
-    async <T>(
-      body: object,
-    ): Promise<{ ok: true; result: T } | { ok: false; error: string }> => {
+    async <T>(body: object): Promise<OutreachResult<T>> => {
       try {
         const result = await postOutreach<T>({
           organizationId: crm.organizationId,
@@ -43,7 +50,12 @@ export function useOutreachSend() {
         void crm.refresh();
         return { ok: true, result };
       } catch (error) {
-        return { ok: false, error: errorText(error, crm.timeZone) };
+        return {
+          ok: false,
+          error: errorText(error, crm.timeZone),
+          code: error instanceof Error ? error.message : "INTERNAL_ERROR",
+          details: error instanceof RequestError ? error.details : {},
+        };
       }
     },
     [crm.organizationId, crm.timeZone, crm.refresh],

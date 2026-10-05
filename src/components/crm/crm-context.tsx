@@ -45,6 +45,17 @@ export interface ActionPlan {
   dueAt?: string;
   ownerId?: string;
 }
+export type ViewVerb =
+  | "touch-approve"
+  | "touch-sent"
+  | "touch-snooze"
+  | "touch-skip"
+  | "touch-edit"
+  | "touch-undo"
+  | "move-next"
+  | "move-previous"
+  | "move-to";
+export type ViewVerbs = Partial<Record<ViewVerb, () => boolean>>;
 export interface RecordDialogState {
   kind: "person" | "company" | "meeting" | "opportunity";
   id?: string;
@@ -117,6 +128,7 @@ function useCrmState({
     selection: emptySelection,
   });
   const creator = useRef<(() => boolean) | null>(null);
+  const verbs = useRef<ViewVerbs>({});
   const editor = useRef<(() => boolean) | null>(null);
   const origin = useRef<Origin | null>(null);
   const rowFocus = useRef("");
@@ -234,6 +246,15 @@ function useCrmState({
   }, []);
   function edit() {
     return editor.current?.() ?? false;
+  }
+  const registerVerbs = useCallback((handlers: ViewVerbs) => {
+    verbs.current = handlers;
+    return () => {
+      if (verbs.current === handlers) verbs.current = {};
+    };
+  }, []);
+  function runVerb(id: ViewVerb) {
+    return verbs.current[id]?.() ?? false;
   }
   function goToSection(section: Section) {
     go(sectionPath(section));
@@ -503,6 +524,8 @@ function useCrmState({
     create,
     registerEdit,
     edit,
+    registerVerbs,
+    runVerb,
     leaveRecord,
     rememberOrigin,
     rowFocus,
@@ -563,6 +586,22 @@ export function usePruneSelection(visible: string[]) {
       base: selection.base.filter((id) => shown.has(id)),
     });
   }, [hidden, key, selection, setSelection]);
+}
+
+export function useVerbs(handlers: ViewVerbs) {
+  const { registerVerbs } = useCrm();
+  const latest = useRef(handlers);
+  useEffect(() => {
+    latest.current = handlers;
+  });
+  useEffect(() => {
+    const ids = Object.keys(latest.current) as ViewVerb[];
+    return registerVerbs(
+      Object.fromEntries(
+        ids.map((id) => [id, () => latest.current[id]?.() ?? false]),
+      ),
+    );
+  }, [registerVerbs]);
 }
 
 export function useEdit(run: () => boolean) {

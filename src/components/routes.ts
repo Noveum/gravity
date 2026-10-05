@@ -29,7 +29,6 @@ export const touchTabs: ReadonlySet<OutreachTab> = new Set([
   "today",
   "drafts",
   "approved",
-  "sent",
 ]);
 export const isOutreachTab = (value: string): value is OutreachTab =>
   (outreachTabs as readonly string[]).includes(value);

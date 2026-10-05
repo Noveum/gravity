@@ -12,8 +12,13 @@ import { describe, expect, test, vi } from "vitest";
 import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { dateLabel } from "../src/components/client-api";
 import { outreachTabs } from "../src/components/routes";
-import { installCrmHarness, mountCrm } from "./support/crm-harness";
+import {
+  installCrmHarness,
+  mountCrm,
+  organizations,
+} from "./support/crm-harness";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
 vi.mock("next/link", () => import("./support/memory-router"));
@@ -97,5 +102,155 @@ describe("outreach routes and tabs", () => {
       `Noor Haddad, ${t.followUpGroups[2]}`,
     ]);
     expect(within(followUp2).getByText(t.overdue)).toBeTruthy();
+  });
+});
+
+describe("touch rows, the draft drawer and paused work", () => {
+  const touch = async (id: number) => {
+    const [found] = await harness.local.db
+      .select()
+      .from(s.touches)
+      .where(eq(s.touches.id, demoId(id)));
+    if (!found) throw new Error("missing touch");
+    return found;
+  };
+  const verb = (name: keyof typeof t.touchVerbs, person: string) =>
+    screen.findByRole("button", { name: `${t.touchVerbs[name]}: ${person}` });
+
+  test("the row buttons approve and snooze with undo, and the drawer shows the person's context beside the draft", async () => {
+    await mountCrm(harness, "/outreach/drafts");
+    fireEvent.click(await verb("approve", "Noor Haddad"));
+    await screen.findByText(t.touchApproved.replace("{name}", "Noor Haddad"));
+    expect((await touch(1307)).status).toBe("approved");
+    fireEvent.click(
+      within(
+        screen.getByRole("navigation", { name: t.outreachTabsLabel }),
+      ).getByRole("link", { name: new RegExp(`^${t.outreachTabs.today}`) }),
+    );
+    const before = await touch(1310);
+    fireEvent.click(await verb("snooze", "Ellis Park"));
+    const toast = await screen.findByText(/^Snoozed the message to Ellis Park/);
+    expect((await touch(1310)).dueAt.getTime()).toBeGreaterThan(
+      before.dueAt.getTime(),
+    );
+    fireEvent.click(
+      within(toast.parentElement as HTMLElement).getByRole("button", {
+        name: t.undo,
+      }),
+    );
+    await screen.findByText(t.verbUndone);
+    expect((await touch(1310)).dueAt.toISOString()).toBe(
+      before.dueAt.toISOString(),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Noor Haddad, / }),
+    );
+    const drawer = await screen.findByRole("dialog", {
+      name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
+    });
+    expect(
+      await within(drawer).findByText("Send follow-up 2 with the case study"),
+    ).toBeTruthy();
+    expect(within(drawer).getByText(t.outreachStages.followUp)).toBeTruthy();
+    expect(
+      await within(drawer).findByText(
+        "Hi Noor, good to meet you at the meetup. Here is the two-page summary.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: t.touchVerbs.skip }),
+    );
+    const skip = await screen.findByRole("dialog", { name: t.skipTitle });
+    fireEvent.change(within(skip).getByLabelText(t.skipReason), {
+      target: { value: "Not relevant now" },
+    });
+    fireEvent.click(within(skip).getByRole("button", { name: t.skipSubmit }));
+    await screen.findByText(t.touchSkipped.replace("{name}", "Noor Haddad"));
+    expect((await touch(1307)).status).toBe("skipped");
+  });
+
+  test("Approved shows each send-after time in the workspace zone, never as raw ISO", async () => {
+    const zone = organizations[0]?.timezone ?? "UTC";
+    if (organizations[0]) organizations[0].timezone = "Asia/Tokyo";
+    try {
+      await harness.local.db.insert(s.contactRules).values({
+        organizationId: demoId(1),
+        cooldownDays: 10,
+        dailyCapPerSender: 40,
+        quietHoursStart: 0,
+        quietHoursEnd: 0,
+      });
+      const [amara] = await harness.local.db
+        .select()
+        .from(s.relationships)
+        .where(eq(s.relationships.id, demoId(304)));
+      const until = new Date(
+        (amara?.lastOutboundAt?.getTime() ?? 0) + 10 * 86400000,
+      ).toISOString();
+      await mountCrm(harness, "/outreach/approved");
+      const badge = await screen.findByText(
+        t.sendAfter.replace("{time}", dateLabel(until, "Asia/Tokyo")),
+      );
+      expect(badge.getAttribute("title")).toBe(
+        t.gateReasons.CONTACT_COOLDOWN.replace(
+          "{until}",
+          dateLabel(until, "Asia/Tokyo"),
+        ),
+      );
+      expect(
+        screen.getByRole("region", {
+          name: `${t.outreach}: ${t.outreachTabs.approved}`,
+        }).textContent,
+      ).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+    } finally {
+      if (organizations[0]) organizations[0].timezone = zone;
+    }
+  });
+
+  test("Resume restarts paused work and is refused with the translated reason for do not contact and archived people, who carry an Archived flag", async () => {
+    const mira = demoId(200);
+    await harness.local.db
+      .update(s.people)
+      .set({ doNotContact: true })
+      .where(eq(s.people.id, mira));
+    await mountCrm(harness, "/outreach/paused");
+    const resume = await screen.findByRole("button", {
+      name: `${t.resume}: Mira Chen`,
+    });
+    fireEvent.click(resume);
+    await screen.findByText(t.errors.DO_NOT_CONTACT);
+    await harness.local.db
+      .update(s.people)
+      .set({ doNotContact: false, archivedAt: new Date() })
+      .where(eq(s.people.id, mira));
+    cleanup();
+    await mountCrm(harness, "/outreach/paused");
+    expect(
+      await screen.findByRole("button", {
+        name: `Mira Chen, ${t.paused_reply}, ${t.archivedFlag}`,
+      }),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: `${t.resume}: Mira Chen` }),
+    );
+    await screen.findByText(t.errors.RECORD_ARCHIVED);
+    await harness.local.db
+      .update(s.people)
+      .set({ archivedAt: null })
+      .where(eq(s.people.id, mira));
+    fireEvent.click(
+      screen.getByRole("button", { name: `${t.resume}: Mira Chen` }),
+    );
+    await screen.findByText(t.resumed.replace("{name}", "Mira Chen"));
+    const [enrollment] = await harness.local.db
+      .select()
+      .from(s.enrollments)
+      .where(eq(s.enrollments.id, demoId(500)));
+    expect(enrollment).toMatchObject({ status: "running", pauseReason: null });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: `${t.resume}: Mira Chen` }),
+      ).toBeNull(),
+    );
   });
 });

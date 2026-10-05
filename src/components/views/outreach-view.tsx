@@ -2,15 +2,20 @@
 import t from "@crm/i18n/translations/en.json";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
-import { useWorkspaceData } from "../crm/crm-context";
+import { useVerbs, useWorkspaceData } from "../crm/crm-context";
 import {
+  type PausedEnrollment,
   type QueueTouch,
   type Touch,
   useOutreachData,
+  useOutreachSend,
 } from "../outreach/outreach-data";
 import { OutreachTabs } from "../outreach/outreach-tabs";
 import { PausedRow } from "../outreach/paused-list";
 import { SentRow } from "../outreach/sent-list";
+import { TouchActions } from "../outreach/touch-actions";
+import { MarkSentDialog, SkipDialog } from "../outreach/touch-dialogs";
+import { TouchDrawer } from "../outreach/touch-drawer";
 import {
   byUrgency,
   emptyCopy,
@@ -19,11 +24,13 @@ import {
   TouchGroup,
 } from "../outreach/touch-lists";
 import { TouchRow } from "../outreach/touch-row";
+import { useTouchVerbs } from "../outreach/use-touch-verbs";
 import {
   type OutreachTab,
   outreachPath,
   outreachTabFor,
   personPath,
+  touchTabs,
 } from "../routes";
 import { EmptyState, ErrorState, LoadingState } from "../ui/states";
 import { SequencesView } from "./sequences-view";
@@ -36,8 +43,18 @@ export function OutreachView() {
     if (!tab) router.replace(outreachPath("today"));
   }, [tab, router]);
   const outreach = useOutreachData();
-  if (!tab) return null;
   const { due, queue } = outreach;
+  const send = useOutreachSend();
+  const touches = new Map<string, Touch>(
+    [
+      ...(due?.groups.flatMap((group) => group.touches) ?? []),
+      ...(queue?.drafts ?? []),
+      ...(queue?.approved ?? []),
+    ].map((touch) => [touch.id, touch]),
+  );
+  const verbs = useTouchVerbs({ touches, reload: outreach.reload });
+  useVerbs(tab && touchTabs.has(tab) ? verbs.keys : {});
+  if (!tab) return null;
   const search = crm.search;
   const visible = <T extends Touch>(touches: readonly T[]) =>
     touches.filter((touch) =>
@@ -60,10 +77,24 @@ export function OutreachView() {
       key={touch.id}
       touch={touch}
       now={now}
-      onPeek={() => open(touch)}
+      onPeek={() => verbs.peek(touch)}
       onOpen={() => open(touch)}
+      actions={<TouchActions touch={touch} verbs={verbs} />}
     />
   );
+  async function resume(enrollment: PausedEnrollment) {
+    const result = await send<{ version: number }>({
+      operation: "enrollment",
+      enrollmentId: enrollment.id,
+      version: enrollment.version,
+      command: "resume",
+    });
+    if (!result.ok) return crm.notify(result.error, "danger");
+    crm.notify(t.resumed.replace("{name}", enrollment.person.name), "success");
+    await outreach.reload();
+  }
+  const drawerTouch =
+    verbs.drawer && (touches.get(verbs.drawer.touch.id) ?? verbs.drawer.touch);
   const flat = (touches: readonly QueueTouch[], title: string) =>
     touches.length ? (
       <TouchGroup title={title} count={touches.length}>
@@ -90,7 +121,7 @@ export function OutreachView() {
             <PausedRow
               key={enrollment.id}
               enrollment={enrollment}
-              onResume={() => undefined}
+              onResume={resume}
             />
           ))}
         </TouchGroup>
@@ -117,6 +148,37 @@ export function OutreachView() {
           paused: counts.paused,
         }}
       />
+      {drawerTouch && verbs.drawer && (
+        <TouchDrawer
+          key={drawerTouch.id}
+          touch={drawerTouch}
+          edit={verbs.drawer.edit}
+          verbs={verbs}
+          onClose={verbs.closeDrawer}
+        />
+      )}
+      {verbs.dialog?.kind === "sent" && (
+        <MarkSentDialog
+          name={verbs.dialog.touch.person.name}
+          onClose={verbs.closeDialog}
+          onSubmit={(link) =>
+            verbs.dialog
+              ? verbs.markSent(verbs.dialog.touch, link)
+              : Promise.resolve(null)
+          }
+        />
+      )}
+      {verbs.dialog?.kind === "skip" && (
+        <SkipDialog
+          name={verbs.dialog.touch.person.name}
+          onClose={verbs.closeDialog}
+          onSubmit={(reason) =>
+            verbs.dialog
+              ? verbs.skip(verbs.dialog.touch, reason)
+              : Promise.resolve(null)
+          }
+        />
+      )}
       <section
         aria-label={`${t.outreach}: ${t.outreachTabs[tab]}`}
         className="outreach-panel"

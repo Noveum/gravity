@@ -19,7 +19,7 @@ import {
   navigableRecords,
   useKeyboardNavigation,
 } from "../keyboard-navigation";
-import type { Section } from "../routes";
+import { outreachTabFor, type Section, touchTabs } from "../routes";
 
 export interface ShellShortcutOptions {
   searchInput: RefObject<HTMLInputElement | null>;
@@ -54,6 +54,9 @@ export function useShellShortcuts({
   const section: Section = crm.route?.section ?? "actions";
   const recordId = crm.route?.recordId ?? "";
   const stageMoves = useStageMoves();
+  const outreachTab =
+    section === "outreach" ? outreachTabFor(crm.pathname) : null;
+  const listed = !!crm.data && !recordId;
   const editable =
     !showPeek &&
     (!!recordId || section === "meetings" || section === "opportunities");
@@ -65,6 +68,7 @@ export function useShellShortcuts({
   const move = (command: Movement) => () =>
     listFocusAllowed() && focusRecord(command);
   function toggleSelected() {
+    if (section === "outreach") return false;
     const row = focusedRecord();
     const id = row?.getAttribute("data-nav-record");
     if (!id) return false;
@@ -72,6 +76,7 @@ export function useShellShortcuts({
     return true;
   }
   const extend = (command: "next" | "previous") => () => {
+    if (section === "outreach") return false;
     const from = focusedRecord()?.getAttribute("data-nav-record");
     if (!from || !focusRecord(command)) return false;
     const to = focusedRecord()?.getAttribute("data-nav-record") ?? from;
@@ -199,8 +204,16 @@ export function useShellShortcuts({
       return true;
     },
     edit: () => crm.edit(),
-    "move-next": () => stageMoves.step("next"),
-    "move-previous": () => stageMoves.step("previous"),
+    "move-next": () =>
+      outreachTab ? crm.runVerb("move-next") : stageMoves.step("next"),
+    "move-previous": () =>
+      outreachTab ? crm.runVerb("move-previous") : stageMoves.step("previous"),
+    "touch-approve": () => crm.runVerb("touch-approve"),
+    "touch-sent": () => crm.runVerb("touch-sent"),
+    "touch-snooze": () => crm.runVerb("touch-snooze"),
+    "touch-skip": () => crm.runVerb("touch-skip"),
+    "touch-edit": () => crm.runVerb("touch-edit"),
+    "touch-undo": () => crm.runVerb("touch-undo"),
   };
   useKeyboardNavigation(
     (id) => shortcutHandlers[id](),
@@ -214,8 +227,15 @@ export function useShellShortcuts({
         ...(showPeek ? (["peek", "detail"] as const) : []),
         ...(recordId ? (["detail"] as const) : []),
         ...(crm.data && editable ? (["record"] as const) : []),
-        ...(crm.data && !recordId && section === "opportunities"
+        ...(listed &&
+        (section === "opportunities" || outreachTab === "pipeline")
           ? (["board"] as const)
+          : []),
+        ...(listed && outreachTab === "pipeline"
+          ? (["pipeline"] as const)
+          : []),
+        ...(listed && !showPeek && outreachTab && touchTabs.has(outreachTab)
+          ? (["outreach"] as const)
           : []),
       ] satisfies ShortcutScope[],
   );

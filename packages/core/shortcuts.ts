@@ -22,6 +22,8 @@ export type ShortcutScope =
   | "peek"
   | "record"
   | "board"
+  | "pipeline"
+  | "outreach"
   | "row"
   | "dialog";
 export type ShortcutSection =
@@ -29,6 +31,7 @@ export type ShortcutSection =
   | "general"
   | "lists"
   | "actions"
+  | "outreach"
   | "details"
   | "dialogs";
 
@@ -120,6 +123,14 @@ const definitions = {
   undo: define(["mod+z"], "actions", "actions", labels.undo, {
     typing: "pause",
   }),
+  "touch-approve": define(["a"], "outreach", "outreach", labels.touchApprove),
+  "touch-sent": define(["d"], "outreach", "outreach", labels.touchSent),
+  "touch-snooze": define(["s"], "outreach", "outreach", labels.touchSnooze),
+  "touch-skip": define(["shift+s"], "outreach", "outreach", labels.touchSkip),
+  "touch-edit": define(["e"], "outreach", "outreach", labels.touchEdit),
+  "touch-undo": define(["mod+z"], "outreach", "outreach", labels.touchUndo, {
+    typing: "pause",
+  }),
   expand: define(["e"], "peek", "details", labels.expand),
   "list-focus": define(["h"], "peek", "details", labels.listFocus),
   "detail-focus": define(["l"], "peek", "details", labels.detailFocus),
@@ -143,6 +154,7 @@ export const shortcutSections: readonly ShortcutSection[] = [
   "general",
   "lists",
   "actions",
+  "outreach",
   "details",
   "dialogs",
 ];

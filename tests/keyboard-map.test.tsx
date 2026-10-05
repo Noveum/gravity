@@ -11,6 +11,7 @@ import userEvent from "@testing-library/user-event";
 import { eq } from "drizzle-orm";
 import { describe, expect, test, vi } from "vitest";
 import { nextWorkingMorning, snoozeLabel } from "../packages/core/calendar";
+import { OutreachService } from "../packages/core/outreach";
 import {
   bindingLabel,
   type ShortcutId,
@@ -19,7 +20,7 @@ import {
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
-import { requestJson } from "../src/components/client-api";
+import { dateLabel, requestJson } from "../src/components/client-api";
 import { outreachPath, sectionPath } from "../src/components/routes";
 import { Shortcuts } from "../src/components/shortcuts";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
@@ -615,6 +616,152 @@ describe("selection and row verbs", () => {
     await press("{Escape}");
     expect(screen.queryByRole("menu")).toBeNull();
     expect(harness.posts).toHaveLength(0);
+  });
+});
+
+describe("outreach verbs", () => {
+  const touch = async (id: number) => {
+    const [found] = await harness.local.db
+      .select()
+      .from(s.touches)
+      .where(eq(s.touches.id, demoId(id)));
+    if (!found) throw new Error("missing touch");
+    return found;
+  };
+  const touchRow = (name: string) =>
+    screen.findByRole("button", { name: new RegExp(`^${name}, `) });
+  test("A approves the focused touch, and E opens its draft where saving a change clears the approval", async () => {
+    binding("touch-approve");
+    binding("touch-edit");
+    await mountCrm(harness, "/outreach/today");
+    (await touchRow("Noor Haddad")).focus();
+    await press("a");
+    await screen.findByText(t.touchApproved.replace("{name}", "Noor Haddad"));
+    expect((await touch(1307)).status).toBe("approved");
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute("aria-label")).toMatch(
+        /^Noor Haddad, /,
+      ),
+    );
+    await press("e");
+    const editor = await screen.findByRole("dialog", {
+      name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
+    });
+    expect(within(editor).getByText(t.approvalClearsOnEdit)).toBeTruthy();
+    const field = within(editor).getByLabelText(t.draftLabel);
+    expect(document.activeElement).toBe(field);
+    await userEvent.setup().type(field, " Updated.");
+    await press("{Meta>}{Enter}{/Meta}");
+    await screen.findByText(t.draftSavedApprovalCleared);
+    expect(await touch(1307)).toMatchObject({ status: "drafted" });
+    expect((await touch(1307)).draft).toMatch(/Updated\.$/);
+  });
+  test("D records a send with an optional link, and a second report shows the first report's details", async () => {
+    binding("touch-sent");
+    await mountCrm(harness, "/outreach/today");
+    (await touchRow("Amara Stone")).focus();
+    await press("d");
+    const dialog = await screen.findByRole("dialog", {
+      name: t.markSentTitle,
+    });
+    await userEvent
+      .setup()
+      .type(
+        within(dialog).getByLabelText(t.markSentLink),
+        "https://mail.example.test/m/1",
+      );
+    await press("{Meta>}{Enter}{/Meta}");
+    await screen.findByText(
+      new RegExp(`^${t.touchMarkedSent.replace("{name}", "Amara Stone")}`),
+    );
+    expect(await touch(1304)).toMatchObject({
+      status: "sent",
+      externalMessageId: "https://mail.example.test/m/1",
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /^Amara Stone, / }),
+      ).toBeNull(),
+    );
+    const sent = await new OutreachService(harness.local.db).markSent(
+      { userId: demoUser, source: "demo" },
+      {
+        organizationId: demoId(1),
+        touchId: demoId(1307),
+        externalMessageId: "first-report-1",
+      },
+    );
+    (await touchRow("Noor Haddad")).focus();
+    await press("d");
+    const again = await screen.findByRole("dialog", {
+      name: t.markSentTitle,
+    });
+    await press("{Meta>}{Enter}{/Meta}");
+    await waitFor(() =>
+      expect(within(again).getByText(/Alex Morgan/)).toBeTruthy(),
+    );
+    const alert = within(again).getByText(/Alex Morgan/);
+    expect(alert.getAttribute("role")).toBe("alert");
+    expect(alert.textContent).toContain(
+      dateLabel(sent.touch.sentAt?.toISOString() ?? "", "UTC"),
+    );
+    expect(alert.textContent).toContain(
+      t.firstReportLink.replace("{link}", "first-report-1"),
+    );
+    expect(alert.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+  });
+  test("Shift S skips with a reason and Undo reopens it; S snoozes to the next working morning and Cmd Z undoes it", async () => {
+    binding("touch-skip");
+    binding("touch-snooze");
+    binding("touch-undo");
+    await mountCrm(harness, "/outreach/today");
+    (await touchRow("Ellis Park")).focus();
+    await press("{Shift>}S{/Shift}");
+    const dialog = await screen.findByRole("dialog", { name: t.skipTitle });
+    await userEvent
+      .setup()
+      .type(within(dialog).getByLabelText(t.skipReason), "Met at an event");
+    await press("{Meta>}{Enter}{/Meta}");
+    const skipped = await screen.findByText(
+      t.touchSkipped.replace("{name}", "Ellis Park"),
+    );
+    expect(await touch(1310)).toMatchObject({
+      status: "skipped",
+      skipReason: "Met at an event",
+    });
+    fireEvent.click(
+      within(skipped.parentElement as HTMLElement).getByRole("button", {
+        name: t.undo,
+      }),
+    );
+    await screen.findByText(t.touchSkipUndone);
+    expect(await touch(1310)).toMatchObject({ status: "drafted" });
+    await touchRow("Ellis Park");
+    const before = await touch(1307);
+    const now = Date.now();
+    const morning = nextWorkingMorning(now, "UTC");
+    (await touchRow("Noor Haddad")).focus();
+    await press("s");
+    await screen.findByText(
+      t.touchSnoozed
+        .replace("{name}", "Noor Haddad")
+        .replace("{when}", snoozeLabel(morning, now, "UTC")),
+    );
+    expect((await touch(1307)).dueAt.toISOString()).toBe(
+      new Date(morning).toISOString(),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /^Noor Haddad, / }),
+      ).toBeNull(),
+    );
+    (await touchRow("Ellis Park")).focus();
+    await press("{Meta>}z{/Meta}");
+    await screen.findByText(t.verbUndone);
+    expect((await touch(1307)).dueAt.toISOString()).toBe(
+      before.dueAt.toISOString(),
+    );
+    await touchRow("Noor Haddad");
   });
 });
 

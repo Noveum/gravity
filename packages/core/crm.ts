@@ -871,6 +871,8 @@ export class CrmService {
           }),
         )
         .digest("hex");
+      const keepsApproval =
+        input.command === "complete" && action.approvedHash === hash;
       if (input.command === "approve" && !draft.trim())
         throw new DomainError("DRAFT_REQUIRED", 400);
       const [result] = await tx
@@ -878,8 +880,18 @@ export class CrmService {
         .set({
           draft,
           draftHash: hash,
-          approvedHash: input.command === "approve" ? hash : null,
-          approvedBy: input.command === "approve" ? principal.userId : null,
+          approvedHash:
+            input.command === "approve"
+              ? hash
+              : keepsApproval
+                ? action.approvedHash
+                : null,
+          approvedBy:
+            input.command === "approve"
+              ? principal.userId
+              : keepsApproval
+                ? action.approvedBy
+                : null,
           kind: input.command === "rework" ? "reply" : action.kind,
           title: input.command === "rework" ? t.newReplyAction : action.title,
           status: input.command === "complete" ? "completed" : "open",
@@ -911,20 +923,57 @@ export class CrmService {
     if (principal.source === "mcp")
       throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
     return this.db.transaction(async (tx) => {
-      const changed: (typeof s.actions.$inferSelect)[] = [];
-      for (const item of input.items) {
-        const [action] = await tx
-          .select()
-          .from(s.actions)
-          .where(
-            and(
-              eq(s.actions.id, item.actionId),
-              eq(s.actions.organizationId, input.organizationId),
+      const items = [...input.items].sort((a, b) =>
+        a.actionId < b.actionId ? -1 : a.actionId > b.actionId ? 1 : 0,
+      );
+      const rows = await tx
+        .select()
+        .from(s.actions)
+        .where(
+          and(
+            inArray(
+              s.actions.id,
+              items.map((item) => item.actionId),
             ),
-          )
-          .for("update");
+            eq(s.actions.organizationId, input.organizationId),
+          ),
+        )
+        .orderBy(asc(s.actions.id))
+        .for("update");
+      if (rows.length !== items.length) throw new DomainError("NOT_FOUND", 404);
+      const products = new Set(rows.map((row) => row.productId));
+      if (input.productId && [...products].some((id) => id !== input.productId))
+        throw new DomainError("FORBIDDEN", 403);
+      for (const productId of products)
+        await authorize(tx, principal, input.organizationId, productId, true);
+      const sourceIds = [
+        ...new Set(
+          rows.flatMap((row) =>
+            row.sourceConversationId ? [row.sourceConversationId] : [],
+          ),
+        ),
+      ];
+      const sources = new Map(
+        (sourceIds.length
+          ? await tx
+              .select()
+              .from(s.conversations)
+              .where(inArray(s.conversations.id, sourceIds))
+          : []
+        ).map((source) => [source.id, source]),
+      );
+      const privateOwner = (action: typeof s.actions.$inferSelect) => {
+        const source = sources.get(action.sourceConversationId ?? "");
+        return source?.visibility === "private" ? source.ownerId : null;
+      };
+      const assignees = new Map<string, boolean>();
+      const changed: (typeof s.actions.$inferSelect)[] = [];
+      for (const item of items) {
+        const action = rows.find((row) => row.id === item.actionId);
         if (!action) throw new DomainError("NOT_FOUND", 404);
-        await authorizeAction(tx, principal, action);
+        const owner = privateOwner(action);
+        if (owner && owner !== principal.userId)
+          throw new DomainError("FORBIDDEN", 403);
         if (action.version !== item.version)
           throw new DomainError("CONFLICT", 409);
         if (action.status === "blocked" && item.status)
@@ -932,17 +981,23 @@ export class CrmService {
         if (action.status === "completed" && item.status !== "open")
           throw new DomainError("ACTION_COMPLETED", 409);
         if (item.ownerId) {
-          try {
-            await authorize(
-              tx,
-              { userId: item.ownerId, source: "session" },
-              input.organizationId,
-              action.productId,
-            );
-          } catch (error) {
-            if (error instanceof DomainError)
-              throw new DomainError("OWNER_NOT_ALLOWED", 403);
-            throw error;
+          if (owner && owner !== item.ownerId)
+            throw new DomainError("ASSIGNEE_PRIVATE_SOURCE", 403);
+          const key = `${item.ownerId}:${action.productId}`;
+          if (!assignees.has(key)) {
+            try {
+              await authorize(
+                tx,
+                { userId: item.ownerId, source: "session" },
+                input.organizationId,
+                action.productId,
+              );
+              assignees.set(key, true);
+            } catch (error) {
+              if (error instanceof DomainError)
+                throw new DomainError("OWNER_NOT_ALLOWED", 403);
+              throw error;
+            }
           }
         }
         const [result] = await tx

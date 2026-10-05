@@ -1001,3 +1001,166 @@ describe("row verbs on actions", () => {
     ).toThrow();
   });
 });
+
+describe("row verb rules from the Task 3 review", () => {
+  const plan = (items: object[], principal: Principal = admin, extra = {}) =>
+    service.planActions(
+      principal,
+      actionPlanSchema.parse({ organizationId: demoId(1), items, ...extra }),
+    );
+  const current = async (id: string) =>
+    (await local.db.select().from(s.actions).where(eq(s.actions.id, id)))[0];
+  async function privateAction() {
+    const [found] = await local.db
+      .select()
+      .from(s.actions)
+      .where(eq(s.actions.sourceConversationId, demoId(711)));
+    if (found) return found;
+    await ingestReply(local.db, {
+      provider: "unipile",
+      accountId: "demo-linkedin",
+      messageId: "private-review",
+      threadId: "demo-theo",
+      direction: "inbound",
+      channel: "linkedin",
+      body: "Private body for the owner",
+      occurredAt: new Date().toISOString(),
+    });
+    const [created] = await local.db
+      .select()
+      .from(s.actions)
+      .where(eq(s.actions.sourceConversationId, demoId(711)));
+    if (!created) throw new Error("PRIVATE_ACTION_REQUIRED");
+    return created;
+  }
+  test("marking an approved draft complete keeps its approval record", async () => {
+    const { actionId } = await service.scheduleAction(
+      admin,
+      scheduleActionSchema.parse({
+        organizationId: demoId(1),
+        relationshipId: demoId(302),
+        ownerId: demoUser,
+        kind: "review",
+        channel: "gmail",
+        owedBy: "us",
+        title: "Approval survives completion",
+        reason: "",
+        dueAt: new Date().toISOString(),
+      }),
+    );
+    const saved = await service.changeAction(admin, {
+      organizationId: demoId(1),
+      actionId,
+      version: 1,
+      command: "save",
+      draft: "A reviewed note",
+    });
+    const approved = await service.changeAction(admin, {
+      organizationId: demoId(1),
+      actionId,
+      version: saved.version,
+      command: "approve",
+    });
+    const completed = await service.changeAction(admin, {
+      organizationId: demoId(1),
+      actionId,
+      version: approved.version,
+      command: "complete",
+    });
+    expect(completed.status).toBe("completed");
+    expect(completed.approvedHash).toBe(approved.approvedHash);
+    expect(completed.approvedBy).toBe(demoUser);
+  });
+  test("an assignee who cannot read a private source is refused with its own error", async () => {
+    const action = await privateAction();
+    await expect(
+      plan([
+        {
+          actionId: action.id,
+          version: action.version,
+          ownerId: "demo-teammate",
+        },
+      ]),
+    ).rejects.toMatchObject({ code: "ASSIGNEE_PRIVATE_SOURCE", status: 403 });
+    await expect(
+      plan(
+        [
+          {
+            actionId: action.id,
+            version: action.version,
+            dueAt: "2030-01-01T09:00:00.000Z",
+          },
+        ],
+        teammate,
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
+    expect((await current(action.id)).version).toBe(action.version);
+  });
+  test("a read-only principal and a scope naming another product are refused", async () => {
+    const action = await current(demoId(604));
+    await expect(
+      plan(
+        [
+          {
+            actionId: action.id,
+            version: action.version,
+            dueAt: "2030-01-01T09:00:00.000Z",
+          },
+        ],
+        { ...admin, source: "session", readOnly: true },
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      plan(
+        [
+          {
+            actionId: action.id,
+            version: action.version,
+            dueAt: "2030-01-01T09:00:00.000Z",
+          },
+        ],
+        admin,
+        { productId: demoId(11) },
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await current(action.id)).version).toBe(action.version);
+  });
+  test("overlapping batches in opposite orders settle without a partial write", async () => {
+    const a = await current(demoId(603));
+    const b = await current(demoId(604));
+    const due = "2031-02-03T09:00:00.000Z";
+    const results = await Promise.allSettled([
+      plan([
+        { actionId: a.id, version: a.version, dueAt: due },
+        { actionId: b.id, version: b.version, dueAt: due },
+      ]),
+      plan([
+        { actionId: b.id, version: b.version, ownerId: "demo-teammate" },
+        { actionId: a.id, version: a.version, ownerId: "demo-teammate" },
+      ]),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((r) => r.status === "rejected")).toMatchObject({
+      reason: { code: "CONFLICT" },
+    });
+    const [nextA, nextB] = [await current(a.id), await current(b.id)];
+    expect(nextA.version).toBe(a.version + 1);
+    expect(nextB.version).toBe(b.version + 1);
+    expect(
+      nextA.dueAt.toISOString() === due && nextB.dueAt.toISOString() === due
+        ? "dates"
+        : nextA.ownerId === "demo-teammate" && nextB.ownerId === "demo-teammate"
+          ? "owners"
+          : "mixed",
+    ).not.toBe("mixed");
+  });
+  test("the batch reads its rows in action id order", async () => {
+    const a = await current(demoId(603));
+    const b = await current(demoId(604));
+    const changed = await plan([
+      { actionId: b.id, version: b.version, dueAt: "2031-03-03T09:00:00.000Z" },
+      { actionId: a.id, version: a.version, dueAt: "2031-03-03T09:00:00.000Z" },
+    ]);
+    expect(changed.map((row) => row.id)).toEqual([a.id, b.id].sort());
+  });
+});

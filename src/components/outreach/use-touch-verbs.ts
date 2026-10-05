@@ -236,7 +236,6 @@ export function useTouchVerbs({
     remember: (touch: Touch, version: number) =>
       versions.current.set(touch.id, version),
     keys: {
-      "touch-approve": onFocused(approve),
       "touch-snooze": onFocused(snooze),
       "touch-skip": onFocused((touch) => setDialog({ kind: "skip", touch })),
       "touch-sent": onFocused((touch) => setDialog({ kind: "sent", touch })),

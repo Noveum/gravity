@@ -46,7 +46,6 @@ export interface ActionPlan {
   ownerId?: string;
 }
 export type ViewVerb =
-  | "touch-approve"
   | "touch-sent"
   | "touch-snooze"
   | "touch-skip"

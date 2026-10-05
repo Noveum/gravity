@@ -897,7 +897,6 @@
   "activity": "Activity",
   "past": "Earlier",
   "shortcutLabels": {
-    "touchApprove": "Approve the draft",
     "touchSent": "Mark sent with an optional message link",
     "touchSnooze": "Snooze the message until the next working morning",
     "touchSkip": "Skip the message with a reason",

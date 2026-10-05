@@ -131,7 +131,6 @@ const definitions = {
   undo: define(["mod+z"], "actions", "actions", labels.undo, {
     typing: "pause",
   }),
-  "touch-approve": define(["a"], "outreach", "outreach", labels.touchApprove),
   "touch-sent": define(["d"], "outreach", "outreach", labels.touchSent),
   "touch-snooze": define(["s"], "outreach", "outreach", labels.touchSnooze),
   "touch-skip": define(["shift+s"], "outreach", "outreach", labels.touchSkip),

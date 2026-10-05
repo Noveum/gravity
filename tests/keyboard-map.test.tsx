@@ -646,19 +646,26 @@ describe("outreach verbs", () => {
   };
   const touchRow = (name: string) =>
     screen.findByRole("button", { name: new RegExp(`^${name}, `) });
-  test("A approves the focused touch, and E opens its draft where saving a change clears the approval", async () => {
-    binding("touch-approve");
+  test("no key approves a touch, and E opens its draft where saving a change clears the approval", async () => {
     binding("touch-edit");
+    expect(
+      shortcuts
+        .filter((entry) => entry.section === "outreach")
+        .map((entry) => entry.id),
+    ).not.toContain("touch-approve");
     await mountCrm(harness, "/outreach/today");
     (await touchRow("Noor Haddad")).focus();
     await press("a");
+    expect(harness.posts).toEqual([]);
+    expect((await touch(1307)).status).not.toBe("approved");
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: `${t.touchVerbs.approve}: Noor Haddad`,
+      }),
+    );
     await screen.findByText(t.touchApproved.replace("{name}", "Noor Haddad"));
     expect((await touch(1307)).status).toBe("approved");
-    await waitFor(() =>
-      expect(document.activeElement?.getAttribute("aria-label")).toMatch(
-        /^Noor Haddad, /,
-      ),
-    );
+    (await touchRow("Noor Haddad")).focus();
     await press("e");
     const editor = await screen.findByRole("dialog", {
       name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
@@ -671,13 +678,6 @@ describe("outreach verbs", () => {
     await screen.findByText(t.draftSavedApprovalCleared);
     expect(await touch(1307)).toMatchObject({ status: "drafted" });
     expect((await touch(1307)).draft).toMatch(/Updated\.$/);
-  });
-  test("A on an already approved touch says so and sends nothing", async () => {
-    await mountCrm(harness, "/outreach/today");
-    (await touchRow("Amara Stone")).focus();
-    await press("a");
-    expect(await screen.findByText(t.touchAlreadyApproved)).toBeTruthy();
-    expect(harness.posts).toEqual([]);
   });
   test("D records a send with an optional link, and a second report shows the first report's details", async () => {
     binding("touch-sent");

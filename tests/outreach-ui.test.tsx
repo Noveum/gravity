@@ -477,7 +477,6 @@ describe("the guide", () => {
         row.getAttribute("data-shortcut"),
       ),
     ).toEqual([
-      "touch-approve",
       "touch-sent",
       "touch-snooze",
       "touch-skip",

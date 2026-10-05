@@ -221,7 +221,6 @@ export function useShellShortcuts({
     "move-previous": () =>
       outreachTab ? crm.runVerb("move-previous") : stageMoves.step("previous"),
     "move-to": () => crm.runVerb("move-to"),
-    "touch-approve": () => crm.runVerb("touch-approve"),
     "touch-sent": () => crm.runVerb("touch-sent"),
     "touch-snooze": () => crm.runVerb("touch-snooze"),
     "touch-skip": () => crm.runVerb("touch-skip"),

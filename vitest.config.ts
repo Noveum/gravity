@@ -9,6 +9,9 @@ export default defineConfig({
     fileParallelism: false,
   },
   resolve: {
-    alias: { "@crm": new URL("./packages", import.meta.url).pathname },
+    alias: {
+      "@crm": new URL("./packages", import.meta.url).pathname,
+      "@": new URL("./src", import.meta.url).pathname,
+    },
   },
 });

@@ -26,7 +26,6 @@ import {
   RotateCw,
   Search,
   Settings2,
-  Sparkles,
   Users,
   X,
 } from "lucide-react";
@@ -48,6 +47,7 @@ import {
 } from "./client-api";
 import { Commands } from "./commands";
 import { Connections } from "./connections";
+import { GravityMark } from "./gravity-logo";
 import { focusRecord, useKeyboardNavigation } from "./keyboard-navigation";
 import { Materials } from "./materials";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
@@ -633,9 +633,7 @@ export function CrmApp({
     >
       <aside className="sidebar" id="navigation-panel">
         <div className="brand">
-          <span className="brand-icon">
-            <Sparkles size={16} />
-          </span>
+          <GravityMark size={34} />
           <span>
             {t.brand}
             <small>{t.brandSub}</small>

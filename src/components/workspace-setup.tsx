@@ -1,8 +1,9 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import { ArrowRight, Check, Sparkles } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorText, requestJson } from "./client-api";
+import { GravityMark } from "./gravity-logo";
 import { submitOnModEnter } from "./modal-lifecycle";
 import { Preferences } from "./preferences";
 import {
@@ -34,9 +35,7 @@ export function WorkspaceSetup({
   return (
     <main className="setup-page">
       <header className="setup-brand">
-        <span className="brand-icon">
-          <Sparkles size={18} />
-        </span>
+        <GravityMark size={34} />
         <strong>{t.brand}</strong>
         <Preferences />
       </header>

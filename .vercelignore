@@ -4,8 +4,8 @@
 .git
 .next
 coverage
-tests
-docs
-drizzle
-scripts
+/tests
+/docs
+/drizzle
+/scripts
 *.tsbuildinfo

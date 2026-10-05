@@ -21,7 +21,8 @@
     "db:seed": "tsx scripts/seed.ts",
     "licenses": "tsx scripts/licenses.ts",
     "licenses:check": "tsx scripts/licenses.ts --check",
-    "test:public": "tsx scripts/smoke-public-site.ts"
+    "test:public": "tsx scripts/smoke-public-site.ts",
+    "test:deployment": "tsx scripts/smoke-deployment.ts"
   },
   "dependencies": {
     "next": "16.3.8",

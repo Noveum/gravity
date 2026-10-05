@@ -257,6 +257,24 @@ describe("archiving a person stops their work", () => {
     expect(moved.stageId).toBe(demoId(801));
   });
 
+  test("a plan from someone without the product is refused as forbidden, not as archived", async () => {
+    await archive(204, true);
+    const current = await action(demoId(604));
+    await expect(
+      crm.planActions(restricted, {
+        organizationId: org,
+        items: [
+          {
+            actionId: current.id,
+            version: current.version,
+            status: "completed",
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await archive(204, false);
+  });
+
   test("archiving needs write access to every brand the person belongs to", async () => {
     await expect(archive(200, true, restricted)).rejects.toMatchObject({
       code: "ARCHIVE_NEEDS_EVERY_BRAND",

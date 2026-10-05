@@ -25,6 +25,7 @@ import { IntegrationService } from "../packages/connectors/service";
 import type { ImportRecord } from "../packages/connectors/types";
 import { CrmService } from "../packages/core/crm";
 import type { Principal } from "../packages/core/policy";
+import { RecordService } from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
@@ -411,6 +412,94 @@ test("meeting updates and cancellations modify one CRM record and require an exp
     .from(s.meetings)
     .where(eq(s.meetings.id, meeting.id));
   expect(unchanged.version).toBe(meeting.version);
+});
+
+test("linking an unmatched message or meeting to an archived person writes nothing", async () => {
+  const service = new IntegrationService(local.db, authTransport);
+  const records = new RecordService(local.db);
+  const [mira] = await local.db
+    .select()
+    .from(s.people)
+    .where(eq(s.people.id, demoId(200)));
+  const archived = await records.archivePerson(admin, {
+    organizationId: scope.organizationId,
+    personId: demoId(200),
+    version: mira?.version ?? 1,
+    archived: true,
+  });
+  const [gmail] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.externalAccountId, "integration-google-user"));
+  const [fireflies] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.externalAccountId, "fireflies-test-user"));
+  await service.importRecord(gmail, {
+    externalId: "archived-thread-message",
+    threadId: "archived-thread",
+    kind: "message",
+    title: "Archived thread",
+    body: "Should not attach",
+    occurredAt: "2026-10-03T12:00:00.000Z",
+    direction: "inbound",
+    participants: ["nobody@example.test"],
+  });
+  await service.importRecord(fireflies, {
+    externalId: "archived-note",
+    kind: "meeting",
+    title: "Archived review",
+    body: "Should not attach",
+    occurredAt: "2026-10-03T15:00:00.000Z",
+    participants: ["nobody@example.test"],
+  });
+  const items = await local.db
+    .select()
+    .from(s.integrationItems)
+    .where(
+      inArray(s.integrationItems.externalId, [
+        "archived-thread-message",
+        "archived-note",
+      ]),
+    );
+  expect(items).toHaveLength(2);
+  const meetingsBefore = await local.db.select().from(s.meetings);
+  for (const item of items)
+    await expect(
+      service.link(admin, scope.organizationId, item.id, demoId(300)),
+    ).rejects.toMatchObject({ code: "RECORD_ARCHIVED" });
+  expect(
+    await local.db
+      .select()
+      .from(s.conversations)
+      .where(eq(s.conversations.externalThreadId, "archived-thread")),
+  ).toHaveLength(0);
+  expect(
+    await local.db
+      .select()
+      .from(s.messages)
+      .where(eq(s.messages.providerMessageId, "archived-thread-message")),
+  ).toHaveLength(0);
+  expect(await local.db.select().from(s.meetings)).toHaveLength(
+    meetingsBefore.length,
+  );
+  const after = await local.db
+    .select()
+    .from(s.integrationItems)
+    .where(
+      inArray(
+        s.integrationItems.id,
+        items.map((item) => item.id),
+      ),
+    );
+  expect(after.map((item) => item.status)).toEqual(["unmatched", "unmatched"]);
+  expect(after.every((item) => item.relationshipId === null)).toBe(true);
+  await records.archivePerson(admin, {
+    organizationId: scope.organizationId,
+    personId: demoId(200),
+    version: archived.version,
+    archived: false,
+  });
 });
 
 test("disconnect during provider fetch cancels imports and does not restore credentials", async () => {

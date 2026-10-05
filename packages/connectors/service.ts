@@ -15,6 +15,7 @@ import { z } from "zod";
 import { appUrl } from "../auth/options";
 import { publishChange } from "../core/changes";
 import { authorize, DomainError, type Principal } from "../core/policy";
+import { assertActiveRelationships } from "../core/visibility";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import {
@@ -729,6 +730,7 @@ export class IntegrationService {
     connection: typeof s.connections.$inferSelect,
     item: typeof s.integrationItems.$inferSelect,
     relationshipId: string,
+    linkedByMember = false,
   ) {
     const [relationship] = await this.db
       .select()
@@ -751,60 +753,67 @@ export class IntegrationService {
       relationship.productId,
       true,
     );
-    if (item.record.kind === "message") {
-      if (!item.record.threadId || !item.record.direction)
-        throw new DomainError("INVALID_INPUT", 400);
-      const [conversation] = await this.db
-        .insert(s.conversations)
-        .values({
-          organizationId: connection.organizationId,
-          productId: relationship.productId,
-          relationshipId,
+    const record = item.record;
+    if (record.kind === "message") {
+      const { threadId, direction } = record;
+      if (!threadId || !direction) throw new DomainError("INVALID_INPUT", 400);
+      await this.db.transaction(async (tx) => {
+        if (linkedByMember)
+          await assertActiveRelationships(tx, connection.organizationId, [
+            relationshipId,
+          ]);
+        const [conversation] = await tx
+          .insert(s.conversations)
+          .values({
+            organizationId: connection.organizationId,
+            productId: relationship.productId,
+            relationshipId,
+            connectionId: connection.id,
+            externalThreadId: threadId,
+            ownerId: connection.ownerId,
+            visibility: "private",
+            channel: connection.provider === "unipile" ? "linkedin" : "gmail",
+          })
+          .onConflictDoNothing()
+          .returning();
+        const [stored] = conversation
+          ? [conversation]
+          : await tx
+              .select()
+              .from(s.conversations)
+              .where(
+                and(
+                  eq(s.conversations.connectionId, connection.id),
+                  eq(s.conversations.externalThreadId, threadId),
+                ),
+              );
+        if (stored.relationshipId !== relationshipId)
+          throw new DomainError("THREAD_ALREADY_LINKED", 409);
+        await ingestReply(tx, {
+          provider: connection.provider === "unipile" ? "unipile" : "gmail",
+          accountId: connection.externalAccountId,
           connectionId: connection.id,
-          externalThreadId: item.record.threadId,
-          ownerId: connection.ownerId,
-          visibility: "private",
-          channel: connection.provider === "unipile" ? "linkedin" : "gmail",
-        })
-        .onConflictDoNothing()
-        .returning();
-      const [stored] = conversation
-        ? [conversation]
-        : await this.db
-            .select()
-            .from(s.conversations)
-            .where(
-              and(
-                eq(s.conversations.connectionId, connection.id),
-                eq(s.conversations.externalThreadId, item.record.threadId),
-              ),
-            );
-      if (stored.relationshipId !== relationshipId)
-        throw new DomainError("THREAD_ALREADY_LINKED", 409);
-      await ingestReply(this.db, {
-        provider: connection.provider === "unipile" ? "unipile" : "gmail",
-        accountId: connection.externalAccountId,
-        connectionId: connection.id,
-        messageId: item.record.externalId,
-        threadId: item.record.threadId,
-        direction: item.record.direction,
-        channel: stored.channel,
-        body: item.record.body,
-        occurredAt: item.record.occurredAt,
-        historical:
-          typeof connection.syncCursor.connectedAt === "string" &&
-          new Date(item.record.occurredAt) <
-            new Date(connection.syncCursor.connectedAt),
+          messageId: record.externalId,
+          threadId,
+          direction,
+          channel: stored.channel,
+          body: record.body,
+          occurredAt: record.occurredAt,
+          historical:
+            typeof connection.syncCursor.connectedAt === "string" &&
+            new Date(record.occurredAt) <
+              new Date(connection.syncCursor.connectedAt),
+        });
+        await tx
+          .update(s.integrationItems)
+          .set({
+            status: "matched",
+            productId: relationship.productId,
+            relationshipId,
+            entityId: stored.id,
+          })
+          .where(eq(s.integrationItems.id, item.id));
       });
-      await this.db
-        .update(s.integrationItems)
-        .set({
-          status: "matched",
-          productId: relationship.productId,
-          relationshipId,
-          entityId: stored.id,
-        })
-        .where(eq(s.integrationItems.id, item.id));
     } else {
       // Linking a meeting is an explicit decision to add these notes to this product's shared CRM context.
       await this.db.transaction(async (tx) => {
@@ -827,6 +836,10 @@ export class IntegrationService {
           relationship.productId,
           true,
         );
+        if (linkedByMember)
+          await assertActiveRelationships(tx, connection.organizationId, [
+            relationshipId,
+          ]);
         const [locked] = await tx
           .select()
           .from(s.integrationItems)
@@ -932,8 +945,8 @@ export class IntegrationService {
         )
         .orderBy(s.integrationItems.createdAt);
       for (const member of threadItems)
-        await this.materialize(connection, member, relationshipId);
-    } else await this.materialize(connection, item, relationshipId);
+        await this.materialize(connection, member, relationshipId, true);
+    } else await this.materialize(connection, item, relationshipId, true);
   }
   async disconnect(principal: Principal, organizationId: string, id: string) {
     const connection = await this.own(principal, organizationId, id);

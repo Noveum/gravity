@@ -148,10 +148,8 @@ async function writableRelationship(
     .select({
       id: s.relationships.id,
       productId: s.relationships.productId,
-      archivedAt: s.people.archivedAt,
     })
     .from(s.relationships)
-    .innerJoin(s.people, eq(s.people.id, s.relationships.personId))
     .where(
       and(
         eq(s.relationships.id, relationshipId),
@@ -162,7 +160,7 @@ async function writableRelationship(
   await authorize(tx, principal, organizationId, relationship.productId, true);
   if (productId && productId !== relationship.productId)
     throw new DomainError("FORBIDDEN", 403);
-  if (relationship.archivedAt) throw new DomainError("RECORD_ARCHIVED", 409);
+  await assertActiveRelationships(tx, organizationId, [relationship.id]);
   return relationship;
 }
 

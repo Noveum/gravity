@@ -858,21 +858,24 @@ export class CrmService {
     if (principal.source === "mcp")
       throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
     return this.db.transaction(async (tx) => {
-      const [action] = await tx
-        .select()
-        .from(s.actions)
-        .where(
-          and(
-            eq(s.actions.id, input.actionId),
-            eq(s.actions.organizationId, input.organizationId),
-          ),
-        )
-        .for("update");
-      if (!action) throw new DomainError("NOT_FOUND", 404);
-      await authorizeAction(tx, principal, action);
+      const actionRow = () =>
+        tx
+          .select()
+          .from(s.actions)
+          .where(
+            and(
+              eq(s.actions.id, input.actionId),
+              eq(s.actions.organizationId, input.organizationId),
+            ),
+          );
+      const [found] = await actionRow();
+      if (!found) throw new DomainError("NOT_FOUND", 404);
+      await authorizeAction(tx, principal, found);
       await assertActiveRelationships(tx, input.organizationId, [
-        action.relationshipId,
+        found.relationshipId,
       ]);
+      const [action] = await actionRow().for("update");
+      if (!action) throw new DomainError("NOT_FOUND", 404);
       if (action.version !== input.version)
         throw new DomainError("CONFLICT", 409);
       if (action.status === "completed")
@@ -954,31 +957,35 @@ export class CrmService {
       const items = [...input.items].sort((a, b) =>
         a.actionId < b.actionId ? -1 : a.actionId > b.actionId ? 1 : 0,
       );
-      const rows = await tx
-        .select()
-        .from(s.actions)
-        .where(
-          and(
-            inArray(
-              s.actions.id,
-              items.map((item) => item.actionId),
+      const selectRows = () =>
+        tx
+          .select()
+          .from(s.actions)
+          .where(
+            and(
+              inArray(
+                s.actions.id,
+                items.map((item) => item.actionId),
+              ),
+              eq(s.actions.organizationId, input.organizationId),
             ),
-            eq(s.actions.organizationId, input.organizationId),
-          ),
-        )
-        .orderBy(asc(s.actions.id))
-        .for("update");
-      if (rows.length !== items.length) throw new DomainError("NOT_FOUND", 404);
-      const products = new Set(rows.map((row) => row.productId));
-      await assertActiveRelationships(
-        tx,
-        input.organizationId,
-        rows.map((row) => row.relationshipId),
-      );
+          )
+          .orderBy(asc(s.actions.id));
+      const found = await selectRows();
+      if (found.length !== items.length)
+        throw new DomainError("NOT_FOUND", 404);
+      const products = new Set(found.map((row) => row.productId));
       if (input.productId && [...products].some((id) => id !== input.productId))
         throw new DomainError("FORBIDDEN", 403);
       for (const productId of products)
         await authorize(tx, principal, input.organizationId, productId, true);
+      await assertActiveRelationships(
+        tx,
+        input.organizationId,
+        found.map((row) => row.relationshipId),
+      );
+      const rows = await selectRows().for("update");
+      if (rows.length !== items.length) throw new DomainError("NOT_FOUND", 404);
       const sourceIds = [
         ...new Set(
           rows.flatMap((row) =>

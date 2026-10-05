@@ -3439,6 +3439,7 @@ tbody tr[data-selected] td:first-child::before {
 .touch-row > .action-row {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 .touch-actions {
   position: absolute;
@@ -3454,8 +3455,7 @@ tbody tr[data-selected] td:first-child::before {
   pointer-events: none;
   transition: opacity var(--duration-fast) var(--ease-standard);
 }
-.touch-row:hover .touch-actions,
-.touch-row:focus-within .touch-actions {
+.touch-row:hover .touch-actions {
   opacity: 1;
   pointer-events: auto;
 }
@@ -3487,7 +3487,8 @@ tbody tr[data-selected] td:first-child::before {
 }
 @container (max-width: 560px) {
   .touch-row .row-action,
-  .touch-row .row-meta {
+  .touch-row .row-meta,
+  .touch-row .badge:not(.warning) {
     display: none;
   }
   .touch-row .row-kind {

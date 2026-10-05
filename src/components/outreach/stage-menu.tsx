@@ -103,11 +103,12 @@ export function StageMenu({
             onClick={() => onChoose(stage.id)}
           >
             <span className="menu-item-label">{stage.name}</span>
-            {stage.category !== "open" && (
-              <span className="menu-item-hint">
-                {t.stageCategory[stage.category]}
-              </span>
-            )}
+            {t.stageCategory[stage.category] !== stage.name &&
+              stage.category !== "open" && (
+                <span className="menu-item-hint">
+                  {t.stageCategory[stage.category]}
+                </span>
+              )}
             {stage.id === current && <Check size={13} aria-hidden />}
           </button>
         ))}

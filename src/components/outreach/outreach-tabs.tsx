@@ -1,6 +1,7 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
+import { useLayoutEffect, useRef } from "react";
 import { type OutreachTab, outreachPath, outreachTabs } from "../routes";
 
 export function OutreachTabs({
@@ -10,8 +11,21 @@ export function OutreachTabs({
   tab: OutreachTab;
   counts: Partial<Record<OutreachTab, number>>;
 }) {
+  const nav = useRef<HTMLElement>(null);
+  const shown = useRef<OutreachTab | null>(null);
+  useLayoutEffect(() => {
+    const bar = nav.current;
+    const current = bar?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!bar || !current || shown.current === tab) return;
+    shown.current = tab;
+    const left = current.offsetLeft;
+    const right = left + current.offsetWidth;
+    if (left < bar.scrollLeft) bar.scrollLeft = left;
+    else if (right > bar.scrollLeft + bar.clientWidth)
+      bar.scrollLeft = right - bar.clientWidth;
+  });
   return (
-    <nav aria-label={t.outreachTabsLabel} className="outreach-tabs">
+    <nav ref={nav} aria-label={t.outreachTabsLabel} className="outreach-tabs">
       {outreachTabs.map((id) => {
         const count = counts[id];
         return (

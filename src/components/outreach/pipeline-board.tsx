@@ -223,7 +223,7 @@ function Board({ productId }: { productId: string }) {
       <div
         className="pipeline-stages"
         style={{
-          gridTemplateColumns: `repeat(${pipeline.length}, minmax(196px, 1fr))`,
+          gridTemplateColumns: `repeat(${pipeline.length}, minmax(184px, 1fr))`,
         }}
       >
         {pipeline.map((stage) => {

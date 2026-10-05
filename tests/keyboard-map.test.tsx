@@ -10,6 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { eq } from "drizzle-orm";
 import { describe, expect, test, vi } from "vitest";
+import { nextWorkingMorning, snoozeLabel } from "../packages/core/calendar";
 import {
   bindingLabel,
   type ShortcutId,
@@ -18,6 +19,7 @@ import {
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { requestJson } from "../src/components/client-api";
 import { sectionPath } from "../src/components/routes";
 import { Shortcuts } from "../src/components/shortcuts";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
@@ -119,7 +121,7 @@ describe("list movement, peek and open", () => {
 });
 
 describe("Escape backs out one level", () => {
-  test("selection, then peek, then the record page each close in turn and focus returns to the row", async () => {
+  test("peek, then selection, then the record page each close in turn and focus returns to the row", async () => {
     binding("back");
     await mountCrm(harness);
     const ellis = row(/Ellis Park.*Verify role/);
@@ -129,10 +131,10 @@ describe("Escape backs out one level", () => {
     await waitFor(() => expect(peek()).toBeTruthy());
     ellis.focus();
     await press("{Escape}");
-    expect(ellis.dataset.selected).toBeUndefined();
-    expect(peek()).toBeTruthy();
-    await press("{Escape}");
     expect(peek()).toBeNull();
+    expect(ellis.dataset.selected).toBe("true");
+    await press("{Escape}");
+    expect(ellis.dataset.selected).toBeUndefined();
     row(/Ellis Park.*Verify role/).focus();
     await press("{Enter}");
     await waitFor(() => expect(pathname()).toBe(`/people/${demoId(205)}`));
@@ -146,6 +148,30 @@ describe("Escape backs out one level", () => {
     await waitFor(() =>
       expect(document.activeElement).toBe(row(/Ellis Park.*Verify role/)),
     );
+  });
+  test("Escape on a record returns to the list that record was opened from, not an older one", async () => {
+    await mountCrm(harness);
+    row(/Ellis Park.*Verify role/).focus();
+    await press("{Enter}");
+    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(205)}`));
+    await press("gp");
+    await waitFor(() => expect(pathname()).toBe("/people"));
+    const leena = screen.getByRole("link", { name: /Leena Rao/ });
+    leena.focus();
+    await press("{Enter}");
+    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(202)}`));
+    await press("{Escape}");
+    await waitFor(() => expect(pathname()).toBe("/people"));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("link", { name: /Leena Rao/ }),
+      ),
+    );
+    screen.getByRole("link", { name: /Ellis Park/ }).focus();
+    await press("{Enter}");
+    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(205)}`));
+    await press("{Escape}");
+    await waitFor(() => expect(pathname()).toBe("/people"));
   });
   test("a record page reached by a deep link backs out to its list", async () => {
     await mountCrm(harness, `/companies/${demoId(100)}`);
@@ -283,6 +309,31 @@ describe("palette, search, guide and create", () => {
 });
 
 describe("shell bindings", () => {
+  test("[ closes the open drawer on a narrow screen", async () => {
+    const wide = window.matchMedia;
+    window.matchMedia = vi.fn((query: string) => ({
+      matches: query.includes("max-width"),
+      addEventListener() {},
+      removeEventListener() {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      await mountCrm(harness);
+      await press("[[");
+      await waitFor(() =>
+        expect(
+          document.querySelector(".sidebar")?.getAttribute("data-drawer"),
+        ).toBe("open"),
+      );
+      await press("[[");
+      await waitFor(() =>
+        expect(
+          document.querySelector(".sidebar")?.getAttribute("data-drawer"),
+        ).toBe("closed"),
+      );
+    } finally {
+      window.matchMedia = wide;
+    }
+  });
   test("[ toggles the sidebar", async () => {
     binding("sidebar");
     await mountCrm(harness);
@@ -377,23 +428,139 @@ describe("selection and row verbs", () => {
     await screen.findByText(t.errors.REPLY_BLOCKED);
     expect(harness.posts).toHaveLength(0);
   });
-  test("S snoozes the focused action by a day and Cmd Z undoes it", async () => {
+  test("S snoozes the focused action to the next working morning, moves it to Upcoming, and Cmd Z undoes it", async () => {
     binding("snooze");
     binding("undo");
     await mountCrm(harness);
     const before = await actionRow(605);
+    const now = Date.now();
+    const morning = nextWorkingMorning(now, "UTC");
     row(/Ellis Park.*Verify role/).focus();
     await press("s");
-    await screen.findByText(t.verbSnoozed.replace("{count}", t.actionCountOne));
-    const snoozed = await actionRow(605);
-    expect(snoozed.dueAt.getTime()).toBeGreaterThanOrEqual(
-      Math.max(Date.now(), before.dueAt.getTime()) + 86400000 - 60000,
+    await screen.findByText(
+      t.verbSnoozed
+        .replace("{count}", t.actionCountOne)
+        .replace("{when}", snoozeLabel(morning, now, "UTC")),
+    );
+    expect((await actionRow(605)).dueAt.toISOString()).toBe(
+      new Date(morning).toISOString(),
+    );
+    await waitFor(() =>
+      expect(
+        row(/Ellis Park.*Verify role/).parentElement?.querySelector(
+          ".group-title",
+        )?.textContent,
+      ).toContain(label("upcoming")),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(row(/Ellis Park.*Verify role/)),
     );
     await press("{Meta>}z{/Meta}");
     await screen.findByText(t.verbUndone);
     expect((await actionRow(605)).dueAt.toISOString()).toBe(
       before.dueAt.toISOString(),
     );
+    await waitFor(() =>
+      expect(
+        row(/Ellis Park.*Verify role/).parentElement?.querySelector(
+          ".group-title",
+        )?.textContent,
+      ).toContain(label("now")),
+    );
+  });
+  test("an undo refused because a teammate changed the row says so", async () => {
+    await mountCrm(harness);
+    row(/Ellis Park.*Verify role/).focus();
+    await press("s");
+    const toast = (
+      await screen.findByText(new RegExp(t.verbSnoozed.split(" ")[0] ?? ""))
+    ).parentElement as HTMLElement;
+    const changed = await actionRow(605);
+    await harness.service.planActions(
+      { userId: "demo-teammate", source: "session" },
+      {
+        organizationId: demoId(1),
+        items: [
+          { actionId: changed.id, version: changed.version, ownerId: demoUser },
+        ],
+      },
+    );
+    fireEvent.click(within(toast).getByRole("button", { name: t.undo }));
+    await screen.findByText(t.errors.CONFLICT);
+    expect((await actionRow(605)).dueAt.toISOString()).toBe(
+      changed.dueAt.toISOString(),
+    );
+  });
+  test("a verb pressed while another request is in flight waits its turn instead of being dropped", async () => {
+    await mountCrm(harness);
+    const regular = vi.mocked(requestJson).getMockImplementation();
+    if (!regular) throw new Error("REQUEST_MOCK_REQUIRED");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let held = false;
+    vi.mocked(requestJson).mockImplementation(async (url, init) => {
+      if (init?.method === "POST" && !held) {
+        held = true;
+        await gate;
+      }
+      return regular(url, init);
+    });
+    row(/Ellis Park.*Verify role/).focus();
+    await press("s");
+    row(/Jonah Reed.*Answer the API/).focus();
+    await press("s");
+    await act(async () => release());
+    await waitFor(() =>
+      expect(
+        harness.posts.filter((post) => post.operation === "plan"),
+      ).toHaveLength(2),
+    );
+    const morning = new Date(
+      nextWorkingMorning(Date.now(), "UTC"),
+    ).toISOString();
+    await waitFor(async () =>
+      expect((await actionRow(601)).dueAt.toISOString()).toBe(morning),
+    );
+    expect((await actionRow(605)).dueAt.toISOString()).toBe(morning);
+  });
+  test("a search prunes hidden rows from the selection, the chip counts what is left, and verbs never touch a hidden row", async () => {
+    await mountCrm(harness);
+    row(/Ellis Park.*Verify role/).focus();
+    await press("x");
+    row(/Jonah Reed.*Answer the API/).focus();
+    await press("x");
+    const chip = (count: number) =>
+      screen.queryByRole("button", {
+        name: `${t.selectedCount.replace("{count}", String(count))}: ${t.clearSelection}`,
+      });
+    expect(chip(2)).toBeTruthy();
+    const search = screen.getByRole("searchbox", { name: t.search });
+    await userEvent.setup().type(search, "Jonah");
+    await waitFor(() => expect(chip(1)).toBeTruthy());
+    await userEvent.setup().clear(search);
+    expect(chip(1)).toBeTruthy();
+    expect(row(/Ellis Park.*Verify role/).dataset.selected).toBeUndefined();
+    await userEvent.setup().type(search, "Leena");
+    await waitFor(() => expect(chip(1)).toBeNull());
+    await userEvent.setup().clear(search);
+    row(/Leena Rao.*Prepare the pilot/).focus();
+    await press("x");
+    const leena = await actionRow(602);
+    await userEvent.setup().type(search, "Ellis");
+    await waitFor(() => expect(chip(1)).toBeNull());
+    await act(async () => search.blur());
+    row(/Ellis Park.*Verify role/).focus();
+    await press("s");
+    await screen.findByText(new RegExp(t.actionCountOne));
+    expect((await actionRow(602)).dueAt.toISOString()).toBe(
+      leena.dueAt.toISOString(),
+    );
+    expect((await actionRow(602)).version).toBe(leena.version);
+    expect(harness.posts.at(-1)).toMatchObject({
+      items: [expect.objectContaining({ actionId: demoId(605) })],
+    });
   });
   test("A opens an assign menu that owns the keyboard, assigns, and offers undo", async () => {
     binding("assign");
@@ -421,6 +588,14 @@ describe("selection and row verbs", () => {
     expect(screen.queryByRole("menu")).toBeNull();
     expect((await actionRow(605)).ownerId).toBe(demoUser);
     expect(document.activeElement).toBe(row(/Ellis Park.*Verify role/));
+    const toast = screen.getByText(
+      t.verbAssigned
+        .replace("{count}", t.actionCountOne)
+        .replace("{name}", "Alex Morgan"),
+    ).parentElement as HTMLElement;
+    fireEvent.click(within(toast).getByRole("button", { name: t.undo }));
+    await screen.findByText(t.verbUndone);
+    expect((await actionRow(605)).ownerId).toBe("demo-teammate");
   });
   test("Escape closes the assign menu without assigning, and it lists only teammates who can see the product", async () => {
     await mountCrm(harness);

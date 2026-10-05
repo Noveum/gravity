@@ -1,7 +1,11 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
-import { useCreate, useWorkspaceData } from "../crm/crm-context";
+import {
+  useCreate,
+  usePruneSelection,
+  useWorkspaceData,
+} from "../crm/crm-context";
 import { ArchivedList } from "../records/archived-list";
 import { peekOnSpace } from "../records/peek-keys";
 import { companyPath, personPath } from "../routes";
@@ -18,6 +22,7 @@ export function CompaniesView() {
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
+  usePruneSelection(companies.map((item) => item.id));
   return (
     <div className="table-scroll">
       {!companies.length && <EmptyState title={t.noCompanies} compact />}

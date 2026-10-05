@@ -533,8 +533,10 @@ function CrmShell({ children }: { children: ReactNode }) {
                 if (
                   target instanceof HTMLAnchorElement &&
                   target.origin === window.location.origin
-                )
+                ) {
+                  crm.rememberOrigin(target.pathname);
                   titleFocus.current = target.pathname;
+                }
               }}
             >
               {!data.products.length && section !== "settings" && (

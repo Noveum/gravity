@@ -1,10 +1,15 @@
 "use client";
+import { dueToday } from "@crm/core/calendar";
 import t from "@crm/i18n/translations/en.json";
 import { CircleHelp, Hourglass, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { dateLabel, label } from "../client-api";
-import { useCreate, useWorkspaceData } from "../crm/crm-context";
+import {
+  useCreate,
+  usePruneSelection,
+  useWorkspaceData,
+} from "../crm/crm-context";
 import { useWarmContext } from "../crm/record-context";
 import { rowKeys } from "../records/peek-keys";
 import { actionFilters, personPath, sectionPath } from "../routes";
@@ -39,14 +44,15 @@ export function ActionsView() {
         companyFor(personFor(action.relationshipId)?.id ?? "")?.name,
       ),
   );
+  usePruneSelection(visibleActions.map((action) => action.id));
   const now = Date.now();
   return (
     <>
       {["now", "upcoming"].map((group) => {
         const list = visibleActions.filter((action) =>
           group === "now"
-            ? new Date(action.dueAt).getTime() < now + day
-            : new Date(action.dueAt).getTime() >= now + day,
+            ? dueToday(action.dueAt, now, crm.timeZone)
+            : !dueToday(action.dueAt, now, crm.timeZone),
         );
         if (!list.length) return null;
         return (

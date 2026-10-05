@@ -53,6 +53,7 @@ export interface RecordDialogState {
 interface Origin {
   path: string;
   focus: string;
+  record: string;
 }
 
 export interface CrmProps {
@@ -180,8 +181,13 @@ function useCrmState({
     setSelectionState({ path: "", selection: emptySelection });
   }
   function rememberOrigin(href: string) {
-    const target = routeFor(href.split("?")[0] ?? href);
-    if (!target?.recordId || route?.recordId) return;
+    const record = href.split("?")[0] ?? href;
+    const target = routeFor(record);
+    if (!target?.recordId) return;
+    if (route?.recordId) {
+      if (origin.current?.record !== pathname) origin.current = null;
+      return;
+    }
     const focus =
       document.activeElement instanceof HTMLElement
         ? (document.activeElement
@@ -191,6 +197,7 @@ function useCrmState({
     origin.current = {
       path: `${pathname}${query.toString() ? `?${query}` : ""}`,
       focus,
+      record,
     };
   }
   function go(href: string) {
@@ -200,10 +207,10 @@ function useCrmState({
   }
   function leaveRecord() {
     if (!route?.recordId) return false;
-    const back = origin.current ?? {
-      path: sectionPath(route.section),
-      focus: route.recordId,
-    };
+    const back =
+      origin.current?.record === pathname
+        ? origin.current
+        : { path: sectionPath(route.section), focus: route.recordId };
     origin.current = null;
     rowFocus.current = back.focus;
     titleFocus.current = back.path.split("?")[0] ?? back.path;
@@ -538,6 +545,21 @@ export function useCreate(run: () => boolean) {
     latest.current = run;
   });
   useEffect(() => registerCreate(() => latest.current()), [registerCreate]);
+}
+
+export function usePruneSelection(visible: string[]) {
+  const { selection, setSelection } = useCrm();
+  const key = visible.join(" ");
+  const hidden = selection.selected.some((id) => !visible.includes(id));
+  useEffect(() => {
+    if (!hidden) return;
+    const shown = new Set(key.split(" "));
+    setSelection({
+      selected: selection.selected.filter((id) => shown.has(id)),
+      anchor: shown.has(selection.anchor) ? selection.anchor : "",
+      base: selection.base.filter((id) => shown.has(id)),
+    });
+  }, [hidden, key, selection, setSelection]);
 }
 
 export function useEdit(run: () => boolean) {

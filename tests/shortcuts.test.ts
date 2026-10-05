@@ -12,6 +12,7 @@ import {
   startsSequence,
   toggleSelection,
 } from "../packages/core/shortcuts";
+import t from "../packages/i18n/translations/en.json";
 
 const stroke = (key: string, extra: Partial<KeyStroke> = {}): KeyStroke => ({
   key,
@@ -190,5 +191,39 @@ describe("selection", () => {
     let state = toggleSelection(emptySelection, "a");
     state = extendSelection(order, state, "d", "e");
     expect(state.selected).toEqual(["a", "d", "e"]);
+  });
+});
+
+describe("review follow-ups", () => {
+  test("no two entries share a binding in any set of scopes that are active together", () => {
+    const together: ShortcutScope[][] = [
+      ["global", "list", "actions", "peek", "detail"],
+      ["global", "list", "board"],
+      ["global", "detail", "record"],
+      ["dialog"],
+      ["row"],
+    ];
+    for (const scopes of together) {
+      const seen = new Map<string, string>();
+      for (const entry of shortcuts.filter((item) =>
+        scopes.includes(item.scope),
+      ))
+        for (const value of entry.bindings) {
+          expect(
+            seen.get(value),
+            `${scopes.join("+")}: ${value}`,
+          ).toBeUndefined();
+          seen.set(value, entry.id);
+        }
+    }
+  });
+  test("key names shown to people come from the translations", () => {
+    expect(bindingLabel("space", false)).toBe(t.keyNames.space);
+    expect(bindingLabel("escape", false)).toBe(t.keyNames.escape);
+    expect(bindingLabel("enter", false)).toBe(t.keyNames.enter);
+    expect(bindingLabel("home", false)).toBe(t.keyNames.home);
+    expect(bindingLabel("end", false)).toBe(t.keyNames.end);
+    expect(bindingLabel("mod+k", false)).toBe(`${t.keyNames.ctrl} K`);
+    expect(bindingLabel("shift+j", false)).toBe(`${t.keyNames.shift} J`);
   });
 });

@@ -290,21 +290,21 @@ export function shortcutFor(
 }
 
 const keyNames: Record<string, string> = {
-  " ": "Space",
-  escape: "Esc",
-  enter: "Enter",
-  arrowdown: "↓",
-  arrowup: "↑",
-  arrowright: "→",
-  arrowleft: "←",
-  home: "Home",
-  end: "End",
+  " ": t.keyNames.space,
+  escape: t.keyNames.escape,
+  enter: t.keyNames.enter,
+  arrowdown: "\u2193",
+  arrowup: "\u2191",
+  arrowright: "\u2192",
+  arrowleft: "\u2190",
+  home: t.keyNames.home,
+  end: t.keyNames.end,
 };
 
 export function bindingKeys(binding: string, mac: boolean): string[] {
   return parseBinding(binding).flatMap((stroke) => [
-    ...(stroke.mod ? [mac ? "⌘" : "Ctrl"] : []),
-    ...(stroke.shift ? ["Shift"] : []),
+    ...(stroke.mod ? [mac ? "\u2318" : t.keyNames.ctrl] : []),
+    ...(stroke.shift ? [t.keyNames.shift] : []),
     keyNames[stroke.key] ?? stroke.key.toUpperCase(),
   ]);
 }

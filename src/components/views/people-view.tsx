@@ -2,7 +2,11 @@
 import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
 import { label } from "../client-api";
-import { useCreate, useWorkspaceData } from "../crm/crm-context";
+import {
+  useCreate,
+  usePruneSelection,
+  useWorkspaceData,
+} from "../crm/crm-context";
 import { useWarmContext } from "../crm/record-context";
 import { ArchivedList } from "../records/archived-list";
 import { peekOnSpace } from "../records/peek-keys";
@@ -24,6 +28,7 @@ export function PeopleView() {
   const people = data.people.filter((person) =>
     matches(person.name, person.title, companyFor(person.id)?.name),
   );
+  usePruneSelection(people.map((item) => item.id));
   return (
     <div className="table-scroll">
       {!people.length && <EmptyState title={t.noPeople} compact />}

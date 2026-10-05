@@ -1,4 +1,5 @@
 "use client";
+import { shortcutFor } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import {
   ChevronRight,
@@ -15,6 +16,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { isEditable, keyInput } from "../keyboard-navigation";
 
 const focusableSelector =
   "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])";
@@ -162,7 +164,11 @@ export function Sidebar({
   }, [drawerOpen]);
   function trapFocus(event: KeyboardEvent<HTMLElement>) {
     if (!drawerOpen || !panel.current) return;
-    if (event.key === "Escape") {
+    if (
+      event.key === "Escape" ||
+      shortcutFor(keyInput(event), ["global"], isEditable(event.target)) ===
+        "sidebar"
+    ) {
       event.preventDefault();
       event.stopPropagation();
       onCloseDrawer();

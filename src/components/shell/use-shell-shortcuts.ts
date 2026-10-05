@@ -94,8 +94,8 @@ export function useShellShortcuts({
       target.blur();
       document.querySelector<HTMLElement>(".view-title")?.focus();
     } else if (isEditable(target)) return false;
-    else if (crm.selection.selected.length) crm.clearSelection();
     else if (showPeek) crm.closePeek();
+    else if (crm.selection.selected.length) crm.clearSelection();
     else return crm.leaveRecord();
     return true;
   }

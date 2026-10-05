@@ -59,7 +59,7 @@ try {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline && child.exitCode === null && !spawnFailed) {
     try {
-      const response = await fetch(`${base}/welcome`, {
+      const response = await fetch(`${base}/`, {
         signal: AbortSignal.timeout(2000),
       });
       if (response.ok) {
@@ -79,9 +79,18 @@ try {
       !html.includes('name="robots" content="noindex, nofollow"')
     )
       throw new Error(`SMOKE_PAGE_FAILED: ${path}`);
-    if (path === "/welcome" && !html.includes(siteCopy.heroTitle))
+    if (path === "/" && !html.includes(siteCopy.heroTitle))
       throw new Error("SMOKE_COPY_MISSING");
   }
+  const welcome = await fetch(new URL("/welcome", base), {
+    redirect: "manual",
+    signal: AbortSignal.timeout(15000),
+  });
+  if (
+    welcome.status !== 308 ||
+    new URL(welcome.headers.get("location") ?? "", base).pathname !== "/"
+  )
+    throw new Error("LANDING_REDIRECT_FAILED");
   for (const path of ["/docs/missing-guide", "/blog/missing-article"]) {
     if ((await request(path)).status !== 404)
       throw new Error(`SMOKE_NOT_FOUND_FAILED: ${path}`);

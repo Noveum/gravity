@@ -15,25 +15,25 @@ export default function PublicLayout({
         {copy.skip}
       </a>
       <header className="site-header">
-        <Link href="/welcome" className="site-brand">
+        <Link href="/" className="site-brand">
           <GravityMark size={32} />
           {t.brand}
         </Link>
         <nav aria-label={copy.navLabel}>
-          <Link href="/welcome#product">{copy.product}</Link>
+          <Link href="/#product">{copy.product}</Link>
           <Link href="/docs">{copy.docsLabel}</Link>
           <Link href="/blog">{copy.blogLabel}</Link>
           <a href="https://github.com/Noveum/gravity">{copy.source}</a>
         </nav>
         <Preferences showDensity={false} />
-        <Link className="site-button site-button-small" href="/sign-in">
+        <Link className="site-button site-button-small" href="/actions">
           {copy.openApp}
         </Link>
       </header>
       {children}
       <footer className="site-footer">
         <span>{copy.footer}</span>
-        <Link href="/docs/deployment-readiness">{copy.previewBadge}</Link>
+        <Link href="/docs/deployment-readiness">{copy.selfHost}</Link>
         <a href="https://github.com/Noveum/gravity">{copy.source}</a>
       </footer>
     </div>

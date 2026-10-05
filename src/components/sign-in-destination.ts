@@ -1,13 +1,13 @@
 export function signInDestination(query: URLSearchParams, origin: string) {
   try {
-    const target = new URL(query.get("callbackURL") ?? "/", origin);
+    const target = new URL(query.get("callbackURL") ?? "/actions", origin);
     const isSignIn =
       decodeURIComponent(target.pathname).replace(/\/+$/, "") === "/sign-in";
     return target.origin === origin && !isSignIn
       ? `${target.pathname}${target.search}`
-      : "/";
+      : "/actions";
   } catch {
-    return "/";
+    return "/actions";
   }
 }
 

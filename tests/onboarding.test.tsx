@@ -93,7 +93,7 @@ test("opening authorization or consent without an assistant request offers recov
   expect(screen.getByText(t.authFlowMissing)).toBeTruthy();
   expect(
     screen.getByRole("link", { name: t.backToWorkspace }).getAttribute("href"),
-  ).toBe("/");
+  ).toBe("/actions");
   view.rerender(<Consent />);
   expect(screen.getByText(t.authFlowMissing)).toBeTruthy();
   expect(screen.queryByRole("button", { name: t.accept })).toBeNull();
@@ -213,7 +213,7 @@ test("social login blocks duplicate clicks and rejects unsafe callback origins",
   fireEvent.click(screen.getByRole("button", { name: t.githubSignIn }));
   expect(request).toHaveBeenCalledOnce();
   expect(JSON.parse(String(request.mock.calls[0][1]?.body)).callbackURL).toBe(
-    "/",
+    "/actions",
   );
   await act(async () => pending.resolve({ url: "javascript:invalid" }));
   expect(screen.getByRole("alert").textContent).toBe(t.errors.INVALID_INPUT);
@@ -299,7 +299,7 @@ test("email sign-in destinations preserve safe paths and reject external or malf
         new URLSearchParams({ callbackURL: callback }),
         "https://crm.example.test",
       ),
-    ).toBe("/");
+    ).toBe("/actions");
   expect(
     signInDestination(
       new URLSearchParams({ callbackURL: "/onboarding?from=login" }),

@@ -405,7 +405,11 @@ test("a confirmed action updates the queue before refresh and an older read cann
     }
     return regular(url, init);
   });
-  fireEvent.click(screen.getByRole("button", { name: t.searchShort }));
+  fireEvent.click(
+    within(screen.getByRole("banner")).getByRole("button", {
+      name: t.searchShort,
+    }),
+  );
   fireEvent.click(screen.getByRole("option", { name: t.refresh }));
   fireEvent.click(screen.getByRole("button", { name: t.markDone }));
   await waitFor(() => expect(row()).toBeNull());
@@ -1256,4 +1260,119 @@ test("a company record stacks its people and opportunities as sibling sections w
   expect(
     sections.map((section) => section.querySelector("h3")?.textContent),
   ).toEqual([t.allPeople, t.opportunities]);
+});
+
+test("product creation is reachable from sidebar, toolbar, keyboard and commands in the active organization", async () => {
+  mount("/people");
+  const buttons = screen.getAllByRole("button", { name: t.newProduct });
+  expect(buttons).toHaveLength(2);
+  for (const button of buttons) {
+    expect(button.textContent).toContain(t.keys.createProduct);
+    fireEvent.click(button);
+    const dialog = screen.getByRole("dialog", { name: t.newProduct });
+    expect(within(dialog).getByText(organizations[0].name)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: t.cancel }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  }
+  const search = screen.getByRole("searchbox", { name: t.search });
+  fireEvent.keyDown(search, { key: "P", shiftKey: true });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.keyDown(document.body, { key: "P", shiftKey: true });
+  expect(screen.getByRole("dialog", { name: t.newProduct })).toBeTruthy();
+  fireEvent(
+    screen.getByRole("dialog"),
+    new Event("cancel", { cancelable: true }),
+  );
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  const palette = screen.getByRole("dialog", { name: t.commands });
+  fireEvent.click(
+    within(palette).getByRole("option", { name: new RegExp(t.newProduct) }),
+  );
+  expect(screen.getByRole("dialog", { name: t.newProduct })).toBeTruthy();
+  const regular = request.getMockImplementation();
+  if (!regular) throw new Error("Missing request implementation");
+  request.mockImplementation(async (url, init) => {
+    if (init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      return service.createProduct(principal, body.organizationId, body.name);
+    }
+    return regular(url, init);
+  });
+  const input = screen.getByLabelText(t.productName);
+  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+  expect(
+    request.mock.calls.filter(([, init]) => init?.method === "POST"),
+  ).toHaveLength(0);
+  fireEvent.change(input, { target: { value: "Fictional shortcuts product" } });
+  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await screen.findByRole("button", { name: "Fictional shortcuts product" });
+  expect(
+    JSON.parse(
+      String(
+        request.mock.calls.find(([, init]) => init?.method === "POST")?.[1]
+          ?.body,
+      ),
+    ),
+  ).toEqual({
+    operation: "product",
+    organizationId: demoId(1),
+    name: "Fictional shortcuts product",
+  });
+});
+
+test("non-admins have no product creation buttons, shortcut or advertised creation command", async () => {
+  const limited = {
+    ...snapshot,
+    members: snapshot.members.map((member) => ({
+      ...member,
+      role: "member" as const,
+    })),
+  };
+  request.mockResolvedValue(limited);
+  render(
+    <CrmApp
+      initial={limited}
+      organizations={organizations}
+      initialOrganizationId={demoId(1)}
+      userId={demoUser}
+      demo
+    >
+      <Routed />
+    </CrmApp>,
+  );
+  expect(screen.queryByRole("button", { name: t.newProduct })).toBeNull();
+  fireEvent.keyDown(document.body, { key: "P", shiftKey: true });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.keyDown(document.body, { key: "?", shiftKey: true });
+  const guide = screen.getByRole("dialog", { name: t.keyboardHelp });
+  expect(within(guide).queryByText(t.newProduct)).toBeNull();
+  fireEvent(guide, new Event("cancel", { cancelable: true }));
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  const command = screen.getByRole("option", {
+    name: new RegExp(t.newProduct),
+  });
+  expect(command.matches(":disabled")).toBe(true);
+  fireEvent.click(command);
+  expect(screen.getByRole("dialog", { name: t.commands })).toBeTruthy();
+});
+
+test("visible go-to hints include Outreach and the help button opens the map", async () => {
+  mount();
+  const sidebar = document.getElementById("navigation-panel") as HTMLElement;
+  for (const section of shellNavigation.listedViews) {
+    const link = sidebar.querySelector(`[data-nav-item="${section}"]`);
+    expect(link?.querySelector("kbd")?.textContent).toBe(
+      shellNavigation.sectionHint(section),
+    );
+  }
+  fireEvent.keyDown(document.body, { key: "g" });
+  fireEvent.keyDown(document.body, { key: "r" });
+  await waitFor(() => expect(window.location.pathname).toBe("/outreach"));
+  fireEvent.click(screen.getByRole("button", { name: t.keyboardHelp }));
+  expect(
+    within(screen.getByRole("dialog", { name: t.keyboardHelp })).getByText(
+      t.keys.createProduct,
+    ),
+  ).toBeTruthy();
 });

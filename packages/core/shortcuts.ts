@@ -8,6 +8,7 @@ export const navigationKeys = {
   f: "materials",
   i: "integrations",
   t: "settings",
+  r: "outreach",
 } as const;
 export type View = (typeof navigationKeys)[keyof typeof navigationKeys];
 export interface ShortcutInput {
@@ -39,7 +40,12 @@ export function shortcutFor(input: ShortcutInput): string | null {
   if (key === "escape") return "close";
   if (input.isEditing) return null;
   if (key === "?") return "help";
-  if (input.shiftKey) return null;
+  if (input.shiftKey) {
+    if (input.repeat || input.prefix) return null;
+    if (key === "p") return "createProduct";
+    if (key === "o") return "createOrganization";
+    return null;
+  }
   if (input.repeat && ["g", "c", "n"].includes(key)) return null;
   if (input.prefix)
     return navigationKeys[key as keyof typeof navigationKeys] || null;

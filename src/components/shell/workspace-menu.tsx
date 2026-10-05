@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { Organization } from "../client-api";
+import { ShortcutHint } from "../ui/shortcut-hint";
 
 export const initials = (name: string) =>
   name
@@ -174,6 +175,7 @@ export function WorkspaceMenu({
         <a className="menu-item" role="menuitem" href="/onboarding">
           <Plus size={14} aria-hidden />
           <span className="menu-item-label">{t.createWorkspace}</span>
+          <ShortcutHint keys={t.keys.createOrganization} />
         </a>
       </div>
     </div>
@@ -189,13 +191,15 @@ export function WorkspaceMenu({
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         aria-label={`${t.switchOrganization}: ${name}`}
-        title={name}
+        title={`${name} (${t.keys.organization})`}
+        aria-keyshortcuts="O"
         onClick={() => setOpen((value) => !value)}
       >
         <span className="workspace-logo" aria-hidden>
           {initials(name)}
         </span>
         <span className="workspace-name nav-label-text">{name}</span>
+        <ShortcutHint keys={t.keys.organization} className="nav-label-text" />
         <ChevronsUpDown size={13} aria-hidden className="nav-label-text" />
       </button>
       {open && layer && (floating ? createPortal(popup, layer) : popup)}

@@ -52,9 +52,11 @@ Live updates never approve, send, or replace an unsaved draft. Draft edits are b
 | / | Focus search in the current view; Escape clears it, then returns to the view |
 | J/K or Down/Up | Focus visible records in every record view; Enter opens the focused record |
 | Home / End | Focus first / last visible record |
-| C | Create a person in People; otherwise schedule an action |
+| C | Create a person from any workspace view |
+| Shift P | Add a product to the current organization (admins only) |
+| Shift O | Start creating a new organization |
 | N | Open next-action scheduling |
-| G then A/P/C/S/M/O/F/I/T | Actions / People / Companies / Sequences / Meetings / Opportunities / Materials / Connections / Settings |
+| G then A/P/C/S/M/O/F/I/T/R | Actions / People / Companies / Sequences / Meetings / Opportunities / Materials / Connections / Settings / Outreach |
 | O / P | Focus organization / product selector; native arrows and Enter choose |
 | H / L | Focus the record list / detail panel |
 | E | Expand or restore the detail panel |
@@ -64,7 +66,7 @@ Live updates never approve, send, or replace an unsaved draft. Draft edits are b
 | Escape | Close an inspector and restore its trigger; native dialogs cancel unless saving |
 | Tab / Shift Tab | Standard focus navigation; native modal focus containment |
 
-Single-key shortcuts pause while typing, during IME composition, and behind modals or menus. Child controls retain consumed keys, and dividers/inspectors keep their own arrow navigation. Go-to chords expire after 900 ms. Record movement changes focus rather than opening links or downloading files; Enter activates the focused control. No shortcut approves a draft, accepts a meeting commitment, or sends a message. Native validation and synchronous submission guards apply to modifier submission. The complete searchable guide is generated from the same view mapping as navigation.
+Single-key shortcuts pause while typing, during IME composition, and behind modals or menus. Child controls retain consumed keys, and dividers/inspectors keep their own arrow navigation. Go-to chords expire after 900 ms. Record movement changes focus rather than opening links or downloading files; Enter activates the focused control. No shortcut approves a draft, accepts a meeting commitment, or sends a message. Native validation and synchronous submission guards apply to modifier submission. The complete searchable guide uses the same view mapping as navigation and hides unavailable creation actions. Visible key hints accompany navigation links, workspace/product selectors, creation buttons, modal submission/cancellation, and commands. Cmd/Ctrl hints adapt to the device after hydration. Add product is available from the Products sidebar, view toolbar, empty state, settings, and command palette.
 
 ## Live delivery contract
 

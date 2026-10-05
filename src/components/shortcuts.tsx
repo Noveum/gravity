@@ -4,6 +4,7 @@ import t from "@crm/i18n/translations/en.json";
 import { useRef, useState } from "react";
 import { label } from "./client-api";
 import { useModalLifecycle } from "./modal-lifecycle";
+import { ShortcutHint } from "./ui/shortcut-hint";
 
 const shortcuts = [
   ...Object.values(navigationKeys).map((view) => ({
@@ -17,10 +18,12 @@ const shortcuts = [
     [t.searchShortcut, "/"],
     [t.keyboardRecords, "J / K · ↓ / ↑ · Home / End"],
     [t.keyboardOpen, "Enter"],
-    [t.keyboardCreate, "C"],
+    [t.addPerson, t.keys.create],
+    [t.newProduct, t.keys.createProduct],
+    [t.createWorkspace, t.keys.createOrganization],
     [t.scheduleAction, "N"],
-    [t.workspace, "O"],
-    [t.product, "P"],
+    [t.workspace, t.keys.organization],
+    [t.product, t.keys.product],
     [t.keyboardSubmit, "⌘ / Ctrl Enter"],
     [t.toggleSidebar, t.keys.sidebar],
   ].map(([name, keys]) => ({ label: name, keys, section: t.keyboardGeneral })),
@@ -35,15 +38,28 @@ const shortcuts = [
     [t.closeInspector, "Esc"],
   ].map(([name, keys]) => ({ label: name, keys, section: t.recordDetails })),
 ];
-export function Shortcuts({ onClose }: { onClose: () => void }) {
+export function Shortcuts({
+  onClose,
+  canCreateProduct = false,
+  canCreatePerson = false,
+  canSchedule = false,
+}: {
+  onClose: () => void;
+  canCreateProduct?: boolean;
+  canCreatePerson?: boolean;
+  canSchedule?: boolean;
+}) {
   const modal = useRef<HTMLDialogElement>(null);
   const [query, setQuery] = useState("");
   useModalLifecycle(modal);
-  const filtered = shortcuts.filter((shortcut) =>
-    `${shortcut.label} ${shortcut.keys} ${shortcut.section}`
+  const filtered = shortcuts.filter((shortcut) => {
+    if (shortcut.label === t.newProduct && !canCreateProduct) return false;
+    if (shortcut.label === t.addPerson && !canCreatePerson) return false;
+    if (shortcut.label === t.scheduleAction && !canSchedule) return false;
+    return `${shortcut.label} ${shortcut.keys} ${shortcut.section}`
       .toLowerCase()
-      .includes(query.toLowerCase()),
-  );
+      .includes(query.toLowerCase());
+  });
   return (
     <dialog
       ref={modal}
@@ -72,7 +88,10 @@ export function Shortcuts({ onClose }: { onClose: () => void }) {
                 .map((shortcut) => (
                   <div className="shortcut-row" key={shortcut.label}>
                     <span>{shortcut.label}</span>
-                    <kbd>{shortcut.keys}</kbd>
+                    <ShortcutHint
+                      keys={shortcut.keys ?? ""}
+                      decorative={false}
+                    />
                   </div>
                 ))}
             </section>

@@ -104,6 +104,8 @@ export function PeekPanel() {
               type="button"
               className="icon-button"
               aria-label={t.backToRecord}
+              title={`${t.backToRecord} (B)`}
+              aria-keyshortcuts="B"
               onClick={crm.previousRecord}
             >
               <ArrowLeft size={15} />
@@ -114,6 +116,8 @@ export function PeekPanel() {
               type="button"
               className="icon-button"
               aria-label={t.scheduleAction}
+              title={`${t.scheduleAction} (N)`}
+              aria-keyshortcuts="N"
               onClick={() => crm.setActionDialog(true)}
             >
               <Plus size={15} />
@@ -136,6 +140,8 @@ export function PeekPanel() {
             type="button"
             className="icon-button expand-control"
             aria-label={expanded ? t.collapseInspector : t.expandInspector}
+            title={`${expanded ? t.collapseInspector : t.expandInspector} (E)`}
+            aria-keyshortcuts="E"
             onClick={() => crm.setExpanded(!expanded)}
           >
             {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
@@ -144,6 +150,8 @@ export function PeekPanel() {
             type="button"
             className="icon-button"
             aria-label={t.closeInspector}
+            title={`${t.closeInspector} (Esc)`}
+            aria-keyshortcuts="Escape"
             onClick={crm.closePeek}
           >
             <X size={15} />

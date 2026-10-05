@@ -1,10 +1,320 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { draftHash } from "../core/drafts";
 import type { Database } from "./client";
 import * as s from "./schema";
 export const demoId = (value: number) =>
   `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
 export const demoUser = "demo-you";
+const stepTemplates = [
+  "Hi {first name}, I noticed your team is evaluating model testing. Would a short overview of how others approach it be useful?",
+  "Hi {first name}, following up on my note. Happy to share a two-page summary instead of a call.",
+  "Hi {first name}, one more idea: a fictional case study from a similar team. Should I send it?",
+  "Hi {first name}, I will close the loop here. If timing changes, reply and I will pick it up.",
+];
+const steps = (index: number) => stepTemplates[index] ?? "";
+const outreachStage = (product: number, position: number) =>
+  demoId(1200 + product * 10 + position);
+const stagePosition = {
+  new: 0,
+  researching: 1,
+  contacted: 2,
+  followUp: 3,
+  replied: 4,
+  meeting: 5,
+  won: 6,
+  lost: 7,
+  notNow: 8,
+} as const;
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+async function seedOutreach(tx: Transaction, due: (offset: number) => Date) {
+  const placements: [number, number, keyof typeof stagePosition][] = [
+    [300, 0, "replied"],
+    [301, 1, "contacted"],
+    [302, 2, "meeting"],
+    [303, 2, "followUp"],
+    [304, 0, "contacted"],
+    [305, 1, "researching"],
+    [306, 1, "new"],
+    [307, 3, "new"],
+  ];
+  for (const [relationship, product, stage] of placements)
+    await tx
+      .update(s.relationships)
+      .set({ stageId: outreachStage(product, stagePosition[stage]) })
+      .where(eq(s.relationships.id, demoId(relationship)));
+  await tx.insert(s.people).values([
+    {
+      id: demoId(207),
+      organizationId: demoId(1),
+      name: "Noor Haddad",
+      title: "Head of data",
+      summary: "Fictional prospect working from Berlin.",
+      email: "person7@example.test",
+      timeZone: "Europe/Berlin",
+    },
+    {
+      id: demoId(208),
+      organizationId: demoId(1),
+      name: "Owen Blake",
+      title: "Platform lead",
+      summary: "Asked not to be contacted again. Fictional.",
+      email: "person8@example.test",
+      doNotContact: true,
+    },
+  ]);
+  await tx.insert(s.relationships).values([
+    {
+      id: demoId(308),
+      organizationId: demoId(1),
+      productId: demoId(10),
+      personId: demoId(207),
+      ownerId: demoUser,
+      context: "Fictional outbound prospect for the AI Platform.",
+      stageId: outreachStage(0, stagePosition.followUp),
+      priority: "high",
+      nextStep: "Send follow-up 2 with the case study",
+      nextStepDueAt: due(0),
+    },
+    {
+      id: demoId(309),
+      organizationId: demoId(1),
+      productId: demoId(10),
+      personId: demoId(208),
+      ownerId: demoUser,
+      context: "Fictional prospect who opted out.",
+      stageId: outreachStage(0, stagePosition.notNow),
+      priority: "low",
+    },
+  ]);
+  await tx.insert(s.enrollments).values([
+    {
+      id: demoId(502),
+      organizationId: demoId(1),
+      productId: demoId(10),
+      relationshipId: demoId(308),
+      sequenceId: demoId(400),
+      status: "running",
+      step: 3,
+      enrolledAt: due(-8),
+    },
+    {
+      id: demoId(503),
+      organizationId: demoId(1),
+      productId: demoId(10),
+      relationshipId: demoId(309),
+      sequenceId: demoId(400),
+      status: "stopped",
+      step: 2,
+      enrolledAt: due(-10),
+    },
+    {
+      id: demoId(504),
+      organizationId: demoId(1),
+      productId: demoId(11),
+      relationshipId: demoId(305),
+      sequenceId: demoId(401),
+      status: "running",
+      step: 1,
+      enrolledAt: due(0),
+    },
+  ]);
+  const people = new Map(
+    (await tx.select().from(s.people)).map((person) => [person.id, person]),
+  );
+  const relationships = new Map(
+    (await tx.select().from(s.relationships)).map((row) => [row.id, row]),
+  );
+  const touch = (spec: {
+    id: number;
+    relationship: number;
+    enrollment: number;
+    product: number;
+    step: number;
+    status: "planned" | "drafted" | "approved" | "sent" | "skipped" | "expired";
+    dueAt: Date;
+    draft: string;
+    at?: Date;
+    skipReason?: string;
+  }) => {
+    const relationship = relationships.get(demoId(spec.relationship));
+    const person = people.get(relationship?.personId ?? "");
+    const channel = "gmail" as const;
+    const hash = draftHash({
+      draft: spec.draft,
+      personId: person?.id ?? "",
+      email: person?.email ?? null,
+      channel,
+      productId: demoId(spec.product),
+    });
+    return {
+      id: demoId(spec.id),
+      organizationId: demoId(1),
+      productId: demoId(spec.product),
+      relationshipId: demoId(spec.relationship),
+      enrollmentId: demoId(spec.enrollment),
+      stepNumber: spec.step,
+      followUp: spec.step - 1,
+      channel,
+      senderId: relationship?.ownerId ?? demoUser,
+      dueAt: spec.dueAt,
+      status: spec.status,
+      draft: spec.draft,
+      draftHash: hash,
+      approvedHash: spec.status === "approved" ? hash : null,
+      approvedBy: spec.status === "approved" ? demoUser : null,
+      sentBy: spec.status === "sent" ? demoUser : null,
+      sentAt: spec.status === "sent" ? (spec.at ?? spec.dueAt) : null,
+      skipReason: spec.skipReason ?? null,
+      closedAt: ["sent", "skipped", "expired"].includes(spec.status)
+        ? (spec.at ?? spec.dueAt)
+        : null,
+    };
+  };
+  const intro = steps(0);
+  await tx.insert(s.touches).values([
+    touch({
+      id: 1300,
+      relationship: 300,
+      enrollment: 500,
+      product: 10,
+      step: 1,
+      status: "sent",
+      dueAt: due(-9),
+      draft:
+        "Hi Mira, I noticed your team is evaluating model testing. Would a short overview help?",
+    }),
+    touch({
+      id: 1301,
+      relationship: 300,
+      enrollment: 500,
+      product: 10,
+      step: 2,
+      status: "sent",
+      dueAt: due(-6),
+      draft:
+        "Hi Mira, following up with a two-page summary of the evaluation workflow.",
+    }),
+    touch({
+      id: 1302,
+      relationship: 300,
+      enrollment: 500,
+      product: 10,
+      step: 3,
+      status: "drafted",
+      dueAt: due(-1),
+      draft:
+        "Hi Mira, following up on my earlier note. Would you like to take a look?",
+    }),
+    touch({
+      id: 1303,
+      relationship: 304,
+      enrollment: 501,
+      product: 10,
+      step: 1,
+      status: "sent",
+      dueAt: due(-3),
+      draft:
+        "Hi Amara, a short overview of how teams approach model testing. Useful?",
+    }),
+    touch({
+      id: 1304,
+      relationship: 304,
+      enrollment: 501,
+      product: 10,
+      step: 2,
+      status: "approved",
+      dueAt: due(0),
+      draft:
+        "Hi Amara, following up with a two-page summary instead of a call.",
+    }),
+    touch({
+      id: 1305,
+      relationship: 308,
+      enrollment: 502,
+      product: 10,
+      step: 1,
+      status: "skipped",
+      dueAt: due(-8),
+      draft: intro,
+      skipReason: "Introduced at a fictional meetup instead.",
+    }),
+    touch({
+      id: 1306,
+      relationship: 308,
+      enrollment: 502,
+      product: 10,
+      step: 2,
+      status: "sent",
+      dueAt: due(-5),
+      draft:
+        "Hi Noor, good to meet you at the meetup. Here is the two-page summary.",
+    }),
+    touch({
+      id: 1307,
+      relationship: 308,
+      enrollment: 502,
+      product: 10,
+      step: 3,
+      status: "planned",
+      dueAt: due(0),
+      draft: steps(2),
+    }),
+    touch({
+      id: 1308,
+      relationship: 309,
+      enrollment: 503,
+      product: 10,
+      step: 1,
+      status: "sent",
+      dueAt: due(-10),
+      draft:
+        "Hi Owen, a short overview of how platform teams approach model testing.",
+    }),
+    touch({
+      id: 1309,
+      relationship: 309,
+      enrollment: 503,
+      product: 10,
+      step: 2,
+      status: "expired",
+      dueAt: due(-7),
+      draft: steps(1),
+      at: due(-2),
+    }),
+    touch({
+      id: 1310,
+      relationship: 305,
+      enrollment: 504,
+      product: 11,
+      step: 1,
+      status: "planned",
+      dueAt: due(0),
+      draft: intro,
+    }),
+  ]);
+  const sent: [number, number, Date][] = [
+    [300, 2, due(-6)],
+    [304, 1, due(-3)],
+    [308, 1, due(-5)],
+    [309, 1, due(-10)],
+  ];
+  for (const [relationship, touchCount, lastOutboundAt] of sent)
+    await tx
+      .update(s.relationships)
+      .set({ touchCount, lastOutboundAt })
+      .where(eq(s.relationships.id, demoId(relationship)));
+  for (const [relationship, lastInboundAt] of [
+    [300, due(-1)],
+    [303, due(-2)],
+  ] as const)
+    await tx
+      .update(s.relationships)
+      .set({ lastInboundAt })
+      .where(eq(s.relationships.id, demoId(relationship)));
+}
+
 export async function seedDemo(db: Database) {
   const [existing] = await db
     .select()
@@ -173,7 +483,7 @@ export async function seedDemo(db: Database) {
         context: prospects[person - 200][2],
       })),
     );
-    const steps = [
+    const sequenceSteps = [
       "Initial message",
       "Follow-up 1",
       "Follow-up 2",
@@ -183,7 +493,7 @@ export async function seedDemo(db: Database) {
       name,
       delayDays: i === 0 ? 0 : i === 1 ? 3 : 5,
       channel: "gmail" as const,
-      template: "",
+      template: steps(i),
       followUp: i,
     }));
     await tx.insert(s.sequences).values(
@@ -192,7 +502,7 @@ export async function seedDemo(db: Database) {
         organizationId: demoId(p === 13 ? 2 : 1),
         productId: demoId(p),
         name: i === 2 ? "Pilot conversation" : "Thoughtful introduction",
-        steps,
+        steps: sequenceSteps,
       })),
     );
     await tx.insert(s.enrollments).values([
@@ -205,6 +515,7 @@ export async function seedDemo(db: Database) {
         status: "paused",
         pauseReason: "reply",
         step: 3,
+        enrolledAt: new Date(Date.now() - 9 * 86400000),
       },
       {
         id: demoId(501),
@@ -214,6 +525,7 @@ export async function seedDemo(db: Database) {
         sequenceId: demoId(400),
         status: "running",
         step: 2,
+        enrolledAt: new Date(Date.now() - 3 * 86400000),
       },
     ]);
     const now = new Date();
@@ -462,6 +774,29 @@ export async function seedDemo(db: Database) {
           category,
         })),
       );
+      await tx.insert(s.stages).values(
+        (
+          [
+            ["New", "open"],
+            ["Researching", "open"],
+            ["Contacted", "open"],
+            ["Follow-up", "open"],
+            ["Replied", "open"],
+            ["Meeting", "open"],
+            ["Won", "won"],
+            ["Lost", "lost"],
+            ["Not now", "hold"],
+          ] as const
+        ).map(([name, category], j) => ({
+          id: outreachStage(i, j),
+          organizationId: org,
+          productId: demoId(p),
+          name,
+          position: j,
+          pipeline: "outreach" as const,
+          category,
+        })),
+      );
       await tx.insert(s.folders).values(
         ["Overview", "Proof & case studies", "Commercial"].map((name, j) => ({
           id: demoId(900 + i * 10 + j),
@@ -471,6 +806,7 @@ export async function seedDemo(db: Database) {
         })),
       );
     }
+    await seedOutreach(tx, due);
     await tx.insert(s.meetings).values([
       {
         id: demoId(1000),

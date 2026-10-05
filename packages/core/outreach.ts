@@ -171,6 +171,23 @@ async function sentReport(db: Reader, touch: Touch) {
   });
 }
 
+export function externalMessageConflict(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const fields = error as {
+    code?: unknown;
+    constraint?: unknown;
+    constraint_name?: unknown;
+    cause?: unknown;
+  };
+  if (
+    fields.code === "23505" &&
+    (fields.constraint === "touches_external_message" ||
+      fields.constraint_name === "touches_external_message")
+  )
+    return true;
+  return externalMessageConflict(fields.cause);
+}
+
 async function assertTouchOpen(db: Reader, touch: Touch) {
   if (touch.status === "sent") throw await sentReport(db, touch);
   if (!isOpen(touch)) throw new DomainError("TOUCH_CLOSED", 409);
@@ -1359,7 +1376,7 @@ export class OutreachService {
         if (person.doNotContact) throw new DomainError("DO_NOT_CONTACT", 409);
         if (input.externalMessageId) {
           const [reported] = await tx
-            .select({ id: s.touches.id })
+            .select({ id: s.touches.id, productId: s.touches.productId })
             .from(s.touches)
             .where(
               and(
@@ -1368,10 +1385,22 @@ export class OutreachService {
                 eq(s.touches.externalMessageId, input.externalMessageId),
               ),
             );
-          if (reported)
-            throw new DomainError("EXTERNAL_MESSAGE_REPORTED", 409, {
-              touchId: reported.id,
-            });
+          if (reported) {
+            const permission = await authorize(
+              tx,
+              principal,
+              touch.organizationId,
+            );
+            throw new DomainError(
+              "EXTERNAL_MESSAGE_REPORTED",
+              409,
+              permission.products.some(
+                (product) => product.id === reported.productId,
+              )
+                ? { touchId: reported.id }
+                : undefined,
+            );
+          }
         }
         await tx
           .select({ userId: s.memberships.userId })
@@ -1432,7 +1461,12 @@ export class OutreachService {
               inArray(s.touches.status, [...openStatuses]),
             ),
           )
-          .returning();
+          .returning()
+          .catch((error: unknown) => {
+            throw externalMessageConflict(error)
+              ? new DomainError("EXTERNAL_MESSAGE_REPORTED", 409)
+              : error;
+          });
         if (!updated) {
           const [current] = await tx
             .select()

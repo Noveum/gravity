@@ -22,11 +22,12 @@ const org = demoId(1);
 const sentAt = "2026-10-05T05:00:00.000Z";
 const repliedAt = "2026-10-05T07:00:00.000Z";
 
-async function sendAndReply(db: Database, label: string) {
+const outreachOn = (db: Database) =>
+  new OutreachService(db, () => Date.parse("2026-10-05T06:00:00Z"));
+
+async function enrolledTouch(db: Database, label: string, ownerId = demoUser) {
   const crm = new CrmService(db);
-  const outreach = new OutreachService(db, () =>
-    Date.parse("2026-10-05T06:00:00Z"),
-  );
+  const outreach = outreachOn(db);
   const product = await crm.createProduct(admin, org, `Driver ${label}`);
   const email = `driver-${label}@example.test`;
   const person = await crm.createPerson(admin, {
@@ -40,6 +41,10 @@ async function sendAndReply(db: Database, label: string) {
     review: false,
     channel: "gmail",
   });
+  await db
+    .update(s.relationships)
+    .set({ ownerId })
+    .where(eq(s.relationships.id, person.relationshipId));
   const [sequence] = await db
     .insert(s.sequences)
     .values({
@@ -68,7 +73,12 @@ async function sendAndReply(db: Database, label: string) {
     .from(s.touches)
     .where(eq(s.touches.relationshipId, person.relationshipId));
   if (!touch) throw new Error("missing touch");
-  await outreach.markSent(admin, {
+  return { touch, email, relationshipId: person.relationshipId };
+}
+
+async function sendAndReply(db: Database, label: string) {
+  const { touch, email, relationshipId } = await enrolledTouch(db, label);
+  await outreachOn(db).markSent(admin, {
     organizationId: org,
     touchId: touch.id,
     sentAt,
@@ -87,11 +97,11 @@ async function sendAndReply(db: Database, label: string) {
   const [relationship] = await db
     .select()
     .from(s.relationships)
-    .where(eq(s.relationships.id, person.relationshipId));
+    .where(eq(s.relationships.id, relationshipId));
   const [enrollment] = await db
     .select()
     .from(s.enrollments)
-    .where(eq(s.enrollments.relationshipId, person.relationshipId));
+    .where(eq(s.enrollments.relationshipId, relationshipId));
   return { relationship, enrollment };
 }
 
@@ -139,18 +149,18 @@ if (!usableServer)
 
 describe.skipIf(!usableServer)("outreach on the production driver", () => {
   const name = `gravity_crm_driver_${randomUUID().replaceAll("-", "")}`;
-  let admin: postgres.Sql;
+  let server: postgres.Sql;
   let client: postgres.Sql;
   let createdRole = false;
   beforeAll(async () => {
-    admin = postgres(serverUrl, { max: 1, onnotice: () => {} });
+    server = postgres(serverUrl, { max: 1, onnotice: () => {} });
     const [role] =
-      await admin`SELECT 1 FROM pg_roles WHERE rolname = 'gravity_app'`;
+      await server`SELECT 1 FROM pg_roles WHERE rolname = 'gravity_app'`;
     createdRole = !role;
-    await admin.unsafe(`CREATE DATABASE ${name}`);
+    await server.unsafe(`CREATE DATABASE ${name}`);
     const url = new URL(serverUrl);
     url.pathname = `/${name}`;
-    client = postgres(url.toString(), { max: 1, onnotice: () => {} });
+    client = postgres(url.toString(), { max: 4, onnotice: () => {} });
     const db = postgresDrizzle(client, { schema: s });
     await postgresMigrate(db, {
       migrationsFolder: resolve(process.cwd(), "drizzle"),
@@ -159,14 +169,37 @@ describe.skipIf(!usableServer)("outreach on the production driver", () => {
   }, 120000);
   afterAll(async () => {
     await client?.end();
-    await admin.unsafe(`DROP DATABASE IF EXISTS ${name}`);
-    if (createdRole) await admin.unsafe("DROP ROLE IF EXISTS gravity_app");
-    await admin.end();
+    await server.unsafe(`DROP DATABASE IF EXISTS ${name}`);
+    if (createdRole) await server.unsafe("DROP ROLE IF EXISTS gravity_app");
+    await server.end();
   }, 60000);
 
   test("markSent and a matched reply record contact times through postgres-js", async () => {
     expectRecorded(
       await sendAndReply(postgresDrizzle(client, { schema: s }), "server"),
     );
+  });
+
+  test("two sends racing on one message id end in a conflict, never a server error", async () => {
+    const db = postgresDrizzle(client, { schema: s });
+    const first = await enrolledTouch(db, "race-a");
+    const second = await enrolledTouch(db, "race-b", "demo-teammate");
+    const results = await Promise.allSettled(
+      [first, second].map(({ touch }) =>
+        outreachOn(db).markSent(admin, {
+          organizationId: org,
+          touchId: touch.id,
+          externalMessageId: "raced-message-id",
+        }),
+      ),
+    );
+    expect(
+      results.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    expect(
+      results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      ),
+    ).toEqual([expect.objectContaining({ code: "EXTERNAL_MESSAGE_REPORTED" })]);
   });
 });

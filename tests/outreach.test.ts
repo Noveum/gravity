@@ -2,7 +2,11 @@ import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { ingestReply } from "../packages/connectors/replies";
 import { CrmService } from "../packages/core/crm";
-import { OutreachService, sendGate } from "../packages/core/outreach";
+import {
+  externalMessageConflict,
+  OutreachService,
+  sendGate,
+} from "../packages/core/outreach";
 import type { ContactRules } from "../packages/core/outreach-rules";
 import type { Principal } from "../packages/core/policy";
 import {
@@ -595,6 +599,60 @@ describe("no double send", () => {
           )
       ).length,
     ).toBe(1);
+  });
+
+  test("a reused message id names the other touch only to someone who can read its brand", async () => {
+    now = Date.parse("2026-10-13T08:00:00Z");
+    const hidden = await fixture();
+    const visible = await fixture(demoId(10));
+    const visibleToo = await fixture(demoId(10));
+    await enroll(hidden);
+    await enroll(visible);
+    await enroll(visibleToo);
+    const hiddenTouch = await firstTouch(hidden);
+    await send(hiddenTouch.id, admin, { externalMessageId: "brand-scoped-id" });
+    const refused = await send((await firstTouch(visible)).id, teammate, {
+      externalMessageId: "brand-scoped-id",
+    }).catch((error: unknown) => error);
+    expect(refused).toMatchObject({ code: "EXTERNAL_MESSAGE_REPORTED" });
+    expect(refused).not.toHaveProperty("details.touchId");
+    await expect(
+      send((await firstTouch(visibleToo)).id, admin, {
+        externalMessageId: "brand-scoped-id",
+      }),
+    ).rejects.toMatchObject({
+      code: "EXTERNAL_MESSAGE_REPORTED",
+      details: { touchId: hiddenTouch.id },
+    });
+  });
+
+  test("a unique violation on the reported message id is a conflict, not a server error", () => {
+    const pglite = Object.assign(new Error("duplicate key"), {
+      code: "23505",
+      constraint: "touches_external_message",
+    });
+    const postgresJs = Object.assign(new Error("duplicate key"), {
+      code: "23505",
+      constraint_name: "touches_external_message",
+    });
+    expect(
+      externalMessageConflict(
+        Object.assign(new Error("Failed query"), { cause: pglite }),
+      ),
+    ).toBe(true);
+    expect(
+      externalMessageConflict(
+        Object.assign(new Error("Failed query"), { cause: postgresJs }),
+      ),
+    ).toBe(true);
+    expect(
+      externalMessageConflict(
+        Object.assign(new Error("Failed query"), {
+          cause: { code: "23505", constraint: "touches_enrollment_step" },
+        }),
+      ),
+    ).toBe(false);
+    expect(externalMessageConflict(new Error("other"))).toBe(false);
   });
 
   test("the database refuses a sent touch without a report, a reused message id and a second touch for a step", async () => {

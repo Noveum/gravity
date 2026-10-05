@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 import { ActionDialog } from "./action-dialog";
 import { setSidebarCollapsed, toggleTheme, useAppearance } from "./appearance";
 import { label } from "./client-api";
@@ -104,6 +105,10 @@ function CrmShell({ children }: { children: ReactNode }) {
     if (compactScreen()) setDrawerOpen((open) => !open);
     else setSidebarCollapsed(!appearance.sidebarCollapsed);
   }
+  function closeDrawer() {
+    flushSync(() => setDrawerOpen(false));
+    document.querySelector<HTMLElement>(".drawer-trigger")?.focus();
+  }
   function leaveDrawer(href: string) {
     titleFocus.current = href.split("?")[0] ?? href;
     setDrawerOpen(false);
@@ -150,10 +155,8 @@ function CrmShell({ children }: { children: ReactNode }) {
       crm.setActionDialog(true);
     } else if (command === "close") {
       const target = document.activeElement;
-      if (drawerOpen) {
-        setDrawerOpen(false);
-        document.querySelector<HTMLElement>(".drawer-trigger")?.focus();
-      } else if (target === searchInput.current) {
+      if (drawerOpen) closeDrawer();
+      else if (target === searchInput.current) {
         if (crm.search) crm.setSearch("");
         else {
           searchInput.current?.blur();
@@ -278,7 +281,6 @@ function CrmShell({ children }: { children: ReactNode }) {
     <div
       ref={panels.frame}
       className="app-shell"
-      data-collapsed={appearance.sidebarCollapsed || undefined}
       style={{ "--inspector-width": `${panels.inspector}px` } as CSSProperties}
     >
       <Sidebar
@@ -287,7 +289,7 @@ function CrmShell({ children }: { children: ReactNode }) {
         collapsed={appearance.sidebarCollapsed}
         drawerOpen={drawerOpen}
         onToggleCollapsed={toggleSidebar}
-        onCloseDrawer={() => setDrawerOpen(false)}
+        onCloseDrawer={closeDrawer}
         onSearch={() => {
           setDrawerOpen(false);
           setCommandsOpen(true);
@@ -309,7 +311,10 @@ function CrmShell({ children }: { children: ReactNode }) {
             <span className={`live-status sync-${crm.syncState}`}>
               <span aria-hidden />
             </span>
-            <span className="nav-label-text">{label(crm.syncState)}</span>
+            <span className="nav-label-text" aria-hidden>
+              {label(crm.syncState)}
+            </span>
+            <span className="sr-only">{label(crm.syncState)}</span>
             {crm.demo && (
               <span
                 className="badge status-badge nav-label-text"
@@ -322,15 +327,13 @@ function CrmShell({ children }: { children: ReactNode }) {
         }
       />
       {drawerOpen && (
-        <button
-          type="button"
+        <div
           className="drawer-overlay"
-          aria-label={t.closeNavigation}
-          tabIndex={-1}
-          onClick={() => setDrawerOpen(false)}
+          aria-hidden
+          onPointerDown={closeDrawer}
         />
       )}
-      <main className="main">
+      <main className="main" inert={drawerOpen || undefined}>
         <TopBar
           crumbs={crumbs}
           onSearch={() => setCommandsOpen(true)}
@@ -515,7 +518,12 @@ function CrmShell({ children }: { children: ReactNode }) {
           </div>
         )}
       </main>
-      <Toaster toasts={crm.toasts} onDismiss={crm.dismiss} />
+      <Toaster
+        toasts={crm.toasts}
+        onDismiss={crm.dismiss}
+        onPause={crm.pauseToasts}
+        onResume={crm.resumeToasts}
+      />
     </div>
   );
 }

@@ -60,7 +60,7 @@ export function TopBar({
         <button
           type="button"
           className="search-pill"
-          aria-label={t.commands}
+          aria-label={t.searchShort}
           aria-keyshortcuts="Meta+K Control+K"
           onClick={onSearch}
         >

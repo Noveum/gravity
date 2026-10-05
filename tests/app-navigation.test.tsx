@@ -25,7 +25,7 @@ import { createLocalDatabase } from "../packages/database/client";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { appearanceBootScript } from "../src/components/appearance-boot";
-import { requestJson } from "../src/components/client-api";
+import { label, requestJson } from "../src/components/client-api";
 import { CrmApp } from "../src/components/crm-app";
 import { CompanyRecord } from "../src/components/records/company-record";
 import { PersonRecord } from "../src/components/records/person-record";
@@ -305,7 +305,7 @@ test("a confirmed action updates the queue before refresh and an older read cann
     }
     return regular(url, init);
   });
-  fireEvent.click(screen.getByRole("button", { name: t.commands }));
+  fireEvent.click(screen.getByRole("button", { name: t.searchShort }));
   fireEvent.click(screen.getByRole("option", { name: t.refresh }));
   fireEvent.click(screen.getByRole("button", { name: t.markDone }));
   await waitFor(() => expect(row()).toBeNull());
@@ -540,7 +540,9 @@ test("on a narrow screen the bracket key opens the navigation drawer and Escape 
   fireEvent.keyDown(document.body, { key: "[" });
   expect(sidebar?.dataset.drawer).toBe("open");
   expect(localStorage.getItem("gravity-sidebar")).toBeNull();
-  fireEvent.keyDown(document.body, { key: "Escape" });
+  fireEvent.keyDown(document.activeElement ?? document.body, {
+    key: "Escape",
+  });
   expect(sidebar?.dataset.drawer).toBe("closed");
   fireEvent.click(screen.getByRole("button", { name: t.openNavigation }));
   expect(sidebar?.dataset.drawer).toBe("open");
@@ -554,7 +556,10 @@ test("results arrive as dismissible toasts instead of a footer status strip", as
   expect(document.querySelector("footer")).toBeNull();
   expect(screen.queryByText(t.demoDetail, { exact: true })).toBeNull();
   const notifications = screen.getByRole("region", { name: t.notifications });
-  expect(notifications.children).toHaveLength(0);
+  const alerts = within(notifications).getByRole("alert");
+  const statuses = within(notifications).getByRole("status");
+  expect(alerts.children).toHaveLength(0);
+  expect(statuses.children).toHaveLength(0);
   const row = () =>
     screen.queryByRole("button", {
       name: /Theo Grant.*Review their promised introduction/,
@@ -574,8 +579,8 @@ test("results arrive as dismissible toasts instead of a footer status strip", as
     return regular(url, init);
   });
   fireEvent.click(screen.getByRole("button", { name: t.markDone }));
-  const failure = await within(notifications).findByRole("alert");
-  expect(failure.textContent).toBe(t.errors.INTERNAL_ERROR);
+  await waitFor(() => expect(alerts.children).toHaveLength(1));
+  expect(alerts.textContent).toBe(t.errors.INTERNAL_ERROR);
   request.mockImplementation(async (url, init) =>
     init?.method === "POST"
       ? serialize(
@@ -584,11 +589,11 @@ test("results arrive as dismissible toasts instead of a footer status strip", as
       : regular(url, init),
   );
   fireEvent.click(screen.getByRole("button", { name: t.markDone }));
-  const success = await within(notifications).findByRole("status");
-  expect(success.textContent).toBe(t.updated);
-  fireEvent.click(within(success).getByRole("button", { name: t.dismiss }));
-  expect(within(notifications).queryByRole("status")).toBeNull();
-  expect(within(notifications).getByRole("alert")).toBeTruthy();
+  await waitFor(() => expect(statuses.children).toHaveLength(1));
+  expect(statuses.textContent).toBe(t.updated);
+  fireEvent.click(within(statuses).getByRole("button", { name: t.dismiss }));
+  expect(statuses.children).toHaveLength(0);
+  expect(alerts.children).toHaveLength(1);
 });
 
 test("deep links render the view or record they name", async () => {
@@ -809,4 +814,99 @@ test("related work on a record page reveals the meeting in its own view", async 
   await waitFor(() =>
     expect(window.location.pathname).toBe(`/people/${demoId(200)}`),
   );
+});
+
+test("the workspace menu opens above a collapsed sidebar and still switches organization", async () => {
+  mount();
+  fireEvent.keyDown(document.body, { key: "[" });
+  expect(document.documentElement.dataset.sidebar).toBe("collapsed");
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: `${t.switchOrganization}: Northstar Collective`,
+    }),
+  );
+  const menu = screen.getByRole("menu");
+  expect(document.getElementById("navigation-panel")?.contains(menu)).toBe(
+    false,
+  );
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Lunar Studio" }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", {
+        name: `${t.switchOrganization}: Lunar Studio`,
+      }),
+    ).toBeTruthy(),
+  );
+});
+
+test("the narrow-screen drawer takes focus, keeps Tab inside, makes the page inert and gives focus back on Escape", async () => {
+  setCompactScreen(true);
+  mount();
+  const sidebar = document.getElementById("navigation-panel") as HTMLElement;
+  const main = document.querySelector("main") as HTMLElement;
+  const trigger = screen.getByRole("button", { name: t.openNavigation });
+  expect(main.hasAttribute("inert")).toBe(false);
+  fireEvent.click(trigger);
+  expect(sidebar.dataset.drawer).toBe("open");
+  expect(sidebar.contains(document.activeElement)).toBe(true);
+  expect(main.hasAttribute("inert")).toBe(true);
+  const drawer = screen.getByRole("dialog", { name: t.navigationDrawer });
+  expect(drawer).toBe(sidebar);
+  expect(drawer.getAttribute("aria-modal")).toBe("true");
+  const focusable = [
+    ...sidebar.querySelectorAll<HTMLElement>("a[href], button:not(:disabled)"),
+  ].filter((element) => !element.closest("[hidden]"));
+  const first = focusable[0] as HTMLElement;
+  const last = focusable.at(-1) as HTMLElement;
+  last.focus();
+  fireEvent.keyDown(last, { key: "Tab" });
+  expect(document.activeElement).toBe(first);
+  fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(last);
+  const inertWhenFocused: boolean[] = [];
+  trigger.addEventListener("focus", () =>
+    inertWhenFocused.push(main.hasAttribute("inert")),
+  );
+  fireEvent.keyDown(last, { key: "Escape" });
+  expect(sidebar.dataset.drawer).toBe("closed");
+  expect(document.activeElement).toBe(trigger);
+  expect(inertWhenFocused).toEqual([false]);
+  expect(main.hasAttribute("inert")).toBe(false);
+  expect(sidebar.getAttribute("role")).toBeNull();
+  fireEvent.keyDown(document.body, { key: "[" });
+  expect(sidebar.contains(document.activeElement)).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: t.closeNavigation }));
+  expect(document.activeElement).toBe(trigger);
+  expect(inertWhenFocused).toEqual([false, false]);
+});
+
+test("a collapsed sidebar still exposes the sync status, and the shell carries no dead markup", async () => {
+  mount();
+  fireEvent.keyDown(document.body, { key: "[" });
+  const sidebar = document.getElementById("navigation-panel") as HTMLElement;
+  const candidates = within(sidebar).getAllByText(t.reconnecting);
+  const visible = candidates.filter(
+    (element) =>
+      !element.closest('[aria-hidden="true"], .nav-label-text, [hidden]'),
+  );
+  expect(visible.length).toBeGreaterThan(0);
+  expect(document.querySelector("[data-collapsed]")).toBeNull();
+  const collapse = screen.getByRole("button", { name: t.toggleSidebar });
+  const controlled = collapse.getAttribute("aria-controls");
+  if (controlled)
+    expect(document.getElementById(controlled)?.contains(collapse)).toBe(false);
+  const navigation = sidebar.querySelector(`nav[aria-label="${t.myWork}"]`);
+  for (const id of ["settings", "integrations"])
+    expect(
+      navigation?.querySelector(`a[data-nav-item="${id}"]`)?.textContent,
+    ).toBe(label(id));
+});
+
+test("the header search pill is named by the text it shows", async () => {
+  mount();
+  const header = screen.getByRole("banner");
+  const pill = within(header).getByRole("button", { name: t.searchShort });
+  expect(pill.textContent?.startsWith(t.searchShort)).toBe(true);
+  fireEvent.click(pill);
+  expect(screen.getByRole("dialog", { name: t.commands })).toBeTruthy();
 });

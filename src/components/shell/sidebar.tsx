@@ -8,7 +8,25 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { type ReactNode, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+const focusableSelector =
+  "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])";
+
+function focusableIn(container: HTMLElement) {
+  return [...container.querySelectorAll<HTMLElement>(focusableSelector)].filter(
+    (element) =>
+      !element.closest("[hidden], [inert]") &&
+      (typeof element.checkVisibility !== "function" ||
+        element.checkVisibility()),
+  );
+}
 
 export interface SidebarItem {
   id: string;
@@ -138,11 +156,45 @@ export function Sidebar({
   onCloseDrawer: () => void;
   onSearch: () => void;
 }) {
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (drawerOpen && panel.current) focusableIn(panel.current)[0]?.focus();
+  }, [drawerOpen]);
+  function trapFocus(event: KeyboardEvent<HTMLElement>) {
+    if (!drawerOpen || !panel.current) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onCloseDrawer();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = focusableIn(panel.current);
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
   return (
     <aside
+      ref={panel}
       className="sidebar"
       id="navigation-panel"
       data-drawer={drawerOpen ? "open" : "closed"}
+      {...(drawerOpen
+        ? {
+            role: "dialog",
+            "aria-modal": true,
+            "aria-label": t.navigationDrawer,
+          }
+        : {})}
+      onKeyDown={trapFocus}
     >
       <div className="sidebar-top">
         {workspace}
@@ -151,7 +203,6 @@ export function Sidebar({
           className="ghost icon-button sidebar-collapse"
           aria-label={t.toggleSidebar}
           aria-expanded={!collapsed}
-          aria-controls="navigation-panel"
           aria-keyshortcuts="["
           title={`${t.toggleSidebar} [`}
           onClick={onToggleCollapsed}
@@ -178,17 +229,19 @@ export function Sidebar({
         <span className="nav-label-text">{t.searchShort}</span>
         <kbd className="nav-label-text">{t.keys.commandHint}</kbd>
       </button>
-      <nav className="sidebar-scroll" aria-label={t.myWork}>
-        {groups.map((group) => (
-          <Section key={group.id} group={group} collapsed={collapsed} />
-        ))}
+      <nav className="sidebar-nav" aria-label={t.myWork}>
+        <div className="sidebar-scroll">
+          {groups.map((group) => (
+            <Section key={group.id} group={group} collapsed={collapsed} />
+          ))}
+        </div>
+        <div className="sidebar-pinned">
+          {pinned.map((item) => (
+            <NavItem key={item.id} item={item} collapsed={collapsed} />
+          ))}
+        </div>
       </nav>
-      <div className="sidebar-bottom">
-        {pinned.map((item) => (
-          <NavItem key={item.id} item={item} collapsed={collapsed} />
-        ))}
-        {footer}
-      </div>
+      {footer && <div className="sidebar-footer">{footer}</div>}
     </aside>
   );
 }

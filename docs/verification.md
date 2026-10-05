@@ -73,3 +73,15 @@ Snapshot filtering uses Set membership rather than nested person/company scans. 
 The refreshed dependency license inventory records 186 installed locked packages with no undeclared license fields; Bun audit found no vulnerabilities. Production/provider/publication limits recorded above still apply. The repository remains private; no hosting or paid service was added in this pass.
 
 Final local verification for this pass: TypeScript, Biome without warnings, all 64 tests, dependency audit and production build passed. Credential-pattern screening of 106 source/document files found no matches; local databases and uploads remain ignored. Screening is a limited check, not a proof against every possible secret.
+
+## Onboarding through integration review · 4 October 2026
+
+Current local suite: **76 passing tests across ten files**. Added atomic workspace/default/time-zone setup with rollback and tenant isolation, first-workspace UI paths, auth/consent races, pending submission guards, safe social redirects, assistant-first onboarding continuity, canonical MCP rendering/copy recovery and grant-revocation controls. Real MCP transport now verifies that Gmail, Calendar, LinkedIn, Fireflies, sending and approval capabilities are false while context reads are available.
+
+Native browser review created Fictional Onboarding Review/Fictional Pilot, opened the selected workspace/product, created a fictional first buyer/research action with Cmd Enter and added a second product from Settings. People → Mira → company → Back, Sequences, Meetings, Opportunities, Sales materials and both themes were reviewed again. The 1280 × 720 compact layout had no document overflow, a 49-pixel header and a complete navigation sidebar fitting within 720 pixels. Thirteen screenshots were saved outside Git at `/Users/shashank/Projects/Noveum/gravity-review-2026-10-04/`.
+
+The actual unconfigured demo returned 503 `AUTH_UNAVAILABLE` for MCP initialize and both discovery documents, 503 `CONNECTOR_NOT_CONFIGURED` for provider webhook ingress, and 403 for a CRM mutation from another origin. This verifies unavailable configuration remains closed; it does not demonstrate a live integration. OAuth/PKCE/consent/token/refresh interoperability is exercised by the separate configured local HTTP test server, not Google or a production assistant.
+
+TypeScript, Biome without warnings, all 76 tests, Bun dependency audit (no vulnerabilities) and production build passed. The `/onboarding` route is included in the build. Credential-pattern screening of 112 text files found no matches before publication; this remains a limited pattern check. No dependencies, schema migrations, provider accounts, external database, paid subscription or production deployment were added.
+
+The detailed [flow matrix](flow-review-2026-10-04.md) records outstanding record editing/invites, live mailbox/calendar/transcript adapters, durable jobs/backfill, Vercel file transfer, recovery, high-volume and actual Codex/Claude qualification. The source repository remains private.

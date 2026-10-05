@@ -20,7 +20,7 @@ vi.mock("@crm/auth/server", () => ({
   }),
 }));
 
-import { GET } from "../src/app/api/events/route";
+import { GET } from "../src/app/api/crm/live/route";
 
 let local: Awaited<
   ReturnType<
@@ -64,7 +64,7 @@ describe("authorized live delivery", () => {
     );
     const abort = new AbortController();
     const response = await GET(
-      new Request(`http://localhost/api/events?organizationId=${demoId(1)}`, {
+      new Request(`http://localhost/api/crm/live?organizationId=${demoId(1)}`, {
         headers: { "x-test-user": demoUser },
         signal: abort.signal,
       }),
@@ -104,7 +104,7 @@ describe("authorized live delivery", () => {
   test("membership revocation closes an existing stream and rejects a new one", async () => {
     const abort = new AbortController();
     const request = () =>
-      new Request(`http://localhost/api/events?organizationId=${demoId(1)}`, {
+      new Request(`http://localhost/api/crm/live?organizationId=${demoId(1)}`, {
         headers: { "x-test-user": "demo-teammate" },
         signal: abort.signal,
       });

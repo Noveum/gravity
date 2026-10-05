@@ -624,6 +624,43 @@ describe("materials and assistant access", () => {
     expect(response.status).toBe(200);
     expect(body).toContain("API Marketplace");
     expect(body).not.toContain("AI Platform");
+    const capabilitiesResponse = await mcpHandler(
+      local.db,
+      principal,
+      demoId(1),
+    ).fetch(
+      new Request("http://127.0.0.1:3014/mcp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 3,
+          method: "tools/call",
+          params: { name: "get_capabilities", arguments: {} },
+        }),
+      }),
+    );
+    expect(capabilitiesResponse.status).toBe(200);
+    const capabilitiesEnvelope = JSON.parse(
+      (await capabilitiesResponse.text())
+        .split("\n")
+        .find((line) => line.startsWith("data: "))
+        ?.slice(6) ?? "{}",
+    );
+    expect(
+      JSON.parse(capabilitiesEnvelope.result.content[0].text),
+    ).toMatchObject({
+      gmailSync: false,
+      calendarSync: false,
+      linkedinSync: false,
+      firefliesSync: false,
+      sendMessages: false,
+      approveDrafts: false,
+      readContext: true,
+    });
     const companyResponse = await mcpHandler(
       local.db,
       principal,

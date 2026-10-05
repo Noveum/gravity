@@ -67,34 +67,124 @@ export function RelatedWork({
         ))}
         {!meetings.length && <p className="muted">{t.noRelatedMeetings}</p>}
       </section>
-      <section>
-        <h3>{t.opportunities}</h3>
-        {opportunities.map((o) => (
+      <RelatedOpportunities opportunities={opportunities} onReveal={onReveal} />
+    </div>
+  );
+}
+export function RelatedOpportunities({
+  opportunities,
+  onReveal,
+  className,
+}: Pick<WorkProps, "opportunities" | "onReveal"> & { className?: string }) {
+  return (
+    <section className={className}>
+      <h3>{t.opportunities}</h3>
+      {opportunities.map((o) => (
+        <button
+          type="button"
+          className="related-row"
+          key={o.id}
+          onClick={() => onReveal("opportunities", o.id)}
+        >
+          <span>
+            {o.name}
+            <small>
+              {o.amountMinor === null
+                ? t.amountUnknown
+                : new Intl.NumberFormat("en", {
+                    style: "currency",
+                    currency: o.currency,
+                  }).format(o.amountMinor / 100)}
+            </small>
+          </span>
+          <ChevronRight size={13} />
+        </button>
+      ))}
+      {!opportunities.length && (
+        <p className="muted">{t.noRelatedOpportunities}</p>
+      )}
+    </section>
+  );
+}
+export function CompanyProfile({
+  company,
+  recordHeading = false,
+}: {
+  company: ClientCompanyContext["company"];
+  recordHeading?: boolean;
+}) {
+  return (
+    <>
+      <div className="profile">
+        <span className="profile-avatar">
+          <Building2 size={20} />
+        </span>
+        <div>
+          <h2
+            tabIndex={recordHeading ? -1 : undefined}
+            data-record-heading={recordHeading ? "" : undefined}
+          >
+            {company.name}
+          </h2>
+          <p>{company.domain}</p>
+        </div>
+      </div>
+      <p className="context-summary">
+        {company.description || t.companyDescriptionEmpty}
+      </p>
+    </>
+  );
+}
+export function CompanyPeople({
+  context,
+  onPerson,
+}: {
+  context: ClientCompanyContext;
+  onPerson: (relationshipId: string) => void;
+}) {
+  return (
+    <section className="record-section">
+      <h3>{t.allPeople}</h3>
+      {context.people.map((p) => (
+        <div className="company-contact" key={p.id}>
           <button
             type="button"
-            className="related-row"
-            key={o.id}
-            onClick={() => onReveal("opportunities", o.id)}
+            className="text-button"
+            onClick={() =>
+              onPerson(
+                context.relationships.find((r) => r.personId === p.id)?.id ||
+                  "",
+              )
+            }
           >
-            <span>
-              {o.name}
-              <small>
-                {o.amountMinor === null
-                  ? t.amountUnknown
-                  : new Intl.NumberFormat("en", {
-                      style: "currency",
-                      currency: o.currency,
-                    }).format(o.amountMinor / 100)}
-              </small>
-            </span>
-            <ChevronRight size={13} />
+            {p.name}
           </button>
-        ))}
-        {!opportunities.length && (
-          <p className="muted">{t.noRelatedOpportunities}</p>
-        )}
-      </section>
-    </div>
+          <small>
+            {p.title} · {p.email || t.unknown}
+          </small>
+          <div className="relationship-links">
+            {context.relationships
+              .filter((r) => r.personId === p.id)
+              .map((r) => (
+                <button
+                  type="button"
+                  className="badge"
+                  key={r.id}
+                  onClick={() => onPerson(r.id)}
+                >
+                  {
+                    context.products.find(
+                      (product) => product.id === r.productId,
+                    )?.name
+                  }{" "}
+                  · {label(r.purpose)}
+                  <ChevronRight size={10} />
+                </button>
+              ))}
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
 export function CompanyDetails({
@@ -107,63 +197,10 @@ export function CompanyDetails({
   context: ClientCompanyContext;
   onPerson: (relationshipId: string) => void;
 } & Omit<WorkProps, "actions" | "meetings" | "opportunities">) {
-  const company = context.company;
   return (
     <>
-      <div className="profile">
-        <span className="profile-avatar">
-          <Building2 size={20} />
-        </span>
-        <div>
-          <h2>{company.name}</h2>
-          <p>{company.domain}</p>
-        </div>
-      </div>
-      <p className="context-summary">
-        {company.description || t.companyDescriptionEmpty}
-      </p>
-      <section className="record-section">
-        <h3>{t.allPeople}</h3>
-        {context.people.map((p) => (
-          <div className="company-contact" key={p.id}>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() =>
-                onPerson(
-                  context.relationships.find((r) => r.personId === p.id)?.id ||
-                    "",
-                )
-              }
-            >
-              {p.name}
-            </button>
-            <small>
-              {p.title} · {p.email || t.unknown}
-            </small>
-            <div className="relationship-links">
-              {context.relationships
-                .filter((r) => r.personId === p.id)
-                .map((r) => (
-                  <button
-                    type="button"
-                    className="badge"
-                    key={r.id}
-                    onClick={() => onPerson(r.id)}
-                  >
-                    {
-                      context.products.find(
-                        (product) => product.id === r.productId,
-                      )?.name
-                    }{" "}
-                    · {label(r.purpose)}
-                    <ChevronRight size={10} />
-                  </button>
-                ))}
-            </div>
-          </div>
-        ))}
-      </section>
+      <CompanyProfile company={context.company} />
+      <CompanyPeople context={context} onPerson={onPerson} />
       <RelatedWork
         actions={context.actions}
         meetings={context.meetings}

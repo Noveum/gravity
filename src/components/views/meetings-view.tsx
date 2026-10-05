@@ -1,0 +1,110 @@
+"use client";
+import t from "@crm/i18n/translations/en.json";
+import { dateLabel, label } from "../client-api";
+import { useWorkspaceData } from "../crm/crm-context";
+import { useRevealedRecord } from "../crm/use-revealed-record";
+import { EmptyState } from "../ui/states";
+
+export function MeetingsView() {
+  const crm = useWorkspaceData();
+  const { data, search, product, personFor, busy, userId, timeZone } = crm;
+  const focusedRecord = useRevealedRecord();
+  const meetings = data.meetings.filter((meeting) =>
+    [meeting.title, personFor(meeting.relationshipId)?.name]
+      .join(" ")
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+  return (
+    <div className="page-content">
+      <p className="callout">{t.meetingNote}</p>
+      {!meetings.length && <EmptyState title={t.noMeetings} compact />}
+      {meetings.map((meeting) => (
+        <article
+          className={`meeting ${focusedRecord === meeting.id ? "record-highlight" : ""}`}
+          key={meeting.id}
+          data-record-id={meeting.id}
+          tabIndex={-1}
+        >
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">
+                {product(meeting.productId)?.name} ·{" "}
+                {dateLabel(meeting.startsAt, timeZone)}
+              </span>
+              <h2>{meeting.title}</h2>
+              <p className="muted">
+                <button
+                  data-nav-record={meeting.id}
+                  type="button"
+                  className="text-button"
+                  onClick={() => crm.openPerson(meeting.relationshipId)}
+                >
+                  {personFor(meeting.relationshipId)?.name}
+                </button>
+              </p>
+            </div>
+            <span className="badge">{label(meeting.status)}</span>
+          </div>
+          <p>{meeting.summary}</p>
+          {meeting.proposedCommitment && (
+            <div className="commitment-box">
+              <span className="eyebrow">{t.meetingProposal}</span>
+              <p>{meeting.proposedCommitment}</p>
+              {meeting.commitmentActionId ? (
+                <span className="success">{t.commitmentAccepted}</span>
+              ) : (
+                <form
+                  className="inline-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const form = new FormData(event.currentTarget);
+                    void crm.mutate({
+                      operation: "commitment",
+                      organizationId: crm.organizationId,
+                      meetingId: meeting.id,
+                      version: meeting.version,
+                      ownerId: form.get("ownerId"),
+                      dueAt: new Date(String(form.get("dueAt"))).toISOString(),
+                    });
+                  }}
+                >
+                  <label>
+                    {t.owner}
+                    <select
+                      name="ownerId"
+                      defaultValue={userId}
+                      disabled={busy}
+                    >
+                      {data.members
+                        .filter((member) =>
+                          member.productIds.includes(meeting.productId),
+                        )
+                        .map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    {t.commitmentDate}
+                    <input
+                      name="dueAt"
+                      disabled={busy}
+                      type="datetime-local"
+                      required
+                    />
+                  </label>
+                  <button type="submit" className="primary" disabled={busy}>
+                    {t.acceptCommitment}
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+        </article>
+      ))}
+    </div>
+  );
+}

@@ -8,6 +8,7 @@ import {
   personSchema,
   scheduleActionSchema,
   scopeSchema,
+  workspaceSchema,
 } from "@crm/core/crm";
 import { errorResponse, limitedBody } from "@crm/core/http";
 import { getDatabase } from "@crm/database/client";
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
     );
     const operation = z
       .enum([
+        "workspace",
         "action",
         "folder",
         "commitment",
@@ -73,36 +75,48 @@ export async function POST(request: Request) {
       .parse(body.operation);
     const nameSchema = z.string().trim().min(1).max(100);
     const result =
-      operation === "schedule"
-        ? await service.scheduleAction(
-            principal,
-            scheduleActionSchema.parse(body),
-          )
-        : operation === "person"
-          ? await service.createPerson(principal, personSchema.parse(body))
-          : operation === "action"
-            ? await service.changeAction(
-                principal,
-                actionChangeSchema.parse(body),
-              )
-            : operation === "folder"
-              ? await service.createFolder(principal, folderSchema.parse(body))
-              : operation === "commitment"
-                ? await service.acceptCommitment(
+      operation === "workspace"
+        ? await service.createWorkspace(principal, workspaceSchema.parse(body))
+        : operation === "schedule"
+          ? await service.scheduleAction(
+              principal,
+              scheduleActionSchema.parse(body),
+            )
+          : operation === "person"
+            ? await service.createPerson(principal, personSchema.parse(body))
+            : operation === "action"
+              ? await service.changeAction(
+                  principal,
+                  actionChangeSchema.parse(body),
+                )
+              : operation === "folder"
+                ? await service.createFolder(
                     principal,
-                    meetingChangeSchema.parse(body),
+                    folderSchema.parse(body),
                   )
-                : operation === "organization"
-                  ? await service.createOrganization(
+                : operation === "commitment"
+                  ? await service.acceptCommitment(
                       principal,
-                      nameSchema.parse(body.name),
+                      meetingChangeSchema.parse(body),
                     )
-                  : await service.createProduct(
-                      principal,
-                      z.uuid().parse(body.organizationId),
-                      nameSchema.parse(body.name),
-                    );
-    publishChange(body.organizationId || (result as { id?: string }).id || "");
+                  : operation === "organization"
+                    ? await service.createOrganization(
+                        principal,
+                        nameSchema.parse(body.name),
+                      )
+                    : await service.createProduct(
+                        principal,
+                        z.uuid().parse(body.organizationId),
+                        nameSchema.parse(body.name),
+                      );
+    const affected = result as { organizationId?: string; id?: string };
+    publishChange(
+      (operation === "workspace"
+        ? affected.organizationId
+        : operation === "organization"
+          ? affected.id
+          : body.organizationId) || "",
+    );
     return Response.json(result, {
       headers: { "Cache-Control": "private, no-store" },
     });

@@ -54,6 +54,58 @@ export const personSchema = scopeSchema
   .refine((value) => !!value.personId !== !!value.name, {
     message: "Provide a new name or existing person",
   });
+export const workspaceSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  productName: z.string().trim().min(1).max(100),
+  timezone: z
+    .string()
+    .max(100)
+    .default("UTC")
+    .refine((value) => {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: value });
+        return true;
+      } catch {
+        return false;
+      }
+    }),
+});
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+async function insertProduct(
+  tx: Transaction,
+  organizationId: string,
+  name: string,
+  userId: string,
+) {
+  const [product] = await tx
+    .insert(s.products)
+    .values({ organizationId, name })
+    .onConflictDoNothing({
+      target: [s.products.organizationId, s.products.name],
+    })
+    .returning();
+  if (!product) throw new DomainError("PRODUCT_EXISTS", 409);
+  await tx
+    .insert(s.folders)
+    .values({ organizationId, productId: product.id, name: t.defaultFolder });
+  await tx.insert(s.stages).values(
+    [t.discovery, t.evaluation, t.proposal, t.won].map((name, position) => ({
+      organizationId,
+      productId: product.id,
+      name,
+      position,
+    })),
+  );
+  await tx.insert(s.changeEvents).values({
+    organizationId,
+    productId: product.id,
+    actorId: userId,
+    type: "product.created",
+    entityId: product.id,
+  });
+  return product;
+}
+
 export class CrmService {
   constructor(private db: Database) {}
   async scheduleAction(
@@ -246,6 +298,7 @@ export class CrmService {
       .select({
         id: s.organizations.id,
         name: s.organizations.name,
+        slug: s.organizations.slug,
         timezone: s.organizations.timezone,
       })
       .from(s.organizations)
@@ -876,6 +929,39 @@ export class CrmService {
       );
     return result?.revision ?? "0";
   }
+  async createWorkspace(
+    principal: Principal,
+    input: z.infer<typeof workspaceSchema>,
+  ) {
+    if (principal.source === "mcp" || principal.readOnly)
+      throw new DomainError("FORBIDDEN", 403);
+    const values = workspaceSchema.parse(input);
+    return this.db.transaction(async (tx) => {
+      const [organization] = await tx
+        .insert(s.organizations)
+        .values({
+          name: values.name,
+          timezone: values.timezone,
+          slug: `${values.name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .slice(0, 40)}-${randomUUID().slice(0, 8)}`,
+        })
+        .returning();
+      await tx.insert(s.memberships).values({
+        organizationId: organization.id,
+        userId: principal.userId,
+        role: "admin",
+      });
+      const product = await insertProduct(
+        tx,
+        organization.id,
+        values.productName,
+        principal.userId,
+      );
+      return { organizationId: organization.id, productId: product.id };
+    });
+  }
   async createOrganization(principal: Principal, name: string) {
     if (principal.source === "mcp") throw new DomainError("FORBIDDEN", 403);
     return this.db.transaction(async (tx) => {
@@ -911,39 +997,9 @@ export class CrmService {
     );
     if (membership.role !== "admin" || principal.source === "mcp")
       throw new DomainError("FORBIDDEN", 403);
-    return this.db.transaction(async (tx) => {
-      const [product] = await tx
-        .insert(s.products)
-        .values({ organizationId, name })
-        .onConflictDoNothing({
-          target: [s.products.organizationId, s.products.name],
-        })
-        .returning();
-      if (!product) throw new DomainError("PRODUCT_EXISTS", 409);
-      await tx.insert(s.folders).values({
-        organizationId,
-        productId: product.id,
-        name: t.defaultFolder,
-      });
-      await tx.insert(s.stages).values(
-        [t.discovery, t.evaluation, t.proposal, t.won].map(
-          (name, position) => ({
-            organizationId,
-            productId: product.id,
-            name,
-            position,
-          }),
-        ),
-      );
-      await tx.insert(s.changeEvents).values({
-        organizationId,
-        productId: product.id,
-        actorId: principal.userId,
-        type: "product.created",
-        entityId: product.id,
-      });
-      return product;
-    });
+    return this.db.transaction((tx) =>
+      insertProduct(tx, organizationId, name, principal.userId),
+    );
   }
 }
 export type Snapshot = Awaited<ReturnType<CrmService["snapshot"]>>;

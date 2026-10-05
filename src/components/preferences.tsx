@@ -1,108 +1,86 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import { Settings2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-export function Preferences() {
-  const [theme, setTheme] = useState("system");
-  const [density, setDensity] = useState("comfortable");
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-color-scheme: dark)");
-    function restore() {
-      let selected = "system",
-        rows = "comfortable";
-      try {
-        selected = localStorage.getItem("gravity-theme") || selected;
-        rows = localStorage.getItem("gravity-density") || rows;
-      } catch {}
-      setTheme(selected);
-      setDensity(rows);
-      document.documentElement.dataset.theme =
-        selected === "system" ? (query.matches ? "dark" : "light") : selected;
-      document.documentElement.dataset.density = rows;
-    }
-    restore();
-    query.addEventListener("change", restore);
-    window.addEventListener("storage", restore);
-    return () => {
-      query.removeEventListener("change", restore);
-      window.removeEventListener("storage", restore);
-    };
-  }, []);
+import { Moon, Sun } from "lucide-react";
+import { useId } from "react";
+import {
+  type Density,
+  setDensity,
+  setThemePreference,
+  type ThemePreference,
+  toggleTheme,
+  useAppearance,
+} from "./appearance";
+
+export function Preferences({
+  showDensity = true,
+  labelled = false,
+}: {
+  showDensity?: boolean;
+  labelled?: boolean;
+} = {}) {
+  const appearance = useAppearance();
+  const id = useId();
+  const theme = (
+    <select
+      id={`${id}-theme`}
+      aria-label={t.appearance}
+      value={appearance.theme}
+      onChange={(event) =>
+        setThemePreference(event.target.value as ThemePreference)
+      }
+    >
+      <option value="system">{t.system}</option>
+      <option value="light">{t.light}</option>
+      <option value="dark">{t.dark}</option>
+    </select>
+  );
+  const rows = (
+    <select
+      id={`${id}-density`}
+      aria-label={t.density}
+      value={appearance.density}
+      onChange={(event) => setDensity(event.target.value as Density)}
+    >
+      <option value="compact">{t.compact}</option>
+      <option value="comfortable">{t.comfortable}</option>
+    </select>
+  );
+  if (labelled)
+    return (
+      <div className="preference-fields">
+        <label className="field" htmlFor={`${id}-theme`}>
+          <span>{t.appearance}</span>
+          {theme}
+        </label>
+        {showDensity && (
+          <label className="field" htmlFor={`${id}-density`}>
+            <span>{t.density}</span>
+            {rows}
+          </label>
+        )}
+      </div>
+    );
   return (
     <div className="preferences">
-      <select
-        aria-label={t.appearance}
-        value={theme}
-        onChange={(e) => {
-          const next = e.target.value;
-          setTheme(next);
-          document.documentElement.dataset.theme =
-            next === "system"
-              ? window.matchMedia("(prefers-color-scheme: dark)").matches
-                ? "dark"
-                : "light"
-              : next;
-          try {
-            localStorage.setItem("gravity-theme", next);
-          } catch {}
-        }}
-      >
-        <option value="system">{t.system}</option>
-        <option value="light">{t.light}</option>
-        <option value="dark">{t.dark}</option>
-      </select>
-      <select
-        aria-label={t.density}
-        value={density}
-        onChange={(e) => {
-          setDensity(e.target.value);
-          document.documentElement.dataset.density = e.target.value;
-          try {
-            localStorage.setItem("gravity-density", e.target.value);
-          } catch {}
-        }}
-      >
-        <option value="comfortable">{t.comfortable}</option>
-        <option value="compact">{t.compact}</option>
-      </select>
+      {theme}
+      {showDensity && rows}
     </div>
   );
 }
 
-export function ViewOptions() {
-  const menu = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const outside = (event: PointerEvent) => {
-      if (
-        menu.current?.open &&
-        event.target instanceof Node &&
-        !menu.current.contains(event.target)
-      )
-        menu.current.open = false;
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && menu.current?.open) {
-        event.preventDefault();
-        event.stopPropagation();
-        menu.current.open = false;
-        menu.current.querySelector("summary")?.focus();
-      }
-    };
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, []);
+export function ThemeToggle() {
+  const { resolved } = useAppearance();
+  const dark = resolved === "dark";
   return (
-    <details ref={menu} className="view-options">
-      <summary aria-label={t.viewOptions}>
-        <Settings2 size={15} />
-      </summary>
-      <div className="options-popover">
-        <Preferences />
-      </div>
-    </details>
+    <button
+      type="button"
+      className="ghost icon-button"
+      aria-label={t.toggleTheme}
+      aria-pressed={dark}
+      title={dark ? t.useLightTheme : t.useDarkTheme}
+      onClick={toggleTheme}
+    >
+      {dark ? <Sun size={15} aria-hidden /> : <Moon size={15} aria-hidden />}
+    </button>
   );
 }

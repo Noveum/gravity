@@ -1,6 +1,7 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { and, eq, gt } from "drizzle-orm";
 import { z } from "zod";
+import { integrationAvailability } from "../connectors/service";
 import { CrmService } from "../core/crm";
 import { authorize, DomainError, type Principal } from "../core/policy";
 import type { Database } from "../database/client";
@@ -110,9 +111,13 @@ export function mcpHandler(
             materialPdfExtraction: false,
             sendMessages: false,
             approveDrafts: false,
-            gmailSync: false,
-            linkedinSync: false,
-            firefliesSync: false,
+            gmailSync: integrationAvailability().gmail,
+            linkedinSync: integrationAvailability().linkedin,
+            calendarSync: integrationAvailability().calendar,
+            firefliesSync: integrationAvailability().fireflies,
+            accountConnectionRequired: true,
+            integrationManagement: "human-only",
+            syncCadence: "scheduled-five-minute-pages",
             organizationBound: true,
           }),
       );

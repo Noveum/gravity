@@ -1,12 +1,12 @@
 # Gravity requirements and delivery checklist
 
-This consolidates the conversation through October 3, 2026. “Local” means implemented and reviewable with fictional data; it does not imply a production integration. This document supersedes earlier Relay/Novastave naming proposals and the original Twenty deployment direction.
+This consolidates the conversation through October 4, 2026. “Local” means implemented and reviewable with fictional data; it does not imply a production integration. This document supersedes earlier Relay/Novastave naming proposals and the original Twenty deployment direction.
 
 | Requirement | Current status | Remaining work |
 |---|---|---|
 | Gravity by Noveum, generic open-source CRM | Local brand and Apache-2.0 source | New public GitHub repository, release inventory, landing page and deployment |
 | Orbit's fast, clean UI and blue palette | Exact Orbit light/dark semantic colors; system preference, persistent theme and density | Accessibility and high-volume performance qualification |
-| Multiple organizations by default | Organization creation/switching and isolated records | Invitations, membership management, organization profile/time-zone editing |
+| Multiple organizations by default | Guided atomic organization/first-product/time-zone setup, switching and isolated records | Invitations, membership management, organization profile/time-zone editing |
 | Multiple products inside each organization | Product creation and membership enforcement | Product settings and member permissions UI |
 | One person/company, several product contexts | Canonical identities; clickable company/contact/relationship navigation; connected actions, meetings and opportunities | Editing, reviewed imports and merge review |
 | Several salespeople, clear ownership | Member/owner filters and product-authorized scheduling | Invitations, assignment handoff, collision warnings and owner capacity |
@@ -18,7 +18,7 @@ This consolidates the conversation through October 3, 2026. “Local” means im
 | Optional Unipile or own webhooks | Adapter boundaries and HMAC verification | Choose one authoritative adapter per account; subscription and permissions qualification |
 | Replies stop stale follow-ups | Incoming replies pause enrollment, block/invalidate approvals and coalesce reply tasks | Live-provider qualification and send-time race/lease checks |
 | Review and approval before sending | Draft hashes, human-only approval and version checks | No dispatch today; opt-outs, limits, ambiguous-send recovery before execution |
-| Meetings, calendar and Fireflies notes | Meeting outcome and reviewed commitment creation | Calendar/Fireflies connection, source citations and idempotent transcript imports |
+| Meetings, calendar and Fireflies notes | Meeting outcome and reviewed commitment creation; Calendar status/setup guide | Calendar/Fireflies connection, source citations and idempotent transcript imports |
 | Who/when/what to follow up | Persisted next actions, promises, waiting views and conversation timeline | Due-date editing, snooze, recurrence and saved filters in URLs |
 | Product enablement materials | Private PDF/Markdown/text upload, nested folders, stage associations and download | Direct object-store transfer for Vercel, extraction, scanning, versions/approval and stage/persona kits |
 | Codex and Claude access via MCP from day one | Read-only OAuth MCP over the same SQL services and permissions; tested synthetic consent/refresh | Deployed URL and real-client interoperability; controlled write tools after review |

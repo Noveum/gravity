@@ -9,6 +9,7 @@ import {
   useModalLifecycle,
   useReadyFocus,
 } from "./modal-lifecycle";
+import { LoadingState } from "./ui/states";
 
 export function ActionDialog({
   data: initialData,
@@ -222,9 +223,11 @@ export function ActionDialog({
           </label>
         </fieldset>
         <p className="muted">{t.scheduleNote}</p>
-        <p role={error || loadError ? "alert" : "status"}>
-          {error || loadError || (loading ? t.loading : "")}
-        </p>
+        {error || loadError ? (
+          <p role="alert">{error || loadError}</p>
+        ) : (
+          loading && <LoadingState rows={2} />
+        )}
         {loadError && (
           <button type="button" onClick={retry}>
             {t.retry}

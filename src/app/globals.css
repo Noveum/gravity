@@ -401,6 +401,11 @@
   border-radius: 999px;
 }
 
+.setup-form-card input,
+.setup-form-card select {
+  width: 100%;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: var(--gravity-sidebar) minmax(0, 1fr);
@@ -1522,6 +1527,9 @@ td small {
 .inspector-resize {
   right: calc(var(--inspector-width, 400px) - 4px);
 }
+.sidebar-resize {
+  left: calc(var(--gravity-sidebar) - 4px);
+}
 .inspector-expanded > .content,
 .inspector-expanded > .inspector-resize {
   display: none;
@@ -2098,6 +2106,9 @@ ul.timeline {
   font-size: 12px;
 }
 .auth-header-actions > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   text-decoration: none;
   color: var(--muted);
 }
@@ -2222,6 +2233,7 @@ ul.timeline {
 .auth-form-region {
   min-width: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: center;
   justify-items: center;
   padding: 40px 28px;
@@ -2346,11 +2358,80 @@ ul.timeline {
 .auth-card input::placeholder {
   color: var(--gravity-faint);
 }
-.auth-card .auth-code-input {
-  font-size: 24px;
-  letter-spacing: 0.4em;
-  text-align: center;
+.auth-email-input {
+  position: relative;
+  display: block;
+}
+.auth-email-input > svg {
+  position: absolute;
+  top: 50%;
+  left: 13px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.auth-card .auth-email-input > input {
+  width: 100%;
+  padding-left: 39px;
+}
+.auth-card .auth-code-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.auth-code-field {
+  margin-bottom: 18px;
+}
+.auth-code-control {
+  position: relative;
+  border-radius: 8px;
+}
+.auth-card .auth-code-control > input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: text;
+}
+.auth-code-control:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.auth-code-slots {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+.auth-code-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 54px;
+  border: 1px solid var(--orbit-border);
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 22px;
   font-variant-numeric: tabular-nums;
+}
+.auth-code-control:focus-within .auth-code-slot[data-active="true"] {
+  border-color: var(--accent);
+  background: var(--soft);
+}
+.auth-code-control:focus-within
+  .auth-code-slot[data-active="true"]:empty::after {
+  content: "";
+  height: 22px;
+  width: 1px;
+  background: var(--accent);
+}
+.auth-code-control[data-invalid="true"] .auth-code-slot {
+  border-color: var(--orbit-danger);
+}
+.auth-code-control[data-disabled="true"] {
+  opacity: 0.55;
 }
 .auth-card .auth-feedback {
   min-height: 20px;
@@ -2490,10 +2571,7 @@ ul.timeline {
   font-size: var(--text-xs);
   margin: 20px 0;
 }
-.setup-form-card input,
-.setup-form-card select {
-  width: 100%;
-}
+
 .setup-form-card .primary {
   width: 100%;
   justify-content: center;
@@ -2516,6 +2594,11 @@ ul.timeline {
   font-size: var(--text-xs);
   font-weight: 400;
   color: var(--gravity-muted);
+}
+.integration-card .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 td .badge + .badge {
   margin-left: 4px;
@@ -2911,4 +2994,260 @@ tbody tr[data-selected] td:first-child::before {
 .shortcut-or {
   color: var(--gravity-faint);
   font-size: var(--text-2xs);
+}
+.integration-intro,
+.import-review {
+  grid-column: 1 / -1;
+}
+.integration-intro {
+  color: var(--muted);
+  font-size: 12px;
+}
+.integration-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.integration-card > button,
+.connection-buttons button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 36px;
+}
+.connection-account {
+  border-top: 1px solid var(--line);
+  padding: 16px 0;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.connection-meta {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.connection-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.import-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px) auto auto;
+  gap: 12px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding: 18px 0;
+}
+.import-review-toolbar,
+.import-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 18px;
+}
+.import-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: min(240px, 100%);
+  color: var(--muted);
+}
+.import-search-input {
+  width: 100%;
+  min-width: 0;
+}
+.import-page-status {
+  font-size: 12px;
+  color: var(--muted);
+}
+.import-row .import-match {
+  width: 100%;
+  min-width: 0;
+}
+.import-row details {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.import-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+}
+.dialog .endpoint-copy {
+  display: flex;
+  gap: 6px;
+}
+.dialog .endpoint-copy input {
+  min-width: 0;
+  flex: 1;
+}
+@media (max-width: 760px) {
+  .import-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .import-row > div,
+  .import-row .import-match {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Provider setup uses the same compact controls in both themes. */
+.integration-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+.integration-card-actions button,
+.provider-settings button,
+.connection-buttons button,
+.dialog-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  border-radius: 7px;
+}
+.integration-card-actions svg,
+.provider-settings svg,
+.connection-buttons svg {
+  flex-shrink: 0;
+}
+.integration-card > :where(p) {
+  line-height: 1.65;
+}
+.provider-settings {
+  width: min(560px, calc(100vw - 32px));
+}
+.provider-settings-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.provider-settings-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.provider-settings-heading :where(p) {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.provider-settings-heading > .icon-button {
+  margin-left: auto;
+  padding: 8px;
+}
+.provider-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.provider-privacy {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 12px;
+}
+.provider-privacy :where(p) {
+  margin: 0;
+  line-height: 1.65;
+}
+.provider-privacy svg {
+  margin-top: 2px;
+  color: var(--accent);
+}
+.provider-steps {
+  list-style: none;
+  display: flex;
+  gap: 20px;
+  padding: 0;
+  margin: 24px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.provider-steps li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.provider-steps li > span {
+  width: 23px;
+  height: 23px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.provider-steps .current,
+.provider-steps .completed {
+  color: var(--accent);
+}
+.provider-steps .current > span,
+.provider-steps .completed > span {
+  background: var(--soft);
+  border-color: var(--accent);
+}
+.provider-settings form > p,
+.provider-settings > label,
+.provider-settings form > label {
+  margin-top: 16px;
+}
+.provider-settings :where(p) {
+  line-height: 1.65;
+}
+.provider-docs-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 16px;
+  font-size: 12px;
+}
+.provider-ready {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--accent);
+  padding: 14px 0;
+}
+.provider-remove {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 20px;
+}
+.provider-settings .danger-link {
+  color: var(--orbit-danger);
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0;
+}
+@media (max-width: 600px) {
+  .provider-steps {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .connection-buttons {
+    width: 100%;
+  }
 }

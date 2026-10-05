@@ -85,8 +85,8 @@ export function CrmApp({
 function CrmShell({ children }: { children: ReactNode }) {
   const crm = useCrm();
   const { data, sourceData, route, peek, organizationId } = crm;
-  const panels = usePanelLayout();
   const appearance = useAppearance();
+  const panels = usePanelLayout(appearance.sidebarCollapsed);
   const query = useSearchParams();
   const filters = actionFilters(query);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -283,7 +283,12 @@ function CrmShell({ children }: { children: ReactNode }) {
     <div
       ref={panels.frame}
       className="app-shell"
-      style={{ "--inspector-width": `${panels.inspector}px` } as CSSProperties}
+      style={
+        {
+          "--inspector-width": `${panels.inspector}px`,
+          "--gravity-sidebar": `${panels.navigation}px`,
+        } as CSSProperties
+      }
     >
       <Sidebar
         groups={sidebarGroups}
@@ -328,6 +333,20 @@ function CrmShell({ children }: { children: ReactNode }) {
           </div>
         }
       />
+      {!appearance.sidebarCollapsed && (
+        <ResizeHandle
+          label={t.resizeNavigation}
+          hint={t.resizeHint}
+          value={panels.navigation}
+          min={176}
+          max={panels.navigationMax}
+          direction={1}
+          onChange={panels.resizeNavigation}
+          onReset={() => panels.resizeNavigation(232)}
+          className="sidebar-resize"
+          controls="navigation-panel"
+        />
+      )}
       {drawerOpen && (
         <div
           className="drawer-overlay"

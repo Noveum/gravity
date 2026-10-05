@@ -9,7 +9,7 @@ An open-source CRM foundation for teams managing relationships and outreach acro
 
 The daily action queue is the center of the app. A person can have separate buyer or partner relationships for different products, with separate owners, context, outreach, and opportunities. Conversation history and evidence explain the next step.
 
-**Status: working foundation with managed PostgreSQL deployment support; live integrations remain unfinished.** The local demo persists in a real local PostgreSQL engine. Supabase deployment uses restricted runtime credentials, verified TLS and server-only table policies. Live Gmail/LinkedIn/Calendar connection, sending, invitations, imports and execution workers remain unfinished. No live mail or private outreach data is included.
+**Status: working CRM foundation with account connections and managed PostgreSQL deployment support.** The local demo persists in a local PostgreSQL engine. Supabase deployment uses restricted runtime credentials, verified TLS and server-only table policies. Gmail/primary Calendar, Fireflies and Unipile V2 LinkedIn adapters provide owner-scoped imports and explicit context review. Each user can bring their own encrypted Unipile setup through Connections; no instance-wide Unipile credentials are shared. Each installation still needs provider consent and live qualification; outbound sending, invitations and execution remain unfinished. Source code and fixtures contain no real mail or private outreach data. [Integration qualification](docs/integration-review-2026-10-05.md) records what was actually tested.
 
 ## Run locally
 
@@ -32,10 +32,10 @@ Stop the dev server before running `bun run db:migrate` against local PGlite. It
 - Conversation/evidence inspector with partial-history disclosure and private conversation permissions.
 - Persistent draft editing, human approval bound to draft content/recipient/channel/product, stale-write checks, and approval invalidation. Completing an action never claims a message was sent.
 - Separate sequence/enrollment views and qualified-opportunity board. Sequence execution and deal editing are not implemented.
-- Reviewed meeting commitments with owner and due date, created once. Imported meeting notes are not connected yet.
+- Reviewed meeting commitments with owner and due date, created once. Calendar/Fireflies notes enter a private import queue and require an explicit relationship selection before entering shared product context.
 - Private PDF, Markdown, and text materials, nested folders per product, associations with one or several product stages, authenticated download, and content hashes. Files start as drafts; approval/version replacement and PDF extraction are pending.
-- Tested Unipile v2 event normalization and signed webhook entry point. Incoming replies pause enrollments and invalidate approved drafts; several replies in one conversation keep one pending reply task; retries do not duplicate messages. Unknown threads remain in the database for later classification.
-- Read-only MCP using OAuth authorization-code flow with PKCE, resource-bound JWTs, organization/product selection, client consent, refresh, and revocable immutable grants. The OAuth flow is exercised against real local HTTP and SQL in tests. Real Codex/Claude and social-provider connections still require configuration and live verification.
+- Tested Unipile v2 event normalization and signed webhook entry point. Incoming replies pause enrollments and invalidate approved drafts; several replies in one conversation keep one pending reply task; retries do not duplicate messages. Unknown threads enter an owner-private review queue with title/participant search, source filters and cursor pagination.
+- Read-only MCP using OAuth authorization-code flow with PKCE, resource-bound JWTs, organization/product selection, client consent, refresh, and revocable immutable grants. The OAuth flow is exercised against real local HTTP and SQL in tests. The deployed Codex connection has been exercised; Claude Code and each new installation still require live qualification.
 - Orbit’s blue light/dark palettes, system preference, compact row density, a searchable command menu, complete shortcut guide and keyboard navigation across record views.
 - Explicit next-action scheduling with product-authorized owners, channels, owed-by party and UTC deadlines.
 - Authenticated SSE revision delivery with immediate same-runtime wakeups, one-second reconciliation across runtimes and fallback recovery. Unsaved drafts keep their edited version across live updates; distributed fan-out and large-list pagination remain future work.
@@ -51,7 +51,7 @@ are anchored so they do not remove the application's `/docs` routes.
 
 ## Try the app
 
-Open `/onboarding` to create a fictional workspace with its first product. The new queue offers contact creation and connection setup guidance. Users signing in without an organization are directed there automatically. Connections shows the canonical MCP URL and explains which integrations still need implementation/configuration.
+Open `/onboarding` to create a fictional workspace with its first product. The new queue offers contact creation and connection setup guidance. Users signing in without an organization are directed there automatically. Connections shows the canonical MCP URL, provider availability, account connection forms, sync health and a private import review queue.
 
 Choose **Northstar Collective** to see three fictional products, or **Lunar Studio** to see a separate organization. Add a fictional person under People and attach a second product relationship using Existing person. In Next actions, select Mira's blocked follow-up, inspect her reply, and rework the draft. In Sales materials, choose a product, create a nested folder, upload a small PDF/text file, and filter by a relevant stage. In Meetings, review a proposed commitment before assigning its deadline.
 

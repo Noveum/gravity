@@ -1,16 +1,19 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
-const sidebarWidth = 232;
 function bound(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
-export function usePanelLayout() {
+export function usePanelLayout(collapsed = false) {
   const frame = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1280);
+  const [navigation, setNavigation] = useState(232);
   const [inspector, setInspector] = useState(400);
   useEffect(() => {
     try {
+      const left = Number(localStorage.getItem("gravity-navigation-width"));
+      if (Number.isFinite(left) && left >= 176 && left <= 340)
+        setNavigation(left);
       const right = Number(localStorage.getItem("gravity-inspector-width"));
       if (Number.isFinite(right) && right >= 300 && right <= 960)
         setInspector(right);
@@ -23,7 +26,19 @@ export function usePanelLayout() {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const inspectorMax = Math.max(300, Math.min(960, width - sidebarWidth - 320));
+  const navigationMax = Math.max(176, Math.min(340, width - 660));
+  const actualNavigation = bound(navigation, 176, navigationMax);
+  const inspectorMax = Math.max(
+    300,
+    Math.min(960, width - (collapsed ? 56 : actualNavigation) - 320),
+  );
+  function resizeNavigation(value: number) {
+    const next = bound(value, 176, navigationMax);
+    setNavigation(next);
+    try {
+      localStorage.setItem("gravity-navigation-width", String(next));
+    } catch {}
+  }
   function resizeInspector(value: number) {
     const next = bound(value, 300, inspectorMax);
     setInspector(next);
@@ -33,6 +48,9 @@ export function usePanelLayout() {
   }
   return {
     frame,
+    navigation: actualNavigation,
+    navigationMax,
+    resizeNavigation,
     inspector: bound(inspector, 300, inspectorMax),
     inspectorMax,
     resizeInspector,

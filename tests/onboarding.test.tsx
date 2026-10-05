@@ -291,6 +291,8 @@ test("email sign-in destinations preserve safe paths and reject external or malf
     "//elsewhere.example/",
     "javascript:invalid",
     "http://[",
+    "/sign-in",
+    "/sign-in/?callbackURL=/sign-in",
   ])
     expect(
       signInDestination(
@@ -306,6 +308,26 @@ test("email sign-in destinations preserve safe paths and reject external or malf
   ).toBe("/onboarding?from=login");
 });
 
+test("returning to an anonymous login tab checks the shared session once and preserves the form on read failure", async () => {
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  render(<SignIn providers={[]} demo={false} emailEnabled />);
+  const email = screen.getByLabelText(t.emailAddress) as HTMLInputElement;
+  fireEvent.change(email, { target: { value: "owner@example.test" } });
+  const pending = deferred();
+  request.mockReturnValueOnce(pending.promise);
+  fireEvent.focus(window);
+  fireEvent.focus(window);
+  expect(request).toHaveBeenCalledOnce();
+  expect(request.mock.calls[0][0]).toBe("/api/auth/get-session");
+  expect(request.mock.calls[0][1]?.cache).toBe("no-store");
+  await act(async () => pending.resolve(null));
+  request.mockRejectedValueOnce(new Error("temporary failure"));
+  fireEvent.focus(window);
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+  expect(email.value).toBe("owner@example.test");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
 const connectionData = {
   products: [{ id: "p", name: "Product" }],
   grants: [{ id: "g", productIds: ["p"] }],
@@ -314,6 +336,10 @@ test("connections render a canonical endpoint on the server, disclose offline pr
   const endpoint = "https://gravity.example.test/mcp";
   const props = {
     data: connectionData,
+    organizationId: "11111111-1111-4111-8111-111111111111",
+    productId: "",
+    initialNotice: "",
+    onChanged: vi.fn(async () => {}),
     endpoint,
     demo: true,
     onRevoke: vi.fn(async () => true),
@@ -352,6 +378,10 @@ test("assistant grant revocation is single-flight and releases its control after
   render(
     <Connections
       data={connectionData}
+      organizationId="11111111-1111-4111-8111-111111111111"
+      productId=""
+      initialNotice=""
+      onChanged={async () => {}}
       endpoint="https://gravity.example.test/mcp"
       demo={false}
       onRevoke={onRevoke}

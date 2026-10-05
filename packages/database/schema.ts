@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { serverAccessPolicy } from "./access-policy";
@@ -284,14 +285,55 @@ export const actions = pgTable(
     }),
   ],
 ).enableRLS();
+export const providerConfigurations = pgTable(
+  "provider_configurations",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    ownerId: text("owner_id").notNull(),
+    provider: text("provider", { enum: ["unipile"] }).notNull(),
+    encryptedCredentials: text("encrypted_credentials"),
+    webhookReady: boolean("webhook_ready").notNull().default(false),
+    active: boolean("active").notNull().default(true),
+    version: version(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.organizationId, t.ownerId, t.id),
+    uniqueIndex("provider_configurations_active_owner")
+      .on(t.organizationId, t.ownerId, t.provider)
+      .where(sql`${t.active} = true`),
+    foreignKey({
+      columns: [t.organizationId, t.ownerId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+  ],
+).enableRLS();
 export const connections = pgTable(
   "connections",
   {
     id: id(),
     organizationId: organizationId(),
     ownerId: text("owner_id").notNull(),
-    provider: text("provider", { enum: ["gmail", "unipile"] }).notNull(),
+    provider: text("provider", {
+      enum: ["gmail", "unipile", "calendar", "fireflies"],
+    }).notNull(),
     externalAccountId: text("external_account_id").notNull(),
+    providerConfigurationId: uuid("provider_configuration_id"),
+    productId: uuid("product_id"),
+    displayName: text("display_name").notNull().default(""),
+    encryptedCredentials: text("encrypted_credentials"),
+    scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
+    syncCursor: jsonb("sync_cursor")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    errorCode: text("error_code"),
+    leaseId: uuid("lease_id"),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    webhookSecret: text("webhook_secret"),
     status: text("status").notNull().default("disconnected"),
     selfEmail: text("self_email"),
     inboxFolderIds: jsonb("inbox_folder_ids")
@@ -305,8 +347,23 @@ export const connections = pgTable(
   },
   (t) => [
     serverAccessPolicy(),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
     unique().on(t.organizationId, t.id),
-    unique().on(t.provider, t.externalAccountId),
+    unique().on(t.provider, t.providerConfigurationId, t.externalAccountId),
+    uniqueIndex("connections_legacy_provider_account")
+      .on(t.provider, t.externalAccountId)
+      .where(sql`${t.providerConfigurationId} IS NULL`),
+    foreignKey({
+      columns: [t.organizationId, t.ownerId, t.providerConfigurationId],
+      foreignColumns: [
+        providerConfigurations.organizationId,
+        providerConfigurations.ownerId,
+        providerConfigurations.id,
+      ],
+    }),
     foreignKey({
       columns: [t.organizationId, t.ownerId],
       foreignColumns: [memberships.organizationId, memberships.userId],
@@ -649,6 +706,106 @@ export const connectorEvents = pgTable(
   (t) => [
     serverAccessPolicy(),
     unique().on(t.connectionId, t.providerEventId),
+    foreignKey({
+      columns: [t.organizationId, t.connectionId],
+      foreignColumns: [connections.organizationId, connections.id],
+    }),
+  ],
+).enableRLS();
+
+export const integrationFlows = pgTable(
+  "integration_flows",
+  {
+    id: id(),
+    stateHash: text("state_hash").notNull().unique(),
+    organizationId: organizationId(),
+    productId: productId(),
+    ownerId: text("owner_id").notNull(),
+    provider: text("provider").notNull(),
+    encryptedVerifier: text("encrypted_verifier").notNull(),
+    connectionId: uuid("connection_id"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.ownerId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.connectionId],
+      foreignColumns: [connections.organizationId, connections.id],
+    }),
+  ],
+).enableRLS();
+export const integrationItems = pgTable(
+  "integration_items",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    connectionId: uuid("connection_id").notNull(),
+    externalId: text("external_id").notNull(),
+    record: jsonb("record")
+      .$type<import("../connectors/types").ImportRecord>()
+      .notNull(),
+    status: text("status", { enum: ["unmatched", "matched", "ignored"] })
+      .notNull()
+      .default("unmatched"),
+    relationshipId: uuid("relationship_id"),
+    entityId: uuid("entity_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.connectionId, t.externalId),
+    index().on(t.organizationId, t.connectionId, t.status),
+    foreignKey({
+      columns: [t.organizationId, t.connectionId],
+      foreignColumns: [connections.organizationId, connections.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.relationshipId],
+      foreignColumns: [
+        relationships.organizationId,
+        relationships.productId,
+        relationships.id,
+      ],
+    }),
+  ],
+).enableRLS();
+
+export const integrationReceipts = pgTable(
+  "integration_receipts",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    connectionId: uuid("connection_id").notNull(),
+    externalId: text("external_id").notNull(),
+    provider: text("provider", { enum: ["unipile", "fireflies"] }).notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    errorCode: text("error_code"),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.connectionId, t.externalId),
+    index().on(t.processedAt, t.nextAttemptAt),
     foreignKey({
       columns: [t.organizationId, t.connectionId],
       foreignColumns: [connections.organizationId, connections.id],

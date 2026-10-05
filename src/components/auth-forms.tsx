@@ -1,15 +1,19 @@
 "use client";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Mail, RotateCw } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { errorText, type Organization, requestJson } from "./client-api";
 import { GravityMark } from "./gravity-logo";
+import { OneTimeCode } from "./one-time-code";
 import { Preferences } from "./preferences";
-import { signInDestination } from "./sign-in-destination";
+import {
+  authenticatedSignInDestination,
+  signInDestination,
+} from "./sign-in-destination";
 
-function Card({
+export function AuthLayout({
   title,
   description,
   children,
@@ -28,7 +32,10 @@ function Card({
           <span>{t.brand}</span>
         </a>
         <div className="auth-header-actions">
-          <a href="/docs">{t.authHelp}</a>
+          <a href="/docs">
+            <BookOpen size={14} aria-hidden="true" />
+            {t.authHelp}
+          </a>
           <Preferences showDensity={false} />
         </div>
       </header>
@@ -107,6 +114,59 @@ export function SignIn({
   const [cooldown, setCooldown] = useState(0);
   const codeInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
+    if (demo) return;
+    let checking = false;
+    let controller: AbortController | undefined;
+    async function checkSession() {
+      if (
+        checking ||
+        submitting.current ||
+        document.visibilityState === "hidden"
+      )
+        return;
+      checking = true;
+      const flow = activeQuery.current;
+      const pending = new AbortController();
+      controller = pending;
+      try {
+        const session = await requestJson<{ user: { id: string } } | null>(
+          "/api/auth/get-session",
+          { cache: "no-store", signal: pending.signal },
+        );
+        if (
+          !pending.signal.aborted &&
+          activeQuery.current === flow &&
+          session?.user?.id
+        )
+          navigateAuth(
+            authenticatedSignInDestination(
+              new URLSearchParams(flow),
+              window.location.origin,
+            ),
+          );
+      } catch {
+        // A transient read failure must not disable sign-in or erase typed values.
+      } finally {
+        checking = false;
+      }
+    }
+    const focus = (event: Event) => {
+      if (event.target === event.currentTarget) void checkSession();
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") void checkSession();
+    };
+    window.addEventListener("focus", focus);
+    window.addEventListener("pageshow", checkSession);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      controller?.abort();
+      window.removeEventListener("focus", focus);
+      window.removeEventListener("pageshow", checkSession);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [demo]);
+  useEffect(() => {
     if (!cooldown) return;
     const timer = window.setTimeout(
       () => setCooldown((value) => Math.max(0, value - 1)),
@@ -163,7 +223,7 @@ export function SignIn({
     }
   }
   return (
-    <Card title={t.signIn} description={t.signInSubtitle} isSignIn>
+    <AuthLayout title={t.signIn} description={t.signInSubtitle} isSignIn>
       {providers.length ? (
         providers.map((provider) => (
           <button
@@ -220,22 +280,16 @@ export function SignIn({
                 <p id="otp-instructions">
                   {t.emailCodeSent.replace("{email}", sentEmail)}
                 </p>
-                <label>
-                  {t.signInCode}
-                  <input
-                    ref={codeInput}
-                    value={otp}
-                    onChange={(event) => setOtp(event.target.value)}
-                    required
-                    pattern="[0-9]{6}"
-                    maxLength={6}
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    aria-describedby="otp-instructions"
-                    className="auth-code-input"
-                    disabled={busy}
-                  />
-                </label>
+                <OneTimeCode
+                  inputRef={codeInput}
+                  value={otp}
+                  onChange={(value) => {
+                    setOtp(value);
+                    setError("");
+                  }}
+                  disabled={busy}
+                  invalid={Boolean(error)}
+                />
                 <button
                   type="submit"
                   className="primary auth-submit"
@@ -250,6 +304,7 @@ export function SignIn({
                     disabled={busy || cooldown > 0}
                     onClick={() => void sendCode()}
                   >
+                    <RotateCw size={13} aria-hidden="true" />
                     {cooldown
                       ? t.resendCodeIn.replace("{seconds}", String(cooldown))
                       : t.resendCode}
@@ -263,6 +318,7 @@ export function SignIn({
                       setError("");
                     }}
                   >
+                    <ArrowLeft size={13} aria-hidden="true" />
                     {t.changeEmail}
                   </button>
                 </div>
@@ -271,16 +327,19 @@ export function SignIn({
               <>
                 <label>
                   {t.emailAddress}
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    placeholder={t.authEmailPlaceholder}
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    required
-                    maxLength={254}
-                    disabled={busy}
-                  />
+                  <span className="auth-email-input">
+                    <Mail size={16} aria-hidden="true" />
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      placeholder={t.authEmailPlaceholder}
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      required
+                      maxLength={254}
+                      disabled={busy}
+                    />
+                  </span>
                 </label>
                 <button
                   type="submit"
@@ -304,7 +363,7 @@ export function SignIn({
       <p className="auth-feedback" role={error ? "alert" : "status"}>
         {error}
       </p>
-    </Card>
+    </AuthLayout>
   );
 }
 function GithubMark() {
@@ -432,15 +491,15 @@ export function Authorization() {
   const failure = error || (scope.org === org ? scope.error : "");
   if (!hasFlow)
     return (
-      <Card title={t.authorize} description={t.authorizeDescription}>
+      <AuthLayout title={t.authorize} description={t.authorizeDescription}>
         <p className="callout">{t.authFlowMissing}</p>
         <a className="auth-link" href="/">
           {t.backToWorkspace}
         </a>
-      </Card>
+      </AuthLayout>
     );
   return (
-    <Card title={t.authorize} description={t.authorizeDescription}>
+    <AuthLayout title={t.authorize} description={t.authorizeDescription}>
       <form
         onSubmit={async (event) => {
           event.preventDefault();
@@ -562,7 +621,7 @@ export function Authorization() {
           </button>
         </>
       )}
-    </Card>
+    </AuthLayout>
   );
 }
 export function Consent() {
@@ -625,15 +684,15 @@ export function Consent() {
   }
   if (!hasFlow)
     return (
-      <Card title={t.consent} description={t.consentDescription}>
+      <AuthLayout title={t.consent} description={t.consentDescription}>
         <p className="callout">{t.authFlowMissing}</p>
         <a className="auth-link" href="/">
           {t.backToWorkspace}
         </a>
-      </Card>
+      </AuthLayout>
     );
   return (
-    <Card title={t.consent} description={t.consentDescription}>
+    <AuthLayout title={t.consent} description={t.consentDescription}>
       {selectedGrant ? (
         <div className="callout">
           <strong>{selectedGrant.clientName}</strong>
@@ -670,6 +729,6 @@ export function Consent() {
           </button>
         </>
       )}
-    </Card>
+    </AuthLayout>
   );
 }

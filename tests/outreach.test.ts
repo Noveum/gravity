@@ -1,8 +1,9 @@
 import { and, asc, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { ingestReply } from "../packages/connectors/replies";
 import { CrmService } from "../packages/core/crm";
-import { OutreachService } from "../packages/core/outreach";
+import { OutreachService, sendGate } from "../packages/core/outreach";
+import type { ContactRules } from "../packages/core/outreach-rules";
 import type { Principal } from "../packages/core/policy";
 import { RecordService } from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
@@ -155,7 +156,7 @@ async function draftAndApprove(touchId: string, draft = "A fictional note.") {
 async function send(touchId: string, by: Principal = admin, extra = {}) {
   return outreach.markSent(by, { organizationId: org, touchId, ...extra });
 }
-async function setRules(values: Partial<typeof t.errors> | object) {
+async function setRules(values: Partial<ContactRules>) {
   const current = await outreach.contactRules(admin, org);
   return outreach.updateContactRules(admin, {
     organizationId: org,
@@ -637,6 +638,60 @@ describe("no double send", () => {
   });
 });
 
+describe("double send under a stale check", () => {
+  test("a report whose check read an unsent row is still refused with the first report's details", async () => {
+    now = Date.parse("2026-10-13T08:00:00Z");
+    const f = await fixture();
+    await enroll(f);
+    const touch = await firstTouch(f);
+    const firstAt = new Date(now - 60000);
+    type Locked = (
+      principal: Principal,
+      input: { organizationId: string; touchId: string },
+      change: (context: { tx: typeof local.db }) => Promise<unknown>,
+    ) => Promise<unknown>;
+    const target = OutreachService.prototype as unknown as {
+      lockedTouch: Locked;
+    };
+    const original = target.lockedTouch;
+    const spy = vi.spyOn(target, "lockedTouch").mockImplementation(function (
+      this: OutreachService,
+      principal,
+      input,
+      change,
+    ) {
+      return original.call(this, principal, input, async (context) => {
+        await context.tx
+          .update(s.touches)
+          .set({
+            status: "sent",
+            sentBy: "demo-teammate",
+            sentAt: firstAt,
+            closedAt: firstAt,
+            externalMessageId: "first-report",
+          })
+          .where(eq(s.touches.id, touch.id));
+        return change(context);
+      });
+    });
+    try {
+      const refusal = await send(touch.id).catch((error) => error);
+      expect(refusal).toMatchObject({
+        code: "TOUCH_ALREADY_SENT",
+        details: {
+          sentBy: "Sam Rivera",
+          sentById: "demo-teammate",
+          sentAt: firstAt.toISOString(),
+          externalMessageId: "first-report",
+        },
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await relationshipRow(f.relationshipId)).touchCount).toBe(0);
+  });
+});
+
 describe("planner timing and idempotence", () => {
   test("the next touch appears only after the delay from the send, once, and the enrollment completes", async () => {
     now = Date.parse("2026-10-14T06:00:00Z");
@@ -754,7 +809,7 @@ describe("contact rules", () => {
     ).rejects.toMatchObject({ code: "DO_NOT_CONTACT" });
   });
 
-  test("a cooldown from another brand refuses approval with the earliest time and moves the planned due time", async () => {
+  test("a cooldown from another brand moves the planned due time and gates the send, not the approval", async () => {
     now = Date.parse("2026-10-16T06:00:00Z");
     const f = await fixture();
     const second = await product();
@@ -781,18 +836,27 @@ describe("contact rules", () => {
     });
     const [planned] = await touchesOf(linked.relationshipId);
     if (!planned) throw new Error("missing touch");
+    const until = new Date(sentAt + 3 * day).toISOString();
     expect(planned.dueAt).toEqual(new Date(sentAt + 3 * day));
-    const refusal = await draftAndApprove(planned.id).catch((error) => error);
-    expect(refusal).toMatchObject({
-      code: "CONTACT_COOLDOWN",
-      details: { until: new Date(sentAt + 3 * day).toISOString() },
+    const approved = await draftAndApprove(planned.id);
+    expect(approved.status).toBe("approved");
+    expect(await sendGate(local.db, approved, now)).toEqual({
+      allowed: false,
+      sendAfter: sentAt + 3 * day,
+      reasons: [{ code: "CONTACT_COOLDOWN", until: sentAt + 3 * day }],
+    });
+    expect(
+      await outreach.touch(admin, { organizationId: org, touchId: planned.id }),
+    ).toMatchObject({
+      sendAfter: until,
+      reasons: [{ code: "CONTACT_COOLDOWN", until }],
     });
     const reported = await send(planned.id);
-    expect(reported.warnings).toEqual(["cooldown", "unapproved"]);
-    expect(reported.touch.sentWarnings).toEqual(["cooldown", "unapproved"]);
+    expect(reported.warnings).toEqual(["cooldown"]);
+    expect(reported.touch.sentWarnings).toEqual(["cooldown"]);
   });
 
-  test("the daily cap per sender counts the workspace calendar day", async () => {
+  test("the daily cap per sender counts the workspace calendar day and gates the send until the next one", async () => {
     now = Date.parse("2026-10-17T06:00:00Z");
     await setRules({ dailyCapPerSender: 1 });
     try {
@@ -802,23 +866,28 @@ describe("contact rules", () => {
       await enroll(g);
       await send((await firstTouch(f)).id);
       const touch = await firstTouch(g);
-      const refusal = await draftAndApprove(touch.id).catch((error) => error);
-      expect(refusal).toMatchObject({
-        code: "DAILY_CAP_REACHED",
-        details: { cap: 1 },
+      const approved = await draftAndApprove(touch.id);
+      expect(approved.status).toBe("approved");
+      expect(await sendGate(local.db, approved, now)).toEqual({
+        allowed: false,
+        sendAfter: Date.parse("2026-10-18T02:30:00Z"),
+        reasons: [{ code: "DAILY_CAP_REACHED", cap: 1 }],
+      });
+      const due = await outreach.dueTouches(admin, {
+        organizationId: org,
+        productId: g.productId,
+      });
+      expect(
+        due.groups[0]?.touches.find((row) => row.id === touch.id),
+      ).toMatchObject({
+        sendAfter: "2026-10-18T02:30:00.000Z",
+        reasons: [{ code: "DAILY_CAP_REACHED", cap: 1 }],
       });
       const reported = await send(touch.id);
       expect(reported.warnings).toContain("daily_cap");
       now = Date.parse("2026-10-17T18:31:00Z");
       const h = await fixture();
       await enroll(h);
-      const next = await firstTouch(h);
-      await outreach.snooze(admin, {
-        organizationId: org,
-        touchId: next.id,
-        version: next.version,
-        dueAt: new Date(now).toISOString(),
-      });
       const tz = await personRow(h.personId);
       await outreach.setContactPreferences(admin, {
         organizationId: org,
@@ -827,25 +896,31 @@ describe("contact rules", () => {
         doNotContact: false,
         timeZone: "America/Los_Angeles",
       });
-      const nextDay = await draftAndApprove(next.id);
-      expect(nextDay.status).toBe("approved");
+      expect(await sendGate(local.db, await firstTouch(h), now)).toEqual({
+        allowed: true,
+        sendAfter: now,
+        reasons: [],
+      });
     } finally {
       await setRules({ dailyCapPerSender: 40 });
     }
   });
 
-  test("quiet hours refuse approval in the workspace zone, follow the person's zone, and move planned touches", async () => {
+  test("quiet hours follow the person's zone, move planned touches and gate the send, not the approval", async () => {
     now = Date.parse("2026-10-18T16:00:00Z");
     const f = await fixture();
     await enroll(f);
     const touch = await firstTouch(f);
     expect(touch.dueAt).toEqual(new Date("2026-10-19T02:30:00Z"));
-    const refusal = await draftAndApprove(touch.id).catch((error) => error);
-    expect(refusal).toMatchObject({
-      code: "QUIET_HOURS",
-      details: { until: "2026-10-19T02:30:00.000Z" },
+    const approved = await draftAndApprove(touch.id);
+    expect(approved.status).toBe("approved");
+    expect(await sendGate(local.db, approved, now)).toEqual({
+      allowed: false,
+      sendAfter: Date.parse("2026-10-19T02:30:00Z"),
+      reasons: [
+        { code: "QUIET_HOURS", until: Date.parse("2026-10-19T02:30:00Z") },
+      ],
     });
-    expect(t.errors.QUIET_HOURS).toContain("{until}");
     const person = await personRow(f.personId);
     await outreach.setContactPreferences(admin, {
       organizationId: org,
@@ -854,19 +929,58 @@ describe("contact rules", () => {
       doNotContact: false,
       timeZone: "Europe/London",
     });
-    const current = await touchRow(touch.id);
-    const approved = await outreach.approve(admin, {
-      organizationId: org,
-      touchId: touch.id,
-      version: current.version,
+    expect(await sendGate(local.db, approved, now)).toMatchObject({
+      allowed: true,
     });
-    expect(approved.status).toBe("approved");
     await local.db
       .update(s.people)
       .set({ timeZone: null })
       .where(eq(s.people.id, person.id));
     const reported = await send(touch.id);
     expect(reported.warnings).toEqual(["quiet_hours"]);
+  });
+
+  test("one planner run spaces a person's touches across brands by the cooldown", async () => {
+    now = Date.parse("2026-10-19T06:00:00Z");
+    const f = await fixture();
+    const second = await product();
+    const linked = await crm.createPerson(admin, {
+      organizationId: org,
+      productId: second.id,
+      personId: f.personId,
+      title: "",
+      purpose: "buyer",
+      context: "",
+      review: false,
+      channel: "gmail",
+    });
+    const secondSequence = await addSequence(second.id);
+    await local.db.insert(s.enrollments).values([
+      {
+        organizationId: org,
+        productId: f.productId,
+        relationshipId: f.relationshipId,
+        sequenceId: f.sequenceId,
+        status: "running",
+        enrolledAt: new Date(now),
+      },
+      {
+        organizationId: org,
+        productId: second.id,
+        relationshipId: linked.relationshipId,
+        sequenceId: secondSequence.id,
+        status: "running",
+        enrolledAt: new Date(now),
+      },
+    ]);
+    await outreach.advanceEnrollments(admin, { organizationId: org });
+    const due = [
+      ...(await touchesOf(f.relationshipId)),
+      ...(await touchesOf(linked.relationshipId)),
+    ]
+      .map((touch) => touch.dueAt.getTime())
+      .sort((a, b) => a - b);
+    expect(due).toEqual([now, now + 3 * day]);
   });
 
   test("time zones must be real zones", async () => {

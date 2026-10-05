@@ -8,6 +8,7 @@ import {
   contactViolations,
   earliestContact,
   quietHoursEnd,
+  sendWindow,
 } from "../packages/core/outreach-rules";
 
 const day = 86400000;
@@ -145,12 +146,97 @@ describe("contact rules", () => {
   });
 });
 
+describe("the send window", () => {
+  const base = {
+    now: at("2026-10-05T10:00:00Z"),
+    doNotContact: false,
+    timeZone: "UTC",
+    workspaceTimeZone: "UTC",
+    lastContactAt: null,
+    sentTodayBySender: 0,
+    rules,
+  };
+
+  test("a clear send is allowed now", () => {
+    expect(sendWindow(base)).toEqual({
+      allowed: true,
+      sendAfter: base.now,
+      reasons: [],
+    });
+  });
+
+  test("do not contact is never allowed and has no time", () => {
+    expect(sendWindow({ ...base, doNotContact: true })).toEqual({
+      allowed: false,
+      sendAfter: null,
+      reasons: [{ code: "DO_NOT_CONTACT" }],
+    });
+  });
+
+  test("a cooldown that ends in quiet hours waits for them to end", () => {
+    const lastContactAt = at("2026-10-02T21:00:00Z");
+    expect(sendWindow({ ...base, lastContactAt })).toEqual({
+      allowed: false,
+      sendAfter: at("2026-10-06T08:00:00Z"),
+      reasons: [
+        { code: "CONTACT_COOLDOWN", until: at("2026-10-05T21:00:00Z") },
+      ],
+    });
+  });
+
+  test("a reached cap waits for the next workspace day and then for the person's quiet hours", () => {
+    expect(
+      sendWindow({
+        ...base,
+        sentTodayBySender: 2,
+        timeZone: "Asia/Kolkata",
+        workspaceTimeZone: "Asia/Kolkata",
+      }),
+    ).toEqual({
+      allowed: false,
+      sendAfter: at("2026-10-06T02:30:00Z"),
+      reasons: [{ code: "DAILY_CAP_REACHED", cap: 2 }],
+    });
+    expect(
+      sendWindow({
+        ...base,
+        sentTodayBySender: 2,
+        timeZone: "America/New_York",
+      }),
+    ).toEqual({
+      allowed: false,
+      sendAfter: at("2026-10-06T12:00:00Z"),
+      reasons: [
+        { code: "DAILY_CAP_REACHED", cap: 2 },
+        { code: "QUIET_HOURS", until: at("2026-10-05T12:00:00Z") },
+      ],
+    });
+  });
+});
+
 describe("the planner", () => {
   test("the first touch is due at enrollment time", () => {
     expect(planEnrollment(input())).toEqual({
       kind: "create",
       step: steps[0],
       dueAt: at("2026-10-05T10:00:00Z"),
+    });
+  });
+
+  test("the first touch waits for step 1's delay from enrollment", () => {
+    const delayed = steps.map((step) =>
+      step.number === 1 ? { ...step, delayDays: 2 } : step,
+    );
+    const enrolledAt = at("2026-10-05T10:00:00Z");
+    expect(
+      planEnrollment(input({ steps: delayed, now: enrolledAt + 2 * day - 1 })),
+    ).toEqual({ kind: "wait" });
+    expect(
+      planEnrollment(input({ steps: delayed, now: enrolledAt + 2 * day })),
+    ).toEqual({
+      kind: "create",
+      step: delayed[0],
+      dueAt: enrolledAt + 2 * day,
     });
   });
 

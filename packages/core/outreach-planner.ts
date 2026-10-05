@@ -61,7 +61,7 @@ export function planEnrollment(input: PlannerInput): PlannerDecision {
     const readyAt = previous
       ? (previous.sentAt ?? previous.closedAt ?? input.now) +
         step.delayDays * day
-      : input.enrollment.enrolledAt;
+      : input.enrollment.enrolledAt + step.delayDays * day;
     if (input.now < readyAt) return { kind: "wait" };
     return {
       kind: "create",

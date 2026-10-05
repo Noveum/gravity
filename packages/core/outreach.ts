@@ -22,6 +22,7 @@ import {
   type ContactViolation,
   contactViolations,
   defaultContactRules,
+  sendWindow,
 } from "./outreach-rules";
 import { authorize, DomainError, type Principal } from "./policy";
 import {
@@ -138,16 +139,6 @@ const isOpen = (touch: Touch) =>
 function requireHuman(principal: Principal) {
   if (principal.source === "mcp")
     throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
-}
-
-function violationError(violation: ContactViolation) {
-  if (violation.code === "DO_NOT_CONTACT")
-    return new DomainError("DO_NOT_CONTACT", 409);
-  if (violation.code === "DAILY_CAP_REACHED")
-    return new DomainError("DAILY_CAP_REACHED", 409, { cap: violation.cap });
-  return new DomainError(violation.code, 409, {
-    until: new Date(violation.until).toISOString(),
-  });
 }
 
 const warningFor: Record<ContactViolation["code"], string> = {
@@ -404,6 +395,20 @@ export async function advance(
         (candidate) => candidate.number === decision.step.number,
       );
       const draft = step?.template ?? "";
+      const [claimed] = await db
+        .update(s.enrollments)
+        .set({
+          step: decision.step.number,
+          version: sql`${s.enrollments.version} + 1`,
+        })
+        .where(
+          and(
+            eq(s.enrollments.id, enrollment.id),
+            eq(s.enrollments.status, "running"),
+          ),
+        )
+        .returning({ id: s.enrollments.id });
+      if (!claimed) continue;
       const [touch] = await db
         .insert(s.touches)
         .values({
@@ -428,13 +433,10 @@ export async function advance(
         .onConflictDoNothing()
         .returning();
       if (!touch) continue;
-      await db
-        .update(s.enrollments)
-        .set({
-          step: decision.step.number,
-          version: sql`${s.enrollments.version} + 1`,
-        })
-        .where(eq(s.enrollments.id, enrollment.id));
+      contacts.set(
+        person.id,
+        Math.max(contacts.get(person.id) ?? decision.dueAt, decision.dueAt),
+      );
       await db.insert(s.changeEvents).values({
         organizationId,
         productId: enrollment.productId,
@@ -483,6 +485,80 @@ export async function advance(
     }
   }
   return result;
+}
+
+async function gateContext(
+  db: Reader,
+  organizationId: string,
+  personIds: readonly string[],
+  now: number,
+) {
+  const [rules, zone, contacts] = await Promise.all([
+    readContactRules(db, organizationId),
+    workspaceZone(db, organizationId),
+    lastContacts(db, organizationId, personIds),
+  ]);
+  const counts = new Map<string, Promise<number>>();
+  return async (
+    touch: Pick<Touch, "senderId">,
+    person: Pick<
+      typeof s.people.$inferSelect,
+      "id" | "doNotContact" | "timeZone"
+    >,
+  ) => {
+    const count =
+      counts.get(touch.senderId) ??
+      sentOnDay(db, organizationId, touch.senderId, now, zone);
+    counts.set(touch.senderId, count);
+    return sendWindow({
+      now,
+      doNotContact: person.doNotContact,
+      timeZone: person.timeZone ?? zone,
+      workspaceTimeZone: zone,
+      lastContactAt: contacts.get(person.id) ?? null,
+      sentTodayBySender: await count,
+      rules,
+    });
+  };
+}
+
+function gateData(gate: Awaited<ReturnType<typeof sendGate>>) {
+  return {
+    sendAfter:
+      gate.sendAfter === null ? null : new Date(gate.sendAfter).toISOString(),
+    reasons: gate.reasons.map((reason) =>
+      "until" in reason
+        ? { ...reason, until: new Date(reason.until).toISOString() }
+        : reason,
+    ),
+  };
+}
+
+export async function sendGate(db: Reader, touch: Touch, now: number) {
+  const [row] = await db
+    .select({ person: s.people })
+    .from(s.relationships)
+    .innerJoin(
+      s.people,
+      and(
+        eq(s.people.id, s.relationships.personId),
+        eq(s.people.organizationId, s.relationships.organizationId),
+      ),
+    )
+    .where(
+      and(
+        eq(s.relationships.id, touch.relationshipId),
+        eq(s.relationships.organizationId, touch.organizationId),
+      ),
+    );
+  if (!row) throw new DomainError("NOT_FOUND", 404);
+  const gate = await gateContext(
+    db,
+    touch.organizationId,
+    [row.person.id],
+    now,
+  );
+  return gate(touch, row.person);
 }
 
 export async function pauseForReply(
@@ -773,6 +849,8 @@ export class OutreachService {
               id: s.people.id,
               name: s.people.name,
               email: s.people.email,
+              doNotContact: s.people.doNotContact,
+              timeZone: s.people.timeZone,
             },
             stageId: s.relationships.stageId,
           })
@@ -810,16 +888,28 @@ export class OutreachService {
           )
           .orderBy(asc(s.touches.dueAt), asc(s.touches.id))
       : [];
+    const gate = await gateContext(
+      this.db,
+      scope.organizationId,
+      [...new Set(rows.map((row) => row.person.id))],
+      now,
+    );
+    const listed = await Promise.all(
+      rows.map(async (row) => {
+        const window = await gate(row.touch, row.person);
+        return {
+          ...row.touch,
+          person: row.person,
+          stageId: row.stageId,
+          allowed: window.allowed,
+          ...gateData(window),
+        };
+      }),
+    );
     return {
       groups: [0, 1, 2, 3].map((followUp) => ({
         followUp,
-        touches: rows
-          .filter((row) => row.touch.followUp === followUp)
-          .map((row) => ({
-            ...row.touch,
-            person: row.person,
-            stageId: row.stageId,
-          })),
+        touches: listed.filter((touch) => touch.followUp === followUp),
       })),
       advanced,
       asOf: new Date(now).toISOString(),
@@ -873,9 +963,9 @@ export class OutreachService {
       .from(s.sequences)
       .where(eq(s.sequences.id, enrollment.sequenceId));
     const now = this.clock();
-    const contacts = await lastContacts(this.db, input.organizationId, [
-      person.id,
-    ]);
+    const gate = await (
+      await gateContext(this.db, input.organizationId, [person.id], now)
+    )(touch, person);
     return {
       touch,
       person,
@@ -888,25 +978,8 @@ export class OutreachService {
       history,
       rules,
       timeZone: person.timeZone ?? zone,
-      warnings: contactViolations({
-        now,
-        doNotContact: person.doNotContact,
-        timeZone: person.timeZone ?? zone,
-        lastContactAt: contacts.get(person.id) ?? null,
-        sentTodayBySender: await sentOnDay(
-          this.db,
-          input.organizationId,
-          touch.senderId,
-          now,
-          zone,
-        ),
-        rules,
-      }).map((violation) => ({
-        ...violation,
-        ...("until" in violation
-          ? { until: new Date(violation.until).toISOString() }
-          : {}),
-      })),
+      allowed: gate.allowed,
+      ...gateData(gate),
       asOf: new Date(now).toISOString(),
     };
   }
@@ -1052,37 +1125,8 @@ export class OutreachService {
         if (enrollment.status !== "running")
           throw new DomainError("ENROLLMENT_CLOSED", 409);
         if (!touch.draft.trim()) throw new DomainError("DRAFT_REQUIRED", 400);
+        if (person.doNotContact) throw new DomainError("DO_NOT_CONTACT", 409);
         const now = this.clock();
-        const [rules, zone, contacts] = await Promise.all([
-          readContactRules(tx, touch.organizationId),
-          workspaceZone(tx, touch.organizationId),
-          lastContacts(tx, touch.organizationId, [person.id]),
-        ]);
-        await tx
-          .select({ userId: s.memberships.userId })
-          .from(s.memberships)
-          .where(
-            and(
-              eq(s.memberships.organizationId, touch.organizationId),
-              eq(s.memberships.userId, touch.senderId),
-            ),
-          )
-          .for("update");
-        const [violation] = contactViolations({
-          now,
-          doNotContact: person.doNotContact,
-          timeZone: person.timeZone ?? zone,
-          lastContactAt: contacts.get(person.id) ?? null,
-          sentTodayBySender: await sentOnDay(
-            tx,
-            touch.organizationId,
-            touch.senderId,
-            now,
-            zone,
-          ),
-          rules,
-        });
-        if (violation) throw violationError(violation);
         const hash = draftHash({
           draft: touch.draft,
           personId: person.id,
@@ -1152,7 +1196,7 @@ export class OutreachService {
               eq(s.memberships.userId, touch.senderId),
             ),
           )
-          .for("update");
+          .for("no key update");
         const [rules, zone, contacts] = await Promise.all([
           readContactRules(tx, touch.organizationId),
           workspaceZone(tx, touch.organizationId),
@@ -1538,7 +1582,8 @@ export class OutreachService {
             inArray(s.enrollments.status, ["running", "paused"]),
           ),
         )
-        .orderBy(asc(s.enrollments.id));
+        .orderBy(asc(s.enrollments.id))
+        .for("update");
       if (!enrollments.length) return updated;
       const now = new Date(this.clock());
       const planned = await tx

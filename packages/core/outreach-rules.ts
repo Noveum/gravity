@@ -1,4 +1,4 @@
-import { wallClock, zonedInstant } from "./calendar";
+import { wallClock, zonedDayBounds, zonedInstant } from "./calendar";
 
 const day = 86400000;
 
@@ -91,4 +91,28 @@ export function contactViolations(input: {
   const quiet = quietHoursEnd(input.now, input.timeZone, input.rules);
   if (quiet !== null) violations.push({ code: "QUIET_HOURS", until: quiet });
   return violations;
+}
+
+export function sendWindow(input: {
+  now: number;
+  doNotContact: boolean;
+  timeZone: string;
+  workspaceTimeZone: string;
+  lastContactAt: number | null;
+  sentTodayBySender: number;
+  rules: ContactRules;
+}) {
+  const reasons = contactViolations(input);
+  if (input.doNotContact)
+    return { allowed: false, sendAfter: null, reasons } as const;
+  const capped = reasons.some((reason) => reason.code === "DAILY_CAP_REACHED");
+  const notBefore = capped
+    ? zonedDayBounds(input.now, input.workspaceTimeZone)[1]
+    : input.now;
+  const sendAfter = earliestContact(notBefore, {
+    timeZone: input.timeZone,
+    lastContactAt: input.lastContactAt,
+    rules: input.rules,
+  });
+  return { allowed: reasons.length === 0, sendAfter, reasons } as const;
 }

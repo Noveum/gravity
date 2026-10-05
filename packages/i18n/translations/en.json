@@ -160,7 +160,7 @@
   "mcpInstructions": "In Codex, add this URL as a remote MCP server, sign in, and grant an organization and products. Live compatibility requires an end-to-end OAuth test.",
   "revoke": "Revoke access",
   "noGrants": "No assistant grants in this organization.",
-  "noKey": "No CRM API key is required by the planned OAuth connection. HMAC protects provider webhooks.",
+  "noKey": "OAuth does not require a CRM API key. HMAC protects provider webhooks.",
   "demoConnector": "Fictional conversation data",
   "organizationName": "Organization name",
   "productName": "Product name",
@@ -171,10 +171,17 @@
   "member": "Member",
   "organizationIsolation": "People, conversations, products, and materials remain inside their organization.",
   "signIn": "Sign in",
-  "signInSubtitle": "Your relationships, with the context for the next step.",
+  "signInSubtitle": "Sign in to your workspace and pick up where you left off.",
+  "authHelp": "Help & docs",
+  "authStoryTitle": "Every relationship.\nA clear next step.",
+  "authStoryDescription": "Keep people, conversations and follow-ups connected across every product you sell.",
+  "authContext": "Context",
+  "authOpenSource": "Open-source CRM",
+  "authLicense": "Apache 2.0",
+  "authEmailPlaceholder": "you@company.com",
   "googleSignIn": "Continue with Google",
   "githubSignIn": "Continue with GitHub",
-  "authUnavailable": "Configure the production database and authentication credentials to enable sign-in.",
+  "authUnavailable": "Sign-in is not configured yet. Your administrator needs to enable Google, GitHub or email login.",
   "openDemo": "Open local demo",
   "authorize": "Choose assistant access",
   "authorizeDescription": "Choose the organization and products this assistant can read. It cannot approve drafts or send messages.",
@@ -209,7 +216,26 @@
     "NETWORK_ERROR": "Could not reach the server. Try again.",
     "PERSON_EXISTS": "This email already exists in this organization. Use Existing person to add a product relationship, or ask a teammate to review the duplicate.",
     "OWNER_NOT_ALLOWED": "Choose an active teammate with access to this product.",
-    "PRODUCT_EXISTS": "A product with this name already exists in this organization."
+    "PRODUCT_EXISTS": "A product with this name already exists in this organization.",
+    "EMAIL_DELIVERY_UNAVAILABLE": "We could not send your code. Try again in a minute or use Google or GitHub.",
+    "RATE_LIMITED": "Too many requests. Wait a minute and try again.",
+    "TOO_MANY_REQUESTS": "Too many requests. Wait a minute and try again.",
+    "INVALID_OTP": "That code is not valid. Check the email and try again.",
+    "OTP_EXPIRED": "Your code expired. Request a new code.",
+    "TOO_MANY_ATTEMPTS": "Too many incorrect attempts. Request a new code.",
+    "INVALID_EMAIL": "Enter a valid email address.",
+    "PROVIDER_UNAVAILABLE": "The provider could not be reached. Try again shortly.",
+    "PROVIDER_PERMISSION": "The provider denied access. Check API access and consent, then reconnect.",
+    "PROVIDER_RATE_LIMITED": "The provider rate limit was reached. Wait before syncing again.",
+    "PROVIDER_RESPONSE_INVALID": "The provider returned an unexpected response. Try again or contact your administrator.",
+    "RECONNECT_REQUIRED": "This account needs fresh authorization. Reconnect to continue.",
+    "CONNECTION_FLOW_EXPIRED": "This connection request expired. Start a new connection.",
+    "ACCOUNT_ALREADY_CONNECTED": "This account is already assigned elsewhere, or the reconnect selected a different account.",
+    "THREAD_ALREADY_LINKED": "This conversation is already linked to another relationship.",
+    "SYNC_IN_PROGRESS": "A sync is already running for this account. Please wait.",
+    "UNIPILE_SETUP_REQUIRED": "Set up your own Unipile API key and signed webhook before connecting LinkedIn.",
+    "STALE_CONFIGURATION": "Your provider setup changed. Reload Connections and try again.",
+    "PROVIDER_CONFIGURATION_IN_USE": "This setup already has linked accounts. Remove it first to replace the credentials; this will disconnect those accounts and preserve imported history."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
   "addPerson": "Add person",
@@ -242,7 +268,7 @@
   "themeShortcut": "Appearance follows your preference across tabs.",
   "scheduleAction": "Schedule next action",
   "scheduleNote": "Creates a shared task for this product. This does not send a message or advance a sequence. Keep private mailbox details out of shared tasks.",
-  "chooseRelationship": "Choose a product relationship",
+  "chooseRelationship": "Choose a person and product",
   "dueDate": "Due date (your device time zone)",
   "actionTitle": "Action title",
   "reason": "Context and reason",
@@ -278,10 +304,11 @@
     "materials": "G F",
     "integrations": "G I",
     "settings": "G T",
-    "create": "C"
+    "create": "C",
+    "sidebar": "["
   },
-  "resizeNavigation": "Resize navigation sidebar",
   "resizeInspector": "Resize detail panel",
+  "resizeNavigation": "Resize navigation sidebar",
   "expandInspector": "Expand detail panel",
   "collapseInspector": "Restore split view",
   "backToRecord": "Back to previous record",
@@ -299,7 +326,6 @@
   "openMeeting": "Open meeting",
   "openOpportunity": "Open opportunity",
   "newAction": "New action",
-  "viewOptions": "Appearance and density",
   "allPeople": "Company contacts",
   "resizeHint": "Drag to resize; arrow keys adjust width; double-click resets.",
   "noSequences": "No sequences match this view.",
@@ -329,5 +355,599 @@
   "shortcutSearch": "Search shortcuts…",
   "viewLoadError": "This view could not be loaded. Retry to reconnect.",
   "submitHint": "⌘ / Ctrl Enter to submit",
-  "draftSaveHint": "⌘ / Ctrl Enter to save this draft"
+  "draftSaveHint": "⌘ / Ctrl Enter to save this draft",
+  "workspaceSetup": "Workspace setup",
+  "workspaceSetupTitle": "Give your relationships a home.",
+  "workspaceSetupDescription": "Start with one organization and its first product. Add more products and workspaces as your team grows.",
+  "setupStepWorkspace": "Set up your workspace",
+  "setupStepPeople": "Add people and their product context",
+  "setupStepConnections": "Connect your tools and assistant",
+  "setupPrivacy": "Your organization has its own people, conversations and sales materials. Mailbox access requires separate consent.",
+  "backToWorkspace": "Back to workspace",
+  "setupProductHint": "A product has its own relationships, next actions, pipeline and sales materials.",
+  "firstProduct": "First product",
+  "organizationTimezone": "Organization time zone",
+  "setupIncluded": "Includes your admin membership, a materials folder and four pipeline stages.",
+  "createWorkspace": "Create workspace",
+  "noProductsAvailable": "No products available yet",
+  "setupAddProduct": "Add your first product to start organizing people and next actions.",
+  "setupAskAccess": "Ask your organization admin for access to a product.",
+  "calendar": "Google Calendar",
+  "calendarDescription": "Bring meetings, attendees and changed events into the CRM. Calendar authorization and synchronization are still to be implemented.",
+  "connectionSetup": "How connection will work",
+  "providerConnectionPending": "Account connection is not available in this foundation yet.",
+  "mailboxSeparateLogin": "Google sign-in does not connect your mailbox. Gmail access needs its own consent.",
+  "copyMcpEndpoint": "Copy MCP endpoint",
+  "copy": "Copy",
+  "copied": "Copied",
+  "copyFailed": "Could not copy. Select the endpoint and copy it manually.",
+  "mcpQualification": "This endpoint requires configured authentication. Qualify the OAuth connection with your assistant before using real data.",
+  "integrationGuide": "Integration setup guide",
+  "assistantGrants": "Authorized assistants",
+  "mcpSteps": [
+    "Add this URL as a remote HTTP MCP server in your assistant.",
+    "Sign into Gravity, then choose one organization and the products to share.",
+    "Review and accept read-only access. You can revoke it here."
+  ],
+  "connectionSteps": {
+    "gmail": [
+      "Choose the mailbox you want to connect.",
+      "Approve access to read messages; CRM login alone does not grant mailbox access.",
+      "Choose the product relationships to sync and review unmatched conversations."
+    ],
+    "calendar": [
+      "Choose calendars and approve access to their events.",
+      "Link attendees to the right people and products.",
+      "Review meeting outcomes before creating commitments or follow-ups."
+    ],
+    "linkedin": [
+      "Verify your own Unipile API key and set up its signed webhook, then connect your LinkedIn account.",
+      "Choose the product relationships to sync.",
+      "Review replies and unmatched conversations before resuming outreach."
+    ],
+    "fireflies": [
+      "Connect the meeting notes account.",
+      "Match notes to meetings and product relationships.",
+      "Review proposed commitments before assigning an owner and due date."
+    ]
+  },
+  "authFlowMissing": "Open authorization from your assistant to choose access. This page needs its OAuth request.",
+  "authNoOrganizations": "Create a workspace before connecting an assistant.",
+  "authNoProducts": "No products are available to share in this organization. Ask your admin for access or add a product.",
+  "authProductsLoading": "Loading products you can share…",
+  "authOrgLoading": "Loading your organizations…",
+  "authRetry": "Retry loading access",
+  "authFlowLoading": "Loading the selected client and access…",
+  "workspaceReady": "Your workspace is ready.",
+  "workspaceNextStep": "Add your first person and their product relationship, then schedule a next action. Review Connections to set up your tools.",
+  "connectTools": "Review connections",
+  "publicSite": {
+    "product": "Product",
+    "docsLabel": "Docs",
+    "blogLabel": "Journal",
+    "source": "GitHub",
+    "openApp": "Open workspace",
+    "skip": "Skip to content",
+    "navLabel": "Gravity website",
+    "footer": "Gravity by Noveum · Open source · Apache-2.0",
+    "previewBadge": "Early preview",
+    "eyebrow": "Open-source CRM for founders and small sales teams",
+    "heroTitle": "Know who to follow up with next.",
+    "heroDescription": "Organize outreach, replies and meeting follow-ups around a clear next step. Keep the person, conversation and product context together, so your team and AI assistant can pick up where you left off.",
+    "tryDemo": "Explore the preview",
+    "readSetup": "Read the setup guide",
+    "heroNote": "Apache-2.0 licensed. Self-hostable. The local preview uses fictional data.",
+    "previewLabel": "Illustrative workflow with fictional data",
+    "previewOrg": "Northstar Collective",
+    "previewProduct": "AI Platform",
+    "previewQueue": "Next actions",
+    "previewToday": "Needs attention",
+    "previewTasks": [
+      {
+        "name": "Mira Chen",
+        "company": "Northstar Labs",
+        "task": "Reply with the evaluation shortlist",
+        "label": "New reply",
+        "time": "Today"
+      },
+      {
+        "name": "Leena Rao",
+        "company": "Cedar Systems",
+        "task": "Prepare the pilot proposal",
+        "label": "Promise we made",
+        "time": "Tomorrow"
+      },
+      {
+        "name": "Jonah Reed",
+        "company": "Harbor Analytics",
+        "task": "Review the next follow-up",
+        "label": "Waiting on them",
+        "time": "Friday"
+      }
+    ],
+    "previewContext": "Why this follow-up matters",
+    "previewMessage": "We can review the evaluation setup on Monday. Please send your shortlist.",
+    "previewCaption": "See the person, the conversation and the next step together.",
+    "previewHistory": "History can be partial. Assistant access stays within the products you share.",
+    "featureEyebrow": "Built for the daily work of selling",
+    "featureTitle": "Keep the details behind each next step.",
+    "features": [
+      {
+        "title": "See who needs your attention.",
+        "body": "Work through replies, promises and scheduled follow-ups in a daily queue. See the owner, deadline and reason for each next step."
+      },
+      {
+        "title": "Sell several products without mixing the details.",
+        "body": "Keep one contact with separate relationships for each product. Track the purpose, owner and conversation in the right context."
+      },
+      {
+        "title": "Carry the context into your next meeting.",
+        "body": "Keep conversation history, research and product materials close to the person. Review meeting commitments and assign the next step."
+      },
+      {
+        "title": "Move through the work with your keyboard.",
+        "body": "Jump between views, search records and open the details you need. Resize the workspace to fit your screen; live updates preserve your unsaved drafts."
+      }
+    ],
+    "mcpEyebrow": "Your assistant, with the context to help",
+    "mcpTitle": "Give your assistant the relationship behind the task.",
+    "mcpDescription": "Ask for a meeting brief, the history behind a follow-up, or the materials to review. Read-only MCP gives your assistant access to CRM context through the same permissions as the app. You choose the organization and products to share.",
+    "mcpPrompt": "“Catch me up on Mira’s evaluation. What did we promise, what changed, and which materials should I review?”",
+    "mcpBoundary": "Read-only OAuth MCP is implemented. A configured HTTPS installation and live connection testing are needed for Codex and Claude Code.",
+    "mcpLink": "Connect an assistant",
+    "statusTitle": "Explore what works today. See what we’re building next.",
+    "statusDescription": "Gravity is in active development. Explore the core workflows, then configure your own provider accounts to import conversations and meetings.",
+    "readyTitle": "Available in the preview",
+    "readyItems": [
+      "Organizations and products",
+      "People, company context and next actions",
+      "Reviewed meeting commitments",
+      "Private materials and stage folders",
+      "Read-only OAuth MCP",
+      "Keyboard navigation, themes and live updates",
+      "Gmail and primary-calendar import with separate consent",
+      "Fireflies summaries and a Unipile V2 LinkedIn adapter"
+    ],
+    "nextTitle": "On the roadmap",
+    "nextItems": [
+      "Invitations, record editing and reviewed CSV imports",
+      "Google push notifications and larger sync workers",
+      "Integration health and retention controls",
+      "Reviewed outbound sending and suppression rules"
+    ],
+    "journalTitle": "A closer look at the sales workflow",
+    "journalDescription": "Ideas for keeping follow-ups clear, product relationships separate and your assistant informed.",
+    "allArticles": "Read the journal",
+    "readArticle": "Read article",
+    "faqTitle": "Before you get started",
+    "faqs": [
+      {
+        "question": "Who is Gravity for?",
+        "answer": "Founders and small B2B sales teams doing hands-on outreach and follow-ups. It is especially useful when you sell several products or hand conversations between teammates. Technical teams can self-host and extend the source."
+      },
+      {
+        "question": "Can I self-host and modify Gravity?",
+        "answer": "Yes. Gravity is licensed under Apache 2.0. You can run, inspect and modify the code under that license. Start with the local setup guide, then review the deployment guide before putting it on your infrastructure."
+      },
+      {
+        "question": "Can I connect Codex or Claude Code?",
+        "answer": "Gravity implements read-only OAuth MCP. Connect a configured HTTPS installation, sign in and choose the products to share. Actual Codex and Claude Code connections still need live qualification. CRM API keys are not implemented."
+      },
+      {
+        "question": "Are Gmail, LinkedIn and Calendar connected?",
+        "answer": "Gravity includes separate read-only Gmail and primary-calendar consent, Fireflies API-key import, and a LinkedIn adapter through Unipile V2. Each account still needs provider setup, owner authorization and live qualification. The local demo uses fictional data and connects no accounts."
+      },
+      {
+        "question": "Does Gravity send outreach for me?",
+        "answer": "Sending is not available in the current preview. You can organize next actions and review drafts. Completing a task or approving a draft does not send a message."
+      },
+      {
+        "question": "Can I add real sales data yet?",
+        "answer": "Use fictional data in the local preview. Before real data, qualify your production database, sign-in, team permissions, private storage and backup restore. The deployment guide lists the remaining checks."
+      }
+    ],
+    "finalTitle": "Build your sales workflow on Gravity.",
+    "finalDescription": "Run the preview locally, explore the workflows and adapt the source to how your team sells.",
+    "docsTitle": "Gravity documentation",
+    "docsDescription": "Set up a workspace, understand the boundaries and connect an assistant when your installation is ready.",
+    "blogTitle": "The Gravity journal",
+    "blogDescription": "How to organize follow-ups and build useful context for a team selling several products.",
+    "backDocs": "All documentation",
+    "backBlog": "All articles",
+    "author": "Noveum team",
+    "articleDate": "4 October 2026",
+    "onThisPage": "On this page",
+    "related": "Continue reading",
+    "docs": [
+      {
+        "slug": "getting-started",
+        "title": "Set up your first workspace",
+        "description": "From a fictional local preview to an organization, a product and a useful next action.",
+        "sections": [
+          {
+            "id": "local",
+            "title": "Run the local preview",
+            "paragraphs": [
+              "Install Node.js 22.12 or newer and Bun 1.3.14, clone Gravity, then install the locked dependencies and start the app. The demo migrates and seeds a local PGlite database with fictional records. No paid provider is needed.",
+              "Keep this fixed-identity demo for fictional data. A real database or production environment disables the demo identity."
+            ],
+            "code": "git clone https://github.com/Noveum/gravity.git\ncd gravity\nbun install --frozen-lockfile\nbun run dev"
+          },
+          {
+            "id": "workspace",
+            "title": "Create an organization and its first product",
+            "paragraphs": [
+              "Open /onboarding. Name the organization, choose its first product and set the organization time zone. Gravity creates your admin membership, an Overview material folder and four sales stages in one transaction.",
+              "An organization contains its own people and companies. A product contains relationships, next actions, sequences, opportunities and materials. Add another product from Organization settings."
+            ]
+          },
+          {
+            "id": "first-person",
+            "title": "Make the first record useful",
+            "paragraphs": [
+              "Choose Add person. Add a fictional identity, a product relationship, its purpose and context. A person can have a separate buyer or partner relationship for another product without duplicating their identity.",
+              "Add a research task or schedule a next action with an owner and deadline. Record what needs to happen and why. A task is a reviewable piece of work, not proof that an email was sent."
+            ]
+          },
+          {
+            "id": "keyboard",
+            "title": "Keep moving with the keyboard",
+            "paragraphs": [
+              "Cmd or Ctrl K opens commands. G then P opens People; G then A opens Next actions. J/K moves focus through records and Enter opens the focused record. ? opens the complete shortcut guide.",
+              "Cmd or Ctrl Enter submits a valid creation form or saves an edited draft. No shortcut approves a message or sends outreach."
+            ]
+          },
+          {
+            "id": "real-data",
+            "title": "Before adding real data",
+            "paragraphs": [
+              "Use an isolated staging database and a stable HTTPS origin. Configure real authentication, qualify two-user membership and product permissions, and verify private object storage. Complete a backup restore rehearsal.",
+              "Gmail and primary Calendar have separate read-only connection flows. In Connections, bring your own Unipile API key and webhook for LinkedIn, or your Fireflies key for meeting notes. Invitations, record editing/imports and backup restore qualification remain unfinished."
+            ]
+          }
+        ]
+      },
+      {
+        "slug": "connect-an-assistant",
+        "title": "Connect Codex, Claude Code or an MCP client",
+        "description": "OAuth setup, product consent, read-only tools and a clear connection check.",
+        "sections": [
+          {
+            "id": "prerequisites",
+            "title": "Start with a configured installation",
+            "paragraphs": [
+              "The MCP endpoint is your configured application origin followed by /mcp. Register the Google or GitHub sign-in callback under that origin and configure the auth secret and production database.",
+              "The fictional local demo returns AUTH_UNAVAILABLE rather than exposing anonymous MCP data. A URL alone is not a working connection. Use the deployed HTTPS URL below instead of the example."
+            ]
+          },
+          {
+            "id": "codex",
+            "title": "Codex",
+            "paragraphs": [
+              "In Codex Settings, add a custom remote HTTP MCP server and enter the Gravity endpoint. Choose Authenticate when available. With a current Codex CLI, add the server and start login using these commands.",
+              "If codex mcp is unavailable, update the CLI you are invoking; an old binary in PATH can differ from the desktop app."
+            ],
+            "code": "codex mcp add gravity --url https://crm.example.com/mcp\ncodex mcp login gravity"
+          },
+          {
+            "id": "claude-code",
+            "title": "Claude Code",
+            "paragraphs": [
+              "Add Gravity as an HTTP server, then authenticate. Using user scope makes the connection available across your projects. If your installed version does not have mcp login, use /mcp in a Claude Code session to authenticate."
+            ],
+            "code": "claude mcp add --transport http --scope user gravity https://crm.example.com/mcp\nclaude mcp login gravity"
+          },
+          {
+            "id": "consent",
+            "title": "Choose the products to share",
+            "paragraphs": [
+              "Sign into Gravity, choose one organization and select its permitted products. Review the client, products and read-only permission before accepting. A new user can create a workspace without losing the assistant authorization request.",
+              "Tokens and grants do not give an assistant permission to approve or send a message. Product memberships added later do not expand an existing grant. Revoke an assistant from Connections when access is no longer needed."
+            ]
+          },
+          {
+            "id": "verify",
+            "title": "Verify useful reads and the boundary",
+            "paragraphs": [
+              "Ask the assistant to call get_me, get_capabilities and list_products. Confirm its organization and products. Then ask for a permitted person or company context and a relevant material.",
+              "Check that an ungranted product and a revoked connection are rejected. The capabilities report server connector configuration; each provider still needs account authorization and a successful sync. Seeing tool definitions is not proof that a mailbox is connected."
+            ]
+          },
+          {
+            "id": "auth",
+            "title": "OAuth and API keys",
+            "paragraphs": [
+              "OAuth is the current interactive connection path. No personal CRM API key is implemented. Read-only API keys for unattended jobs would need their own scoped issuance, expiration, hashing, rotation and revocation design.",
+              "HMAC authenticates provider webhook deliveries. It is not a substitute for assistant consent or a user-facing OAuth mode. Never paste provider refresh tokens into an assistant configuration."
+            ]
+          },
+          {
+            "id": "provider-credentials",
+            "title": "Keep provider credentials private",
+            "paragraphs": [
+              "MCP tools never receive your API keys or connect accounts on your behalf. A signed-in user configures their own Unipile setup in Connections, verifies the API key, and adds the unique signed webhook. The setup belongs to that user in that organization.",
+              "After reviewing imported conversations into CRM relationships, assistants can read only the context allowed by their organization/product grant and current visibility rules."
+            ]
+          }
+        ]
+      },
+      {
+        "slug": "deployment-readiness",
+        "title": "Prepare a staging installation for real data",
+        "description": "Database, authentication, recovery, storage and integration gates before migration.",
+        "sections": [
+          {
+            "id": "target",
+            "title": "Choose the target deliberately",
+            "paragraphs": [
+              "Use a separate Gravity Vercel project, managed PostgreSQL database and private object bucket. Keep the existing Twenty deployment and domain unchanged while staging is being qualified.",
+              "Review migrations and the database target before applying them. Use separate migration and runtime roles, isolated staging records and provider-approved TLS/pooling. Never seed fictional demo identities into a real database."
+            ]
+          },
+          {
+            "id": "auth",
+            "title": "Prove two-user access",
+            "paragraphs": [
+              "Set APP_URL to a stable HTTPS origin, disable demo mode and store a random auth secret in your environment secret manager. Register exact Google/GitHub callbacks.",
+              "Verify login, organization membership, product restrictions, removal and MCP revocation with two real users. Invitations and membership management UI remain release work; do not compensate with shared sessions."
+            ]
+          },
+          {
+            "id": "recovery",
+            "title": "Restore, rather than just export",
+            "paragraphs": [
+              "Choose backup retention and recovery targets with the database provider. Rehearse restoring an isolated backup and record the result. A CSV export is useful but does not replace recovery.",
+              "Check private storage access from an unauthorized tenant. Direct authenticated storage transfer must replace the local function-proxied large-file path before Vercel file uploads are enabled."
+            ]
+          },
+          {
+            "id": "providers",
+            "title": "Qualify one complete reply loop",
+            "paragraphs": [
+              "Connect one Gmail account through the chosen adapter. Confirm real incoming/outgoing messages, deduplication, approval invalidation, sync gaps and disconnect/reconnect. Historical imports must not pause current outreach based only on an old reply.",
+              "Calendar booking and held meeting are different states. Review any proposed promise, owner and due instant before turning meeting notes into a next action."
+            ]
+          },
+          {
+            "id": "ci",
+            "title": "Use the verified source artifact",
+            "paragraphs": [
+              "CI runs frozen install, audit, types, lint, tests, license coverage and production build on pull requests and main. The opt-in Vercel preview workflow is target-bound and does not migrate an external database.",
+              "Enable deployment only after its project, secrets and stable origin are ready. Passing CI verifies code packaging and the tested contracts; it does not verify your live provider accounts or restore plan."
+            ]
+          }
+        ]
+      }
+    ],
+    "articles": [
+      {
+        "slug": "follow-ups-need-context",
+        "title": "A follow-up is a promise with context",
+        "description": "Why the next step deserves an owner, a reason and a due time—not just a deal stage.",
+        "sections": [
+          {
+            "id": "queue",
+            "title": "Start the day with a decision",
+            "paragraphs": [
+              "A deal board tells you where an opportunity sits. It rarely explains which person needs a reply today, what you promised last week, or whether someone answered on another channel. That decision belongs in a daily action queue.",
+              "A useful next action names the person and product relationship, the owner, the reason, the due instant and who owes the next step. “Follow up” alone leaves too much work for the person opening the record."
+            ]
+          },
+          {
+            "id": "signals",
+            "title": "Keep signals and actions distinct",
+            "paragraphs": [
+              "A reply is an observed conversation event. A promise is a commitment you made. A scheduled review asks you to look again. A sent email is a delivery observation. Treating these as separate facts keeps the history understandable.",
+              "A first, second or third follow-up label describes an intended step. Completing a task does not establish delivery. A fresh reply should invalidate a stale approval before outreach continues."
+            ]
+          },
+          {
+            "id": "context",
+            "title": "Put the explanation beside the task",
+            "paragraphs": [
+              "Open the task and keep its conversation, product context, company and evidence nearby. State when history is partial. A teammate or assistant should be able to distinguish a sourced fact from a working hypothesis.",
+              "If another person owns the next step, record that explicitly. Waiting on them schedules a review; it does not imply another message should be sent."
+            ]
+          },
+          {
+            "id": "practice",
+            "title": "A practical daily review",
+            "paragraphs": [
+              "Handle new replies first. Review promises with an owner and deadline. Then examine scheduled follow-ups against the latest conversation. When context is missing, create a research action rather than inventing a qualification.",
+              "Gravity organizes these states in separate saved views. Its preview supports reviewed tasks and draft approval, while live provider sync and message dispatch remain future work."
+            ]
+          }
+        ]
+      },
+      {
+        "slug": "one-person-many-products",
+        "title": "One person, several product relationships",
+        "description": "Keep identity together without mixing ownership, intent or outreach across products.",
+        "sections": [
+          {
+            "id": "identity",
+            "title": "Identity should not multiply with your product catalog",
+            "paragraphs": [
+              "The same person can evaluate one product and partner on another. Their name and company are the same; the purpose of the relationship is not. Copying the contact into separate lists makes history harder to reconcile.",
+              "Keep a canonical person and create explicit product relationships. Each relationship can have its own owner, purpose, qualification, context, next actions and opportunities."
+            ]
+          },
+          {
+            "id": "boundary",
+            "title": "A shared identity is not permission to read everything",
+            "paragraphs": [
+              "Organizations keep their data separate. Inside an organization, product permissions decide which relationships and work a user can read. Private mailbox history needs an additional visibility boundary.",
+              "An assistant grant should select an organization and permitted products. Adding another product to a user later should not quietly widen an older assistant connection."
+            ]
+          },
+          {
+            "id": "coordination",
+            "title": "Coordinate without blending the conversation",
+            "paragraphs": [
+              "A contact involved in several products still deserves a coherent experience. Review potential outreach collisions and decide deliberately which relationship a conversation belongs to. Do not infer that from a company name or a fuzzy email match.",
+              "Show the connected work without erasing its product label. A broad company view and a precise relationship view answer different questions."
+            ]
+          },
+          {
+            "id": "preview",
+            "title": "What Gravity does today",
+            "paragraphs": [
+              "The preview links readable people to explicit product relationships, exposes company context and keeps grants bounded. Its local tests exercise cross-product and cross-organization rejection.",
+              "Record editing, CSV imports and collision detection remain planned. Provider imports require explicit conversation classification. Until those are qualified, use the preview to evaluate the model with fictional records."
+            ]
+          }
+        ]
+      }
+    ],
+    "metaTitle": "Open-source CRM for founder-led sales",
+    "metaDescription": "Gravity is an open-source CRM for founders and small sales teams. Organize follow-ups, keep product context and connect AI assistants through OAuth MCP.",
+    "runLocally": "Run Gravity locally",
+    "viewSource": "View on GitHub",
+    "openSourceEyebrow": "Open source from the start",
+    "openSourceTitle": "A CRM you can run, understand and change.",
+    "openSourceDescription": "Gravity is licensed under Apache 2.0. Inspect the source, self-host the application and adapt it to how your team sells.",
+    "openSourceValues": [
+      {
+        "title": "Choose your infrastructure.",
+        "body": "Use your own PostgreSQL and deployment. The setup guide covers authentication, storage and the checks needed before adding real data."
+      },
+      {
+        "title": "Shape your sales workflow.",
+        "body": "Extend the data model, workflows and integrations in the source. Build around the way your team works as your needs evolve."
+      },
+      {
+        "title": "Share context on your terms.",
+        "body": "Keep organizations separate and give an assistant access to selected products. Revoke its grant when it no longer needs access."
+      }
+    ]
+  },
+  "orEmail": "Or continue with email",
+  "emailAddress": "Email address",
+  "signInCode": "Sign-in code",
+  "sendSignInCode": "Send sign-in code",
+  "sendingSignInCode": "Sending code…",
+  "verifySignInCode": "Verify and sign in",
+  "signingIn": "Signing in…",
+  "emailCodeSent": "Enter the six-digit code sent to {email}.",
+  "resendCode": "Resend code",
+  "resendCodeIn": "Resend in {seconds}s",
+  "changeEmail": "Use a different email",
+  "emailCodeNote": "No password needed. Codes expire after five minutes.",
+  "emailOtpSubject": "Your Gravity sign-in code",
+  "emailOtpBody": "Your Gravity sign-in code is:\n\n{code}\n\nThis code expires in five minutes and can be used once. If you did not request it, you can ignore this email.",
+  "navWork": "Work",
+  "navOutreach": "Outreach",
+  "navRecords": "Records",
+  "toggleSidebar": "Toggle sidebar",
+  "toggleTheme": "Toggle light and dark theme",
+  "useLightTheme": "Switch to light theme",
+  "useDarkTheme": "Switch to dark theme",
+  "notifications": "Notifications",
+  "dismiss": "Dismiss",
+  "openNavigation": "Open navigation",
+  "navigationDrawer": "Navigation",
+  "mainNavigation": "Main navigation",
+  "closeNavigation": "Close navigation",
+  "breadcrumb": "Breadcrumb",
+  "searchShort": "Search",
+  "switchOrganization": "Switch organization",
+  "organizations": "Organizations",
+  "preferences": "Preferences",
+  "preferencesDetail": "Appearance and row density apply to this browser.",
+  "demoMode": "Demo",
+  "outreach": "Outreach",
+  "outreachSoon": "Outreach is on its way",
+  "outreachSoonDetail": "Due touches, drafts awaiting approval and recent sends will gather here. Sequences stay available in the meantime.",
+  "openRecord": "Open record",
+  "activity": "Activity",
+  "past": "Earlier",
+  "importCalendarTitle": "Calendar event",
+  "importMeetingTitle": "Meeting notes",
+  "importLinkedInTitle": "LinkedIn conversation",
+  "integrationIntro": "Connect your accounts, import history, and assign conversations to the right product. Your provider accounts belong to you within this organization. Background sync runs in small batches every five minutes; Sync now checks immediately.",
+  "integrationDescriptions": {
+    "gmail": "Import Gmail conversations and incoming replies with read-only Google access.",
+    "calendar": "Import events from your primary Google calendar, including changes and cancellations.",
+    "linkedin": "Connect your LinkedIn account through Unipile and receive messages through signed webhooks.",
+    "fireflies": "Connect your Fireflies API key to import meeting summaries and proposed follow-ups."
+  },
+  "connected": "Connected",
+  "syncNow": "Sync now",
+  "syncing": "Syncing…",
+  "reconnect": "Reconnect",
+  "disconnect": "Disconnect",
+  "reconnectRequired": "Reconnect required",
+  "lastSynced": "Last synced {time}",
+  "notSynced": "Not synced yet",
+  "moreHistory": "More history is available. Sync again to continue.",
+  "connectProvider": "Connect {provider}",
+  "integrationDemo": "Connect accounts in a configured installation; this local demo does not access providers.",
+  "integrationConfigRequired": "Your administrator needs to configure the integration client and encryption key.",
+  "unipileSetupRequired": "Connect your own Unipile application to enable LinkedIn.",
+  "linkedInSetup": "Open Set up Unipile to verify your own API key, configure the signed webhook, and connect your LinkedIn account. Your setup is private to you in this organization.",
+  "webhookSetupGuide": "Unipile webhook setup guide",
+  "importReview": "Imported context to review",
+  "importReviewDescription": "Choose a person and product for each conversation or meeting. Linking a conversation imports its messages privately; linking a meeting adds its notes to that product’s shared CRM context. Replies on linked conversations update their existing relationship.",
+  "previewImport": "Preview imported context",
+  "noMessageText": "No text was included.",
+  "linkRelationship": "Person and product",
+  "linkImport": "Link context",
+  "ignoreImport": "Ignore",
+  "firefliesWebhookInstructions": "For live meeting updates, add this webhook URL and signing secret in Fireflies Webhooks V2 settings. Keep the signing secret private; this screen is cleared when you close it.",
+  "webhookUrl": "Webhook URL",
+  "signingSecret": "Signing secret",
+  "copyValue": "Copy {label}",
+  "firefliesWebhookEvents": "Subscribe to meeting.transcribed and meeting.summarized. You can also use Sync now to import existing notes.",
+  "done": "Done",
+  "firefliesConnectNote": "Paste your Fireflies API key. Gravity verifies your account, encrypts the key, and imports only transcripts owned by that account.",
+  "linkedinConnectNote": "Continue to Unipile to connect your own LinkedIn account. Gravity does not collect your LinkedIn password. An existing Unipile application is required.",
+  "googleConnectNote": "Google will ask for separate read-only access to your Gmail or primary calendar. This does not grant permission to send email or edit calendar events.",
+  "defaultProduct": "Default product",
+  "defaultProductNote": "Imported context starts in this product’s review queue. You can explicitly link each thread or meeting to another product you can access.",
+  "firefliesApiKey": "Fireflies API key",
+  "firefliesKeyPlaceholder": "Paste your Fireflies API key",
+  "connecting": "Connecting…",
+  "verifyConnect": "Verify and connect",
+  "continueProvider": "Continue to {provider}",
+  "unipile": "Unipile",
+  "google": "Google",
+  "integrationMessages": {
+    "CONNECTION_CONNECTED": "Account connected. Use Sync now to import history.",
+    "CONNECTION_PENDING": "Account authentication finished. Waiting for the signed Unipile account confirmation.",
+    "SYNC_MORE": "Imported this page. More history is available; sync again to continue.",
+    "SYNC_COMPLETE": "Sync complete. Review imported context below.",
+    "CONNECTION_DISCONNECTED": "Account disconnected. Imported CRM context is retained.",
+    "IMPORT_REVIEWED": "Imported context reviewed."
+  },
+  "searchImports": "Search titles or participants…",
+  "importProvider": "Import source",
+  "allImportProviders": "All sources",
+  "noImportsFound": "No imported items match this view.",
+  "importPage": "Page {page} · {total} items to review",
+  "previousImports": "Previous",
+  "nextImports": "Next",
+  "integrationTimeZone": "Connection and import times use {zone}.",
+  "unipileSettingsTitle": "Your Unipile setup",
+  "unipileSettingsSubtitle": "Bring your LinkedIn conversations into Gravity.",
+  "unipileOwnership": "Only you can manage this setup. Credentials are encrypted on the server, scoped to this organization, and never shared with other users or AI assistants.",
+  "unipileSetupSteps": "Unipile setup steps",
+  "unipileApiStep": "Verify API key",
+  "unipileWebhookStep": "Configure webhook",
+  "unipileKeyInstructions": "Paste the V2 API key from your Unipile application. Gravity will verify access before saving it.",
+  "unipileApiKey": "Unipile API key",
+  "unipileKeyPlaceholder": "Paste your Unipile V2 API key",
+  "unipileScopedKeyNote": "Use a scoped Account API key when available. Unipile billing stays with your provider account; Gravity does not purchase a subscription.",
+  "unipileKeyGuide": "Unipile API keys and scopes",
+  "unipileVerifyKey": "Verify and save key",
+  "unipileWebhookInstructions": "Create a V2 webhook in your Unipile dashboard using the URL above. Paste that endpoint’s signing secret below to finish setup.",
+  "unipileWebhookEvents": "Subscribe to account.add, account.reconnect, account.status.running, account.status.disconnected, account.status.errored, account.remove and message.new.",
+  "unipileSecretPlaceholder": "Paste the webhook signing secret",
+  "unipileSaveWebhook": "Save webhook setup",
+  "unipileReady": "Setup saved. You can now connect LinkedIn. Signed deliveries will be verified when Unipile sends them.",
+  "unipileRemove": "Remove Unipile setup",
+  "unipileRemoveWarning": "Removing this setup disconnects its LinkedIn accounts and deletes the saved credentials. Imported CRM history stays available under its existing access rules. You can create a new setup afterward.",
+  "unipileConfirmRemove": "Remove and disconnect",
+  "unipileSetUp": "Set up Unipile",
+  "unipileManage": "Manage Unipile",
+  "disconnected": "Disconnected"
 }

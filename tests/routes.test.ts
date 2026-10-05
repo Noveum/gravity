@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { seal } from "../packages/connectors/security";
 import type { Principal } from "../packages/core/policy";
 import { DomainError } from "../packages/core/policy";
 import type { Database } from "../packages/database/client";
@@ -29,6 +30,7 @@ vi.mock("@crm/auth/server", () => ({
 
 import { GET, POST } from "../src/app/api/crm/route";
 import { POST as webhook } from "../src/app/api/webhooks/unipile/route";
+import { GET as workspaceLink } from "../src/app/api/workspace/route";
 
 let local: Awaited<
   ReturnType<
@@ -44,11 +46,28 @@ beforeAll(async () => {
   db = local.db;
   await seedDemo(db);
   vi.stubEnv("UNIPILE_WEBHOOK_SECRET", secret);
+  vi.stubEnv("INTEGRATION_ENCRYPTION_KEY", "ab".repeat(32));
+  await db.insert(s.providerConfigurations).values({
+    id: demoId(990),
+    organizationId: demoId(1),
+    ownerId: demoUser,
+    provider: "unipile",
+    webhookReady: true,
+    encryptedCredentials: seal(
+      { apiKey: "fictional-route-api-key", signingSecret: secret },
+      `${demoId(1)}:${demoUser}:${demoId(990)}:provider`,
+    ),
+  });
+  await db
+    .update(s.connections)
+    .set({ providerConfigurationId: demoId(990) })
+    .where(eq(s.connections.id, demoId(701)));
   // One provider account owns a Gmail channel independently of the LinkedIn account.
   await db
     .update(s.connections)
     .set({
       provider: "unipile",
+      providerConfigurationId: demoId(990),
       externalAccountId: "route-gmail",
       selfEmail: "alex@example.test",
       inboxFolderIds: ["INBOX"],
@@ -109,11 +128,14 @@ function signed(
   const signature = createHmac("sha256", secret)
     .update(`${timestamp}.${raw}`)
     .digest("hex");
-  return new Request("http://localhost/api/webhooks/unipile", {
-    method: "POST",
-    headers: { "unipile-signature": `t=${timestamp},v0=${signature}` },
-    body: options.tamper ? `${raw} ` : raw,
-  });
+  return new Request(
+    `http://localhost/api/webhooks/unipile?configurationId=${demoId(990)}`,
+    {
+      method: "POST",
+      headers: { "unipile-signature": `t=${timestamp},v0=${signature}` },
+      body: options.tamper ? `${raw} ` : raw,
+    },
+  );
 }
 const events = () => db.select().from(s.connectorEvents);
 describe("CRM HTTP contracts", () => {
@@ -335,12 +357,256 @@ describe("signed integration HTTP contracts", () => {
     } finally {
       demo = false;
     }
-    vi.stubEnv("UNIPILE_WEBHOOK_SECRET", "");
+    await db
+      .update(s.providerConfigurations)
+      .set({ webhookReady: false })
+      .where(eq(s.providerConfigurations.id, demoId(990)));
     try {
-      expect((await webhook(signed(linkedIn()))).status).toBe(503);
+      expect((await webhook(signed(linkedIn()))).status).toBe(401);
     } finally {
-      vi.stubEnv("UNIPILE_WEBHOOK_SECRET", secret);
+      await db
+        .update(s.providerConfigurations)
+        .set({ webhookReady: true })
+        .where(eq(s.providerConfigurations.id, demoId(990)));
     }
     expect(await events()).toHaveLength(before.length);
+  });
+});
+
+describe("workspace onboarding HTTP transaction", () => {
+  test("creates scoped defaults and rejects invalid or unauthenticated setup", async () => {
+    const body = {
+      operation: "workspace",
+      name: "Fictional onboarding",
+      productName: "Pilot",
+      timezone: "Asia/Kolkata",
+      organizationId: demoId(2),
+    };
+    expect((await crm(body, "")).status).toBe(401);
+    expect(
+      (await crm(body, demoUser, "https://other.example.test")).status,
+    ).toBe(403);
+    const before = await db.select().from(s.organizations);
+    expect((await crm({ ...body, timezone: "Made/Up" })).status).toBe(400);
+    expect((await crm({ ...body, name: " " })).status).toBe(400);
+    expect(await db.select().from(s.organizations)).toHaveLength(before.length);
+    const response = await crm(body);
+    expect(response.status).toBe(200);
+    const created = await response.json();
+    expect(created.organizationId).not.toBe(body.organizationId);
+    const result = await read(`organizationId=${created.organizationId}`);
+    const snapshot = await result.json();
+    expect(snapshot.products.map((p: { id: string }) => p.id)).toEqual([
+      created.productId,
+    ]);
+    expect(snapshot.people).toHaveLength(0);
+    expect(
+      snapshot.members.find((m: { id: string }) => m.id === demoUser).role,
+    ).toBe("admin");
+    expect(snapshot.folders).toHaveLength(1);
+    expect(snapshot.stages).toHaveLength(4);
+    expect(
+      (await read(`organizationId=${created.organizationId}`, "demo-teammate"))
+        .status,
+    ).toBe(403);
+    const [org] = await db
+      .select()
+      .from(s.organizations)
+      .where(eq(s.organizations.id, created.organizationId));
+    expect(org.timezone).toBe("Asia/Kolkata");
+  });
+  test("failed membership insertion rolls back the organization and all defaults", async () => {
+    const before = await db.select().from(s.organizations);
+    const { CrmService } = await import("../packages/core/crm");
+    const service = new CrmService(db);
+    await expect(
+      service.createWorkspace(
+        { userId: "nonexistent-test-user", source: "session" },
+        { name: "Must roll back", productName: "Pilot", timezone: "UTC" },
+      ),
+    ).rejects.toThrow();
+    expect(await db.select().from(s.organizations)).toHaveLength(before.length);
+    for (const principal of [
+      { userId: demoUser, source: "mcp" as const },
+      { userId: demoUser, source: "session" as const, readOnly: true },
+    ]) {
+      await expect(
+        service.createWorkspace(principal, {
+          name: "Denied",
+          productName: "Pilot",
+          timezone: "UTC",
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+    }
+    expect(await db.select().from(s.organizations)).toHaveLength(before.length);
+  });
+});
+
+describe("workspace links", () => {
+  function follow(query: string, user: string | null = demoUser) {
+    return workspaceLink(
+      new Request(`https://crm.example.test/api/workspace?${query}`, {
+        headers: user ? { "x-test-user": user } : {},
+      }),
+    );
+  }
+  test("a member's workspace link stores the slug and brand, then lands on a safe path", async () => {
+    const response = await follow(
+      `workspace=lunar&productId=${demoId(13)}&next=${encodeURIComponent("/people?x=1")}`,
+    );
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/people?x=1");
+    expect(response.headers.getSetCookie()).toEqual([
+      "gravity-workspace=lunar; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+      `gravity-brand=${demoId(13)}; Path=/; Max-Age=31536000; SameSite=Lax; Secure`,
+    ]);
+    const byId = await follow(`organizationId=${demoId(1)}`);
+    expect(byId.headers.get("location")).toBe("/actions");
+    expect(byId.headers.getSetCookie()[0]).toContain(
+      "gravity-workspace=northstar",
+    );
+    expect(byId.headers.getSetCookie()[1]).toContain("gravity-brand=; ");
+  });
+  test("links never set another tenant's workspace or leave the app", async () => {
+    const outsider = await follow("workspace=lunar", "demo-restricted");
+    expect(outsider.headers.get("location")).toBe("/actions");
+    expect(outsider.headers.getSetCookie()).toEqual([]);
+    for (const next of ["//evil.example/x", "https://evil.example", "/api/crm"])
+      expect(
+        (
+          await follow(`workspace=lunar&next=${encodeURIComponent(next)}`)
+        ).headers.get("location"),
+      ).toBe("/actions");
+    for (const next of [
+      "/people\r\nSet-Cookie: x=1",
+      "/people\u0000",
+      "/people\u007f",
+      "/people?q=a\r\nSet-Cookie: x=1",
+      "/people#a\nb",
+    ]) {
+      const response = await follow(
+        `workspace=lunar&next=${encodeURIComponent(next)}`,
+      );
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe("/actions");
+    }
+    const otherBrand = await follow(
+      `workspace=northstar&productId=${demoId(13)}`,
+    );
+    expect(otherBrand.headers.getSetCookie()).toEqual([
+      "gravity-workspace=northstar; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+      "gravity-brand=; Path=/; Max-Age=0; SameSite=Lax; Secure",
+    ]);
+    const anonymous = await follow("workspace=lunar", null);
+    expect(anonymous.headers.get("location")).toBe(
+      `/sign-in?callbackURL=${encodeURIComponent("/api/workspace?workspace=lunar")}`,
+    );
+  });
+});
+
+describe("owner-scoped Unipile webhooks", () => {
+  test("a signature for one setup cannot authenticate another setup or claim its account", async () => {
+    const id = demoId(991),
+      otherSecret = "fictional-other-owner-secret";
+    await db.insert(s.providerConfigurations).values({
+      id,
+      organizationId: demoId(1),
+      ownerId: "demo-teammate",
+      provider: "unipile",
+      webhookReady: true,
+      encryptedCredentials: seal(
+        { apiKey: "fictional-other-key", signingSecret: otherSecret },
+        `${demoId(1)}:demo-teammate:${id}:provider`,
+      ),
+    });
+    const before = await events();
+    const first = signed(linkedIn());
+    expect(
+      (
+        await webhook(
+          new Request(
+            `http://localhost/api/webhooks/unipile?configurationId=${id}`,
+            first,
+          ),
+        )
+      ).status,
+    ).toBe(401);
+    const raw = JSON.stringify(linkedIn());
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = createHmac("sha256", otherSecret)
+      .update(`${timestamp}.${raw}`)
+      .digest("hex");
+    expect(
+      (
+        await webhook(
+          new Request(
+            `http://localhost/api/webhooks/unipile?configurationId=${id}`,
+            {
+              method: "POST",
+              headers: {
+                "unipile-signature": `t=${timestamp},v0=${signature}`,
+              },
+              body: raw,
+            },
+          ),
+        )
+      ).status,
+    ).toBe(422);
+    expect(await events()).toHaveLength(before.length);
+    await db
+      .update(s.providerConfigurations)
+      .set({ active: false, encryptedCredentials: null })
+      .where(eq(s.providerConfigurations.id, id));
+    expect(
+      (
+        await webhook(
+          new Request(
+            `http://localhost/api/webhooks/unipile?configurationId=${id}`,
+            {
+              method: "POST",
+              headers: {
+                "unipile-signature": `t=${timestamp},v0=${signature}`,
+              },
+              body: raw,
+            },
+          ),
+        )
+      ).status,
+    ).toBe(401);
+  });
+  test("provider-settings mutations reject cross-origin and unauthenticated requests", async () => {
+    const { POST: integrations } = await import(
+      "../src/app/api/integrations/route"
+    );
+    const body = JSON.stringify({
+      operation: "configure-unipile",
+      organizationId: demoId(1),
+      apiKey: "fictional-user-key",
+    });
+    expect(
+      (
+        await integrations(
+          new Request("http://localhost/api/integrations", {
+            method: "POST",
+            headers: {
+              origin: "http://untrusted.test",
+              "x-test-user": demoUser,
+            },
+            body,
+          }),
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await integrations(
+          new Request("http://localhost/api/integrations", {
+            method: "POST",
+            headers: { origin: "http://localhost" },
+            body,
+          }),
+        )
+      ).status,
+    ).toBe(401);
   });
 });

@@ -164,3 +164,20 @@ test("settings preserve a failed value, prevent overlapping submissions, and cle
   expect(name.value).toBe("");
   expect(reload).toHaveBeenCalledOnce();
 });
+
+test("a dialog shows the shared loading state while its scope loads", async () => {
+  let loaded!: (data: ClientSnapshot) => void;
+  request.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        loaded = resolve;
+      }),
+  );
+  person();
+  const loading = screen.getByRole("status");
+  expect(loading.getAttribute("aria-busy")).toBe("true");
+  expect(loading.classList.contains("loading-state")).toBe(true);
+  expect(loading.textContent).toBe(t.loading);
+  await act(async () => loaded(snapshot));
+  expect(screen.queryByRole("status")).toBeNull();
+});

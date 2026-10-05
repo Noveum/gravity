@@ -185,21 +185,6 @@ describe("record navigation and event ownership", () => {
     menu.remove();
     expect(run).not.toHaveBeenCalled();
   });
-  test("an open appearance popover owns shortcuts until it is closed", () => {
-    const run = vi.fn(() => true);
-    render(<Navigation run={run} />);
-    const options = document.createElement("details");
-    options.className = "view-options";
-    options.open = true;
-    document.body.append(options);
-    fireEvent.keyDown(document.body, { key: "g" });
-    fireEvent.keyDown(document.body, { key: "p" });
-    expect(run).not.toHaveBeenCalled();
-    options.remove();
-    fireEvent.keyDown(document.body, { key: "g" });
-    fireEvent.keyDown(document.body, { key: "p" });
-    expect(run).toHaveBeenCalledExactlyOnceWith("people");
-  });
 });
 
 test("modifier Enter submits validated forms but does not submit composing input", async () => {

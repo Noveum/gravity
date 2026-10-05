@@ -44,6 +44,7 @@ export function shortcutFor(input: ShortcutInput): string | null {
   if (input.prefix)
     return navigationKeys[key as keyof typeof navigationKeys] || null;
   if (key === "/") return "search";
+  if (key === "[") return "sidebar";
   if (key === "c") return "create";
   if (key === "n") return "schedule";
   if (key === "j" || key === "arrowdown") return "next";

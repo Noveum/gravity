@@ -30,6 +30,7 @@ vi.mock("@crm/auth/server", () => ({
 
 import { GET, POST } from "../src/app/api/crm/route";
 import { POST as webhook } from "../src/app/api/webhooks/unipile/route";
+import { GET as workspaceLink } from "../src/app/api/workspace/route";
 
 let local: Awaited<
   ReturnType<
@@ -438,6 +439,68 @@ describe("workspace onboarding HTTP transaction", () => {
       ).rejects.toMatchObject({ status: 403 });
     }
     expect(await db.select().from(s.organizations)).toHaveLength(before.length);
+  });
+});
+
+describe("workspace links", () => {
+  function follow(query: string, user: string | null = demoUser) {
+    return workspaceLink(
+      new Request(`https://crm.example.test/api/workspace?${query}`, {
+        headers: user ? { "x-test-user": user } : {},
+      }),
+    );
+  }
+  test("a member's workspace link stores the slug and brand, then lands on a safe path", async () => {
+    const response = await follow(
+      `workspace=lunar&productId=${demoId(13)}&next=${encodeURIComponent("/people?x=1")}`,
+    );
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/people?x=1");
+    expect(response.headers.getSetCookie()).toEqual([
+      "gravity-workspace=lunar; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+      `gravity-brand=${demoId(13)}; Path=/; Max-Age=31536000; SameSite=Lax; Secure`,
+    ]);
+    const byId = await follow(`organizationId=${demoId(1)}`);
+    expect(byId.headers.get("location")).toBe("/actions");
+    expect(byId.headers.getSetCookie()[0]).toContain(
+      "gravity-workspace=northstar",
+    );
+    expect(byId.headers.getSetCookie()[1]).toContain("gravity-brand=; ");
+  });
+  test("links never set another tenant's workspace or leave the app", async () => {
+    const outsider = await follow("workspace=lunar", "demo-restricted");
+    expect(outsider.headers.get("location")).toBe("/actions");
+    expect(outsider.headers.getSetCookie()).toEqual([]);
+    for (const next of ["//evil.example/x", "https://evil.example", "/api/crm"])
+      expect(
+        (
+          await follow(`workspace=lunar&next=${encodeURIComponent(next)}`)
+        ).headers.get("location"),
+      ).toBe("/actions");
+    for (const next of [
+      "/people\r\nSet-Cookie: x=1",
+      "/people\u0000",
+      "/people\u007f",
+      "/people?q=a\r\nSet-Cookie: x=1",
+      "/people#a\nb",
+    ]) {
+      const response = await follow(
+        `workspace=lunar&next=${encodeURIComponent(next)}`,
+      );
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe("/actions");
+    }
+    const otherBrand = await follow(
+      `workspace=northstar&productId=${demoId(13)}`,
+    );
+    expect(otherBrand.headers.getSetCookie()).toEqual([
+      "gravity-workspace=northstar; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+      "gravity-brand=; Path=/; Max-Age=0; SameSite=Lax; Secure",
+    ]);
+    const anonymous = await follow("workspace=lunar", null);
+    expect(anonymous.headers.get("location")).toBe(
+      `/sign-in?callbackURL=${encodeURIComponent("/api/workspace?workspace=lunar")}`,
+    );
   });
 });
 

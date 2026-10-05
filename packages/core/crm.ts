@@ -298,6 +298,7 @@ export class CrmService {
       .select({
         id: s.organizations.id,
         name: s.organizations.name,
+        slug: s.organizations.slug,
         timezone: s.organizations.timezone,
       })
       .from(s.organizations)

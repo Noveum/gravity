@@ -5,6 +5,7 @@ import { Download, FileText, Folder, Plus, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { dateLabel, errorText, requestJson } from "./client-api";
 import { submitOnModEnter, useModalLifecycle } from "./modal-lifecycle";
+import { EmptyState } from "./ui/states";
 
 export function Materials({
   data,
@@ -229,21 +230,21 @@ export function Materials({
               </table>
             </div>
           ) : (
-            <div className="materials-empty">
-              <div className="empty-icon">
-                <Folder size={26} />
-              </div>
-              <h2>{t.materials}</h2>
-              <p>{t.materialsEmpty}</p>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => open("upload")}
-              >
-                <Upload size={14} />
-                {t.upload}
-              </button>
-            </div>
+            <EmptyState
+              icon={<Folder />}
+              title={t.materials}
+              description={t.materialsEmpty}
+              action={
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => open("upload")}
+                >
+                  <Upload size={14} />
+                  {t.upload}
+                </button>
+              }
+            />
           )}
           <p className="library-note">{t.materialNote}</p>
         </div>

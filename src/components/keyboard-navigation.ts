@@ -21,7 +21,7 @@ export function useKeyboardNavigation(run: (command: string) => boolean) {
           "input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox]",
         ),
         isModal: !!document.querySelector(
-          "dialog[open], [role=dialog], [role=menu], [role=listbox], .view-options[open]",
+          "dialog[open], [role=dialog], [role=menu], [role=listbox]",
         ),
         prefix: Date.now() < prefix.current,
       });

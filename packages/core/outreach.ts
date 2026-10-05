@@ -294,17 +294,20 @@ export async function advance(
   db: Reader,
   principal: Principal,
   organizationId: string,
+  productIds: readonly string[],
   now: number,
   enrollmentIds?: readonly string[],
 ) {
   const result = { created: 0, completed: 0, paused: 0 };
-  if (enrollmentIds && !enrollmentIds.length) return result;
+  if (!productIds.length || (enrollmentIds && !enrollmentIds.length))
+    return result;
   const running = await db
     .select()
     .from(s.enrollments)
     .where(
       and(
         eq(s.enrollments.organizationId, organizationId),
+        inArray(s.enrollments.productId, [...productIds]),
         eq(s.enrollments.status, "running"),
         enrollmentIds
           ? inArray(s.enrollments.id, [...enrollmentIds])
@@ -672,9 +675,22 @@ export class OutreachService {
     principal: Principal,
     input: { organizationId: string },
   ) {
-    await authorize(this.db, principal, input.organizationId);
+    requireHuman(principal);
+    const permission = await authorize(
+      this.db,
+      principal,
+      input.organizationId,
+      undefined,
+      true,
+    );
     return this.db.transaction((tx) =>
-      advance(tx, principal, input.organizationId, this.clock()),
+      advance(
+        tx,
+        principal,
+        input.organizationId,
+        permission.products.map((product) => product.id),
+        this.clock(),
+      ),
     );
   }
 
@@ -816,6 +832,7 @@ export class OutreachService {
         tx,
         principal,
         input.organizationId,
+        [sequence.productId],
         now.getTime(),
         created.map((row) => row.id),
       );
@@ -842,7 +859,13 @@ export class OutreachService {
       .filter((id) => !scope.productId || id === scope.productId);
     const now = this.clock();
     const advanced = await this.db.transaction((tx) =>
-      advance(tx, principal, scope.organizationId, now),
+      advance(
+        tx,
+        principal,
+        scope.organizationId,
+        permission.products.map((product) => product.id),
+        now,
+      ),
     );
     const zone = await workspaceZone(this.db, scope.organizationId);
     const [, endOfToday] = zonedDayBounds(now, zone);
@@ -1428,9 +1451,14 @@ export class OutreachService {
           })
           .where(eq(s.relationships.id, relationship.id));
         await this.event(tx, principal, touch, "touch.sent");
-        await advance(tx, principal, touch.organizationId, now, [
-          enrollment.id,
-        ]);
+        await advance(
+          tx,
+          principal,
+          touch.organizationId,
+          [touch.productId],
+          now,
+          [enrollment.id],
+        );
         return { touch: updated, warnings };
       },
     );
@@ -1465,9 +1493,14 @@ export class OutreachService {
           .returning();
         if (!updated) throw new DomainError("CONFLICT", 409);
         await this.event(tx, principal, touch, "touch.skipped");
-        await advance(tx, principal, touch.organizationId, now, [
-          enrollment.id,
-        ]);
+        await advance(
+          tx,
+          principal,
+          touch.organizationId,
+          [touch.productId],
+          now,
+          [enrollment.id],
+        );
         return updated;
       },
     );
@@ -1657,9 +1690,14 @@ export class OutreachService {
         entityId: enrollment.id,
       });
       if (input.command === "resume")
-        await advance(tx, principal, input.organizationId, now, [
-          enrollment.id,
-        ]);
+        await advance(
+          tx,
+          principal,
+          input.organizationId,
+          [found.productId],
+          now,
+          [enrollment.id],
+        );
       return updated;
     });
   }
@@ -1891,6 +1929,7 @@ export class OutreachService {
         tx,
         principal,
         input.organizationId,
+        [found.productId],
         now.getTime(),
         enrollments.map((row) => row.id),
       );

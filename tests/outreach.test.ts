@@ -1369,6 +1369,37 @@ describe("tenant isolation", () => {
     });
   });
 
+  test("a restricted member's due list and advance plan no touches in a brand they cannot read", async () => {
+    now = Date.parse("2026-10-23T06:00:00Z");
+    const hidden = await fixture();
+    await local.db.insert(s.enrollments).values({
+      organizationId: org,
+      productId: hidden.productId,
+      relationshipId: hidden.relationshipId,
+      sequenceId: hidden.sequenceId,
+      status: "running",
+      enrolledAt: new Date(now),
+    });
+    const listed = await outreach.dueTouches(restricted, {
+      organizationId: org,
+    });
+    expect(listed.advanced.created).toBe(0);
+    await outreach.advanceEnrollments(restricted, { organizationId: org });
+    expect(await touchesOf(hidden.relationshipId)).toEqual([]);
+    await expect(
+      outreach.advanceEnrollments(agent, { organizationId: org }),
+    ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
+    await expect(
+      outreach.advanceEnrollments(
+        { ...admin, readOnly: true },
+        { organizationId: org },
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(await touchesOf(hidden.relationshipId)).toEqual([]);
+    await outreach.advanceEnrollments(admin, { organizationId: org });
+    expect(await touchesOf(hidden.relationshipId)).toHaveLength(1);
+  });
+
   test("an archived person's touches refuse every write after the status reshape", async () => {
     now = Date.parse("2026-10-24T06:00:00Z");
     const f = await fixture();

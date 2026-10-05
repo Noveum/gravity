@@ -153,8 +153,8 @@
   "linkedinDescription": "Provider adapter for LinkedIn messages. Unipile can supply replies and external sends; no account is connected here.",
   "fireflies": "Fireflies",
   "firefliesDescription": "Meeting notes and proposed commitments. Webhook ingestion and transcript retrieval are planned.",
-  "mcp": "Assistant access",
-  "mcpDescription": "OAuth with organization and product consent. Read-only tools use the same access rules as the app.",
+  "mcp": "AI assistants · MCP",
+  "mcpDescription": "Connect Codex, Claude Code, and other assistants with full CRM read/write access through OAuth. Access follows your organization and product permissions.",
   "mcpEndpoint": "MCP endpoint",
   "mcpOffline": "OAuth is not configured in this local demo. Tools are available in code; this endpoint requires a configured auth server.",
   "mcpInstructions": "In Codex, add this URL as a remote MCP server, sign in, and grant an organization and products. Live compatibility requires an end-to-end OAuth test.",
@@ -184,7 +184,7 @@
   "authUnavailable": "Sign-in is not configured yet. Your administrator needs to enable Google, GitHub or email login.",
   "openDemo": "Open local demo",
   "authorize": "Choose assistant access",
-  "authorizeDescription": "Choose the organization and products this assistant can read. It cannot approve drafts or send messages.",
+  "authorizeDescription": "Choose the organization and products your assistant can read and update.",
   "continue": "Continue",
   "consent": "Authorize assistant",
   "accept": "Allow access",
@@ -312,7 +312,8 @@
     "product": "P",
     "submit": "⌘ / Ctrl Enter",
     "help": "?",
-    "outreach": "G R"
+    "outreach": "G R",
+    "assistants": "G X"
   },
   "resizeInspector": "Resize detail panel",
   "resizeNavigation": "Resize navigation sidebar",
@@ -388,13 +389,13 @@
   "copy": "Copy",
   "copied": "Copied",
   "copyFailed": "Could not copy. Select the endpoint and copy it manually.",
-  "mcpQualification": "This endpoint requires configured authentication. Qualify the OAuth connection with your assistant before using real data.",
+  "mcpQualification": "Connect using OAuth to authorize CRM read/write access. Existing read-only connections must reconnect to approve the new permissions.",
   "integrationGuide": "Integration setup guide",
   "assistantGrants": "Authorized assistants",
   "mcpSteps": [
     "Add this URL as a remote HTTP MCP server in your assistant.",
     "Sign into Gravity, then choose one organization and the products to share.",
-    "Review and accept read-only access. You can revoke it here."
+    "Approve CRM read/write access. You can revoke the connection here at any time."
   ],
   "connectionSteps": {
     "gmail": [
@@ -498,9 +499,9 @@
     ],
     "mcpEyebrow": "Your assistant, with the context to help",
     "mcpTitle": "Give your assistant the relationship behind the task.",
-    "mcpDescription": "Ask for a meeting brief, the history behind a follow-up, or the materials to review. Read-only MCP gives your assistant access to CRM context through the same permissions as the app. You choose the organization and products to share.",
+    "mcpDescription": "Ask for a meeting brief, the history behind a follow-up, or the materials to review. OAuth MCP with read/write access gives your assistant access to CRM context through the same permissions as the app. You choose the organization and products to share.",
     "mcpPrompt": "“Catch me up on Mira’s evaluation. What did we promise, what changed, and which materials should I review?”",
-    "mcpBoundary": "Connect through OAuth, choose the organization and products to share, and revoke access anytime. Assistant tools are read-only.",
+    "mcpBoundary": "Connect through OAuth, choose the organization and products to share, and revoke access anytime. Assistants can read and update CRM records with your consent.",
     "mcpLink": "Connect an assistant",
     "statusTitle": "Ready for your daily sales workflow.",
     "statusDescription": "Start with your team, products and next actions. Connect your own accounts to bring conversations and meeting context into the workspace. Gravity is actively developed; here is what is available and what comes next.",
@@ -510,7 +511,7 @@
       "People, company context and next actions",
       "Reviewed meeting commitments",
       "Private materials and stage folders",
-      "Read-only OAuth MCP",
+      "OAuth MCP with CRM read/write access",
       "Keyboard navigation, themes and live updates",
       "Gmail and primary-calendar import with separate consent",
       "Fireflies summaries and a Unipile V2 LinkedIn adapter"
@@ -538,7 +539,7 @@
       },
       {
         "question": "Can I connect Codex or Claude Code?",
-        "answer": "Yes. Add https://gravity.noveum.ai/mcp as a remote HTTP MCP server, authenticate with OAuth and choose the organization and products to share. Gravity exposes read-only context tools; a CRM API key is not required. The connection guide has client setup instructions."
+        "answer": "Yes. Add https://gravity.noveum.ai/mcp as a remote HTTP MCP server, authenticate with OAuth and choose the organization and products to share. Gravity exposes context tools and CRM write tools; a CRM API key is not required. The connection guide has client setup instructions."
       },
       {
         "question": "Are Gmail, LinkedIn and Calendar connected?",
@@ -625,7 +626,7 @@
       {
         "slug": "connect-an-assistant",
         "title": "Connect Codex, Claude Code or an MCP client",
-        "description": "OAuth setup, product consent, read-only tools and a clear connection check.",
+        "description": "OAuth setup, product consent, CRM read/write tools and a clear connection check.",
         "sections": [
           {
             "id": "prerequisites",
@@ -656,13 +657,13 @@
             "id": "consent",
             "title": "Choose the products to share",
             "paragraphs": [
-              "Sign into Gravity, choose one organization and select its permitted products. Review the client, products and read-only permission before accepting. A new user can create a workspace without losing the assistant authorization request.",
-              "Tokens and grants do not give an assistant permission to approve or send a message. Product memberships added later do not expand an existing grant. Revoke an assistant from Connections when access is no longer needed."
+              "Sign into Gravity, choose one organization and select its permitted products. Review the client, products and CRM read/write permission before accepting. A new user can create a workspace without losing the assistant authorization request.",
+              "Read/write consent lets assistants create CRM records, schedule follow-ups, and save or approve drafts using your permissions. All-products grants include future permitted products; specific-product grants stay fixed. Revoke the connection from MCP access at any time."
             ]
           },
           {
             "id": "verify",
-            "title": "Verify useful reads and the boundary",
+            "title": "Verify reads, writes and permissions",
             "paragraphs": [
               "Ask the assistant to call get_me, get_capabilities and list_products. Confirm its organization and products. Then ask for a permitted person or company context and a relevant material.",
               "Check that an ungranted product and a revoked connection are rejected. The capabilities report server connector configuration; each provider still needs account authorization and a successful sync. Seeing tool definitions is not proof that a mailbox is connected."
@@ -967,5 +968,9 @@
   "unipileManage": "Manage Unipile",
   "disconnected": "Disconnected",
   "productCreationDetail": "Keep contacts, conversations, follow-ups, and sales materials organized by product.",
-  "productNamePlaceholder": "e.g. Customer platform"
+  "productNamePlaceholder": "e.g. Customer platform",
+  "assistants": "MCP access",
+  "allProductsAndFuture": "All current and future products",
+  "assistantProductScope": "Access follows your current organization membership and product permissions. Turn this off to choose specific products.",
+  "consentReadWrite": "Allow this assistant to read and update CRM records, schedule follow-ups, manage drafts and approvals, and create sales materials. Your organization and product permissions still apply."
 }

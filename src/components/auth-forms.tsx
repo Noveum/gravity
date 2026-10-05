@@ -419,6 +419,7 @@ export function Authorization() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [org, setOrg] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [allProducts, setAllProducts] = useState(true);
   const [error, setError] = useState("");
   const [orgLoading, setOrgLoading] = useState(true);
   const [attempt, setAttempt] = useState(0);
@@ -463,6 +464,7 @@ export function Authorization() {
     const controller = new AbortController();
     setScope({ org, products: [], loading: true, error: "" });
     setSelected([]);
+    setAllProducts(true);
     requestJson<ClientSnapshot>(`/api/crm?organizationId=${org}`, {
       signal: controller.signal,
     })
@@ -508,7 +510,7 @@ export function Authorization() {
             loading ||
             failure ||
             !org ||
-            !selected.length ||
+            (!allProducts && !selected.length) ||
             selected.some(
               (id) => !products.some((product) => product.id === id),
             )
@@ -516,7 +518,8 @@ export function Authorization() {
             return;
           const selection = {
             organizationId: org,
-            productIds: [...selected],
+            productIds: allProducts ? [] : [...selected],
+            allProducts,
             oauth_query: query.toString(),
           };
           submitting.current = true;
@@ -562,11 +565,21 @@ export function Authorization() {
               ))}
             </select>
           </label>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={allProducts}
+              onChange={(event) => setAllProducts(event.target.checked)}
+            />
+            {t.allProductsAndFuture}
+          </label>
+          <p className="muted">{t.assistantProductScope}</p>
           {products.map((product) => (
             <label key={product.id} className="checkbox-label">
               <input
                 type="checkbox"
-                checked={selected.includes(product.id)}
+                disabled={allProducts}
+                checked={allProducts || selected.includes(product.id)}
                 onChange={(event) =>
                   setSelected((ids) =>
                     event.target.checked
@@ -601,7 +614,13 @@ export function Authorization() {
         <button
           type="submit"
           className="primary"
-          disabled={busy || loading || !!failure || !selected.length}
+          disabled={
+            busy ||
+            loading ||
+            !!failure ||
+            !org ||
+            (!allProducts && !selected.length)
+          }
         >
           {busy ? t.saving : t.continue}
         </button>
@@ -639,6 +658,7 @@ export function Consent() {
     organization: string;
     products: string[];
     clientName: string;
+    allProducts?: boolean;
   } | null>(null);
   const selectedGrant = grant?.query === signedQuery ? grant : null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the explicit retry trigger.
@@ -651,6 +671,7 @@ export function Consent() {
       organization: string;
       products: string[];
       clientName: string;
+      allProducts?: boolean;
     }>(`/api/grants?oauth_query=${encodeURIComponent(signedQuery)}`, {
       signal: controller.signal,
     })
@@ -697,9 +718,16 @@ export function Consent() {
         <div className="callout">
           <strong>{selectedGrant.clientName}</strong>
           <p>
-            {selectedGrant.organization} · {selectedGrant.products.join(", ")}
+            {selectedGrant.organization} ·{" "}
+            {selectedGrant.allProducts
+              ? t.allProductsAndFuture
+              : selectedGrant.products.join(", ")}
           </p>
-          <p>{t.consentReadOnly}</p>
+          <p>
+            {query.get("scope")?.split(" ").includes("crm:write")
+              ? t.consentReadWrite
+              : t.consentReadOnly}
+          </p>
         </div>
       ) : (
         !error && <p role="status">{t.authFlowLoading}</p>

@@ -33,7 +33,7 @@ export function authPlugins(db?: Database) {
       loginPage: "/sign-in",
       consentPage: "/consent",
       resource: resourceUrl(),
-      scopes: ["openid", "profile", "offline_access", "crm:read"],
+      scopes: ["openid", "profile", "offline_access", "crm:read", "crm:write"],
       allowDynamicClientRegistration: true,
       allowUnauthenticatedClientRegistration: true,
       accessTokenExpiresIn: 300,

@@ -112,7 +112,7 @@ export class CrmService {
     principal: Principal,
     input: z.infer<typeof scheduleActionSchema>,
   ) {
-    if (principal.source === "mcp")
+    if (principal.source === "mcp" && principal.readOnly !== false)
       throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
     return this.db.transaction(async (tx) => {
       const [relationship] = await tx
@@ -192,7 +192,7 @@ export class CrmService {
     principal: Principal,
     input: z.infer<typeof personSchema>,
   ) {
-    if (principal.source === "mcp")
+    if (principal.source === "mcp" && principal.readOnly !== false)
       throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
     return this.db.transaction(async (tx) => {
       const permission = await authorize(
@@ -691,7 +691,7 @@ export class CrmService {
     principal: Principal,
     input: z.infer<typeof actionChangeSchema>,
   ) {
-    if (principal.source === "mcp")
+    if (principal.source === "mcp" && principal.readOnly !== false)
       throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
     return this.db.transaction(async (tx) => {
       const [action] = await tx
@@ -825,7 +825,7 @@ export class CrmService {
     principal: Principal,
     input: z.infer<typeof meetingChangeSchema>,
   ) {
-    if (principal.source === "mcp")
+    if (principal.source === "mcp" && principal.readOnly !== false)
       throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
     return this.db.transaction(async (tx) => {
       const [meeting] = await tx
@@ -995,7 +995,10 @@ export class CrmService {
       undefined,
       true,
     );
-    if (membership.role !== "admin" || principal.source === "mcp")
+    if (
+      membership.role !== "admin" ||
+      (principal.source === "mcp" && principal.productIds !== undefined)
+    )
       throw new DomainError("FORBIDDEN", 403);
     return this.db.transaction((tx) =>
       insertProduct(tx, organizationId, name, principal.userId),

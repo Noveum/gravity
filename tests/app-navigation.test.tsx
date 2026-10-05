@@ -32,6 +32,7 @@ import { PersonRecord } from "../src/components/records/person-record";
 import { type Route, routeFor } from "../src/components/routes";
 import * as shellNavigation from "../src/components/shell/navigation";
 import { ActionsView } from "../src/components/views/actions-view";
+import { AssistantsView } from "../src/components/views/assistants-view";
 import { CompaniesView } from "../src/components/views/companies-view";
 import { ConnectionsView } from "../src/components/views/connections-view";
 import { MaterialsView } from "../src/components/views/materials-view";
@@ -191,6 +192,7 @@ function page(route: Route | null): ReactNode {
     materials: MaterialsView,
     outreach: OutreachView,
     integrations: ConnectionsView,
+    assistants: AssistantsView,
     settings: SettingsView,
   };
   const View = views[route.section];
@@ -711,6 +713,7 @@ test("deep links render the view or record they name", async () => {
     ["/materials", "materials", t.materials],
     ["/outreach", "outreach", t.outreach],
     ["/connections", "integrations", t.integrations],
+    ["/assistants", "assistants", t.assistants],
     ["/settings", "settings", t.settings],
   ];
   mount("/actions");
@@ -1366,6 +1369,10 @@ test("visible go-to hints include Outreach and the help button opens the map", a
       shellNavigation.sectionHint(section),
     );
   }
+  fireEvent.keyDown(document.body, { key: "g" });
+  fireEvent.keyDown(document.body, { key: "x" });
+  await waitFor(() => expect(window.location.pathname).toBe("/assistants"));
+  expect(screen.getByLabelText(t.mcpEndpoint)).toBeTruthy();
   fireEvent.keyDown(document.body, { key: "g" });
   fireEvent.keyDown(document.body, { key: "r" });
   await waitFor(() => expect(window.location.pathname).toBe("/outreach"));

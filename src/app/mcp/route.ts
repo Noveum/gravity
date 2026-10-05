@@ -17,7 +17,7 @@ export async function POST(request: Request) {
           request,
         );
       },
-      { resource: resourceUrl(), requiredScopes: ["crm:read"] },
+      { resource: resourceUrl(), requiredScopes: ["crm:read", "crm:write"] },
     )(request);
   } catch (error) {
     return errorResponse(error);

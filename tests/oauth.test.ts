@@ -64,7 +64,10 @@ const server = createServer(async (incoming, outgoing) => {
             principal.organizationId ?? "",
           ).fetch(request);
         },
-        { resource: `${origin}/mcp`, requiredScopes: ["crm:read"] },
+        {
+          resource: `${origin}/mcp`,
+          requiredScopes: ["crm:read", "crm:write"],
+        },
       )(request);
     else
       response = await withOAuthRequest(request, () => auth.handler(request));
@@ -169,7 +172,7 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      scope: "openid offline_access crm:read",
+      scope: "openid offline_access crm:read crm:write",
     },
     false,
   );
@@ -188,7 +191,7 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
       client_id: clientId,
       response_type: "code",
       redirect_uri: `${origin}/callback`,
-      scope: "openid offline_access crm:read",
+      scope: "openid offline_access crm:read crm:write",
       resource: `${origin}/mcp`,
       state,
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
@@ -250,6 +253,17 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
     ).toString(),
   );
   expect(claims.crm_grant_id).toBe(grantA.id);
+  expect((await principalForVerifiedToken(local.db, claims)).readOnly).toBe(
+    false,
+  );
+  expect(
+    (
+      await principalForVerifiedToken(local.db, {
+        ...claims,
+        scope: "crm:read",
+      })
+    ).readOnly,
+  ).toBe(true);
   expect([claims.aud].flat()).toContain(`${origin}/mcp`);
   const response = await fetch(`${origin}/mcp`, {
     method: "POST",
@@ -269,6 +283,39 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
   expect(response.status).toBe(200);
   expect(body).toContain("A Product");
   expect(body).not.toContain("B Product");
+  // Accept a narrower scope on a second flow; a valid legacy read-only token must not gain writes.
+  const readConsent = await call("/oauth2/consent", {
+    accept: true,
+    scope: "crm:read",
+    oauth_query: new URL(continueB.url, origin).search.slice(1),
+  });
+  const readTokenResponse = await fetch(`${origin}/api/auth/oauth2/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: clientId,
+      code: new URL(readConsent.url).searchParams.get("code") ?? "",
+      redirect_uri: `${origin}/callback`,
+      code_verifier: verifierB,
+      resource: `${origin}/mcp`,
+    }),
+  });
+  expect(readTokenResponse.status).toBe(200);
+  const readToken = await readTokenResponse.json();
+  const insufficient = await fetch(`${origin}/mcp`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${readToken.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+  });
+  expect(insufficient.status).toBe(403);
+  expect(insufficient.headers.get("www-authenticate")).toContain(
+    "insufficient_scope",
+  );
+  expect(insufficient.headers.get("www-authenticate")).toContain("crm:write");
   const refreshed = await fetch(`${origin}/api/auth/oauth2/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -345,6 +392,7 @@ test("MCP requests without credentials receive OAuth discovery instead of data",
   const metadata = await metadataResponse.json();
   expect(metadata.resource).toBe(`${origin}/mcp`);
   expect(metadata.scopes_supported).toContain("crm:read");
+  expect(metadata.scopes_supported).toContain("crm:write");
   const issuer = new URL(metadata.authorization_servers[0]);
   const discovery = await fetch(
     `${issuer.origin}/.well-known/oauth-authorization-server${issuer.pathname}`,
@@ -355,7 +403,7 @@ test("MCP requests without credentials receive OAuth discovery instead of data",
   expect(configuration.code_challenge_methods_supported).toContain("S256");
 });
 
-test("official MCP client discovers OAuth, registers, completes PKCE and reads only its selected product", async () => {
+test("official MCP client discovers OAuth, registers, completes PKCE and reads and writes only its selected product", async () => {
   const service = new CrmService(local.db);
   const principal = { userId, source: "session" as const };
   const organization = await service.createOrganization(principal, "SDK Org");
@@ -382,7 +430,7 @@ test("official MCP client discovers OAuth, registers, completes PKCE and reads o
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      scope: "crm:read offline_access",
+      scope: "crm:read crm:write offline_access",
     },
     state: () => "sdk-state",
     clientInformation: () => clientInformation,
@@ -469,7 +517,11 @@ test("official MCP client discovers OAuth, registers, completes PKCE and reads o
     const tools = await connected.listTools();
     expect(tools.tools.map((tool) => tool.name)).toContain("list_products");
     expect(
-      tools.tools.every((tool) => tool.annotations?.readOnlyHint === true),
+      tools.tools.some(
+        (tool) =>
+          tool.name === "create_person" &&
+          tool.annotations?.readOnlyHint === false,
+      ),
     ).toBe(true);
     const products = await connected.callTool({
       name: "list_products",
@@ -483,6 +535,33 @@ test("official MCP client discovers OAuth, registers, completes PKCE and reads o
     });
     expect(forbidden.isError).toBe(true);
     expect(JSON.stringify(forbidden)).toContain("FORBIDDEN");
+    const created = await connected.callTool({
+      name: "create_person",
+      arguments: {
+        productId: product.id,
+        name: "Fictional OAuth buyer",
+        review: false,
+      },
+    });
+    expect(created.isError).not.toBe(true);
+    expect(
+      (
+        await service.snapshot(principal, {
+          organizationId: organization.id,
+          productId: product.id,
+        })
+      ).people.some((p) => p.name === "Fictional OAuth buyer"),
+    ).toBe(true);
+    const deniedWrite = await connected.callTool({
+      name: "create_person",
+      arguments: {
+        productId: hiddenProduct.id,
+        name: "Forbidden OAuth buyer",
+        review: false,
+      },
+    });
+    expect(deniedWrite.isError).toBe(true);
+    expect(JSON.stringify(deniedWrite)).toContain("FORBIDDEN");
     const capabilities = await connected.callTool({
       name: "get_capabilities",
       arguments: {},

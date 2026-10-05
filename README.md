@@ -23,7 +23,7 @@ The remote OAuth MCP endpoint is `https://gravity.noveum.ai/mcp`. Assistant acce
 
 The button creates **your own repository and Vercel project**. Bring your own PostgreSQL database, secrets and verified Resend sender for email-code login. It does not reuse Noveum's database or provider credentials, apply database migrations, or configure your domain automatically. [Vercel setup](docs/vercel.md) covers restricted database roles, environment values, Google/GitHub callbacks and release checks. For social-only login, import your fork and set those provider credentials instead of Resend.
 
-The default `vercel.json` uses manual provider sync and has no plan-dependent cron. For automatic five-minute sync on a compatible Vercel plan, deploy with `--local-config vercel.scheduled.json`; alternatively use your own authenticated scheduler. Automatic Git deployments remain disabled until you configure a reviewed CI deployment gate.
+The default `vercel.json` uses manual provider sync and has no plan-dependent cron. For automatic five-minute sync on a compatible Vercel plan, copy `vercel.scheduled.json` over `vercel.json` in your deployment source before deploying; alternatively use your own authenticated scheduler. Automatic Git deployments remain disabled until you configure a reviewed CI deployment gate.
 
 ## Develop locally or self-host
 

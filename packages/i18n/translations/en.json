@@ -791,7 +791,7 @@
             "title": "Create the Vercel project",
             "paragraphs": [
               "Choose Deploy with Vercel on the landing page, fill in your environment values and create the cloned repository. Use the root application, Next.js and the committed Bun install/build commands. Select Node.js 22 in your Vercel project settings. If you already have a fork, import it as a project instead.",
-              "The default vercel.json has no scheduled cron and works with manual sync. For automatic five-minute sync on a compatible Vercel plan, deploy with --local-config vercel.scheduled.json. Otherwise call GET /api/integrations/cron from your own scheduler with Authorization: Bearer <CRON_SECRET>. Do not put the secret in a query string."
+              "The default vercel.json has no scheduled cron and works with manual sync. For automatic five-minute sync on a compatible Vercel plan, copy vercel.scheduled.json over vercel.json in your deployment source before deploying. Otherwise call GET /api/integrations/cron from your own scheduler with Authorization: Bearer <CRON_SECRET>. Do not put the secret in a query string."
             ]
           },
           {

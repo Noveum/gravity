@@ -42,10 +42,12 @@ For social sign-in, configure the corresponding complete pair: `GOOGLE_CLIENT_ID
 Use the repository root, Next.js framework and committed Bun install/build commands. Select Node.js 22 in your Vercel project settings.
 
 - **Basic Vercel:** the default `vercel.json` has no cron. Deploy normally; users can trigger provider sync manually. This avoids requiring a plan that supports a five-minute cron.
-- **Scheduled Vercel:** deploy with `--local-config vercel.scheduled.json` on a plan that supports the included five-minute schedule. This is the configuration used by Noveum's hosted instance.
+- **Scheduled Vercel:** copy `vercel.scheduled.json` over `vercel.json` in your deployment source before deploying on a plan that supports the included five-minute schedule. This is the configuration used by Noveum's hosted instance.
 - **External scheduler:** keep the basic configuration and have your scheduler call `GET <APP_URL>/api/integrations/cron` with `Authorization: Bearer <CRON_SECRET>`. Keep the credential out of the URL. Provider account consent is still required.
 
 Both configurations disable automatic Git deployments. Run checks on your fork, review any migrations, then deploy and promote the tested artifact. If you enable Git deployments, configure a deployment gate that enforces your CI. The existing optional preview workflow is separate and uses an isolated target; it does not migrate production.
+
+Vercel's remote build reads the uploaded canonical `vercel.json`. A custom `--local-config` filename alone does not retain the cron schedule in a remote build. Review and commit your chosen root configuration in your fork. After promotion, verify the production project's cron definitions include `/api/integrations/cron` with `*/5 * * * *` when you selected scheduled sync.
 
 ```sh
 bun run typecheck
@@ -58,7 +60,8 @@ bun run test:public
 bunx vercel@62.2.0 deploy --prod --skip-domain
 
 # OR: five-minute provider sync on a compatible Vercel plan
-bunx vercel@62.2.0 deploy --prod --skip-domain --local-config vercel.scheduled.json
+cp vercel.scheduled.json vercel.json
+bunx vercel@62.2.0 deploy --prod --skip-domain
 
 # Verify the created artifact, then switch the production domain.
 bunx vercel@62.2.0 promote <deployment-url>

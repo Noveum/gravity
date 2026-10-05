@@ -7,6 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { eq } from "drizzle-orm";
 import { describe, expect, test, vi } from "vitest";
 import * as s from "../packages/database/schema";
@@ -252,5 +253,111 @@ describe("touch rows, the draft drawer and paused work", () => {
         screen.queryByRole("button", { name: `${t.resume}: Mira Chen` }),
       ).toBeNull(),
     );
+  });
+});
+
+describe("enrolling from People", () => {
+  const person = (name: string) =>
+    screen.getByRole("link", { name: new RegExp(`^${name}`) });
+  const press = (keys: string) => userEvent.setup().keyboard(keys);
+
+  test("X selects people, Enroll on the chip picks a sequence, the dry run lists who is skipped and why, and confirm enrolls", async () => {
+    await harness.local.db
+      .update(s.people)
+      .set({ doNotContact: true })
+      .where(eq(s.people.id, demoId(203)));
+    await mountCrm(harness, "/people");
+    for (const name of ["Leena Rao", "Theo Grant", "Jonah Reed"]) {
+      person(name).focus();
+      await press("x");
+    }
+    fireEvent.click(screen.getByRole("button", { name: t.enrollSelected }));
+    const dialog = await screen.findByRole("dialog", { name: t.enrollTitle });
+    fireEvent.change(within(dialog).getByLabelText(t.sequenceLabel), {
+      target: { value: demoId(402) },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: t.enrollReview }),
+    );
+    const will = await within(dialog).findByRole("region", {
+      name: t.enrollWill.replace("{count}", "1"),
+    });
+    expect(within(will).getByText("Leena Rao")).toBeTruthy();
+    const skipped = within(dialog).getByRole("region", {
+      name: t.enrollSkipped.replace("{count}", "2"),
+    });
+    expect(
+      within(skipped)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      `Theo Grant: ${t.outreachCopy.skipReasons.do_not_contact}`,
+      `Jonah Reed: ${t.outreachCopy.skipReasons.other_brand}`,
+    ]);
+    expect(
+      harness.posts.filter((post) => post.operation === "enroll"),
+    ).toMatchObject([{ dryRun: true, sequenceId: demoId(402) }]);
+    expect(
+      await harness.local.db
+        .select()
+        .from(s.enrollments)
+        .where(eq(s.enrollments.relationshipId, demoId(302))),
+    ).toHaveLength(0);
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: t.enrollConfirm.replace("{people}", t.personCountOne),
+      }),
+    );
+    await screen.findByText(
+      t.enrollDone
+        .replace("{people}", t.personCountOne)
+        .replace("{sequence}", "Pilot conversation"),
+    );
+    expect(
+      await harness.local.db
+        .select()
+        .from(s.enrollments)
+        .where(eq(s.enrollments.relationshipId, demoId(302))),
+    ).toMatchObject([{ status: "running", sequenceId: demoId(402) }]);
+    expect(screen.queryByRole("button", { name: t.enrollSelected })).toBeNull();
+  });
+
+  test("the palette enrolls the focused person and the dry run says they are already in the sequence", async () => {
+    await mountCrm(harness, "/people");
+    person("Amara Stone").focus();
+    await press("{Meta>}k{/Meta}");
+    await userEvent
+      .setup()
+      .type(screen.getByRole("combobox", { name: t.commandSearch }), "Enroll");
+    await press("{Enter}");
+    const dialog = await screen.findByRole("dialog", { name: t.enrollTitle });
+    expect(
+      within(dialog).getByText(
+        t.enrollChosen.replace("{people}", "Amara Stone"),
+      ),
+    ).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText(t.sequenceLabel), {
+      target: { value: demoId(400) },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: t.enrollReview }),
+    );
+    const skipped = await within(dialog).findByRole("region", {
+      name: t.enrollSkipped.replace("{count}", "1"),
+    });
+    expect(within(skipped).getByRole("listitem").textContent).toBe(
+      `Amara Stone: ${t.outreachCopy.skipReasons.already_enrolled}`,
+    );
+    expect(within(dialog).getByText(t.enrollNobody)).toBeTruthy();
+    expect(
+      (
+        within(dialog).getByRole("button", {
+          name: t.enrollConfirm.replace(
+            "{people}",
+            t.personCount.replace("{count}", "0"),
+          ),
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 });

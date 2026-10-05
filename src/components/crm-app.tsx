@@ -17,7 +17,8 @@ import { label } from "./client-api";
 import { Commands } from "./commands";
 import { type CrmProps, CrmProvider, useCrm } from "./crm/crm-context";
 import { useActionVerbs } from "./crm/use-action-verbs";
-import { navigableRecords } from "./keyboard-navigation";
+import { focusedRecord, navigableRecords } from "./keyboard-navigation";
+import { EnrollDialog } from "./outreach/enroll-dialog";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
 import { PersonDialog } from "./person-dialog";
 import { PeekPanel } from "./records/peek-panel";
@@ -96,6 +97,13 @@ function CrmShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [enrolling, setEnrolling] = useState<readonly string[] | null>(null);
+  const paletteFocus = useRef("");
+  function openPalette() {
+    paletteFocus.current =
+      focusedRecord()?.getAttribute("data-nav-record") ?? "";
+    setCommandsOpen(true);
+  }
   const searchInput = useRef<HTMLInputElement>(null);
   const section: Section = route?.section ?? "actions";
   const recordId = route?.recordId ?? "";
@@ -166,7 +174,7 @@ function CrmShell({ children }: { children: ReactNode }) {
     drawerOpen,
     closeDrawer,
     openDrawer: () => setDrawerOpen(true),
-    openPalette: () => setCommandsOpen(true),
+    openPalette,
     openGuide: () => setHelpOpen(true),
     toggleSidebar,
     goToSection,
@@ -314,7 +322,7 @@ function CrmShell({ children }: { children: ReactNode }) {
         onCloseDrawer={closeDrawer}
         onSearch={() => {
           setDrawerOpen(false);
-          setCommandsOpen(true);
+          openPalette();
         }}
         workspace={
           <WorkspaceMenu
@@ -385,11 +393,24 @@ function CrmShell({ children }: { children: ReactNode }) {
       <main className="main" inert={drawerOpen || undefined}>
         <TopBar
           crumbs={crumbs}
-          onSearch={() => setCommandsOpen(true)}
+          onSearch={openPalette}
           onOpenNavigation={() => setDrawerOpen(true)}
         />
         {data && !recordId && toolbarSections.has(section) && (
-          <ViewToolbar searchInput={searchInput} />
+          <ViewToolbar
+            searchInput={searchInput}
+            onEnroll={() => setEnrolling(crm.selection.selected)}
+          />
+        )}
+        {enrolling && (
+          <EnrollDialog
+            personIds={enrolling}
+            onClose={() => setEnrolling(null)}
+            onEnrolled={() => {
+              setEnrolling(null);
+              crm.clearSelection();
+            }}
+          />
         )}
         {helpOpen && <Shortcuts onClose={() => setHelpOpen(false)} />}
         {commandsOpen && (
@@ -436,6 +457,20 @@ function CrmShell({ children }: { children: ReactNode }) {
                   crm.setActionDialog(
                     true,
                     recordRelationship ?? peek.relationshipId,
+                  ),
+              },
+              {
+                id: "enroll",
+                title: t.enrollCommand,
+                shortcut: "",
+                disabled:
+                  section !== "people" ||
+                  !(crm.selection.selected.length || paletteFocus.current),
+                run: () =>
+                  setEnrolling(
+                    crm.selection.selected.length
+                      ? crm.selection.selected
+                      : [paletteFocus.current],
                   ),
               },
               {

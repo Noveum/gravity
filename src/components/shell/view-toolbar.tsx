@@ -1,6 +1,6 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import { Plus, Search, X } from "lucide-react";
+import { Plus, Search, Send, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { RefObject } from "react";
 import { label } from "../client-api";
@@ -11,8 +11,10 @@ const actionKinds = ["reply", "approval", "review", "commitment", "research"];
 
 export function ViewToolbar({
   searchInput,
+  onEnroll,
 }: {
   searchInput: RefObject<HTMLInputElement | null>;
+  onEnroll: () => void;
 }) {
   const crm = useCrm();
   const router = useRouter();
@@ -63,6 +65,12 @@ export function ViewToolbar({
             onClick={crm.clearSelection}
           >
             {selectedLabel} <X size={12} aria-hidden />
+          </button>
+        )}
+        {section === "people" && crm.selection.selected.length > 0 && (
+          <button type="button" className="chip" onClick={onEnroll}>
+            <Send size={12} aria-hidden />
+            {t.enrollSelected}
           </button>
         )}
       </span>

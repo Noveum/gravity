@@ -79,6 +79,25 @@
     "@rolldown/binding-openharmony-arm64@1.2.12",
     "@rolldown/binding-win32-arm64-msvc@1.2.12",
     "@rolldown/binding-win32-x64-msvc@1.2.12",
+    "@typescript/typescript-aix-ppc64@7.0.2",
+    "@typescript/typescript-darwin-x64@7.0.2",
+    "@typescript/typescript-freebsd-arm64@7.0.2",
+    "@typescript/typescript-freebsd-x64@7.0.2",
+    "@typescript/typescript-linux-arm64@7.0.2",
+    "@typescript/typescript-linux-arm@7.0.2",
+    "@typescript/typescript-linux-loong64@7.0.2",
+    "@typescript/typescript-linux-mips64el@7.0.2",
+    "@typescript/typescript-linux-ppc64@7.0.2",
+    "@typescript/typescript-linux-riscv64@7.0.2",
+    "@typescript/typescript-linux-s390x@7.0.2",
+    "@typescript/typescript-linux-x64@7.0.2",
+    "@typescript/typescript-netbsd-arm64@7.0.2",
+    "@typescript/typescript-netbsd-x64@7.0.2",
+    "@typescript/typescript-openbsd-arm64@7.0.2",
+    "@typescript/typescript-openbsd-x64@7.0.2",
+    "@typescript/typescript-sunos-x64@7.0.2",
+    "@typescript/typescript-win32-arm64@7.0.2",
+    "@typescript/typescript-win32-x64@7.0.2",
     "lightningcss-android-arm64@1.33.0",
     "lightningcss-darwin-x64@1.33.0",
     "lightningcss-freebsd-x64@1.33.0",
@@ -692,6 +711,13 @@
       "license": "MIT",
       "direct": true,
       "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+    },
+    {
+      "name": "@typescript/typescript-darwin-arm64",
+      "version": "7.0.2",
+      "license": "Apache-2.0",
+      "direct": false,
+      "repository": "https://github.com/microsoft/TypeScript.git"
     },
     {
       "name": "@vitest/mocker",
@@ -1339,7 +1365,7 @@
     },
     {
       "name": "typescript",
-      "version": "5.9.3",
+      "version": "7.0.2",
       "license": "Apache-2.0",
       "direct": true,
       "repository": "https://github.com/microsoft/TypeScript.git"

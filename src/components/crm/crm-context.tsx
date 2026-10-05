@@ -9,12 +9,13 @@ import {
   type RefObject,
   useCallback,
   useContext,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { errorText, type Organization, requestJson } from "../client-api";
 import { homePath, routeFor, type Section, sectionPath } from "../routes";
-import { type Notify, useToasts } from "../ui/toaster";
+import { useToasts } from "../ui/toaster";
 import { rememberBrand, rememberWorkspace } from "../workspace-preference";
 import { isAccessError, useLiveSnapshot } from "./use-live-snapshot";
 
@@ -114,7 +115,10 @@ function useCrmState({
   });
   const { sourceData, setData, refresh, activeOrganization, fetchGeneration } =
     live;
-  const data = sourceData ? productSnapshot(sourceData, productId) : null;
+  const data = useMemo(
+    () => (sourceData ? productSnapshot(sourceData, productId) : null),
+    [sourceData, productId],
+  );
   const peek: Peek =
     peekState.path === pathname
       ? {
@@ -129,6 +133,7 @@ function useCrmState({
   const timeZone = currentOrg?.timezone || "UTC";
 
   function showPeek(next: Peek, path = pathname) {
+    if (path !== peekState.path) setExpanded(false);
     setPeekState({ path, ...next });
   }
   function resetRecordState() {
@@ -304,7 +309,7 @@ function useCrmState({
     pathname,
     route,
     toasts,
-    notify: notify as Notify,
+    notify,
     dismiss,
     organizations,
     organizationId,

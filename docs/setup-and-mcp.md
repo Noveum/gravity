@@ -1,6 +1,12 @@
 # Setup and OAuth MCP
 
-## Development versus production
+## Hosted access
+
+Gravity is hosted at [gravity.noveum.ai](https://gravity.noveum.ai). The public landing page is `/`; **Start using Gravity** opens `/actions` and prompts signed-out users to sign in. Google, GitHub and email-code sign-in are available on the hosted app. Users create their own organization and product through onboarding, then connect personal provider accounts from Connections. No local installation or environment variables are needed to use the hosted workspace.
+
+The hosted remote OAuth MCP endpoint is `https://gravity.noveum.ai/mcp`. When changing from the old `crm.noveum.ai` endpoint, update the assistant URL and authenticate again: tokens are bound to the exact origin and resource. Existing organizations, contacts and connected provider credentials remain in the same database.
+
+## Development and self-hosting configuration
 
 The local fictional demo works without credentials. `CRM_DEMO_MODE=false` or any `DATABASE_URL` turns off its fixed identity; `NODE_ENV=production` always disables it. Production requires an HTTPS origin in `APP_URL`, a managed PostgreSQL `DATABASE_URL`, and a cryptographically random `BETTER_AUTH_SECRET` of at least 32 characters. Keep secrets outside Git and logs. Changing the public origin changes the OAuth issuer/resource and requires planned reauthorization.
 

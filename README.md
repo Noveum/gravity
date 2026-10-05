@@ -11,7 +11,13 @@ The daily action queue is the center of the app. A person can have separate buye
 
 **Status: working CRM foundation with account connections and managed PostgreSQL deployment support.** The local demo persists in a local PostgreSQL engine. Supabase deployment uses restricted runtime credentials, verified TLS and server-only table policies. Gmail/primary Calendar, Fireflies and Unipile V2 LinkedIn adapters provide owner-scoped imports and explicit context review. Each user can bring their own encrypted Unipile setup through Connections; no instance-wide Unipile credentials are shared. Each installation still needs provider consent and live qualification; outbound sending, invitations and execution remain unfinished. Source code and fixtures contain no real mail or private outreach data. [Integration qualification](docs/integration-review-2026-10-05.md) records what was actually tested.
 
-## Run locally
+## Use the hosted app
+
+Open [gravity.noveum.ai](https://gravity.noveum.ai), choose **Start using Gravity**, and sign in with Google, GitHub or an email code. Create an organization and its first product, then add contacts and next actions. Connect your own Gmail, Calendar, Unipile and Fireflies accounts from Connections. No local installation or database credentials are needed.
+
+The remote OAuth MCP endpoint is `https://gravity.noveum.ai/mcp`. Assistant access is read-only and scoped to the organization and products you select.
+
+## Develop locally or self-host
 
 Requirements: Node.js 22.12+ and Bun 1.3.14.
 
@@ -42,14 +48,14 @@ Stop the dev server before running `bun run db:migrate` against local PGlite. It
 
 ## Public pages
 
-Open `/welcome` for the landing page, `/docs` for setup/assistant/deployment guides and `/blog` for two original design articles. These pages work without auth or a database and reuse Orbit's light/dark palette. The CRM remains at `/`. Marketing distinguishes working foundations from planned integrations and has no invented customer claims. [Positioning research](docs/positioning-2026-10-04.md) records the competitor review. Set `PUBLIC_SITE_URL` and opt into `PUBLIC_SITE_INDEXING` only for a reviewed production launch; preview and development hosts remain non-indexable.
+Open `/` for the public landing page (`/welcome` permanently redirects there), `/docs` for setup/assistant/deployment guides and `/blog` for two original design articles. These pages work without auth or a database and reuse Orbit's light/dark palette. The CRM workspace is at `/actions`; opening it prompts signed-out users to sign in. Marketing distinguishes working foundations from planned integrations and has no invented customer claims. [Positioning research](docs/positioning-2026-10-04.md) records the competitor review. Set `PUBLIC_SITE_URL` and opt into `PUBLIC_SITE_INDEXING` only for a reviewed production launch; preview and development hosts remain non-indexable.
 
 After deploying, run `bun run test:deployment https://your-gravity-domain.example`
 to check the actual uploaded public routes, authentication page, readiness,
 branding assets and OAuth MCP challenge. Deployment exclusions for root docs
 are anchored so they do not remove the application's `/docs` routes.
 
-## Try the app
+## Explore the development demo
 
 Open `/onboarding` to create a fictional workspace with its first product. The new queue offers contact creation and connection setup guidance. Users signing in without an organization are directed there automatically. Connections shows the canonical MCP URL, provider availability, account connection forms, sync health and a private import review queue.
 
@@ -94,6 +100,6 @@ React interaction tests cover command selection, focus restoration, form submiss
 
 Start from `.env.example`; use a secret manager for real credentials. [Setup and OAuth MCP](docs/setup-and-mcp.md) describes the required variables and callbacks. [Architecture](docs/architecture.md) records tenant boundaries and storage decisions. [Connector design](docs/connectors.md) distinguishes implemented event handling from live synchronization. [Consolidated requirements and keyboard map](docs/requirements.md) covers every requested feature and its status. [Delivery roadmap](docs/roadmap.md) records production gates and the next implementation slices. [Naming research](docs/naming.md) records the selected brand and naming history. [Full-flow review](docs/flow-review-2026-10-04.md) covers onboarding, integration status and screenshots. [Verification record](docs/verification.md) records the tests and browser checks actually performed.
 
-Target deployment: Vercel with managed PostgreSQL and private object storage, without Kubernetes. Do not deploy this foundation for real sales work before the production gates are complete. In particular, the local 10 MB upload route must be replaced with authenticated direct-to-storage uploads to accommodate Vercel request limits.
+The hosted deployment uses Vercel and managed PostgreSQL. For self-hosting, qualify authentication, tenant permissions, provider connections and backups on your own installation. Private cloud uploads need direct-to-storage transfer: the local 10 MB upload route must be replaced with authenticated direct-to-storage uploads to accommodate Vercel request limits.
 
-Source repository: [Noveum/gravity](https://github.com/Noveum/gravity). Licensed under Apache-2.0. This is a deployable application source package, not an npm SDK; `private: true` prevents accidental registry publication. [Contributing](CONTRIBUTING.md), [security reporting](SECURITY.md), [release review](docs/release-review.md), [dependency inventory](docs/dependency-licenses.json) and [CI/deployment](docs/ci-and-deployment.md) describe the release process. [Supabase setup](docs/supabase.md) covers migrations, runtime permissions, recovery and the deployed health check. A running deployment does not qualify unfinished provider flows for real sales work.
+Source repository: [Noveum/gravity](https://github.com/Noveum/gravity). Licensed under Apache-2.0. This is a deployable application source package, not an npm SDK; `private: true` prevents accidental registry publication. [Contributing](CONTRIBUTING.md), [security reporting](SECURITY.md), [release review](docs/release-review.md), [dependency inventory](docs/dependency-licenses.json) and [CI/deployment](docs/ci-and-deployment.md) describe the release process. [Supabase setup](docs/supabase.md) covers migrations, runtime permissions, recovery and the deployed health check. Each provider account requires its own authorization and a successful sync; outbound sending is not implemented.

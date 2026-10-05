@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, test, vi } from "vitest";
 import {
   findArticle,
@@ -11,6 +13,7 @@ import {
 } from "../packages/public-site/metadata";
 import robots from "../src/app/robots";
 import sitemap from "../src/app/sitemap";
+import { LandingPage } from "../src/components/public-site/landing-page";
 
 afterEach(() => vi.unstubAllEnvs());
 test.each([
@@ -51,11 +54,13 @@ test("production discovery includes only public content, keeping CRM and auth ou
     publicPaths.map((path) => `https://gravity.example.test${path}`),
   );
   expect(
-    publicPaths.every((path) => /^\/(welcome|docs|blog)(\/|$)/.test(path)),
+    publicPaths.every(
+      (path) => path === "/" || /^\/(docs|blog)(\/|$)/.test(path),
+    ),
   ).toBe(true);
   expect(robots().rules).toEqual({
     userAgent: "*",
-    allow: ["/welcome", "/docs", "/blog"],
+    allow: ["/$", "/docs", "/blog"],
     disallow: "/",
   });
   const metadata = publicMetadata("Example", "Description", "/docs");
@@ -87,4 +92,22 @@ test("every content route has a unique slug and anchor; missing articles stay mi
   }
   expect(findArticle("docs", "missing")).toBeUndefined();
   expect(findArticle("articles", "missing")).toBeUndefined();
+});
+
+test("the landing page sends its primary calls to action into the hosted workspace", () => {
+  const html = renderToStaticMarkup(createElement(LandingPage));
+  expect(html).toContain(siteCopy.heroTitle);
+  expect(html).toContain(siteCopy.heroNote);
+  expect((html.match(/href="\/actions"/g) ?? []).length).toBe(3);
+  expect(html).not.toContain("Run Gravity locally");
+  expect(html).not.toContain('href="/sign-in"');
+});
+
+test("getting started leads with hosted access and leaves development setup optional", () => {
+  const guide = findArticle("docs", "getting-started");
+  expect(guide?.sections[0].id).toBe("hosted");
+  expect(guide?.sections[0].paragraphs.join(" ")).toContain(
+    "https://gravity.noveum.ai",
+  );
+  expect(guide?.sections.at(-1)?.id).toBe("self-host");
 });

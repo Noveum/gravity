@@ -26,11 +26,11 @@ afterEach(() => vi.unstubAllEnvs());
 test("authenticated visits leave sign-in for the workspace or a safe callback", async () => {
   principal.mockResolvedValue({ userId: "real-session", source: "session" });
   for (const [callbackURL, expected] of [
-    [undefined, "/"],
+    [undefined, "/actions"],
     ["/onboarding?from=login", "/onboarding?from=login"],
-    ["https://evil.example", "/"],
-    ["/sign-in?callbackURL=/sign-in", "/"],
-    ["/%73ign-in/", "/"],
+    ["https://evil.example", "/actions"],
+    ["/sign-in?callbackURL=/sign-in", "/actions"],
+    ["/%73ign-in/", "/actions"],
   ]) {
     await expect(
       Page({ searchParams: Promise.resolve({ callbackURL }) }),

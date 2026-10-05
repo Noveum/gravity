@@ -2,11 +2,24 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { and, eq, gt } from "drizzle-orm";
 import { z } from "zod";
 import { integrationAvailability } from "../connectors/service";
-import { CrmService } from "../core/crm";
-import { authorize, DomainError, type Principal } from "../core/policy";
+import { publishChange } from "../core/changes";
+import {
+  actionChangeSchema,
+  CrmService,
+  folderSchema,
+  meetingChangeSchema,
+  personSchema,
+  scheduleActionSchema,
+} from "../core/crm";
+import {
+  authorize,
+  DomainError,
+  grantedProductIds,
+  type Principal,
+} from "../core/policy";
 import type { Database } from "../database/client";
 import { mcpGrants, oauthClient, session } from "../database/schema";
-import { downloadAsset } from "../storage/files";
+import { downloadAsset, uploadAsset } from "../storage/files";
 
 // Call only after the OAuth library has verified signature, issuer, audience and scope.
 export async function principalForVerifiedToken(db: Database, claims: unknown) {
@@ -16,6 +29,7 @@ export async function principalForVerifiedToken(db: Database, claims: unknown) {
       crm_grant_id: z.uuid(),
       client_id: z.string(),
       sid: z.string(),
+      scope: z.string().default(""),
     })
     .safeParse(claims);
   if (!identity.success) throw new DomainError("UNAUTHORIZED", 401);
@@ -35,7 +49,16 @@ export async function principalForVerifiedToken(db: Database, claims: unknown) {
     );
   if (!client || client.disabled || !activeSession)
     throw new DomainError("UNAUTHORIZED", 401);
-  return principalForGrant(db, identity.data.sub, identity.data.crm_grant_id);
+  const principal = await principalForGrant(
+    db,
+    identity.data.sub,
+    identity.data.crm_grant_id,
+  );
+  // Only a cryptographically verified OAuth scope can enable writes. Legacy grants remain read-only.
+  return {
+    ...principal,
+    readOnly: !identity.data.scope.split(" ").includes("crm:write"),
+  };
 }
 
 export async function principalForGrant(
@@ -57,7 +80,7 @@ export async function principalForGrant(
   const principal: Principal = {
     userId,
     organizationId: grant.organizationId,
-    productIds: grant.productIds,
+    productIds: grantedProductIds(grant.productIds),
     source: "mcp",
     readOnly: true,
   };
@@ -92,7 +115,11 @@ export function mcpHandler(
             userId: principal.userId,
             organizationId,
             productIds: principal.productIds,
-            permissions: ["crm:read"],
+            permissions:
+              principal.readOnly === false
+                ? ["crm:read", "crm:write"]
+                : ["crm:read"],
+            allProducts: principal.productIds === undefined,
           }),
       );
       server.registerTool(
@@ -103,14 +130,20 @@ export function mcpHandler(
           inputSchema: z.object({}),
           annotations: { readOnlyHint: true },
         },
-        async () =>
-          result({
+        async () => {
+          const { membership } = await authorize(db, principal, organizationId);
+          return result({
             readContext: true,
             readCompanyContext: true,
             readMaterials: true,
             materialPdfExtraction: false,
             sendMessages: false,
-            approveDrafts: false,
+            approveDrafts: principal.readOnly === false,
+            writeRecords: principal.readOnly === false,
+            createProducts:
+              principal.readOnly === false &&
+              principal.productIds === undefined &&
+              membership.role === "admin",
             gmailSync: integrationAvailability().gmail,
             linkedinSync: integrationAvailability().linkedin,
             calendarSync: integrationAvailability().calendar,
@@ -119,7 +152,8 @@ export function mcpHandler(
             integrationManagement: "human-only",
             syncCadence: "scheduled-five-minute-pages",
             organizationBound: true,
-          }),
+          });
+        },
       );
       server.registerTool(
         "list_products",
@@ -275,6 +309,161 @@ export function mcpHandler(
           });
         },
       );
+      server.registerTool(
+        "get_workspace",
+        {
+          description:
+            "Read permitted CRM records, relationships, sequences, meetings, materials and versions. Organization and product restrictions apply.",
+          inputSchema: z.object({ productId: z.uuid().optional() }),
+          annotations: { readOnlyHint: true },
+        },
+        async ({ productId }) =>
+          result(
+            await service.snapshot(principal, { organizationId, productId }),
+          ),
+      );
+      if (principal.readOnly === false) {
+        const changed = async (operation: Promise<unknown>) => {
+          const value = await operation;
+          publishChange(organizationId);
+          return result(value);
+        };
+        server.registerTool(
+          "create_person",
+          {
+            description:
+              "Create a person and product relationship, or add an existing person to a product. Optionally create a research task.",
+            inputSchema: z
+              .object(personSchema.shape)
+              .omit({ organizationId: true }),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: false,
+              idempotentHint: false,
+            },
+          },
+          async (input) =>
+            changed(
+              service.createPerson(
+                principal,
+                personSchema.parse({ ...input, organizationId }),
+              ),
+            ),
+        );
+        server.registerTool(
+          "schedule_next_action",
+          {
+            description:
+              "Schedule a next action for a product relationship and assign its owner. This does not send a message.",
+            inputSchema: scheduleActionSchema.omit({ organizationId: true }),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: false,
+              idempotentHint: false,
+            },
+          },
+          async (input) =>
+            changed(
+              service.scheduleAction(principal, { ...input, organizationId }),
+            ),
+        );
+        server.registerTool(
+          "change_action",
+          {
+            description:
+              "Save a draft, approve, complete, or reopen an action using its current version. Approval is bound to the draft, recipient and channel; editing invalidates it. No messages are sent.",
+            inputSchema: actionChangeSchema.omit({ organizationId: true }),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: true,
+              idempotentHint: false,
+            },
+          },
+          async (input) =>
+            changed(
+              service.changeAction(principal, { ...input, organizationId }),
+            ),
+        );
+        server.registerTool(
+          "accept_meeting_commitment",
+          {
+            description:
+              "Turn a proposed commitment from a held meeting into an assigned follow-up. Supply the current meeting version.",
+            inputSchema: meetingChangeSchema.omit({ organizationId: true }),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: false,
+              idempotentHint: true,
+            },
+          },
+          async (input) =>
+            changed(
+              service.acceptCommitment(principal, { ...input, organizationId }),
+            ),
+        );
+        server.registerTool(
+          "create_material_folder",
+          {
+            description:
+              "Create a product sales-material folder, optionally inside another folder in that product.",
+            inputSchema: folderSchema.omit({ organizationId: true }),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: false,
+              idempotentHint: false,
+            },
+          },
+          async (input) =>
+            changed(
+              service.createFolder(principal, { ...input, organizationId }),
+            ),
+        );
+        server.registerTool(
+          "create_material",
+          {
+            description:
+              "Upload a private plain-text or Markdown sales material into a product folder, with optional sales-stage associations. Content is stored as a draft for review.",
+            inputSchema: z.object({
+              productId: z.uuid(),
+              folderId: z.uuid(),
+              stageIds: z.array(z.uuid()).max(100).default([]),
+              name: z.string().trim().min(1).max(200),
+              mimeType: z
+                .enum(["text/plain", "text/markdown"])
+                .default("text/markdown"),
+              content: z.string().min(1).max(200000),
+            }),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: false,
+              idempotentHint: false,
+            },
+          },
+          async ({ content, ...input }) =>
+            changed(
+              uploadAsset(db, principal, {
+                ...input,
+                organizationId,
+                bytes: new TextEncoder().encode(content),
+              }),
+            ),
+        );
+        server.registerTool(
+          "create_product",
+          {
+            description:
+              "Create a product with its default sales stages and material folder. Requires organization admin membership and an all-products grant.",
+            inputSchema: z.object({ name: z.string().trim().min(1).max(100) }),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: false,
+              idempotentHint: false,
+            },
+          },
+          async ({ name }) =>
+            changed(service.createProduct(principal, organizationId, name)),
+        );
+      }
       return server;
     },
     { legacy: "stateless" },

@@ -12,6 +12,7 @@ const sectionPaths: Record<Section, string> = {
   materials: "/materials",
   outreach: "/outreach",
   integrations: "/connections",
+  assistants: "/assistants",
   settings: "/settings",
 };
 const recordSections: ReadonlySet<Section> = new Set(["people", "companies"]);

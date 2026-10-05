@@ -9,6 +9,14 @@ export interface Principal {
   productIds?: string[];
   readOnly?: boolean;
 }
+// A deliberate organization-wide grant. Empty and historical UUID lists stay restricted.
+export const allProductsGrant = ["*"];
+export function isAllProductsGrant(productIds: string[]) {
+  return productIds.length === 1 && productIds[0] === "*";
+}
+export function grantedProductIds(productIds: string[]) {
+  return isAllProductsGrant(productIds) ? undefined : productIds;
+}
 export class DomainError extends Error {
   constructor(
     public code: string,
@@ -26,7 +34,12 @@ export async function authorize(
 ) {
   if (principal.organizationId && principal.organizationId !== organizationId)
     throw new DomainError("FORBIDDEN", 403);
-  if (write && principal.readOnly) throw new DomainError("FORBIDDEN", 403);
+  if (
+    write &&
+    (principal.readOnly ||
+      (principal.source === "mcp" && principal.readOnly !== false))
+  )
+    throw new DomainError("FORBIDDEN", 403);
   const [membership] = await db
     .select()
     .from(memberships)

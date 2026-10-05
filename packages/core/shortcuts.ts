@@ -7,6 +7,7 @@ export const navigationKeys = {
   o: "opportunities",
   f: "materials",
   i: "integrations",
+  x: "assistants",
   t: "settings",
   r: "outreach",
 } as const;

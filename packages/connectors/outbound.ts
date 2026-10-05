@@ -581,7 +581,10 @@ export class OutboundService {
           and(
             input.touchId
               ? eq(s.deliveries.touchId, input.touchId)
-              : eq(s.deliveries.actionId, input.actionId ?? ""),
+              : and(
+                  eq(s.deliveries.actionId, input.actionId ?? ""),
+                  eq(s.deliveries.sourceVersion, input.version),
+                ),
             inArray(s.deliveries.status, [
               "sending",
               "unknown",

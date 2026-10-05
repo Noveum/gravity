@@ -1,0 +1,2 @@
+DROP INDEX "deliveries_action_claim";--> statement-breakpoint
+CREATE UNIQUE INDEX "deliveries_action_claim" ON "deliveries" USING btree ("action_id","source_version") WHERE "deliveries"."status" <> 'failed';

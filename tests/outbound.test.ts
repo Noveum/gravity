@@ -659,6 +659,34 @@ test("an approved follow-up sends and completes, while a newer inbound reply rem
     .from(s.actions)
     .where(eq(s.actions.id, actionId));
   expect(action.status).toBe("blocked");
+  const reworked = await f.crm.changeAction(principal, {
+    organizationId: org,
+    actionId,
+    version: action.version,
+    command: "rework",
+    draft: "Subject: New follow-up\n\nA reviewed response to the newer reply.",
+  });
+  const approved = await f.crm.changeAction(principal, {
+    organizationId: org,
+    actionId,
+    version: reworked.version,
+    command: "approve",
+  });
+  const later = new OutboundService(
+    local.db,
+    f.transport,
+    () => now + 366 * 86400000,
+  );
+  const nextInput = {
+    ...f.input,
+    version: approved.version,
+    idempotencyKey: randomUUID(),
+  };
+  const second = await later.send(principal, nextInput);
+  expect(second.status).toBe("sent");
+  expect(second.id).not.toBe(sent.id);
+  expect((await later.send(principal, nextInput)).id).toBe(second.id);
+  expect(f.transport).toHaveBeenCalledTimes(1);
   const ordinary = await fixture("gmail", true);
   expect((await ordinary.service.send(principal, ordinary.input)).status).toBe(
     "sent",
@@ -825,4 +853,109 @@ test("mail subjects decode folded Unicode and quoted-printable words for replies
   expect(decodeMailHeader("=?invalid-charset?B?YWJj?=")).toBe(
     "=?invalid-charset?B?YWJj?=",
   );
+});
+
+test("an owned sender can serve another granted product, while either missing product grant denies dispatch", async () => {
+  const account = await fixture();
+  const target = await fixture();
+  const input = { ...target.input, connectionId: account.connectionId };
+  for (const productIds of [[target.productId], [account.productId]]) {
+    await expect(
+      target.service.send({ ...principal, productIds }, input),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  }
+  expect(target.transport).not.toHaveBeenCalled();
+  const granted = {
+    ...principal,
+    productIds: [account.productId, target.productId],
+  };
+  expect((await target.service.readiness(granted, input)).ready).toBe(true);
+  expect((await target.service.send(granted, input)).status).toBe("sent");
+  const [history] = await local.db
+    .select()
+    .from(s.conversations)
+    .where(eq(s.conversations.connectionId, account.connectionId));
+  expect(history.productId).toBe(target.productId);
+  expect(history.relationshipId).toBe(target.relationshipId);
+  expect(history.ownerId).toBe(demoUser);
+});
+test("cross-product receipt verification also requires the sender account's default product grant", async () => {
+  const account = await fixture();
+  const target = await fixture();
+  const input = { ...target.input, connectionId: account.connectionId };
+  const transport = vi.fn<typeof fetch>(async (_url, init) =>
+    init?.method === "POST" ? json({}, 503) : json({ messages: [] }),
+  );
+  const service = new OutboundService(local.db, transport, clock);
+  const granted = {
+    ...principal,
+    productIds: [account.productId, target.productId],
+  };
+  const unknown = await service.send(granted, input);
+  expect(unknown.status).toBe("unknown");
+  await expect(
+    service.reconcile(
+      { ...principal, productIds: [target.productId] },
+      { organizationId: org, deliveryId: unknown.id },
+    ),
+  ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  expect(transport).toHaveBeenCalledTimes(1);
+  await expect(
+    service.reconcile(granted, { organizationId: org, deliveryId: unknown.id }),
+  ).rejects.toMatchObject({ code: "DELIVERY_OUTCOME_UNKNOWN" });
+  expect(transport).toHaveBeenCalledTimes(2);
+});
+
+test("reopening a sent follow-up clears approval before another deliberate send", async () => {
+  const f = await fixture("gmail", true);
+  if (!("actionId" in f.source)) throw new Error("fixture");
+  await f.service.send(principal, f.input);
+  const [completed] = await local.db
+    .select()
+    .from(s.actions)
+    .where(eq(s.actions.id, f.source.actionId));
+  const [reopened] = await f.crm.planActions(principal, {
+    organizationId: org,
+    items: [
+      { actionId: completed.id, version: completed.version, status: "open" },
+    ],
+  });
+  expect(reopened.approvedHash).toBeNull();
+  const later = new OutboundService(
+    local.db,
+    f.transport,
+    () => now + 366 * 86400000,
+  );
+  await expect(
+    later.send(principal, {
+      ...f.input,
+      version: reopened.version,
+      idempotencyKey: randomUUID(),
+    }),
+  ).rejects.toMatchObject({ code: "FRESH_APPROVAL_REQUIRED" });
+  const approved = await f.crm.changeAction(principal, {
+    organizationId: org,
+    actionId: reopened.id,
+    version: reopened.version,
+    command: "approve",
+    draft: "Subject: Another reviewed follow-up\n\nA new reviewed message.",
+  });
+  f.transport.mockResolvedValueOnce(
+    json({ id: "renewed-follow-up", threadId: "renewed-follow-up-thread" }),
+  );
+  expect(
+    (
+      await later.send(principal, {
+        ...f.input,
+        version: approved.version,
+        idempotencyKey: randomUUID(),
+      })
+    ).status,
+  ).toBe("sent");
+  expect(f.transport).toHaveBeenCalledTimes(2);
+  const history = await local.db
+    .select()
+    .from(s.messages)
+    .where(eq(s.messages.connectionId, f.connectionId));
+  expect(history).toHaveLength(2);
 });

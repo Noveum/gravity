@@ -645,7 +645,7 @@ export const deliveries = pgTable(
       .on(t.touchId)
       .where(sql`${t.status} <> 'failed'`),
     uniqueIndex("deliveries_action_claim")
-      .on(t.actionId)
+      .on(t.actionId, t.sourceVersion)
       .where(sql`${t.status} <> 'failed'`),
     index("deliveries_sender_day").on(t.organizationId, t.ownerId, t.createdAt),
     check(

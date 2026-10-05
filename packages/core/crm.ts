@@ -1252,6 +1252,10 @@ export class CrmService {
             ...(item.status ? { status: item.status } : {}),
             ...(item.dueAt ? { dueAt: new Date(item.dueAt) } : {}),
             ...(item.ownerId ? { ownerId: item.ownerId } : {}),
+            // Reopening or replanning is a new intent, not permission to reuse a
+            // previously dispatched approval on a later source version.
+            approvedHash: null,
+            approvedBy: null,
             version: action.version + 1,
           })
           .where(

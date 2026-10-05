@@ -99,6 +99,7 @@ export function normalizeUnipileV2(
     const isSelf = mail.email.from.some(
       (from) => from.email.toLowerCase() === mailbox.selfEmail?.toLowerCase(),
     );
+    const sender = mail.email.from[0]?.email;
     if (isSelf && !mailbox.sentFolderIds.includes(mail.folder_id)) return null;
     if (!isSelf && !mailbox.inboxFolderIds.includes(mail.folder_id))
       return null;
@@ -111,7 +112,7 @@ export function normalizeUnipileV2(
       channel: "gmail",
       body: mail.email.body_plain,
       occurredAt: mail.email.date,
-      from: mail.email.from[0]?.email,
+      ...(sender && sender.trim().length <= 320 ? { from: sender } : {}),
     });
   }
   return null;

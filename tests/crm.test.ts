@@ -295,6 +295,35 @@ describe("reply ingestion", () => {
       }),
     ).toBeNull();
   });
+  test("an oversized Unipile sender address imports the reply without a sender hint", () => {
+    const sender = `${"a".repeat(329)}@example.test`;
+    expect(sender).toHaveLength(342);
+    const reply = normalizeUnipileV2(
+      {
+        id: "evt-long-sender",
+        account_id: "mailbox",
+        account_provider: "GOOGLE",
+        type: "email.new",
+        payload: {
+          folder_id: "inbox",
+          email: {
+            id: "mail-long-sender",
+            thread_id: "thread-long-sender",
+            body_plain: "Hello",
+            date: new Date().toISOString(),
+            from: [{ email: sender }],
+          },
+        },
+      },
+      {
+        selfEmail: "me@example.test",
+        inboxFolderIds: ["inbox"],
+        sentFolderIds: ["sent"],
+      },
+    );
+    expect(reply).toMatchObject({ direction: "inbound" });
+    expect(reply).not.toHaveProperty("from");
+  });
   test("Gmail folder moves are ignored and thread identity is required", () => {
     const event = {
       id: "evt-mail",

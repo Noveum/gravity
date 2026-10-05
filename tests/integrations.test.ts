@@ -22,7 +22,10 @@ import {
   verifyFirefliesSignature,
 } from "../packages/connectors/security";
 import { IntegrationService } from "../packages/connectors/service";
-import type { ImportRecord } from "../packages/connectors/types";
+import {
+  type ImportRecord,
+  importRecordSchema,
+} from "../packages/connectors/types";
 import { CrmService } from "../packages/core/crm";
 import { OutreachService } from "../packages/core/outreach";
 import type { Principal } from "../packages/core/policy";
@@ -615,6 +618,34 @@ test("disconnect during provider fetch cancels imports and does not restore cred
       .from(s.integrationItems)
       .where(eq(s.integrationItems.externalId, "late-note")),
   ).toEqual([]);
+});
+
+test("an oversized Gmail From header imports the message without a sender hint", () => {
+  const sender = `${"a".repeat(329)}@example.test`;
+  expect(sender).toHaveLength(342);
+  const record = normalizeGmail(
+    {
+      id: "long-sender",
+      threadId: "long-sender-thread",
+      internalDate: "1790859600000",
+      labelIds: ["INBOX"],
+      payload: {
+        mimeType: "text/plain",
+        headers: [
+          { name: "From", value: sender },
+          { name: "To", value: "owner@example.test" },
+          { name: "Subject", value: "Fictional long sender" },
+        ],
+        body: { data: Buffer.from("Hello").toString("base64url") },
+      },
+    },
+    "owner@example.test",
+  );
+  expect(record).not.toHaveProperty("from");
+  expect(importRecordSchema.parse(record)).toMatchObject({
+    externalId: "long-sender",
+    direction: "inbound",
+  });
 });
 
 test("provider normalization preserves direction, MIME text, all-day dates and chat-scoped message IDs", () => {

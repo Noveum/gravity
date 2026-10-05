@@ -8,6 +8,7 @@ import { type RecordTab, useCrm } from "../crm/crm-context";
 import type { useDraft } from "../crm/use-draft";
 import { keyInput } from "../keyboard-navigation";
 import { initials } from "../shell/workspace-menu";
+import { ShortcutHint } from "../ui/shortcut-hint";
 
 type Action = ClientSnapshot["actions"][number];
 type DraftState = ReturnType<typeof useDraft>;
@@ -119,10 +120,12 @@ export function PersonActivity({
             type="button"
             key={value}
             data-inspector-tab={value}
+            aria-keyshortcuts={String(tabs.indexOf(value) + 1)}
             aria-pressed={current === value}
             onClick={() => setTab(value)}
           >
             {label(value)}
+            <ShortcutHint id={value} />
           </button>
         ))}
       </div>

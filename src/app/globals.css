@@ -3762,3 +3762,49 @@ tbody tr[data-selected] td:first-child::before {
   border-radius: 3px;
   padding: 0 2px;
 }
+/* Keyboard hints remain readable without competing with action labels. */
+.shortcut-hint {
+  flex: 0 0 auto;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.primary .shortcut-hint kbd {
+  color: inherit;
+  background: transparent;
+  border-color: currentColor;
+  opacity: 0.75;
+}
+.nav-item > .nav-shortcut {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.product-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.product-picker select {
+  min-width: 0;
+}
+.search .shortcut-hint {
+  margin-right: 6px;
+}
+.product-dialog form {
+  display: grid;
+  gap: 20px;
+  margin-top: 20px;
+}
+.product-dialog form > label {
+  display: grid;
+  gap: 8px;
+}
+@media (max-width: 760px) {
+  :root[data-sidebar="collapsed"] .sidebar .nav-shortcut {
+    display: inline;
+  }
+  .keyboard-help-button .shortcut-hint {
+    display: none;
+  }
+}

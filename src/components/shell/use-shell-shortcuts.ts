@@ -34,6 +34,7 @@ export interface ShellShortcutOptions {
   recordRelationship: string | undefined;
   compact: () => boolean;
   verbs: ReturnType<typeof useActionVerbs>;
+  openProductDialog: () => boolean;
 }
 
 export function useShellShortcuts({
@@ -49,6 +50,7 @@ export function useShellShortcuts({
   recordRelationship,
   compact,
   verbs,
+  openProductDialog,
 }: ShellShortcutOptions) {
   const crm = useCrm();
   const section: Section = crm.route?.section ?? "actions";
@@ -141,7 +143,17 @@ export function useShellShortcuts({
       else openPalette();
       return true;
     },
-    create: () => crm.create(),
+    create: () => {
+      if (crm.create()) return true;
+      if (!crm.data?.products.length) return false;
+      crm.setPersonDialog(true);
+      return true;
+    },
+    "create-product": openProductDialog,
+    "create-organization": () => {
+      crm.go("/onboarding");
+      return true;
+    },
     schedule: () => {
       if (!crm.data?.relationships.length) return false;
       crm.setActionDialog(true, recordRelationship ?? crm.peek.relationshipId);

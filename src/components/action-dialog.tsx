@@ -9,6 +9,7 @@ import {
   useModalLifecycle,
   useReadyFocus,
 } from "./modal-lifecycle";
+import { ShortcutHint } from "./ui/shortcut-hint";
 import { LoadingState } from "./ui/states";
 
 export function ActionDialog({
@@ -240,15 +241,18 @@ export function ActionDialog({
             disabled={busy}
             onClick={onClose}
           >
-            {t.cancel}
+            {t.cancel} <ShortcutHint id="back" />
           </button>
           <button
             className="primary"
             type="submit"
+            aria-label={busy ? t.saving : t.scheduleAction}
             title={t.submitHint}
+            aria-keyshortcuts="Meta+Enter Control+Enter"
             disabled={busy || loading || !!loadError || !relationship}
           >
             {busy ? t.saving : t.scheduleAction}
+            <ShortcutHint id="save" />
           </button>
         </div>
       </form>

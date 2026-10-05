@@ -65,7 +65,7 @@ const repeatable = { repeatable: true };
 const definitions = {
   "go-actions": goTo("a", "actions"),
   "go-meetings": goTo("m", "meetings"),
-  "go-outreach": goTo("u", "outreach"),
+  "go-outreach": goTo("r", "outreach"),
   "go-sequences": goTo("s", "sequences"),
   "go-people": goTo("p", "people"),
   "go-companies": goTo("c", "companies"),
@@ -77,6 +77,13 @@ const definitions = {
   help: define(["?"], "global", "general", labels.help),
   search: define(["/"], "global", "general", labels.search),
   create: define(["c"], "global", "general", labels.create),
+  "create-product": define(["shift+p"], "global", "general", t.newProduct),
+  "create-organization": define(
+    ["shift+o"],
+    "global",
+    "general",
+    t.createWorkspace,
+  ),
   schedule: define(["n"], "global", "general", labels.schedule),
   sidebar: define(["["], "global", "general", labels.sidebar),
   theme: define(["mod+shift+l"], "global", "general", labels.theme),
@@ -140,7 +147,7 @@ const definitions = {
   draft: define(["3"], "detail", "details", labels.draft),
   "previous-record": define(["b"], "peek", "details", labels.previousRecord),
   edit: define(["e"], "record", "details", labels.edit),
-  save: define(["e", "mod+enter"], "dialog", "dialogs", labels.save),
+  save: define(["mod+enter", "e"], "dialog", "dialogs", labels.save),
 } satisfies Record<string, Definition>;
 
 export type ShortcutId = keyof typeof definitions;
@@ -324,6 +331,10 @@ export function bindingKeys(binding: string, mac: boolean): string[] {
 
 export function bindingLabel(binding: string, mac: boolean) {
   return bindingKeys(binding, mac).join(" ");
+}
+
+export function shortcutLabel(id: ShortcutId, mac = false) {
+  return bindingLabel(shortcut(id).bindings[0] ?? "", mac);
 }
 
 export type Movement = "next" | "previous" | "first" | "last";

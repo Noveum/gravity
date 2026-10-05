@@ -78,7 +78,8 @@ describe("shortcut registry", () => {
   test("go-to chords beat the single keys they start with", () => {
     expect(match([stroke("g"), stroke("a")])).toBe("go-actions");
     expect(match([stroke("g"), stroke("s")])).toBe("go-sequences");
-    expect(match([stroke("g"), stroke("u")])).toBe("go-outreach");
+    expect(match([stroke("g"), stroke("r")])).toBe("go-outreach");
+    expect(match([stroke("g"), stroke("u")])).toBeNull();
     expect(match([stroke("a")])).toBe("assign");
     expect(match([stroke("s")])).toBe("snooze");
     expect(match([stroke("g")])).toBeNull();
@@ -226,4 +227,28 @@ describe("review follow-ups", () => {
     expect(bindingLabel("mod+k", false)).toBe(`${t.keyNames.ctrl} K`);
     expect(bindingLabel("shift+j", false)).toBe(`${t.keyNames.shift} J`);
   });
+});
+
+test("creation chords are distinct from selectors and ignore unsafe input", () => {
+  for (const [value, id] of [
+    ["P", "create-product"],
+    ["O", "create-organization"],
+  ] as const) {
+    expect(shortcutFor(key(value, { shiftKey: true }), ["global"])).toBe(id);
+    expect(
+      shortcutFor(key(value, { shiftKey: true }), ["global"], true),
+    ).toBeNull();
+    for (const extra of [
+      { isComposing: true },
+      { repeat: true },
+      { metaKey: true },
+      { ctrlKey: true },
+      { altKey: true },
+    ])
+      expect(
+        shortcutFor(key(value, { shiftKey: true, ...extra }), ["global"]),
+      ).toBeNull();
+  }
+  expect(shortcutFor(key("p"), ["global"])).toBe("product");
+  expect(shortcutFor(key("o"), ["global"])).toBe("organization");
 });

@@ -1,19 +1,23 @@
 "use client";
+import { shortcutLabel } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
-import { Menu, Search } from "lucide-react";
+import { Keyboard, Menu, Search } from "lucide-react";
 import Link from "next/link";
 import { Fragment } from "react";
 import { GravityMark } from "../gravity-logo";
 import { ThemeToggle } from "../preferences";
+import { ShortcutHint } from "../ui/shortcut-hint";
 import type { Crumb } from "./navigation";
 
 export function TopBar({
   crumbs,
   onSearch,
+  onHelp,
   onOpenNavigation,
 }: {
   crumbs: Crumb[];
   onSearch: () => void;
+  onHelp: () => void;
   onOpenNavigation: () => void;
 }) {
   return (
@@ -66,7 +70,18 @@ export function TopBar({
         >
           <Search size={14} aria-hidden />
           <span className="search-pill-label">{t.searchShort}</span>
-          <kbd>{t.keys.commandHint}</kbd>
+          <ShortcutHint id="palette" />
+        </button>
+        <button
+          type="button"
+          className="ghost keyboard-help-button"
+          aria-label={t.keyboardHelp}
+          aria-keyshortcuts="Shift+/"
+          title={`${t.keyboardHelp} (${shortcutLabel("help")})`}
+          onClick={onHelp}
+        >
+          <Keyboard size={15} aria-hidden />
+          <ShortcutHint id="help" />
         </button>
         <ThemeToggle />
       </div>

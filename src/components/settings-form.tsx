@@ -3,6 +3,7 @@ import t from "@crm/i18n/translations/en.json";
 import { Plus } from "lucide-react";
 import { useRef, useState } from "react";
 import { submitOnSaveKey } from "./modal-lifecycle";
+import { ShortcutHint } from "./ui/shortcut-hint";
 
 export function SettingsForm({
   organizationId,
@@ -58,6 +59,7 @@ export function SettingsForm({
             className="primary"
             type="submit"
             title={t.submitHint}
+            aria-keyshortcuts="Meta+Enter Control+Enter"
             disabled={busy}
           >
             <Plus size={14} />
@@ -66,6 +68,7 @@ export function SettingsForm({
               : kind === "organization"
                 ? t.newOrganization
                 : t.newProduct}
+            <ShortcutHint id="save" />
           </button>
         </form>
       ))}

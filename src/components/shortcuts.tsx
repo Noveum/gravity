@@ -3,6 +3,7 @@ import {
   bindingKeys,
   bindingLabel,
   type Shortcut,
+  type ShortcutId,
   shortcutSections,
   shortcuts,
 } from "@crm/core/shortcuts";
@@ -49,13 +50,20 @@ export function ShortcutKeys({
   );
 }
 
-export function Shortcuts({ onClose }: { onClose: () => void }) {
+export function Shortcuts({
+  onClose,
+  unavailable = [],
+}: {
+  onClose: () => void;
+  unavailable?: readonly ShortcutId[];
+}) {
   const modal = useRef<HTMLDialogElement>(null);
   const [query, setQuery] = useState("");
   const [mac] = useState(macPlatform);
   useModalLifecycle(modal);
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const filtered = shortcuts.filter((shortcut) => {
+    if (unavailable.includes(shortcut.id)) return false;
     const text = [
       shortcut.label,
       t.shortcutSections[shortcut.section],

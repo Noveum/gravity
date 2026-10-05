@@ -280,7 +280,7 @@ describe("palette, search, guide and create", () => {
     await press("c");
     expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy();
   });
-  test("C on a person record schedules for that person, and on a view without a create it does nothing", async () => {
+  test("C on a person record schedules for that person, and on a view without its own create adds a person", async () => {
     await mountCrm(harness, `/people/${demoId(202)}`);
     await press("c");
     const dialog = await screen.findByRole("dialog", {
@@ -300,7 +300,7 @@ describe("palette, search, guide and create", () => {
     await waitFor(() => expect(pathname()).toBe("/outreach/sequences"));
     (document.activeElement as HTMLElement | null)?.blur();
     await press("c");
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy();
   });
   test("C on materials opens the upload dialog", async () => {
     await mountCrm(harness, "/materials");
@@ -308,6 +308,18 @@ describe("palette, search, guide and create", () => {
     expect(
       screen.getByRole("heading", { name: t.upload, level: 2 }),
     ).toBeTruthy();
+  });
+  test("Shift P opens product creation for an admin and Shift O starts a new workspace", async () => {
+    binding("create-product");
+    binding("create-organization");
+    await mountCrm(harness, "/companies");
+    await press("{Shift>}P{/Shift}");
+    const dialog = screen.getByRole("dialog", { name: t.newProduct });
+    expect(within(dialog).getByText(organizations[0]?.name ?? "")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: t.cancel }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await press("{Shift>}O{/Shift}");
+    await waitFor(() => expect(pathname()).toBe("/onboarding"));
   });
   test("N schedules an action from any view", async () => {
     binding("schedule");

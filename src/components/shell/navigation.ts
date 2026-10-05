@@ -81,3 +81,6 @@ export const sectionHint = (section: Section) => {
     ?.bindings[0];
   return binding ? bindingLabel(binding, false) : "";
 };
+
+export const sectionShortcut = (section: Section) =>
+  shortcuts.find((entry) => entry.view === section)?.id;

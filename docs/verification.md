@@ -85,3 +85,10 @@ The actual unconfigured demo returned 503 `AUTH_UNAVAILABLE` for MCP initialize 
 TypeScript, Biome without warnings, all 76 tests, Bun dependency audit (no vulnerabilities) and production build passed. The `/onboarding` route is included in the build. Credential-pattern screening of 112 text files found no matches before publication; this remains a limited pattern check. No dependencies, schema migrations, provider accounts, external database, paid subscription or production deployment were added.
 
 The detailed [flow matrix](flow-review-2026-10-04.md) records outstanding record editing/invites, live mailbox/calendar/transcript adapters, durable jobs/backfill, Vercel file transfer, recovery, high-volume and actual Codex/Claude qualification. The source repository remains private.
+
+
+## Visible keyboard actions (2026-10-05)
+
+Product creation is available in the Products sidebar, record-view toolbar, empty-product state, settings, and command palette. Shift+P opens the same scoped dialog for organization admins; Shift+O starts workspace onboarding. C consistently opens Add person, N schedules an action, and G then R navigates to Outreach. Hints are visible on navigation, creation buttons, selectors, inspector tabs, and modal submission/cancellation. Command modifiers adapt to macOS or Windows/Linux after hydration without changing accessible action names. The shortcut guide hides unavailable creation actions.
+
+Verification: 259 tests pass, including scoped product creation through the real local domain service, non-admin denial, text-entry/IME/menu/modal guards, pending-submission protection, failure retention, native validation, and platform hints. Typecheck, Biome, production build, dependency audit, license inventory, and built public-page smoke checks pass. In-app browser checks exercised Shift+P, C, N, Escape, Cmd+Enter with a fictional local product, and light/dark layouts. Screenshots are local review artifacts, not included in the repository. No production CRM records were created during this review.

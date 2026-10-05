@@ -303,9 +303,6 @@
   "close": "Close",
   "reloadDraft": "Discard local edits and load latest",
   "closeInspector": "Close inspector",
-  "keys": {
-    "commandHint": "\u2318 K"
-  },
   "keyNames": {
     "space": "Space",
     "escape": "Esc",
@@ -1264,5 +1261,7 @@
   "ownedBy": "Owner: {name}",
   "touchAlreadyApproved": "Already approved",
   "mergeFieldMissing": "[{field}?]",
-  "mergePreview": "Preview with this person's details"
+  "mergePreview": "Preview with this person's details",
+  "productCreationDetail": "Keep contacts, conversations, follow-ups, and sales materials organized by product.",
+  "productNamePlaceholder": "e.g. Customer platform"
 }

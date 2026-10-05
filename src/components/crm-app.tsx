@@ -1,7 +1,7 @@
 "use client";
 import { bindingLabel, type ShortcutId, shortcut } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
-import Link from "next/link";
+import { Plus } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import {
   type CSSProperties,
@@ -21,6 +21,7 @@ import { focusedRecord, navigableRecords } from "./keyboard-navigation";
 import { EnrollDialog } from "./outreach/enroll-dialog";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
 import { PersonDialog } from "./person-dialog";
+import { ProductDialog } from "./product-dialog";
 import { PeekPanel } from "./records/peek-panel";
 import { RecordDialogHost } from "./records/record-dialog-host";
 import {
@@ -37,6 +38,7 @@ import {
   listedViews,
   pinnedViews,
   sectionHint,
+  sectionShortcut,
   viewIcons,
   viewSections,
 } from "./shell/navigation";
@@ -48,6 +50,7 @@ import { UserMenu } from "./shell/user-menu";
 import { ViewToolbar } from "./shell/view-toolbar";
 import { WorkspaceMenu } from "./shell/workspace-menu";
 import { macPlatform, Shortcuts } from "./shortcuts";
+import { ShortcutHint } from "./ui/shortcut-hint";
 import { EmptyState, ErrorState, LoadingState } from "./ui/states";
 import { Toaster } from "./ui/toaster";
 import { AssignMenu } from "./views/assign-menu";
@@ -103,6 +106,14 @@ function CrmShell({ children }: { children: ReactNode }) {
     paletteFocus.current =
       focusedRecord()?.getAttribute("data-nav-record") ?? "";
     setCommandsOpen(true);
+  }
+  const [productDialog, setProductDialog] = useState("");
+  const canCreateProduct = !!organizationId && !!data && crm.isAdmin;
+  function openProductDialog() {
+    if (!canCreateProduct) return false;
+    setDrawerOpen(false);
+    setProductDialog(organizationId);
+    return true;
   }
   const searchInput = useRef<HTMLInputElement>(null);
   const section: Section = route?.section ?? "actions";
@@ -192,6 +203,7 @@ function CrmShell({ children }: { children: ReactNode }) {
     recordRelationship,
     compact: compactScreen,
     verbs,
+    openProductDialog,
   });
 
   const [mac] = useState(macPlatform);
@@ -223,7 +235,7 @@ function CrmShell({ children }: { children: ReactNode }) {
       id,
       label: label(id),
       icon: viewIcons[id],
-      hint: sectionHint(id),
+      hint: sectionShortcut(id),
       href,
       active:
         id === "sequences"
@@ -249,25 +261,39 @@ function CrmShell({ children }: { children: ReactNode }) {
     {
       id: "products",
       title: t.products,
-      items: products.length
-        ? [
-            {
-              id: "all-products",
-              label: t.allProducts,
-              kind: "filter" as const,
-              active: !crm.productId,
-              onSelect: () => crm.switchProduct(""),
-            },
-            ...products.map((product) => ({
-              id: `product-${product.id}`,
-              label: product.name,
-              dot: product.color,
-              kind: "filter" as const,
-              active: crm.productId === product.id,
-              onSelect: () => crm.switchProduct(product.id),
-            })),
-          ]
-        : [],
+      items: [
+        ...(products.length
+          ? [
+              {
+                id: "all-products",
+                label: t.allProducts,
+                kind: "filter" as const,
+                active: !crm.productId,
+                onSelect: () => crm.switchProduct(""),
+              },
+              ...products.map((product) => ({
+                id: `product-${product.id}`,
+                label: product.name,
+                dot: product.color,
+                kind: "filter" as const,
+                active: crm.productId === product.id,
+                onSelect: () => crm.switchProduct(product.id),
+              })),
+            ]
+          : []),
+        ...(canCreateProduct
+          ? [
+              {
+                id: "add-product",
+                label: t.newProduct,
+                icon: Plus,
+                hint: "create-product" as const,
+                active: false,
+                onSelect: openProductDialog,
+              },
+            ]
+          : []),
+      ],
     },
     {
       id: "saved",
@@ -409,12 +435,14 @@ function CrmShell({ children }: { children: ReactNode }) {
         <TopBar
           crumbs={crumbs}
           onSearch={openPalette}
+          onHelp={() => setHelpOpen(true)}
           onOpenNavigation={() => setDrawerOpen(true)}
         />
         {data && !recordId && toolbarSections.has(section) && (
           <ViewToolbar
             searchInput={searchInput}
             onEnroll={() => setEnrolling(crm.selection.selected)}
+            onCreateProduct={openProductDialog}
           />
         )}
         {enrolling && (
@@ -427,7 +455,16 @@ function CrmShell({ children }: { children: ReactNode }) {
             }}
           />
         )}
-        {helpOpen && <Shortcuts onClose={() => setHelpOpen(false)} />}
+        {helpOpen && (
+          <Shortcuts
+            onClose={() => setHelpOpen(false)}
+            unavailable={[
+              ...(canCreateProduct ? [] : (["create-product"] as const)),
+              ...(data?.products.length ? [] : (["create"] as const)),
+              ...(data?.relationships.length ? [] : (["schedule"] as const)),
+            ]}
+          />
+        )}
         {commandsOpen && (
           <Commands
             onClose={() => setCommandsOpen(false)}
@@ -503,6 +540,19 @@ function CrmShell({ children }: { children: ReactNode }) {
                 },
               },
               {
+                id: "product",
+                title: t.newProduct,
+                shortcut: hint("create-product"),
+                disabled: !canCreateProduct,
+                run: openProductDialog,
+              },
+              {
+                id: "organization",
+                title: t.createWorkspace,
+                shortcut: hint("create-organization"),
+                run: () => crm.go("/onboarding"),
+              },
+              {
                 id: "person",
                 title: t.addPerson,
                 shortcut: section === "people" ? hint("create") : "",
@@ -522,6 +572,15 @@ function CrmShell({ children }: { children: ReactNode }) {
             anchor={verbs.assigning.anchor}
             onAssign={verbs.assignTo}
             onClose={verbs.closeAssign}
+          />
+        )}
+        {productDialog === organizationId && canCreateProduct && (
+          <ProductDialog
+            key={organizationId}
+            organizationName={crm.currentOrg?.name ?? ""}
+            organizationId={organizationId}
+            mutate={crm.mutate}
+            onClose={() => setProductDialog("")}
           />
         )}
         {crm.actionDialog && data && (
@@ -618,12 +677,15 @@ function CrmShell({ children }: { children: ReactNode }) {
                   }
                   action={
                     crm.isAdmin && (
-                      <Link
-                        className="button primary"
-                        href={sectionPath("settings")}
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={openProductDialog}
                       >
+                        <Plus size={14} aria-hidden />
                         {t.newProduct}
-                      </Link>
+                        <ShortcutHint id="create-product" />
+                      </button>
                     )
                   }
                 />

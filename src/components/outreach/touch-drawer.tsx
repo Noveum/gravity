@@ -8,8 +8,9 @@ import { useCrm } from "../crm/crm-context";
 import { usePersonContext } from "../crm/record-context";
 import { submitOnSaveKey, useModalLifecycle } from "../modal-lifecycle";
 import { personPath } from "../routes";
+import { hasMergeFields, mergeParts } from "./merge-fields";
 import { type Touch, useOutreachSend } from "./outreach-data";
-import { followUpLabel, gateReason } from "./touch-labels";
+import { followUpLabel, gateReason, mergePerson } from "./touch-labels";
 import type { useTouchVerbs } from "./use-touch-verbs";
 
 type Context = JsonValue<TouchContext>;
@@ -79,12 +80,14 @@ export function TouchDrawer({
     if (saving || !changed) return;
     setSaving(true);
     setError("");
-    const result = await send<Saved>({
-      operation: "draft",
-      touchId: touch.id,
-      version: verbs.versionOf(touch),
-      draft,
-    });
+    const result = await verbs.enqueue(() =>
+      send<Saved>({
+        operation: "draft",
+        touchId: touch.id,
+        version: verbs.versionOf(touch),
+        draft,
+      }),
+    );
     setSaving(false);
     if (!result.ok) {
       setError(result.error);
@@ -146,6 +149,26 @@ export function TouchDrawer({
               }}
             />
           </label>
+          {hasMergeFields(draft) && (
+            <section aria-label={t.mergePreview} className="merge-preview">
+              <span className="field-hint muted">{t.mergePreview}</span>
+              <p className="touch-message-body">
+                {mergeParts(draft, mergePerson(crm, touch.person)).map(
+                  (part, index) =>
+                    part.missing ? (
+                      <mark
+                        key={`${index.toString()}-${part.text}`}
+                        className="merge-missing"
+                      >
+                        {part.text}
+                      </mark>
+                    ) : (
+                      part.text
+                    ),
+                )}
+              </p>
+            </section>
+          )}
           {touch.status === "approved" && (
             <p className="field-hint warning-text">{t.approvalClearsOnEdit}</p>
           )}

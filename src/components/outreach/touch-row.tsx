@@ -6,8 +6,9 @@ import { dateLabel, label } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { rowKeys } from "../records/peek-keys";
 import { initials } from "../shell/workspace-menu";
+import { mergeText } from "./merge-fields";
 import type { Touch } from "./outreach-data";
-import { followUpLabel, gateReason } from "./touch-labels";
+import { followUpLabel, gateReason, mergePerson } from "./touch-labels";
 
 export function touchOverdue(touch: Touch, now: number, timeZone: string) {
   return touch.status !== "sent" && overdueDay(touch.dueAt, now, timeZone);
@@ -54,7 +55,10 @@ export function TouchRow({
         <span className="row-name">{touch.person.name}</span>
         <span className="row-kind">{step}</span>
         <span className={`row-action${touch.draft.trim() ? "" : " muted"}`}>
-          {touch.draft.trim() || t.emptyDraft}
+          {(touch.status === "planned"
+            ? mergeText(touch.draft, mergePerson(crm, touch.person))
+            : touch.draft
+          ).trim() || t.emptyDraft}
         </span>
         {overdue && <span className="badge warning">{t.overdue}</span>}
         {gated && touch.sendAfter && (

@@ -89,6 +89,10 @@ export function useTouchVerbs({
     return true;
   };
   function approve(touch: Touch) {
+    if (touch.status === "approved") {
+      crm.notify(t.touchAlreadyApproved, "neutral");
+      return;
+    }
     void enqueue(async () => {
       const result = await run<Saved>(touch, {
         operation: "approve",
@@ -228,6 +232,7 @@ export function useTouchVerbs({
     skip,
     markSent,
     versionOf,
+    enqueue,
     remember: (touch: Touch, version: number) =>
       versions.current.set(touch.id, version),
     keys: {

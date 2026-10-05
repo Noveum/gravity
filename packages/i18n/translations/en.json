@@ -1252,5 +1252,8 @@
     "hold": "On hold"
   },
   "noNextStepShort": "No next step",
-  "ownedBy": "Owner: {name}"
+  "ownedBy": "Owner: {name}",
+  "touchAlreadyApproved": "Already approved",
+  "mergeFieldMissing": "[{field}?]",
+  "mergePreview": "Preview with this person's details"
 }

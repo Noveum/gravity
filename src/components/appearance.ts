@@ -6,8 +6,11 @@ export type ThemePreference = "system" | "light" | "dark";
 export type Density = "comfortable" | "compact";
 
 const changeEvent = "gravity-appearance";
+const unsaved = new Map<string, string>();
 
 function read(key: string) {
+  const pending = unsaved.get(key);
+  if (pending !== undefined) return pending;
   try {
     return localStorage.getItem(key);
   } catch {
@@ -17,7 +20,10 @@ function read(key: string) {
 function write(key: string, value: string) {
   try {
     localStorage.setItem(key, value);
-  } catch {}
+    unsaved.delete(key);
+  } catch {
+    unsaved.set(key, value);
+  }
   window.dispatchEvent(new Event(changeEvent));
 }
 function systemDark() {

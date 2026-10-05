@@ -718,11 +718,11 @@ export class IntegrationService {
           ),
         );
       if (conversation)
-        await this.link(
-          { userId: connection.ownerId, source: "session" },
-          connection.organizationId,
-          item.id,
+        await this.materializeThread(
+          connection,
+          item,
           conversation.relationshipId,
+          false,
         );
     }
   }
@@ -932,21 +932,34 @@ export class IntegrationService {
       relationship.productId,
       true,
     );
-    if (item.record.kind === "message" && item.record.threadId) {
-      const threadItems = await this.db
-        .select()
-        .from(s.integrationItems)
-        .where(
-          and(
-            eq(s.integrationItems.connectionId, connection.id),
-            eq(s.integrationItems.status, "unmatched"),
-            sql`${s.integrationItems.record}->>'threadId' = ${item.record.threadId}`,
-          ),
-        )
-        .orderBy(s.integrationItems.createdAt);
-      for (const member of threadItems)
-        await this.materialize(connection, member, relationshipId, true);
-    } else await this.materialize(connection, item, relationshipId, true);
+    await this.materializeThread(connection, item, relationshipId, true);
+  }
+  private async materializeThread(
+    connection: typeof s.connections.$inferSelect,
+    item: typeof s.integrationItems.$inferSelect,
+    relationshipId: string,
+    linkedByMember: boolean,
+  ) {
+    if (item.record.kind !== "message" || !item.record.threadId)
+      return this.materialize(connection, item, relationshipId, linkedByMember);
+    const threadItems = await this.db
+      .select()
+      .from(s.integrationItems)
+      .where(
+        and(
+          eq(s.integrationItems.connectionId, connection.id),
+          eq(s.integrationItems.status, "unmatched"),
+          sql`${s.integrationItems.record}->>'threadId' = ${item.record.threadId}`,
+        ),
+      )
+      .orderBy(s.integrationItems.createdAt);
+    for (const member of threadItems)
+      await this.materialize(
+        connection,
+        member,
+        relationshipId,
+        linkedByMember,
+      );
   }
   async disconnect(principal: Principal, organizationId: string, id: string) {
     const connection = await this.own(principal, organizationId, id);

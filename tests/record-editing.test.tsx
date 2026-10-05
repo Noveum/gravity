@@ -201,6 +201,9 @@ describe("fix round 1", () => {
     expect(amount.getAttribute("step")).toBe("0.01");
     const currency = within(deal).getByLabelText(t.currency);
     await user.clear(currency);
+    await user.type(currency, "KWD");
+    expect(amount.getAttribute("step")).toBe("0.001");
+    await user.clear(currency);
     await user.type(currency, "JPY");
     expect(amount.getAttribute("step")).toBe("1");
     await user.type(amount, "1250");

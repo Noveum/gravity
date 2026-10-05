@@ -502,6 +502,73 @@ test("linking an unmatched message or meeting to an archived person writes nothi
   });
 });
 
+test("new mail on an archived person's linked thread is still stored and matched", async () => {
+  const service = new IntegrationService(local.db, authTransport);
+  const records = new RecordService(local.db);
+  const [gmail] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.externalAccountId, "integration-google-user"));
+  const message = (externalId: string, occurredAt: string): ImportRecord => ({
+    externalId,
+    threadId: "kept-thread",
+    kind: "message",
+    title: "Kept thread",
+    body: `Fictional note ${externalId}`,
+    occurredAt,
+    direction: "inbound",
+    participants: ["person0@example.test"],
+  });
+  await service.importRecord(
+    gmail,
+    message("kept-thread-1", "2026-10-03T09:00:00.000Z"),
+  );
+  const [first] = await local.db
+    .select()
+    .from(s.integrationItems)
+    .where(eq(s.integrationItems.externalId, "kept-thread-1"));
+  await service.link(admin, scope.organizationId, first.id, demoId(300));
+  const [mira] = await local.db
+    .select()
+    .from(s.people)
+    .where(eq(s.people.id, demoId(200)));
+  const archived = await records.archivePerson(admin, {
+    organizationId: scope.organizationId,
+    personId: demoId(200),
+    version: mira?.version ?? 1,
+    archived: true,
+  });
+  try {
+    await expect(
+      service.importRecord(
+        gmail,
+        message("kept-thread-2", "2026-10-04T09:00:00.000Z"),
+      ),
+    ).resolves.toBeUndefined();
+    expect(
+      await local.db
+        .select()
+        .from(s.messages)
+        .where(eq(s.messages.providerMessageId, "kept-thread-2")),
+    ).toHaveLength(1);
+    const [second] = await local.db
+      .select()
+      .from(s.integrationItems)
+      .where(eq(s.integrationItems.externalId, "kept-thread-2"));
+    expect(second).toMatchObject({
+      status: "matched",
+      relationshipId: demoId(300),
+    });
+  } finally {
+    await records.archivePerson(admin, {
+      organizationId: scope.organizationId,
+      personId: demoId(200),
+      version: archived.version,
+      archived: false,
+    });
+  }
+});
+
 test("disconnect during provider fetch cancels imports and does not restore credentials", async () => {
   const [connection] = await local.db
     .select()

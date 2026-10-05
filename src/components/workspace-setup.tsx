@@ -4,7 +4,7 @@ import { ArrowRight, Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorText, requestJson } from "./client-api";
 import { GravityMark } from "./gravity-logo";
-import { submitOnModEnter } from "./modal-lifecycle";
+import { submitOnSaveKey } from "./modal-lifecycle";
 import { Preferences } from "./preferences";
 import {
   type WorkspaceResult,
@@ -63,7 +63,7 @@ export function WorkspaceSetup({
           <h2>{t.setupStepWorkspace}</h2>
           <p className="muted">{t.setupProductHint}</p>
           <form
-            onKeyDown={submitOnModEnter}
+            onKeyDown={submitOnSaveKey}
             onSubmit={async (event) => {
               event.preventDefault();
               if (submitting.current) return;

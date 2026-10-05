@@ -1,5 +1,7 @@
 "use client";
+import { shortcutFor } from "@crm/core/shortcuts";
 import { type RefObject, useEffect, useLayoutEffect } from "react";
+import { isEditable, keyInput } from "./keyboard-navigation";
 
 export function useModalLifecycle(
   ref: RefObject<HTMLDialogElement | null>,
@@ -21,16 +23,18 @@ export function useModalLifecycle(
   }, [ref, active]);
 }
 
-export function submitOnModEnter(event: React.KeyboardEvent<HTMLFormElement>) {
+export function submitOnSaveKey(event: React.KeyboardEvent<HTMLFormElement>) {
+  const editing = isEditable(event.target);
+  const id = shortcutFor(keyInput(event), ["dialog"], editing);
+  if (id !== "save") return;
   if (
-    event.key === "Enter" &&
-    (event.metaKey || event.ctrlKey) &&
-    !event.altKey &&
-    !event.nativeEvent.isComposing
-  ) {
-    event.preventDefault();
-    event.currentTarget.requestSubmit();
-  }
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.currentTarget.closest("dialog")
+  )
+    return;
+  event.preventDefault();
+  if (!event.repeat) event.currentTarget.requestSubmit();
 }
 
 export function useReadyFocus(

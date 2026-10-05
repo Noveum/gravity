@@ -3,7 +3,7 @@ import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
-import { useWorkspaceData } from "../crm/crm-context";
+import { useCreate, useWorkspaceData } from "../crm/crm-context";
 import { usePersonContext } from "../crm/record-context";
 import { useDraft } from "../crm/use-draft";
 import { PersonDetails, RelatedWork } from "../record-details";
@@ -41,6 +41,12 @@ export function PersonRecord({ personId }: { personId: string }) {
       ? requestedAction
       : undefined;
   const draft = useDraft(action);
+  const relationshipId = relationship?.id ?? "";
+  useCreate(() => {
+    if (!relationshipId) return false;
+    crm.setActionDialog(true, relationshipId);
+    return true;
+  });
   const actionKind = action?.kind;
   useEffect(() => {
     setTab(

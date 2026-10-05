@@ -1,10 +1,12 @@
 "use client";
 import type { ClientContext, ClientSnapshot } from "@crm/core/dto";
+import { shortcutFor } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import { ArrowUpRight } from "lucide-react";
 import { dateLabel, label } from "../client-api";
 import { type RecordTab, useCrm } from "../crm/crm-context";
 import type { useDraft } from "../crm/use-draft";
+import { keyInput } from "../keyboard-navigation";
 import { initials } from "../shell/workspace-menu";
 
 type Action = ClientSnapshot["actions"][number];
@@ -196,12 +198,7 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
         maxLength={20000}
         disabled={busy}
         onKeyDown={(event) => {
-          if (
-            event.key === "Enter" &&
-            (event.metaKey || event.ctrlKey) &&
-            !event.altKey &&
-            !event.nativeEvent.isComposing
-          ) {
+          if (shortcutFor(keyInput(event), ["dialog"], true) === "save") {
             event.preventDefault();
             event.currentTarget.parentElement
               ?.querySelector<HTMLButtonElement>(

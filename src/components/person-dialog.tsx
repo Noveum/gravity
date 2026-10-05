@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { errorText, requestJson } from "./client-api";
 import { useDialogSnapshot } from "./dialog-snapshot";
 import {
-  submitOnModEnter,
+  submitOnSaveKey,
   useModalLifecycle,
   useReadyFocus,
 } from "./modal-lifecycle";
@@ -76,7 +76,7 @@ export function PersonDialog({
         </button>
       </div>
       <form
-        onKeyDown={submitOnModEnter}
+        onKeyDown={submitOnSaveKey}
         key={String(existing)}
         onSubmit={async (event) => {
           event.preventDefault();

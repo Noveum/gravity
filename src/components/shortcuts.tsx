@@ -1,49 +1,70 @@
 "use client";
-import { navigationKeys } from "@crm/core/shortcuts";
+import {
+  bindingKeys,
+  bindingLabel,
+  type Shortcut,
+  shortcutSections,
+  shortcuts,
+} from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
-import { useRef, useState } from "react";
-import { label } from "./client-api";
+import { Fragment, useRef, useState } from "react";
 import { useModalLifecycle } from "./modal-lifecycle";
 
-const shortcuts = [
-  ...Object.values(navigationKeys).map((view) => ({
-    label: label(view),
-    keys: t.keys[view],
-    section: t.keyboardNavigation,
-  })),
-  ...[
-    [t.commands, t.keys.commands],
-    [t.keyboardHelp, "?"],
-    [t.searchShortcut, "/"],
-    [t.keyboardRecords, "J / K · ↓ / ↑ · Home / End"],
-    [t.keyboardOpen, "Enter"],
-    [t.keyboardCreate, "C"],
-    [t.scheduleAction, "N"],
-    [t.workspace, "O"],
-    [t.product, "P"],
-    [t.keyboardSubmit, "⌘ / Ctrl Enter"],
-    [t.toggleSidebar, t.keys.sidebar],
-  ].map(([name, keys]) => ({ label: name, keys, section: t.keyboardGeneral })),
-  ...[
-    [t.expandInspector, "E"],
-    [t.keyboardListFocus, "H"],
-    [t.keyboardDetailFocus, "L"],
-    [t.timeline, "1"],
-    [t.evidence, "2"],
-    [t.draft, "3"],
-    [t.backToRecord, "B"],
-    [t.closeInspector, "Esc"],
-  ].map(([name, keys]) => ({ label: name, keys, section: t.recordDetails })),
-];
+export function macPlatform() {
+  return (
+    typeof navigator !== "undefined" &&
+    /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent)
+  );
+}
+
+export function ShortcutKeys({
+  shortcut,
+  mac,
+}: {
+  shortcut: Shortcut;
+  mac: boolean;
+}) {
+  return (
+    <span className="shortcut-keys">
+      <span className="sr-only">
+        {shortcut.bindings
+          .map((binding) => bindingLabel(binding, mac))
+          .join(` ${t.shortcutOr} `)}
+      </span>
+      {shortcut.bindings.map((binding, index) => (
+        <Fragment key={binding}>
+          {index > 0 && (
+            <span className="shortcut-or" aria-hidden>
+              {t.shortcutOr}
+            </span>
+          )}
+          <span className="shortcut-binding" aria-hidden>
+            {bindingKeys(binding, mac).map((key, keyIndex) => (
+              <kbd key={`${key}-${keyIndex.toString()}`}>{key}</kbd>
+            ))}
+          </span>
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
 export function Shortcuts({ onClose }: { onClose: () => void }) {
   const modal = useRef<HTMLDialogElement>(null);
   const [query, setQuery] = useState("");
+  const [mac] = useState(macPlatform);
   useModalLifecycle(modal);
-  const filtered = shortcuts.filter((shortcut) =>
-    `${shortcut.label} ${shortcut.keys} ${shortcut.section}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
-  );
+  const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const filtered = shortcuts.filter((shortcut) => {
+    const text = [
+      shortcut.label,
+      t.shortcutSections[shortcut.section],
+      ...shortcut.bindings.map((binding) => bindingLabel(binding, mac)),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return terms.every((term) => text.includes(term));
+  });
   return (
     <dialog
       ref={modal}
@@ -61,23 +82,32 @@ export function Shortcuts({ onClose }: { onClose: () => void }) {
         onChange={(event) => setQuery(event.target.value)}
       />
       <div className="shortcut-groups">
-        {[t.keyboardNavigation, t.keyboardGeneral, t.recordDetails].map(
-          (section) => (
-            <section key={section}>
-              {filtered.some((shortcut) => shortcut.section === section) && (
-                <h3>{section}</h3>
-              )}
-              {filtered
-                .filter((shortcut) => shortcut.section === section)
-                .map((shortcut) => (
-                  <div className="shortcut-row" key={shortcut.label}>
-                    <span>{shortcut.label}</span>
-                    <kbd>{shortcut.keys}</kbd>
-                  </div>
-                ))}
+        {shortcutSections.map((section) => {
+          const entries = filtered.filter(
+            (shortcut) => shortcut.section === section,
+          );
+          if (!entries.length) return null;
+          return (
+            <section
+              key={section}
+              aria-labelledby={`shortcut-section-${section}`}
+            >
+              <h3 id={`shortcut-section-${section}`}>
+                {t.shortcutSections[section]}
+              </h3>
+              {entries.map((shortcut) => (
+                <div
+                  className="shortcut-row"
+                  key={shortcut.id}
+                  data-shortcut={shortcut.id}
+                >
+                  <span>{shortcut.label}</span>
+                  <ShortcutKeys shortcut={shortcut} mac={mac} />
+                </div>
+              ))}
             </section>
-          ),
-        )}
+          );
+        })}
         {!filtered.length && <p role="status">{t.noCommands}</p>}
       </div>
       <div className="dialog-actions">

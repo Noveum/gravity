@@ -2,7 +2,7 @@
 import t from "@crm/i18n/translations/en.json";
 import { Plus } from "lucide-react";
 import { useRef, useState } from "react";
-import { submitOnModEnter } from "./modal-lifecycle";
+import { submitOnSaveKey } from "./modal-lifecycle";
 
 export function SettingsForm({
   organizationId,
@@ -25,7 +25,7 @@ export function SettingsForm({
       ].map((kind) => (
         <form
           key={kind}
-          onKeyDown={submitOnModEnter}
+          onKeyDown={submitOnSaveKey}
           onSubmit={async (event) => {
             event.preventDefault();
             if (submitting.current) return;

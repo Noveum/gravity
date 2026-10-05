@@ -9,6 +9,7 @@ import { EmptyState } from "../ui/states";
 export function CompaniesView() {
   const crm = useWorkspaceData();
   const { data, search, product } = crm;
+  const selected = new Set(crm.selection.selected);
   const companies = data.companies.filter((company) =>
     [company.name, company.domain]
       .join(" ")
@@ -35,16 +36,22 @@ export function CompaniesView() {
               people.some((person) => person.id === relationship.personId),
             );
             return (
-              <tr key={company.id}>
+              <tr
+                key={company.id}
+                data-selected={selected.has(company.id) || undefined}
+              >
                 <td>
                   <Link
                     href={companyPath(company.id)}
                     className="text-button"
                     data-nav-record={company.id}
-                    aria-keyshortcuts="Space Enter"
+                    aria-keyshortcuts="Space Enter X"
                     onKeyDown={peekOnSpace(() => crm.openCompany(company.id))}
                   >
                     {company.name}
+                    {selected.has(company.id) && (
+                      <span className="sr-only">{t.selected}</span>
+                    )}
                   </Link>
                   <small>{company.domain}</small>
                 </td>

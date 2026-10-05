@@ -15,6 +15,7 @@ type Buffers = ReadonlyMap<string, DraftBuffer>;
 interface DraftBufferActions {
   save: (id: string, buffer: DraftBuffer) => void;
   drop: (...ids: string[]) => void;
+  rebase: (id: string, from: number, to: number) => void;
   clear: () => void;
 }
 
@@ -34,6 +35,12 @@ export function DraftBuffersProvider({ children }: { children: ReactNode }) {
           const next = new Map(current);
           for (const id of ids) next.delete(id);
           return next;
+        }),
+      rebase: (id, from, to) =>
+        setBuffers((current) => {
+          const buffer = current.get(id);
+          if (buffer?.version !== from) return current;
+          return new Map(current).set(id, { ...buffer, version: to });
         }),
       clear: () => setBuffers((current) => (current.size ? empty : current)),
     }),

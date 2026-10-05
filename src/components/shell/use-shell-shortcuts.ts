@@ -1,0 +1,210 @@
+"use client";
+import {
+  extendSelection,
+  type Movement,
+  type ShortcutScope,
+  toggleSelection,
+} from "@crm/core/shortcuts";
+import t from "@crm/i18n/translations/en.json";
+import type { RefObject } from "react";
+import { toggleTheme } from "../appearance";
+import { type RecordTab, useCrm } from "../crm/crm-context";
+import type { useActionVerbs } from "../crm/use-action-verbs";
+import {
+  type DispatchedShortcut,
+  focusedRecord,
+  focusRecord,
+  isEditable,
+  navigableRecords,
+  useKeyboardNavigation,
+} from "../keyboard-navigation";
+import type { Section } from "../routes";
+
+export interface ShellShortcutOptions {
+  searchInput: RefObject<HTMLInputElement | null>;
+  drawerOpen: boolean;
+  closeDrawer: () => void;
+  openDrawer: () => void;
+  openPalette: () => void;
+  openGuide: () => void;
+  toggleSidebar: () => void;
+  goToSection: (section: Section) => void;
+  showPeek: boolean;
+  recordRelationship: string | undefined;
+  compact: () => boolean;
+  verbs: ReturnType<typeof useActionVerbs>;
+}
+
+export function useShellShortcuts({
+  searchInput,
+  drawerOpen,
+  closeDrawer,
+  openDrawer,
+  openPalette,
+  openGuide,
+  toggleSidebar,
+  goToSection,
+  showPeek,
+  recordRelationship,
+  compact,
+  verbs,
+}: ShellShortcutOptions) {
+  const crm = useCrm();
+  const section: Section = crm.route?.section ?? "actions";
+  const recordId = crm.route?.recordId ?? "";
+  const listFocusAllowed = () =>
+    document.activeElement?.classList.contains("view-title") ||
+    !document.activeElement?.closest(
+      "#record-inspector, .sidebar, .resize-handle, header, .toolbar",
+    );
+  const move = (command: Movement) => () =>
+    listFocusAllowed() && focusRecord(command);
+  function toggleSelected() {
+    const row = focusedRecord();
+    const id = row?.getAttribute("data-nav-record");
+    if (!id) return false;
+    crm.setSelection(toggleSelection(crm.selection, id));
+    return true;
+  }
+  const extend = (command: "next" | "previous") => () => {
+    const from = focusedRecord()?.getAttribute("data-nav-record");
+    if (!from || !focusRecord(command)) return false;
+    const to = focusedRecord()?.getAttribute("data-nav-record") ?? from;
+    const order = navigableRecords().map(
+      (row) => row.getAttribute("data-nav-record") ?? "",
+    );
+    crm.setSelection(extendSelection(order, crm.selection, from, to));
+    return true;
+  };
+  function backOut() {
+    const target = document.activeElement;
+    if (drawerOpen) closeDrawer();
+    else if (target === searchInput.current) {
+      if (crm.search) crm.setSearch("");
+      else {
+        searchInput.current?.blur();
+        document.querySelector<HTMLElement>(".view-title")?.focus();
+      }
+    } else if (target instanceof HTMLElement && target.closest(".toolbar")) {
+      target.blur();
+      document.querySelector<HTMLElement>(".view-title")?.focus();
+    } else if (isEditable(target)) return false;
+    else if (crm.selection.selected.length) crm.clearSelection();
+    else if (showPeek) crm.closePeek();
+    else return crm.leaveRecord();
+    return true;
+  }
+  function focusTab(tab: RecordTab) {
+    const button = document.querySelector<HTMLButtonElement>(
+      `[data-inspector-tab="${tab}"]`,
+    );
+    if (!button) return false;
+    crm.setTab(tab);
+    button.focus();
+    return true;
+  }
+  const goTo = (view: Section) => () => {
+    goToSection(view);
+    return true;
+  };
+  const shortcutHandlers: Record<DispatchedShortcut, () => boolean> = {
+    "go-actions": goTo("actions"),
+    "go-meetings": goTo("meetings"),
+    "go-outreach": goTo("outreach"),
+    "go-sequences": goTo("sequences"),
+    "go-people": goTo("people"),
+    "go-companies": goTo("companies"),
+    "go-opportunities": goTo("opportunities"),
+    "go-materials": goTo("materials"),
+    "go-integrations": goTo("integrations"),
+    "go-settings": goTo("settings"),
+    palette: () => {
+      openPalette();
+      return true;
+    },
+    help: () => {
+      openGuide();
+      return true;
+    },
+    search: () => {
+      if (searchInput.current) searchInput.current.focus();
+      else openPalette();
+      return true;
+    },
+    create: () => crm.create(),
+    schedule: () => {
+      if (!crm.data?.relationships.length) return false;
+      crm.setActionDialog(true, recordRelationship ?? crm.peek.relationshipId);
+      return true;
+    },
+    sidebar: () => {
+      toggleSidebar();
+      return true;
+    },
+    theme: () => {
+      toggleTheme();
+      return true;
+    },
+    organization: () => {
+      if (compact()) openDrawer();
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLElement>("[data-workspace-trigger]")
+          ?.focus(),
+      );
+      return true;
+    },
+    product: () => {
+      const filter = document.querySelector<HTMLSelectElement>(
+        `select[aria-label="${t.product}"]`,
+      );
+      filter?.focus();
+      return !!filter;
+    },
+    back: backOut,
+    next: move("next"),
+    previous: move("previous"),
+    first: move("first"),
+    last: move("last"),
+    select: toggleSelected,
+    "extend-next": extend("next"),
+    "extend-previous": extend("previous"),
+    done: verbs.done,
+    snooze: verbs.snooze,
+    assign: verbs.assign,
+    undo: verbs.undo,
+    expand: () => {
+      crm.setExpanded(!crm.expanded);
+      return true;
+    },
+    "list-focus": () => focusRecord("next"),
+    "detail-focus": () => {
+      const target = document.querySelector<HTMLButtonElement>(
+        "#record-inspector button:not(:disabled)",
+      );
+      target?.focus();
+      return !!target;
+    },
+    timeline: () => focusTab("timeline"),
+    evidence: () => focusTab("evidence"),
+    draft: () => focusTab("draft"),
+    "previous-record": () => {
+      if (!crm.recordHistory.length) return false;
+      crm.previousRecord();
+      return true;
+    },
+  };
+  useKeyboardNavigation(
+    (id) => shortcutHandlers[id](),
+    () =>
+      [
+        "global",
+        ...(crm.data && !recordId ? (["list"] as const) : []),
+        ...(crm.data && !recordId && section === "actions"
+          ? (["actions"] as const)
+          : []),
+        ...(showPeek ? (["peek", "detail"] as const) : []),
+        ...(recordId ? (["detail"] as const) : []),
+      ] satisfies ShortcutScope[],
+  );
+}

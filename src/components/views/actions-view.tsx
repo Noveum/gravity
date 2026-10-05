@@ -4,9 +4,9 @@ import { CircleHelp, Hourglass, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { dateLabel, label } from "../client-api";
-import { useWorkspaceData } from "../crm/crm-context";
+import { useCreate, useWorkspaceData } from "../crm/crm-context";
 import { useWarmContext } from "../crm/record-context";
-import { openOnEnter } from "../records/peek-keys";
+import { rowKeys } from "../records/peek-keys";
 import { actionFilters, personPath, sectionPath } from "../routes";
 import { initials } from "../shell/workspace-menu";
 import { EmptyState } from "../ui/states";
@@ -19,6 +19,12 @@ export function ActionsView() {
   const { data, search, personFor, companyFor, product, member, peek } = crm;
   const filters = actionFilters(useSearchParams());
   const warmContext = useWarmContext();
+  useCreate(() => {
+    if (!data.relationships.length) return false;
+    crm.setActionDialog(true);
+    return true;
+  });
+  const selected = new Set(crm.selection.selected);
   const matches = (...values: (string | undefined | null)[]) =>
     values.join(" ").toLowerCase().includes(search.toLowerCase());
   const visibleActions = data.actions.filter(
@@ -54,6 +60,7 @@ export function ActionsView() {
               const OwedIcon =
                 owedIcons[action.owedBy as keyof typeof owedIcons] ??
                 CircleHelp;
+              const isSelected = selected.has(action.id);
               return (
                 <button
                   type="button"
@@ -61,22 +68,28 @@ export function ActionsView() {
                   className="action-row"
                   data-nav-record={action.id}
                   data-action-id={action.id}
+                  data-selected={isSelected || undefined}
                   onPointerEnter={() => warmContext(action.relationshipId)}
                   aria-pressed={peek.actionId === action.id}
-                  aria-keyshortcuts="Space Enter"
+                  aria-keyshortcuts="Space Enter X D S A"
                   onClick={() =>
                     crm.openPerson(action.relationshipId, action.id)
                   }
-                  onKeyDown={openOnEnter(() => {
-                    if (person)
-                      crm.go(
-                        personPath(person.id, {
-                          relationshipId: action.relationshipId,
-                          actionId: action.id,
-                        }),
-                      );
+                  onKeyDown={rowKeys({
+                    peek: () =>
+                      crm.openPerson(action.relationshipId, action.id),
+                    open: () => {
+                      if (person)
+                        crm.go(
+                          personPath(person.id, {
+                            relationshipId: action.relationshipId,
+                            actionId: action.id,
+                          }),
+                        );
+                    },
                   })}
                 >
+                  {isSelected && <span className="sr-only">{t.selected}</span>}
                   <span className="row-avatar" aria-hidden>
                     {initials(person?.name ?? "?")}
                   </span>

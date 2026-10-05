@@ -2823,3 +2823,92 @@ td .badge + .badge {
     scroll-behavior: auto;
   }
 }
+
+.action-row[data-selected] {
+  --button-fill: var(--gravity-accent-soft);
+  --button-hover: var(--gravity-accent-soft-hover);
+}
+.action-row[data-selected]::before,
+tbody tr[data-selected] td:first-child::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gravity-accent);
+  flex-shrink: 0;
+}
+tbody tr[data-selected] {
+  background: var(--gravity-accent-soft);
+}
+tbody tr[data-selected] td:first-child::before {
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.selection-status:empty {
+  display: none;
+}
+.toast-action {
+  --button-ink: var(--gravity-accent);
+  min-height: 22px;
+  padding: 0 8px;
+  font-weight: 500;
+}
+.assign-menu {
+  max-height: 260px;
+  overflow-y: auto;
+}
+.command-group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.command-group + .command-group {
+  margin-top: 6px;
+}
+.command-group-title {
+  padding: 4px 8px 2px;
+  font-size: var(--text-2xs);
+  color: var(--gravity-faint);
+}
+.command-list button {
+  gap: 8px;
+}
+.command-icon {
+  flex-shrink: 0;
+  color: var(--gravity-faint);
+}
+.command-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.command-detail {
+  color: var(--gravity-faint);
+  font-size: var(--text-xs);
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shortcut-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.shortcut-binding {
+  display: inline-flex;
+  gap: 3px;
+}
+.shortcut-or {
+  color: var(--gravity-faint);
+  font-size: var(--text-2xs);
+}

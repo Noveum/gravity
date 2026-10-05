@@ -21,6 +21,10 @@ export function ViewToolbar({
   const products = (crm.data?.products ?? []).filter(
     (product) => product.organizationId === crm.organizationId,
   );
+  const selectedLabel = t.selectedCount.replace(
+    "{count}",
+    String(crm.selection.selected.length),
+  );
   const filter = (change: Partial<ActionFilters>) =>
     router.replace(actionsPath({ ...filters, ...change }), { scroll: false });
   return (
@@ -50,6 +54,18 @@ export function ViewToolbar({
           />
         </label>
       )}
+      <span className="selection-status" aria-live="polite">
+        {crm.selection.selected.length > 0 && (
+          <button
+            type="button"
+            className="chip"
+            aria-label={`${selectedLabel}: ${t.clearSelection}`}
+            onClick={crm.clearSelection}
+          >
+            {selectedLabel} <X size={12} aria-hidden />
+          </button>
+        )}
+      </span>
       {section === "actions" && (
         <>
           <select

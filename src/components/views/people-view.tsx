@@ -2,7 +2,7 @@
 import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
 import { label } from "../client-api";
-import { useWorkspaceData } from "../crm/crm-context";
+import { useCreate, useWorkspaceData } from "../crm/crm-context";
 import { useWarmContext } from "../crm/record-context";
 import { peekOnSpace } from "../records/peek-keys";
 import { companyPath, personPath } from "../routes";
@@ -12,6 +12,12 @@ export function PeopleView() {
   const crm = useWorkspaceData();
   const { data, search, companyFor, product, peek } = crm;
   const warmContext = useWarmContext();
+  const selected = new Set(crm.selection.selected);
+  useCreate(() => {
+    if (!data.products.length) return false;
+    crm.setPersonDialog(true);
+    return true;
+  });
   const matches = (...values: (string | undefined | null)[]) =>
     values.join(" ").toLowerCase().includes(search.toLowerCase());
   const people = data.people.filter((person) =>
@@ -37,19 +43,25 @@ export function PeopleView() {
             const first = relationships[0]?.id ?? "";
             const company = companyFor(person.id);
             return (
-              <tr key={person.id}>
+              <tr
+                key={person.id}
+                data-selected={selected.has(person.id) || undefined}
+              >
                 <td>
                   <Link
                     href={personPath(person.id)}
                     className="text-button identity-link"
                     data-nav-record={person.id}
                     aria-label={person.name}
-                    aria-keyshortcuts="Space Enter"
+                    aria-keyshortcuts="Space Enter X"
                     onFocus={() => warmContext(first)}
                     onKeyDown={peekOnSpace(() => crm.openPerson(first))}
                   >
                     {person.name}
                     <small>{person.title}</small>
+                    {selected.has(person.id) && (
+                      <span className="sr-only">{t.selected}</span>
+                    )}
                   </Link>
                 </td>
                 <td>

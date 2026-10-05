@@ -1,6 +1,7 @@
 "use client";
 import { productSnapshot } from "@crm/core/client-state";
 import type { ClientContext, ClientSnapshot } from "@crm/core/dto";
+import { emptySelection, type SelectionState } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -9,6 +10,7 @@ import {
   type RefObject,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -35,6 +37,18 @@ export interface Peek {
 }
 const noPeek: Peek = { relationshipId: "", companyId: "", actionId: "" };
 type Snapshot = ClientSnapshot;
+type Action = Snapshot["actions"][number];
+export interface ActionPlan {
+  actionId: string;
+  version: number;
+  status?: "open" | "completed";
+  dueAt?: string;
+  ownerId?: string;
+}
+interface Origin {
+  path: string;
+  focus: string;
+}
 
 export interface CrmProps {
   initial: ClientSnapshot | null;
@@ -85,7 +99,17 @@ function useCrmState({
   const [expanded, setExpanded] = useState(false);
   const [searchState, setSearchState] = useState({ path: pathname, text: "" });
   const [personDialog, setPersonDialog] = useState(false);
-  const [actionDialog, setActionDialog] = useState(false);
+  const [actionDialog, setActionDialogState] = useState({
+    open: false,
+    relationshipId: "",
+  });
+  const [selectionState, setSelectionState] = useState({
+    path: pathname,
+    selection: emptySelection,
+  });
+  const creator = useRef<(() => boolean) | null>(null);
+  const origin = useRef<Origin | null>(null);
+  const rowFocus = useRef("");
   const [busy, setBusy] = useState(false);
   const [focusedRecord, setFocusedRecord] = useState({ path: "", id: "" });
   const mutating = useRef(false);
@@ -121,6 +145,14 @@ function useCrmState({
         }
       : noPeek;
   const search = searchState.path === pathname ? searchState.text : "";
+  const selection =
+    selectionState.path === pathname
+      ? selectionState.selection
+      : emptySelection;
+  const setSelection = (next: SelectionState) =>
+    setSelectionState({ path: pathname, selection: next });
+  const setActionDialog = (open: boolean, relationshipId = "") =>
+    setActionDialogState({ open, relationshipId: open ? relationshipId : "" });
   const setSearch = (text: string) => setSearchState({ path: pathname, text });
   const currentOrg = organizations.find((org) => org.id === organizationId);
   const timeZone = currentOrg?.timezone || "UTC";
@@ -135,10 +167,47 @@ function useCrmState({
     setExpanded(false);
     setPersonDialog(false);
     setActionDialog(false);
+    setSelectionState({ path: "", selection: emptySelection });
+  }
+  function rememberOrigin(href: string) {
+    const target = routeFor(href.split("?")[0] ?? href);
+    if (!target?.recordId || route?.recordId) return;
+    const focus =
+      document.activeElement instanceof HTMLElement
+        ? (document.activeElement
+            .closest<HTMLElement>("[data-nav-record]")
+            ?.getAttribute("data-nav-record") ?? "")
+        : "";
+    origin.current = {
+      path: `${pathname}${query.toString() ? `?${query}` : ""}`,
+      focus,
+    };
   }
   function go(href: string) {
+    rememberOrigin(href);
     titleFocus.current = href.split("?")[0] ?? href;
     router.push(href);
+  }
+  function leaveRecord() {
+    if (!route?.recordId) return false;
+    const back = origin.current ?? {
+      path: sectionPath(route.section),
+      focus: route.recordId,
+    };
+    origin.current = null;
+    rowFocus.current = back.focus;
+    titleFocus.current = back.path.split("?")[0] ?? back.path;
+    router.push(back.path);
+    return true;
+  }
+  const registerCreate = useCallback((run: () => boolean) => {
+    creator.current = run;
+    return () => {
+      if (creator.current === run) creator.current = null;
+    };
+  }, []);
+  function create() {
+    return creator.current?.() ?? false;
   }
   function goToSection(section: Section) {
     go(sectionPath(section));
@@ -215,7 +284,20 @@ function useCrmState({
     router.push(path);
   }
   async function mutate(body: object) {
-    if (mutating.current) return false;
+    return (await send(body)).ok;
+  }
+  async function planActions(items: ActionPlan[]) {
+    const { ok, result } = await send(
+      { operation: "plan", organizationId, items },
+      false,
+    );
+    return ok ? (result as Action[]) : null;
+  }
+  async function send(
+    body: object,
+    announce = true,
+  ): Promise<{ ok: boolean; result?: unknown }> {
+    if (mutating.current) return { ok: false };
     mutating.current = true;
     const submittedOrganization = organizationId;
     setBusy(true);
@@ -225,9 +307,27 @@ function useCrmState({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (activeOrganization.current !== submittedOrganization) return true;
+      if (activeOrganization.current !== submittedOrganization)
+        return { ok: true, result };
       fetchGeneration.current++;
       const changed = body as { operation?: string; actionId?: string };
+      if (changed.operation === "plan") {
+        const updated = result as Action[];
+        for (const action of updated)
+          draftBuffers.rebase(action.id, action.version - 1, action.version);
+        setData((previous) =>
+          previous
+            ? {
+                ...previous,
+                asOf: new Date().toISOString(),
+                actions: previous.actions.map(
+                  (item) =>
+                    updated.find((action) => action.id === item.id) ?? item,
+                ),
+              }
+            : previous,
+        );
+      }
       if (changed.operation === "action") {
         const updatedAction = result as Snapshot["actions"][number];
         draftBuffers.drop(updatedAction.id, changed.actionId ?? "");
@@ -244,15 +344,15 @@ function useCrmState({
         );
       }
       void refresh();
-      notify(t.updated, "success");
-      return true;
+      if (announce) notify(t.updated, "success");
+      return { ok: true, result };
     } catch (error) {
       if (activeOrganization.current === submittedOrganization) {
         notify(errorText(error), "danger");
         if (isAccessError(error, ["CONFLICT", "FORBIDDEN", "UNAUTHORIZED"]))
           void refresh();
       }
-      return false;
+      return { ok: false };
     } finally {
       mutating.current = false;
       setBusy(false);
@@ -323,6 +423,7 @@ function useCrmState({
     busy,
     mutating,
     mutate,
+    planActions,
     revokeGrant,
     reloadOrganizations,
     switchOrganization,
@@ -347,8 +448,17 @@ function useCrmState({
     setExpanded,
     personDialog,
     setPersonDialog,
-    actionDialog,
+    actionDialog: actionDialog.open,
+    actionDialogRelationship: actionDialog.relationshipId,
     setActionDialog,
+    selection,
+    setSelection,
+    clearSelection: () => setSelection(emptySelection),
+    registerCreate,
+    create,
+    leaveRecord,
+    rememberOrigin,
+    rowFocus,
     focusedRecord: focusedRecord.path === pathname ? focusedRecord.id : "",
     reveal,
     go,
@@ -382,6 +492,15 @@ export function useCrm() {
   const crm = useContext(CrmContext);
   if (!crm) throw new Error("CRM_PROVIDER_MISSING");
   return crm;
+}
+
+export function useCreate(run: () => boolean) {
+  const { registerCreate } = useCrm();
+  const latest = useRef(run);
+  useEffect(() => {
+    latest.current = run;
+  });
+  useEffect(() => registerCreate(() => latest.current()), [registerCreate]);
 }
 
 export function useWorkspaceData() {

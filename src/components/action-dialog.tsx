@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { errorText, label, requestJson } from "./client-api";
 import { useDialogSnapshot } from "./dialog-snapshot";
 import {
-  submitOnModEnter,
+  submitOnSaveKey,
   useModalLifecycle,
   useReadyFocus,
 } from "./modal-lifecycle";
@@ -62,7 +62,7 @@ export function ActionDialog({
     >
       <h2 id="action-dialog-title">{t.scheduleAction}</h2>
       <form
-        onKeyDown={submitOnModEnter}
+        onKeyDown={submitOnSaveKey}
         onSubmit={async (e) => {
           e.preventDefault();
           if (submitting.current || loading || loadError) return;

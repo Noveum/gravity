@@ -12,6 +12,7 @@ export function MaterialsView() {
       refresh={crm.refresh}
       onNotice={(text) => crm.notify(text, "success")}
       timeZone={crm.timeZone}
+      registerCreate={crm.registerCreate}
     />
   );
 }

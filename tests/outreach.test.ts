@@ -1421,6 +1421,7 @@ describe("views for the outreach section", () => {
     now += 3 * day;
     await outreach.advanceEnrollments(admin, { organizationId: org });
     expect(await touchesOf(f.relationshipId)).toHaveLength(2);
+    const withdrawn = (await touchesOf(f.relationshipId))[1];
     const reopened = await outreach.reopen(admin, {
       organizationId: org,
       touchId: touch.id,
@@ -1433,6 +1434,19 @@ describe("views for the outreach section", () => {
     });
     expect(await touchesOf(f.relationshipId)).toMatchObject([
       { stepNumber: 1, status: "drafted" },
+    ]);
+    expect(
+      await local.db
+        .select()
+        .from(s.changeEvents)
+        .where(
+          and(
+            eq(s.changeEvents.entityId, withdrawn?.id ?? ""),
+            eq(s.changeEvents.type, "touch.withdrawn"),
+          ),
+        ),
+    ).toMatchObject([
+      { organizationId: org, productId: f.productId, actorId: demoUser },
     ]);
     expect(await enrollmentOf(f.relationshipId)).toMatchObject({
       status: "running",

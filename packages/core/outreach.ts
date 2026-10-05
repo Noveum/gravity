@@ -1498,13 +1498,23 @@ export class OutreachService {
           );
         if (later.some((row) => row.status !== "planned" || row.version !== 1))
           throw new DomainError("CONFLICT", 409);
-        if (later.length)
+        if (later.length) {
+          await tx.insert(s.changeEvents).values(
+            later.map((row) => ({
+              organizationId: row.organizationId,
+              productId: row.productId,
+              actorId: principal.userId,
+              type: "touch.withdrawn",
+              entityId: row.id,
+            })),
+          );
           await tx.delete(s.touches).where(
             inArray(
               s.touches.id,
               later.map((row) => row.id),
             ),
           );
+        }
         const now = new Date(this.clock());
         const [updated] = await tx
           .update(s.touches)

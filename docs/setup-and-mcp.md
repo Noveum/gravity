@@ -12,11 +12,14 @@ The local fictional demo works without credentials. `CRM_DEMO_MODE=false` or any
 | `BETTER_AUTH_SECRET` | Stable auth/encryption secret, generated and stored securely |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional Google login app |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Optional GitHub login app |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Optional passwordless email sign-in; sender must be verified in Resend |
 | `UNIPILE_WEBHOOK_SECRET` | Per-endpoint v2 signature secret; handler remains disabled in demo |
 | `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Private object storage credentials |
 | `S3_ENDPOINT`, `S3_REGION` | Provider endpoint/region; region defaults to `auto` |
 
-No Unipile API key or Gmail mailbox refresh token is consumed by the foundation because hosted connection setup and synchronization clients are not implemented. Do not add credentials that no adapter uses. Resend invitation mail is also pending.
+No Unipile API key or Gmail mailbox refresh token is consumed by the foundation because hosted connection setup and synchronization clients are not implemented. Do not add credentials that no adapter uses. Resend sends requested login codes; teammate invitations are still pending.
+
+Email sign-in uses six-digit, single-use OTP codes that expire after five minutes, with three incorrect attempts allowed. Codes are hashed in the protected verification store. Atomic database rate limits work across serverless instances; each recipient can request one code per minute. A rejected resend leaves the original code usable. The browser handles delivery failures, code errors and resend cooldowns without losing the recipient or assistant authorization request. Login-code delivery is awaited, and its bounded log events never include the code, recipient or provider response body.
 
 The social-login callback paths are `/api/auth/callback/google` and `/api/auth/callback/github`, under the exact configured origin. Register a distinct CRM client or explicitly review an additional callback in an existing app. Do not copy credentials from another project into code. Gmail connection scopes/callbacks will be separate from login, and require the Google verification/security requirements relevant to the chosen scope.
 
@@ -38,7 +41,7 @@ Connection sequence after deployment:
 
 1. Add the remote HTTP server `<APP_URL>/mcp` in an OAuth-capable assistant client.
 2. The client discovers OAuth metadata and starts authorization-code flow with S256 PKCE.
-3. Sign into the CRM through the configured Google/GitHub provider.
+3. Sign into the CRM through Google, GitHub or an email code, according to the installation's enabled providers.
 4. Select one organization and the products to share. The signed OAuth request binds that selection to this flow and session; parallel consent tabs cannot overwrite each other's tenant selection.
 5. Review the client, organization/products and read-only permission at consent.
 6. The client exchanges the code and stores its tokens. Revoke the grant from Connections when needed.

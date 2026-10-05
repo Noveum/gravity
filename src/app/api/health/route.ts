@@ -10,7 +10,7 @@ export async function GET() {
   let isReady = false;
   try {
     const secret = process.env.BETTER_AUTH_SECRET;
-    if (isDemoMode() || !secret || secret.length < 32)
+    if (isDemoMode() || !secret || secret.length < 32 || !loginConfigured())
       throw new Error("PRODUCTION_CONFIGURATION_REQUIRED");
     appUrl();
     const db = await getDatabase();
@@ -36,3 +36,5 @@ export async function GET() {
     },
   );
 }
+
+import { loginConfigured } from "@crm/auth/config";

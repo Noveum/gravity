@@ -6,7 +6,16 @@ export async function requestJson<T>(
 ): Promise<T> {
   const response = await fetch(url, { ...init, cache: "no-store" });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error ?? "INTERNAL_ERROR");
+  if (!response.ok)
+    throw new Error(
+      typeof data.error === "string"
+        ? data.error
+        : typeof data.code === "string"
+          ? data.code
+          : response.status === 429
+            ? "RATE_LIMITED"
+            : "INTERNAL_ERROR",
+    );
   return data;
 }
 export function errorText(error: unknown) {

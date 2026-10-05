@@ -174,7 +174,7 @@
   "signInSubtitle": "Your relationships, with the context for the next step.",
   "googleSignIn": "Continue with Google",
   "githubSignIn": "Continue with GitHub",
-  "authUnavailable": "Sign-in is not configured yet. Your administrator needs to enable Google or GitHub login.",
+  "authUnavailable": "Sign-in is not configured yet. Your administrator needs to enable Google, GitHub or email login.",
   "openDemo": "Open local demo",
   "authorize": "Choose assistant access",
   "authorizeDescription": "Choose the organization and products this assistant can read. It cannot approve drafts or send messages.",
@@ -209,7 +209,14 @@
     "NETWORK_ERROR": "Could not reach the server. Try again.",
     "PERSON_EXISTS": "This email already exists in this organization. Use Existing person to add a product relationship, or ask a teammate to review the duplicate.",
     "OWNER_NOT_ALLOWED": "Choose an active teammate with access to this product.",
-    "PRODUCT_EXISTS": "A product with this name already exists in this organization."
+    "PRODUCT_EXISTS": "A product with this name already exists in this organization.",
+    "EMAIL_DELIVERY_UNAVAILABLE": "We could not send your code. Try again in a minute or use Google or GitHub.",
+    "RATE_LIMITED": "Too many requests. Wait a minute and try again.",
+    "TOO_MANY_REQUESTS": "Too many requests. Wait a minute and try again.",
+    "INVALID_OTP": "That code is not valid. Check the email and try again.",
+    "OTP_EXPIRED": "Your code expired. Request a new code.",
+    "TOO_MANY_ATTEMPTS": "Too many incorrect attempts. Request a new code.",
+    "INVALID_EMAIL": "Enter a valid email address."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
   "addPerson": "Add person",
@@ -785,5 +792,19 @@
         "body": "Keep organizations separate and give an assistant access to selected products. Revoke its grant when it no longer needs access."
       }
     ]
-  }
+  },
+  "orEmail": "Or continue with email",
+  "emailAddress": "Email address",
+  "signInCode": "Sign-in code",
+  "sendSignInCode": "Send sign-in code",
+  "sendingSignInCode": "Sending code…",
+  "verifySignInCode": "Verify and sign in",
+  "signingIn": "Signing in…",
+  "emailCodeSent": "Enter the six-digit code sent to {email}.",
+  "resendCode": "Resend code",
+  "resendCodeIn": "Resend in {seconds}s",
+  "changeEmail": "Use a different email",
+  "emailCodeNote": "No password needed. Codes expire after five minutes.",
+  "emailOtpSubject": "Your Gravity sign-in code",
+  "emailOtpBody": "Your Gravity sign-in code is:\n\n{code}\n\nThis code expires in five minutes and can be used once. If you did not request it, you can ignore this email."
 }

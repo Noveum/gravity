@@ -22,6 +22,15 @@ afterEach(() => {
 afterAll(async () => local.client.close());
 
 function configure() {
+  vi.stubEnv("GOOGLE_CLIENT_ID", "fictional-google-id");
+  vi.stubEnv("GOOGLE_CLIENT_SECRET", "fictional-google-secret");
+  for (const key of [
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+    "RESEND_API_KEY",
+    "EMAIL_FROM",
+  ])
+    vi.stubEnv(key, "");
   vi.stubEnv(
     "BETTER_AUTH_SECRET",
     "fictional-health-test-secret-32-characters",
@@ -40,6 +49,18 @@ test("readiness exercises migrated CRM and auth tables without returning records
     event: "gravity.health",
     status: "ready",
   });
+});
+
+test("database access without a configured login is unavailable, while email-only login is ready", async () => {
+  configure();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "info").mockImplementation(() => {});
+  vi.stubEnv("GOOGLE_CLIENT_SECRET", "");
+  expect((await GET()).status).toBe(503);
+  vi.stubEnv("RESEND_API_KEY", "fictional-resend-key");
+  expect((await GET()).status).toBe(503);
+  vi.stubEnv("EMAIL_FROM", "Gravity <login@example.test>");
+  expect((await GET()).status).toBe(200);
 });
 
 test("demo identities and missing auth configuration are never production-ready", async () => {

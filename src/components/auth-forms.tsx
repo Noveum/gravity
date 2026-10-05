@@ -5,6 +5,7 @@ import { Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { errorText, type Organization, requestJson } from "./client-api";
+import { signInDestination } from "./sign-in-destination";
 
 function Card({
   title,
@@ -45,14 +46,79 @@ function navigateAuth(url: string | undefined) {
 export function SignIn({
   providers,
   demo,
+  emailEnabled = false,
 }: {
   providers: ("google" | "github")[];
   demo: boolean;
+  emailEnabled?: boolean;
 }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const query = useSearchParams();
   const submitting = useRef(false);
+  const activeQuery = useRef(query.toString());
+  activeQuery.current = query.toString();
+  const [email, setEmail] = useState("");
+  const [sentEmail, setSentEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [cooldown, setCooldown] = useState(0);
+  const codeInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!cooldown) return;
+    const timer = window.setTimeout(
+      () => setCooldown((value) => Math.max(0, value - 1)),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
+  useEffect(() => {
+    if (sentEmail) codeInput.current?.focus();
+  }, [sentEmail]);
+  async function sendCode() {
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError("");
+    const recipient = (sentEmail || email).trim().toLowerCase();
+    try {
+      await authPost("/email-otp/send-verification-otp", {
+        email: recipient,
+        type: "sign-in",
+      });
+      setSentEmail(recipient);
+      setOtp("");
+      setCooldown(60);
+      codeInput.current?.focus();
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }
+  async function verifyCode() {
+    if (submitting.current || !/^\d{6}$/.test(otp)) return;
+    submitting.current = true;
+    setBusy(true);
+    setError("");
+    const signedQuery = query.toString();
+    try {
+      const response = await authPost("/sign-in/email-otp", {
+        email: sentEmail,
+        otp,
+        ...(query.has("sig") ? { oauth_query: signedQuery } : {}),
+      });
+      if (activeQuery.current === signedQuery)
+        navigateAuth(
+          response.url ?? signInDestination(query, window.location.origin),
+        );
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }
   return (
     <Card title={t.signIn} description={t.signInSubtitle}>
       {providers.length ? (
@@ -67,12 +133,7 @@ export function SignIn({
               setError("");
               setBusy(true);
               try {
-                const callbackURL = query.get("callbackURL") ?? "/";
-                const target = new URL(callbackURL, window.location.origin);
-                const safe =
-                  target.origin === window.location.origin
-                    ? `${target.pathname}${target.search}`
-                    : "/";
+                const safe = signInDestination(query, window.location.origin);
                 navigateAuth(
                   (
                     await authPost("/sign-in/social", {
@@ -95,8 +156,88 @@ export function SignIn({
             {provider === "google" ? t.googleSignIn : t.githubSignIn}
           </button>
         ))
-      ) : (
+      ) : !emailEnabled ? (
         <p className="callout">{t.authUnavailable}</p>
+      ) : null}
+      {emailEnabled && (
+        <>
+          {providers.length > 0 && <p className="auth-divider">{t.orEmail}</p>}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!event.currentTarget.checkValidity()) return;
+              if (sentEmail) void verifyCode();
+              else void sendCode();
+            }}
+          >
+            {sentEmail ? (
+              <>
+                <p id="otp-instructions">
+                  {t.emailCodeSent.replace("{email}", sentEmail)}
+                </p>
+                <label>
+                  {t.signInCode}
+                  <input
+                    ref={codeInput}
+                    value={otp}
+                    onChange={(event) => setOtp(event.target.value)}
+                    required
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    aria-describedby="otp-instructions"
+                    disabled={busy}
+                  />
+                </label>
+                <button type="submit" disabled={busy}>
+                  {busy ? t.signingIn : t.verifySignInCode}
+                </button>
+                <div className="auth-code-actions">
+                  <button
+                    type="button"
+                    disabled={busy || cooldown > 0}
+                    onClick={() => void sendCode()}
+                  >
+                    {cooldown
+                      ? t.resendCodeIn.replace("{seconds}", String(cooldown))
+                      : t.resendCode}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setSentEmail("");
+                      setOtp("");
+                      setError("");
+                    }}
+                  >
+                    {t.changeEmail}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <label>
+                  {t.emailAddress}
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    required
+                    maxLength={254}
+                    disabled={busy}
+                  />
+                </label>
+                <button type="submit" disabled={busy}>
+                  {busy ? t.sendingSignInCode : t.sendSignInCode}
+                </button>
+              </>
+            )}
+            <p className="auth-email-note">{t.emailCodeNote}</p>
+          </form>
+        </>
       )}
       {demo && (
         <a href="/" className="auth-link">

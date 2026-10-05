@@ -1209,6 +1209,25 @@ legend {
   border-radius: 6px;
   background: var(--soft);
   text-decoration: none;
+  width: 100%;
+  margin-top: 10px;
+}
+.auth-card .auth-divider {
+  text-align: center;
+  margin: 22px 0;
+}
+.auth-code-actions {
+  display: flex;
+  gap: 10px;
+}
+.auth-code-actions button {
+  padding: 8px 5px;
+  font-size: 11px;
+  background: transparent;
+}
+.auth-card .auth-email-note {
+  font-size: 11px;
+  margin: 14px 0 0;
 }
 .auth-card label {
   display: flex;

@@ -82,12 +82,11 @@ export function CompanyRecord({ companyId }: { companyId: string }) {
         {context ? (
           <>
             <CompanyPeople context={context} onPerson={openPerson} />
-            <div className="related-work">
-              <RelatedOpportunities
-                opportunities={context.opportunities}
-                onReveal={crm.reveal}
-              />
-            </div>
+            <RelatedOpportunities
+              className="record-section"
+              opportunities={context.opportunities}
+              onReveal={crm.reveal}
+            />
           </>
         ) : (
           <LoadingState rows={5} />

@@ -1512,6 +1512,9 @@ td small {
   border-bottom: 1px solid var(--gravity-border-hairline);
   font-size: var(--text-xs);
 }
+.record-section > .company-contact:last-child {
+  border-bottom: 0;
+}
 .record-highlight {
   outline: 2px solid var(--gravity-ring);
   outline-offset: -2px;
@@ -1590,7 +1593,12 @@ body:has(.resize-handle[data-dragging]) {
 ul.timeline {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 0 0 6px;
+}
+.record-timeline .group-title {
+  margin: 0 -24px 10px;
+  padding: 0 24px;
+  top: -12px;
 }
 .activity-group + .activity-group {
   margin-top: 12px;

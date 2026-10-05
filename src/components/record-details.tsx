@@ -74,9 +74,10 @@ export function RelatedWork({
 export function RelatedOpportunities({
   opportunities,
   onReveal,
-}: Pick<WorkProps, "opportunities" | "onReveal">) {
+  className,
+}: Pick<WorkProps, "opportunities" | "onReveal"> & { className?: string }) {
   return (
-    <section>
+    <section className={className}>
       <h3>{t.opportunities}</h3>
       {opportunities.map((o) => (
         <button

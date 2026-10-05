@@ -450,6 +450,26 @@ describe("workspace links", () => {
           await follow(`workspace=lunar&next=${encodeURIComponent(next)}`)
         ).headers.get("location"),
       ).toBe("/actions");
+    for (const next of [
+      "/people\r\nSet-Cookie: x=1",
+      "/people\u0000",
+      "/people\u007f",
+      "/people?q=a\r\nSet-Cookie: x=1",
+      "/people#a\nb",
+    ]) {
+      const response = await follow(
+        `workspace=lunar&next=${encodeURIComponent(next)}`,
+      );
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe("/actions");
+    }
+    const otherBrand = await follow(
+      `workspace=northstar&productId=${demoId(13)}`,
+    );
+    expect(otherBrand.headers.getSetCookie()).toEqual([
+      "gravity-workspace=northstar; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+      "gravity-brand=; Path=/; Max-Age=0; SameSite=Lax; Secure",
+    ]);
     const anonymous = await follow("workspace=lunar", null);
     expect(anonymous.headers.get("location")).toBe(
       `/sign-in?callbackURL=${encodeURIComponent("/api/workspace?workspace=lunar")}`,

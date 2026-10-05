@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   and,
   asc,
@@ -15,6 +15,7 @@ import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import t from "../i18n/translations/en.json";
+import { draftHash } from "./drafts";
 import { authorize, DomainError, type Principal } from "./policy";
 import {
   activeCompany,
@@ -329,6 +330,19 @@ export class CrmService {
           .returning();
         personId = person.id;
       }
+      const [firstStage] = await tx
+        .select({ id: s.stages.id })
+        .from(s.stages)
+        .where(
+          and(
+            eq(s.stages.organizationId, input.organizationId),
+            eq(s.stages.productId, input.productId),
+            eq(s.stages.pipeline, "outreach"),
+            isNull(s.stages.archivedAt),
+          ),
+        )
+        .orderBy(asc(s.stages.position))
+        .limit(1);
       const [relationship] = await tx
         .insert(s.relationships)
         .values({
@@ -338,6 +352,7 @@ export class CrmService {
           ownerId: principal.userId,
           purpose: input.purpose,
           context: input.context,
+          stageId: firstStage?.id ?? null,
         })
         .onConflictDoNothing()
         .returning();
@@ -922,17 +937,13 @@ export class CrmService {
         .select()
         .from(s.people)
         .where(eq(s.people.id, relationship.personId));
-      const hash = createHash("sha256")
-        .update(
-          JSON.stringify({
-            draft,
-            personId: person.id,
-            email: person.email,
-            channel: action.channel,
-            productId: action.productId,
-          }),
-        )
-        .digest("hex");
+      const hash = draftHash({
+        draft,
+        personId: person.id,
+        email: person.email,
+        channel: action.channel,
+        productId: action.productId,
+      });
       const keepsApproval =
         input.command === "complete" && action.approvedHash === hash;
       if (input.command === "approve" && !draft.trim())

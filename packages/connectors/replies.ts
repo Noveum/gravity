@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { z } from "zod";
+import { pauseForReply, peopleByEmail } from "../core/outreach";
 import { DomainError } from "../core/policy";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
@@ -17,6 +18,7 @@ export const replySchema = z.object({
   body: z.string().max(100000),
   occurredAt: z.iso.datetime(),
   historical: z.boolean().optional(),
+  from: z.string().trim().max(320).optional(),
 });
 export type ReplyEvent = z.infer<typeof replySchema>;
 export function verifyUnipileSignature(
@@ -109,6 +111,7 @@ export function normalizeUnipileV2(
       channel: "gmail",
       body: mail.email.body_plain,
       occurredAt: mail.email.date,
+      from: mail.email.from[0]?.email,
     });
   }
   return null;
@@ -165,7 +168,19 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
           eq(s.conversations.externalThreadId, event.threadId),
         ),
       );
+    const senders =
+      event.direction === "inbound" && event.from
+        ? await peopleByEmail(tx, connection.organizationId, event.from)
+        : [];
     if (!conversation || conversation.channel !== event.channel) {
+      if (!event.historical)
+        await pauseForReply(tx, {
+          organizationId: connection.organizationId,
+          personIds: senders,
+          occurredAt: new Date(event.occurredAt),
+          actorId: connection.ownerId,
+          pause: true,
+        });
       await tx
         .update(s.connectorEvents)
         .set({ status: "unmatched" })
@@ -225,26 +240,25 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
           })),
         );
     }
+    if (message && event.direction === "inbound") {
+      const [owner] = await tx
+        .select({ personId: s.relationships.personId })
+        .from(s.relationships)
+        .where(eq(s.relationships.id, conversation.relationshipId));
+      await pauseForReply(tx, {
+        organizationId: connection.organizationId,
+        personIds: [...(owner ? [owner.personId] : []), ...senders],
+        occurredAt: new Date(event.occurredAt),
+        actorId: connection.ownerId,
+        pause: !event.historical && latest?.id === message.id,
+      });
+    }
     if (
       !event.historical &&
       message &&
       latest?.id === message.id &&
       event.direction === "inbound"
     ) {
-      await tx
-        .update(s.enrollments)
-        .set({
-          status: "paused",
-          pauseReason: "reply",
-          version: sqIncrement(s.enrollments.version),
-        })
-        .where(
-          and(
-            eq(s.enrollments.organizationId, connection.organizationId),
-            eq(s.enrollments.relationshipId, conversation.relationshipId),
-            eq(s.enrollments.status, "running"),
-          ),
-        );
       const blockedActions = await tx
         .update(s.actions)
         .set({

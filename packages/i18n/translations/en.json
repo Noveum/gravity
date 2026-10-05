@@ -242,6 +242,15 @@
     "STALE_CONFIGURATION": "Your provider setup changed. Reload Connections and try again.",
     "RECORD_ARCHIVED": "This record is archived. Restore it before changing it.",
     "COMPANY_EXISTS": "A company with this domain already exists in this organization.",
+    "TOUCH_ALREADY_SENT": "This message was already reported sent by {sentBy} at {sentAt}. It cannot be reported twice.",
+    "TOUCH_CLOSED": "This message was skipped or expired. It can no longer change.",
+    "DO_NOT_CONTACT": "This person asked not to be contacted.",
+    "CONTACT_COOLDOWN": "This person was contacted recently. The earliest allowed time is {until}.",
+    "DAILY_CAP_REACHED": "This sender has reached today's limit of {cap} messages.",
+    "QUIET_HOURS": "It is quiet hours for this person. They end at {until}.",
+    "ENROLLMENT_PAUSED": "This sequence is paused for this person. Resume it first.",
+    "ENROLLMENT_CLOSED": "This sequence has stopped or completed for this person.",
+    "EXTERNAL_MESSAGE_REPORTED": "This sent message is already recorded on another touch.",
     "PROVIDER_CONFIGURATION_IN_USE": "This setup already has linked accounts. Remove it first to replace the credentials; this will disconnect those accounts and preserve imported history."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
@@ -337,6 +346,23 @@
   "summary": "Summary",
   "retry": "Retry",
   "defaultFolder": "Overview",
+  "outreachCopy": {
+    "skipReasons": {
+      "not_found": "Not available",
+      "other_brand": "Belongs to another brand",
+      "archived": "Archived",
+      "do_not_contact": "Do not contact",
+      "already_enrolled": "Already in this sequence",
+      "in_another_sequence": "Already in another sequence"
+    },
+    "warnings": {
+      "cooldown": "Sent inside the cooldown",
+      "daily_cap": "Sent over the sender's daily cap",
+      "quiet_hours": "Sent during quiet hours",
+      "unapproved": "Sent without a current approval",
+      "paused": "Sent while the sequence was paused"
+    }
+  },
   "outreachStages": {
     "new": "New",
     "researching": "Researching",

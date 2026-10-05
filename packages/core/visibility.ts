@@ -143,17 +143,44 @@ export async function clearApprovals(
       ),
     )
     .returning();
-  if (cleared.length)
-    await db.insert(s.changeEvents).values(
-      cleared.map((action) => ({
-        organizationId: action.organizationId,
-        productId: action.productId,
-        sourceConversationId: action.sourceConversationId,
-        actorId: principal.userId,
-        type: "action.approval_invalidated",
-        entityId: action.id,
-      })),
-    );
+  const touches = await db
+    .update(s.touches)
+    .set({
+      status: "drafted",
+      approvedHash: null,
+      approvedBy: null,
+      version: sql`${s.touches.version} + 1`,
+    })
+    .where(
+      and(
+        eq(s.touches.organizationId, organizationId),
+        inArray(
+          s.touches.relationshipId,
+          relationships.map((relationship) => relationship.id),
+        ),
+        eq(s.touches.status, "approved"),
+      ),
+    )
+    .returning();
+  const events = [
+    ...cleared.map((action) => ({
+      organizationId: action.organizationId,
+      productId: action.productId,
+      sourceConversationId: action.sourceConversationId,
+      actorId: principal.userId,
+      type: "action.approval_invalidated",
+      entityId: action.id,
+    })),
+    ...touches.map((touch) => ({
+      organizationId: touch.organizationId,
+      productId: touch.productId,
+      sourceConversationId: null,
+      actorId: principal.userId,
+      type: "touch.approval_invalidated",
+      entityId: touch.id,
+    })),
+  ];
+  if (events.length) await db.insert(s.changeEvents).values(events);
 }
 
 export async function assertActiveRelationships(

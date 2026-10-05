@@ -14,7 +14,7 @@ import { describe, expect, test, vi } from "vitest";
 import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
-import { dateLabel } from "../src/components/client-api";
+import { dateLabel, requestJson } from "../src/components/client-api";
 import { outreachTabs } from "../src/components/routes";
 import { Shortcuts } from "../src/components/shortcuts";
 import {
@@ -79,6 +79,25 @@ describe("outreach routes and tabs", () => {
         name: `${t.outreach}: ${t.outreachTabs.drafts}`,
       }),
     ).toBeTruthy();
+  });
+
+  test("the outreach view advances enrollments with a POST before it reads the due list", async () => {
+    await mountCrm(harness, "/outreach/today");
+    await screen.findByRole("region", {
+      name: `${t.outreach}: ${t.outreachTabs.today}`,
+    });
+    const calls = vi.mocked(requestJson).mock.calls;
+    const advance = calls.findIndex(
+      ([url, init]) =>
+        url === "/api/outreach" &&
+        init?.method === "POST" &&
+        JSON.parse(String(init.body)).operation === "advance",
+    );
+    const due = calls.findIndex(([url]) =>
+      String(url).startsWith("/api/outreach?operation=due"),
+    );
+    expect(advance).toBeGreaterThanOrEqual(0);
+    expect(due).toBeGreaterThan(advance);
   });
 
   test("Today groups due touches by follow-up with counts and puts overdue ones first", async () => {

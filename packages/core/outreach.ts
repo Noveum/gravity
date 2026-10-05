@@ -879,15 +879,6 @@ export class OutreachService {
       .map((product) => product.id)
       .filter((id) => !scope.productId || id === scope.productId);
     const now = this.clock();
-    const advanced = await this.db.transaction((tx) =>
-      advance(
-        tx,
-        principal,
-        scope.organizationId,
-        permission.products.map((product) => product.id),
-        now,
-      ),
-    );
     const zone = await workspaceZone(this.db, scope.organizationId);
     const [, endOfToday] = zonedDayBounds(now, zone);
     const rows = productIds.length
@@ -960,7 +951,6 @@ export class OutreachService {
         followUp,
         touches: listed.filter((touch) => touch.followUp === followUp),
       })),
-      advanced,
       asOf: new Date(now).toISOString(),
     };
   }

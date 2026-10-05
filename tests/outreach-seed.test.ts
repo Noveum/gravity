@@ -51,8 +51,10 @@ test("the demo has outreach stages, staged relationships, a three follow-up sequ
 
 test("the seeded outreach is already planned, so the first read changes nothing and lists today's touches", async () => {
   const outreach = new OutreachService(local.db);
+  expect(
+    await outreach.advanceEnrollments(admin, { organizationId: demoId(1) }),
+  ).toEqual({ created: 0, completed: 0, paused: 0 });
   const due = await outreach.dueTouches(admin, { organizationId: demoId(1) });
-  expect(due.advanced).toEqual({ created: 0, completed: 0, paused: 0 });
   const listed = due.groups.flatMap((group) =>
     group.touches.map((touch) => touch.id),
   );

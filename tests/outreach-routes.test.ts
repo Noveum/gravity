@@ -1,8 +1,10 @@
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { CrmService } from "../packages/core/crm";
 import type { Principal } from "../packages/core/policy";
 import { DomainError } from "../packages/core/policy";
 import type { Database } from "../packages/database/client";
+import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 
 let db: Database;
@@ -143,6 +145,77 @@ describe("outreach HTTP contracts", () => {
       error: "TOUCH_ALREADY_SENT",
       details: { sentBy: "Alex Morgan", externalMessageId: "route-message" },
     });
+  });
+  test("listing due touches is read-only and only a same-origin POST advances enrollments", async () => {
+    const crm = new CrmService(db);
+    const product = await crm.createProduct(
+      { userId: demoUser, source: "demo" },
+      org,
+      "Route advance fixture",
+    );
+    const person = await crm.createPerson(
+      { userId: demoUser, source: "demo" },
+      {
+        organizationId: org,
+        productId: product.id,
+        name: "Route advance person",
+        email: "route-advance@example.test",
+        title: "",
+        purpose: "buyer",
+        context: "",
+        review: false,
+        channel: "gmail",
+      },
+    );
+    const [sequence] = await db
+      .insert(s.sequences)
+      .values({
+        organizationId: org,
+        productId: product.id,
+        name: "Route advance sequence",
+        steps: [
+          {
+            number: 1,
+            name: "Introduction",
+            delayDays: 0,
+            channel: "gmail",
+            template: "Fictional template",
+            followUp: 0,
+          },
+        ],
+      })
+      .returning();
+    await db.insert(s.enrollments).values({
+      organizationId: org,
+      productId: product.id,
+      relationshipId: person.relationshipId,
+      sequenceId: sequence?.id ?? "",
+      status: "running",
+      enrolledAt: new Date(),
+    });
+    const planned = () =>
+      db
+        .select()
+        .from(s.touches)
+        .where(eq(s.touches.relationshipId, person.relationshipId));
+    const due = await get({ operation: "due", organizationId: org }, demoUser);
+    expect(due.status).toBe(200);
+    expect(await due.json()).not.toHaveProperty("advanced");
+    expect(await planned()).toEqual([]);
+    expect(
+      (
+        await post(
+          { operation: "advance", organizationId: org },
+          demoUser,
+          "https://elsewhere.example",
+        )
+      ).status,
+    ).toBe(403);
+    expect(await planned()).toEqual([]);
+    const advanced = await post({ operation: "advance", organizationId: org });
+    expect(advanced.status).toBe(200);
+    expect((await advanced.json()).created).toBeGreaterThanOrEqual(1);
+    expect(await planned()).toHaveLength(1);
   });
   test("the queue lists recent sends and a skipped touch reopens through the route", async () => {
     const queue = await (

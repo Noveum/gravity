@@ -76,6 +76,7 @@ export function useOutreachData() {
     const scope = new URLSearchParams({ organizationId });
     if (productId) scope.set("productId", productId);
     try {
+      await postOutreach({ operation: "advance", organizationId });
       const [due, queue] = await Promise.all([
         requestJson<Due>(`/api/outreach?operation=due&${scope}`),
         requestJson<Queue>(`/api/outreach?operation=queue&${scope}`),

@@ -48,10 +48,9 @@ export async function GET(request: Request) {
         await service.contactRules(principal, scope.organizationId),
         { headers },
       );
-    const due = await service.dueTouches(principal, scope);
-    if (due.advanced.created || due.advanced.completed || due.advanced.paused)
-      publishChange(scope.organizationId);
-    return Response.json(due, { headers });
+    return Response.json(await service.dueTouches(principal, scope), {
+      headers,
+    });
   } catch (error) {
     return errorResponse(error);
   }
@@ -65,9 +64,14 @@ export async function POST(request: Request) {
     const body = JSON.parse(
       new TextDecoder().decode(await limitedBody(request, 100000)),
     );
+    if (body.operation === "advance") {
+      const scope = scopeSchema.parse(body);
+      const advanced = await service.advanceEnrollments(principal, scope);
+      if (advanced.created || advanced.completed || advanced.paused)
+        publishChange(scope.organizationId);
+      return Response.json(advanced, { headers });
+    }
     const operations = {
-      advance: () =>
-        service.advanceEnrollments(principal, scopeSchema.parse(body)),
       enroll: () => service.enroll(principal, enrollSchema.parse(body)),
       draft: () => service.editDraft(principal, touchDraftSchema.parse(body)),
       approve: () => service.approve(principal, touchApproveSchema.parse(body)),

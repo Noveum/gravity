@@ -108,8 +108,12 @@ async function respondOutreach(
   try {
     if (init?.method === "POST") {
       const body = JSON.parse(String(init.body));
-      harness.posts.push(body);
+      if (body.operation !== "advance") harness.posts.push(body);
       const operations: Record<string, () => Promise<unknown>> = {
+        advance: () =>
+          outreach.advanceEnrollments(principal, {
+            organizationId: body.organizationId,
+          }),
         enroll: () => outreach.enroll(principal, enrollSchema.parse(body)),
         draft: () =>
           outreach.editDraft(principal, touchDraftSchema.parse(body)),

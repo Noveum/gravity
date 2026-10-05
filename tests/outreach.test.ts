@@ -550,6 +550,7 @@ describe("touch lifecycle", () => {
     await enroll(f);
     await send((await firstTouch(f)).id);
     now += 3 * day;
+    await outreach.advanceEnrollments(admin, { organizationId: org });
     const listed = await outreach.dueTouches(admin, {
       organizationId: org,
       productId: f.productId,
@@ -1444,7 +1445,7 @@ describe("tenant isolation", () => {
     });
   });
 
-  test("a restricted member's due list and advance plan no touches in a brand they cannot read", async () => {
+  test("listing due touches plans nothing, and a restricted member's advance plans no touches in a brand they cannot read", async () => {
     now = Date.parse("2026-10-23T06:00:00Z");
     const hidden = await fixture();
     await local.db.insert(s.enrollments).values({
@@ -1455,10 +1456,8 @@ describe("tenant isolation", () => {
       status: "running",
       enrolledAt: new Date(now),
     });
-    const listed = await outreach.dueTouches(restricted, {
-      organizationId: org,
-    });
-    expect(listed.advanced.created).toBe(0);
+    await outreach.dueTouches(admin, { organizationId: org });
+    expect(await touchesOf(hidden.relationshipId)).toEqual([]);
     await outreach.advanceEnrollments(restricted, { organizationId: org });
     expect(await touchesOf(hidden.relationshipId)).toEqual([]);
     await expect(

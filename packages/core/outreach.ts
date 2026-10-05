@@ -18,7 +18,7 @@ import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { zonedDayBounds } from "./calendar";
 import { scopeSchema } from "./crm";
-import { draftHash } from "./drafts";
+import { draftHash, draftSubject } from "./drafts";
 import { planEnrollment } from "./outreach-planner";
 import {
   type ContactRules,
@@ -430,8 +430,7 @@ export async function advance(
           draft,
           draftHash: draftHash({
             draft,
-            personId: person.id,
-            email: person.email,
+            ...(await draftSubject(db, person)),
             channel: decision.step.channel,
             productId: enrollment.productId,
           }),
@@ -1240,8 +1239,7 @@ export class OutreachService {
         throw new DomainError("CONFLICT", 409);
       const hash = draftHash({
         draft: input.draft,
-        personId: person.id,
-        email: person.email,
+        ...(await draftSubject(tx, person)),
         channel: touch.channel,
         productId: touch.productId,
       });
@@ -1295,8 +1293,7 @@ export class OutreachService {
         const now = this.clock();
         const hash = draftHash({
           draft: touch.draft,
-          personId: person.id,
-          email: person.email,
+          ...(await draftSubject(tx, person)),
           channel: touch.channel,
           productId: touch.productId,
         });
@@ -1370,8 +1367,7 @@ export class OutreachService {
         ]);
         const hash = draftHash({
           draft: touch.draft,
-          personId: person.id,
-          email: person.email,
+          ...(await draftSubject(tx, person)),
           channel: touch.channel,
           productId: touch.productId,
         });
@@ -1861,8 +1857,7 @@ export class OutreachService {
             draft: step.template,
             draftHash: draftHash({
               draft: step.template,
-              personId: person.id,
-              email: person.email,
+              ...(await draftSubject(tx, person)),
               channel: step.channel,
               productId: touch.productId,
             }),

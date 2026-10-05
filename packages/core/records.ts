@@ -273,7 +273,12 @@ export class RecordService {
         type: "person.updated",
         entityId: person.id,
       });
-      if ((person.email ?? null) !== (input.email ?? null))
+      if (
+        (person.email ?? null) !== (updated.email ?? null) ||
+        person.name !== updated.name ||
+        person.title !== updated.title ||
+        (person.companyId ?? null) !== (updated.companyId ?? null)
+      )
         await clearApprovals(tx, principal, input.organizationId, person.id);
       return updated;
     });
@@ -484,6 +489,24 @@ export class RecordService {
         type: existing ? "company.updated" : "company.created",
         entityId: saved.id,
       });
+      if (existing && existing.name !== saved.name) {
+        const employees = await tx
+          .select({ id: s.people.id })
+          .from(s.people)
+          .where(
+            and(
+              eq(s.people.organizationId, input.organizationId),
+              eq(s.people.companyId, saved.id),
+            ),
+          );
+        for (const employee of employees)
+          await clearApprovals(
+            tx,
+            principal,
+            input.organizationId,
+            employee.id,
+          );
+      }
       return saved;
     });
   }

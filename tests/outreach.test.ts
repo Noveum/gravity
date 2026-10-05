@@ -5,7 +5,11 @@ import { CrmService } from "../packages/core/crm";
 import { OutreachService, sendGate } from "../packages/core/outreach";
 import type { ContactRules } from "../packages/core/outreach-rules";
 import type { Principal } from "../packages/core/policy";
-import { RecordService } from "../packages/core/records";
+import {
+  companySchema,
+  personUpdateSchema,
+  RecordService,
+} from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
@@ -1141,6 +1145,68 @@ describe("pausing on reply", () => {
     expect(
       (await relationshipRow(outsiderRelationship?.id ?? "")).lastInboundAt,
     ).toBeNull();
+  });
+});
+
+describe("approval follows merge fields", () => {
+  test("renaming the person, changing their title or company, or renaming the company clears an approved touch", async () => {
+    now = Date.parse("2026-10-21T06:00:00Z");
+    const f = await fixture();
+    await enroll(f);
+    const touch = await firstTouch(f);
+    await draftAndApprove(touch.id);
+    const reapprove = async () => {
+      const current = await touchRow(touch.id);
+      expect(current).toMatchObject({ status: "drafted", approvedHash: null });
+      return outreach.approve(admin, {
+        organizationId: org,
+        touchId: touch.id,
+        version: current.version,
+      });
+    };
+    const editPerson = async (changes: object) => {
+      const person = await personRow(f.personId);
+      return records.updatePerson(
+        admin,
+        personUpdateSchema.parse({
+          organizationId: org,
+          productId: f.productId,
+          personId: person.id,
+          version: person.version,
+          name: person.name,
+          title: person.title,
+          email: person.email,
+          companyId: person.companyId,
+          ...changes,
+        }),
+      );
+    };
+    await editPerson({});
+    expect(await touchRow(touch.id)).toMatchObject({ status: "approved" });
+    await editPerson({ name: "Renamed fixture person" });
+    await reapprove();
+    await editPerson({ title: "Fictional new title" });
+    await reapprove();
+    const company = await records.saveCompany(
+      admin,
+      companySchema.parse({
+        organizationId: org,
+        name: "Fictional Merge Field Co",
+      }),
+    );
+    await editPerson({ companyId: company.id });
+    await reapprove();
+    await records.saveCompany(
+      admin,
+      companySchema.parse({
+        organizationId: org,
+        companyId: company.id,
+        version: company.version,
+        name: "Fictional Renamed Co",
+      }),
+    );
+    const approved = await reapprove();
+    expect(approved.status).toBe("approved");
   });
 });
 

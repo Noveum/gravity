@@ -194,6 +194,7 @@ describe("editing people", () => {
       restricted,
       edit(mira, current.version, {
         name: current.name,
+        title: current.title,
         companyId: current.companyId,
       }),
     );

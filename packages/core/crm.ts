@@ -15,7 +15,7 @@ import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import t from "../i18n/translations/en.json";
-import { draftHash } from "./drafts";
+import { draftHash, draftSubject } from "./drafts";
 import { authorize, DomainError, type Principal } from "./policy";
 import {
   activeCompany,
@@ -939,8 +939,7 @@ export class CrmService {
         .where(eq(s.people.id, relationship.personId));
       const hash = draftHash({
         draft,
-        personId: person.id,
-        email: person.email,
+        ...(await draftSubject(tx, person)),
         channel: action.channel,
         productId: action.productId,
       });

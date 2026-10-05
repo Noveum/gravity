@@ -126,6 +126,9 @@ async function seedOutreach(tx: Transaction, due: (offset: number) => Date) {
   const relationships = new Map(
     (await tx.select().from(s.relationships)).map((row) => [row.id, row]),
   );
+  const companies = new Map(
+    (await tx.select().from(s.companies)).map((row) => [row.id, row.name]),
+  );
   const touch = (spec: {
     id: number;
     relationship: number;
@@ -144,7 +147,10 @@ async function seedOutreach(tx: Transaction, due: (offset: number) => Date) {
     const hash = draftHash({
       draft: spec.draft,
       personId: person?.id ?? "",
+      name: person?.name ?? "",
+      title: person?.title ?? "",
       email: person?.email ?? null,
+      companyName: companies.get(person?.companyId ?? "") ?? null,
       channel,
       productId: demoId(spec.product),
     });

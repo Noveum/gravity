@@ -132,8 +132,8 @@ export const opportunityChangeSchema = scopeSchema
       value.currency !== undefined,
   );
 
-function requireHuman(principal: Principal) {
-  if (principal.source === "mcp")
+function requireWriteActor(principal: Principal) {
+  if (principal.source === "mcp" && principal.readOnly !== false)
     throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
 }
 
@@ -200,7 +200,7 @@ export class RecordService {
     principal: Principal,
     input: z.infer<typeof personUpdateSchema>,
   ) {
-    requireHuman(principal);
+    requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
       const permission = await authorize(
         tx,
@@ -289,7 +289,7 @@ export class RecordService {
     principal: Principal,
     input: z.infer<typeof personArchiveSchema>,
   ) {
-    requireHuman(principal);
+    requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
       const permission = await authorize(
         tx,
@@ -402,7 +402,7 @@ export class RecordService {
     principal: Principal,
     input: z.infer<typeof companySchema>,
   ) {
-    requireHuman(principal);
+    requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
       const permission = await authorize(
         tx,
@@ -516,7 +516,7 @@ export class RecordService {
     principal: Principal,
     input: z.infer<typeof companyArchiveSchema>,
   ) {
-    requireHuman(principal);
+    requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
       const permission = await authorize(
         tx,
@@ -589,7 +589,7 @@ export class RecordService {
     principal: Principal,
     input: z.infer<typeof meetingSchema>,
   ) {
-    requireHuman(principal);
+    requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
       const values = {
         title: input.title,
@@ -674,7 +674,7 @@ export class RecordService {
     principal: Principal,
     input: z.infer<typeof opportunityCreateSchema>,
   ) {
-    requireHuman(principal);
+    requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
       const relationship = await writableRelationship(
         tx,
@@ -735,7 +735,7 @@ export class RecordService {
     principal: Principal,
     input: z.infer<typeof opportunityChangeSchema>,
   ) {
-    requireHuman(principal);
+    requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
       const [opportunity] = await tx
         .select()

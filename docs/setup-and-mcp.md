@@ -54,21 +54,33 @@ Connection sequence after deployment:
 
 Tokens are resource-bound to the MCP URL and expire after five minutes. On each request, the library validates signature, issuer, audience and required scope; domain code checks the current OAuth client, active user session, active grant and memberships. Revocation applies immediately even to an otherwise valid JWT. Organization grants are immutable. All-products grants explicitly cover current and future products the user can access; specific-product grants remain fixed. Empty product lists grant no product access. Existing read-only clients must reconnect to consent to `crm:write`; their old tokens are never silently elevated. The test suite verifies PKCE, consent, refresh preserving the original grant, product isolation and revocation. Actual Codex/Claude interoperability and Google/GitHub sign-in remain live verification gates.
 
-| Tool | Current purpose |
+## Complete business API access
+
+The endpoint requires `crm:read crm:write`; include `offline_access` for refresh. AI assistants is a dedicated sidebar option (`G X`), and the MCP card appears first in Connections. Reconnect old read-only clients and refresh cached tool discovery after upgrading.
+
+All current business HTTP operations are defined once in `packages/operations/catalog.ts`. The CRM, outreach, integrations, material upload/download and grant-revocation HTTP adapters execute that registry. MCP registers every definition automatically with the same domain schema, validation, permissions, audit events and real-time change hints. `get_capabilities` returns the current operation inventory and HTTP mapping; `tools/list` provides each tool's complete input schema. There are 57 shared operations (41 mutations), plus eight context and compatibility helpers.
+
+| Area | Tools |
 |---|---|
-| `get_me` | User and granted organization/products |
-| `get_capabilities` | Implemented features and explicit integration gaps |
-| `list_products` | Currently readable granted products |
-| `list_next_actions` | Pending actions in a permitted product/all granted products |
-| `search_records` | Search readable people/companies/relationships |
-| `get_person_context` | Person, company, permitted product relationships, readable messages, evidence and related work |
-| `get_company_context` | Company, permitted contacts, product relationships and related work |
-| `list_materials` | Private material metadata for permitted products/stages |
-| `read_material` | Bounded text/Markdown, or PDF metadata with extraction unavailable |
+| Records and clients | `list_records`, `get_workspace`, `get_person`, `get_person_context`, `get_company_context`, `create_person`, `update_person`, `archive_person`, `save_company`, `archive_company` |
+| Organizations/products | `list_organizations`, `create_workspace`, `create_organization`, `create_product`, `list_products` |
+| Deals and analytics | `save_deal`, `create_opportunity`, `change_opportunity`, `create_pipeline`, `get_overview`, `get_message_activity` |
+| Follow-ups and meetings | `schedule_next_action`, `change_action`, `plan_actions`, `save_meeting`, `accept_meeting_commitment`, `list_next_actions`, `get_workspace_revision` |
+| Sequences and outreach | `create_sequence`, `get_sequence`, `update_sequence`, `enroll_in_sequence`, `advance_sequences`, `list_due_touches`, `get_outreach_queue`, `get_touch`, `edit_touch_draft`, `approve_touch`, `record_touch_sent`, `skip_touch`, `reopen_touch`, `snooze_touch`, `change_enrollment`, `change_relationship` |
+| Contact policies | `get_contact_rules`, `update_contact_rules`, `set_contact_preferences` |
+| Connections and imports | `get_integrations`, `connect_integration`, `sync_integration`, `disconnect_integration`, `link_import`, `ignore_import`, `configure_unipile`, `remove_unipile` |
+| Documents | `create_material_folder`, `upload_material`, `download_material`, `list_materials`, `read_material`, `create_material` |
+| Identity and access | `get_me`, `get_capabilities`, `search_records`, `revoke_assistant` |
 
-The endpoint requires `crm:read crm:write`; include `offline_access` for refresh. OAuth scope challenges advertise these permissions. AI assistants is a dedicated sidebar option (`G X`), and the MCP card appears first in Connections.
+`list_records` returns up to 100 permitted records per page with `total` and `nextOffset`. It currently filters an authorized workspace snapshot before paging; this bounds response size, not database work. `get_workspace`, `get_person`, `get_sequence` and the queue/detail tools provide versions for subsequent edits. Mutations requiring a version reject stale values with `CONFLICT`. `plan_actions` changes up to 100 follow-ups atomically. Company/meeting create-versus-update refinements are identical across HTTP and MCP. Approval remains bound to the exact draft, recipient, channel and product; edits and replies invalidate it.
 
-Write tools use the same domain services as the UI: `create_person`, `schedule_next_action`, `change_action` (save, approve, complete, rework), `accept_meeting_commitment`, `create_material_folder`, `create_material` (text/Markdown), `create_product`, `save_deal`, and `create_pipeline`. `get_workspace` supplies current records and versions; `get_overview` reports sales/outreach metrics and `get_message_activity` pages through their underlying synced messages. Product creation requires an organization admin with an all-products grant; pipeline creation requires an admin with access to that product. Changes are audited and publish the same real-time wake-up hints as UI changes. Stale action, meeting and deal versions are rejected. Approval is bound to the exact draft and is invalidated by edits or replies. Message dispatch and membership administration are not implemented as MCP tools. [Analytics definitions](analytics.md).
+Organization and product grants remain immutable. Product and new-workspace creation require an organization administrator with an all-products grant. Creating another workspace does not grant access to that workspace; authorize it separately. Pipeline creation requires an administrator with access to the product. Organization-wide contact rules and personal Unipile setup changes require an all-products grant. MCP cannot impersonate another owner, widen the selected organization or bypass private conversation rules. Verified writers can inspect archived records by ID to obtain the version needed for restoration; legacy read-only assistants retain their archived-history restriction. Revoking the current assistant grant invalidates subsequent requests.
+
+Connection management is account-owner scoped. `connect_integration` for Google/LinkedIn returns the provider authorization URL; the owner completes consent in a browser signed into Gravity. An assistant cannot bypass Google or LinkedIn account verification. `configure_unipile` and Fireflies connection accept an owner's provider key explicitly supplied for that setup; never put credentials in a public prompt or repository. Keys remain encrypted at rest and are not returned in tool results. Fireflies returns its newly provisioned webhook signing secret to the owner for setup, matching the UI. Sync, disconnect, import linking and ignoring use the same ownership and visibility rules as Connections.
+
+`upload_material` accepts canonical base64 PDF, text or Markdown in a permitted product folder. `download_material` returns the authorized bytes as base64 and their hash. Maximum decoded file size is 10 MiB; hosting request/response limits also apply, so use small files on Vercel until direct storage transfer is added. Contract PDFs use this document workflow. A dedicated contracts lifecycle, signing, membership administration and outbound dispatch do not exist yet in either transport. `record_touch_sent` records an already externally sent message; it never sends one.
+
+Authentication, OAuth selection/consent, provider callbacks, signed webhook delivery, private cron invocation, browser workspace cookies and SSE are transport protocols rather than additional CRM business tools. MCP exposes their meaningful business effects through connection/sync/grant tools, rather than replaying browser cookies or inventing webhook signatures. Future business operations must be added to the shared registry so both transports ship together. [Analytics definitions](analytics.md).
 
 Primary implementation references: [Better Auth MCP](https://better-auth.com/docs/plugins/mcp), [OAuth provider](https://better-auth.com/docs/plugins/oauth-provider), and [official MCP authorization specification](https://modelcontextprotocol.io/specification/latest/basic/authorization).
 

@@ -461,6 +461,9 @@ export class CrmService {
           eq(s.organizations.id, s.memberships.organizationId),
           eq(s.memberships.userId, principal.userId),
           eq(s.memberships.active, true),
+          ...(principal.organizationId
+            ? [eq(s.organizations.id, principal.organizationId)]
+            : []),
         ),
       )
       .orderBy(asc(s.organizations.name));
@@ -827,6 +830,14 @@ export class CrmService {
           eq(s.people.organizationId, organizationId),
         ),
       );
+    // Legacy read-only assistant grants cannot retrieve archived history.
+    // Verified writers need the detail/version to restore a record, as the UI does.
+    if (
+      principal.source === "mcp" &&
+      principal.readOnly !== false &&
+      person?.archivedAt
+    )
+      throw new DomainError("NOT_FOUND", 404);
     const sources = await this.db
       .select()
       .from(s.conversations)
@@ -964,6 +975,12 @@ export class CrmService {
         scope.organizationId,
         companyId,
       ));
+    if (
+      principal.source === "mcp" &&
+      principal.readOnly !== false &&
+      company.archivedAt
+    )
+      throw new DomainError("NOT_FOUND", 404);
     const people = snapshot.people.filter(
       (person) => person.companyId === company.id,
     );
@@ -1130,7 +1147,7 @@ export class CrmService {
     principal: Principal,
     input: z.infer<typeof actionPlanSchema>,
   ) {
-    if (principal.source === "mcp")
+    if (principal.source === "mcp" && principal.readOnly !== false)
       throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
     return this.db.transaction(async (tx) => {
       const items = [...input.items].sort((a, b) =>
@@ -1412,12 +1429,29 @@ export class CrmService {
       );
     return result?.revision ?? "0";
   }
+  private async authorizeOrganizationCreation(principal: Principal) {
+    if (principal.readOnly) throw new DomainError("FORBIDDEN", 403);
+    if (principal.source !== "mcp") return;
+    if (
+      principal.readOnly !== false ||
+      !principal.organizationId ||
+      principal.productIds !== undefined
+    )
+      throw new DomainError("FORBIDDEN", 403);
+    const { membership } = await authorize(
+      this.db,
+      principal,
+      principal.organizationId,
+      undefined,
+      true,
+    );
+    if (membership.role !== "admin") throw new DomainError("FORBIDDEN", 403);
+  }
   async createWorkspace(
     principal: Principal,
     input: z.infer<typeof workspaceSchema>,
   ) {
-    if (principal.source === "mcp" || principal.readOnly)
-      throw new DomainError("FORBIDDEN", 403);
+    await this.authorizeOrganizationCreation(principal);
     const values = workspaceSchema.parse(input);
     return this.db.transaction(async (tx) => {
       const [organization] = await tx
@@ -1446,7 +1480,7 @@ export class CrmService {
     });
   }
   async createOrganization(principal: Principal, name: string) {
-    if (principal.source === "mcp") throw new DomainError("FORBIDDEN", 403);
+    await this.authorizeOrganizationCreation(principal);
     return this.db.transaction(async (tx) => {
       const [organization] = await tx
         .insert(s.organizations)

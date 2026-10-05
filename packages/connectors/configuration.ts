@@ -43,7 +43,14 @@ export class ProviderConfigurationService {
     private transport: ProviderFetch = fetch,
   ) {}
   async own(principal: Principal, organizationId: string) {
-    if (principal.source !== "session")
+    if (
+      principal.source !== "session" &&
+      !(
+        principal.source === "mcp" &&
+        principal.readOnly === false &&
+        principal.organizationId
+      )
+    )
       throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
     await authorize(this.db, principal, organizationId);
     const [row] = await this.db
@@ -63,6 +70,8 @@ export class ProviderConfigurationService {
     principal: Principal,
     input: z.infer<typeof unipileSettingsInput>,
   ) {
+    if (principal.source === "mcp" && principal.productIds !== undefined)
+      throw new DomainError("FORBIDDEN", 403);
     const value = unipileSettingsInput.parse(input);
     const prior = await this.own(principal, value.organizationId);
     await authorize(this.db, principal, value.organizationId, undefined, true);
@@ -168,6 +177,8 @@ export class ProviderConfigurationService {
     organizationId: string,
     configurationId: string,
   ) {
+    if (principal.source === "mcp" && principal.productIds !== undefined)
+      throw new DomainError("FORBIDDEN", 403);
     const prior = await this.own(principal, organizationId);
     if (prior?.id !== configurationId) throw new DomainError("NOT_FOUND", 404);
     await this.db.transaction(async (tx) => {

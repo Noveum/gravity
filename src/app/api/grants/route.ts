@@ -19,6 +19,7 @@ import {
   oauthSelections,
   organizations,
 } from "@crm/database/schema";
+import { apiOperation } from "@crm/operations/catalog";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 export const runtime = "nodejs";
@@ -139,18 +140,12 @@ export async function DELETE(request: Request) {
       .parse(
         JSON.parse(new TextDecoder().decode(await limitedBody(request, 2000))),
       );
-    const [grant] = await db
-      .update(mcpGrants)
-      .set({ active: false })
-      .where(
-        and(
-          eq(mcpGrants.id, body.grantId),
-          eq(mcpGrants.userId, principal.userId),
-        ),
-      )
-      .returning();
-    if (!grant) throw new DomainError("NOT_FOUND", 404);
-    return Response.json({ revoked: true });
+    return Response.json(
+      await apiOperation("grants", "DELETE", "revoke").execute(
+        { db, principal },
+        body,
+      ),
+    );
   } catch (error) {
     return errorResponse(error);
   }

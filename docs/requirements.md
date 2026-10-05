@@ -17,7 +17,7 @@ This consolidates the conversation through October 4, 2026. “Local” means im
 | LinkedIn replies | Tested Unipile v2 message normalization | Qualified provider account setup, encrypted credentials, durable job processing |
 | Optional Unipile or own webhooks | Adapter boundaries and HMAC verification | Choose one authoritative adapter per account; subscription and permissions qualification |
 | Replies stop stale follow-ups | Incoming replies pause enrollment, block/invalidate approvals and coalesce reply tasks | Live-provider qualification and send-time race/lease checks |
-| Review and approval before sending | Draft hashes, human-only approval and version checks | No dispatch today; opt-outs, limits, ambiguous-send recovery before execution |
+| Review and approval before sending | Draft hashes, user or verified assistant approval and version checks | No dispatch today; opt-outs, limits, ambiguous-send recovery before execution |
 | Meetings, calendar and Fireflies notes | Meeting outcome and reviewed commitment creation; Calendar status/setup guide | Calendar/Fireflies connection, source citations and idempotent transcript imports |
 | Who/when/what to follow up | Persisted next actions, promises, waiting views and conversation timeline | Due-date editing, snooze, recurrence and saved filters in URLs |
 | Product enablement materials | Private PDF/Markdown/text upload, nested folders, stage associations and download | Direct object-store transfer for Vercel, extraction, scanning, versions/approval and stage/persona kits |
@@ -83,7 +83,7 @@ Single-key shortcuts pause while typing, during IME composition, and behind moda
 
 The browser subscribes to an authenticated SSE revision stream. Each check recomputes current organization/product/private-conversation permissions; only the visible revision is emitted, never raw change records. The current runtime wakes streams immediately after committed HTTP/material/webhook changes. A one-second SQL reconciliation sees changes from other runtimes; five-second fallback checks and focus recovery operate when SSE is unavailable. Streams rotate after 25 seconds and reconnect, keeping a bounded serverless request.
 
-This is near-live delivery, not a guarantee of instant distributed synchronization. Before production, measure realistic concurrent sessions and database cost, and replace per-client reconciliation with durable outbox fan-out (for example managed pub/sub) if needed. MCP reads committed SQL state directly and uses the same domain permission rules; future MCP writes must publish through the same change log. No optimistic UI may bypass a server approval/version check.
+This is near-live delivery, not a guarantee of instant distributed synchronization. Before production, measure realistic concurrent sessions and database cost, and replace per-client reconciliation with durable outbox fan-out (for example managed pub/sub) if needed. MCP reads committed SQL state directly and uses the same domain permission rules; MCP writes publish through the same change log. No optimistic UI may bypass a server approval/version check.
 
 ## Next implementation order
 

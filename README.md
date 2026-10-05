@@ -15,7 +15,7 @@ The daily action queue is the center of the app. A person can have separate buye
 
 Open [gravity.noveum.ai](https://gravity.noveum.ai), choose **Sign in**, and sign in with Google, GitHub or an email code. Create an organization and its first product, then add contacts and next actions. Connect your own Gmail, Calendar, Unipile and Fireflies accounts from Connections. No local installation or database credentials are needed.
 
-The remote OAuth MCP endpoint is `https://gravity.noveum.ai/mcp`. Assistant access includes CRM read/write tools and is scoped to the organization and products you authorize.
+The remote OAuth MCP endpoint is `https://gravity.noveum.ai/mcp`. Assistant access includes every current business API: records, deals, follow-ups, sequence/outreach management, account-owner connections/imports and documents. HTTP and MCP use a shared operation registry so future business APIs automatically gain tools. Access is scoped to the organization and products you authorize; reconnect older read-only clients for write consent. [Complete tool map](docs/setup-and-mcp.md#complete-business-api-access).
 
 ## Deploy your own instance on Vercel
 
@@ -44,7 +44,7 @@ Stop the dev server before running `bun run db:migrate` against local PGlite. It
 - People/company views and explicit product relationships. Create a person and optional research task; link an existing readable person to another product without copying or overwriting identity. Duplicate email creation is rejected for review.
 - Next actions filtered by product, owner, type, and search; separate saved views for replies, commitments, and waiting on others.
 - Conversation/evidence inspector with partial-history disclosure and private conversation permissions.
-- Persistent draft editing, human approval bound to draft content/recipient/channel/product, stale-write checks, and approval invalidation. Completing an action never claims a message was sent.
+- Persistent draft editing, user or authorized assistant approval bound to draft content/recipient/channel/product, stale-write checks, and approval invalidation. Completing an action never claims a message was sent.
 - Separate sequence/enrollment views and editable deals across multiple sales pipelines per product. Deals record amount/currency, owner, probability, expected close date, outcome, loss reason, and context; edits reject stale versions. Sequence execution remains unfinished.
 - Clickable Overview reports for follow-ups, synced message activity, team workloads, pipeline value, weighted value, average deal size, won/lost outcomes and missing deal data. Filter by product, teammate, channel and 7/30/90-day range; open the records behind each metric. Currency totals remain separate. [Analytics definitions](docs/analytics.md).
 - Reviewed meeting commitments with owner and due date, created once. Calendar/Fireflies notes enter a private import queue and require an explicit relationship selection before entering shared product context.
@@ -83,7 +83,8 @@ packages/core/           Authorized domain services and common permissions
 packages/database/       Drizzle schema, PostgreSQL/PGlite adapters, fictional seed
 packages/auth/           Social sign-in, OAuth flow binding, resource configuration
 packages/connectors/     Signed event normalization and idempotent reply ingestion
-packages/mcp/            Read/write tools over the same domain services
+packages/operations/     Shared business API definitions, validation and execution
+packages/mcp/            Automatic read/write tools over the shared registry
 packages/storage/        Private file access and content validation
 packages/i18n/           Interface strings
 Drizzle migrations:      drizzle/

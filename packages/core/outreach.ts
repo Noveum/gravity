@@ -582,7 +582,7 @@ export async function pauseForReply(
   const relationships = await db
     .update(s.relationships)
     .set({
-      lastInboundAt: sql`greatest(coalesce(${s.relationships.lastInboundAt}, ${input.occurredAt}), ${input.occurredAt})`,
+      lastInboundAt: sql`greatest(coalesce(${s.relationships.lastInboundAt}, ${input.occurredAt.toISOString()}::timestamptz), ${input.occurredAt.toISOString()}::timestamptz)`,
     })
     .where(
       and(
@@ -1427,7 +1427,7 @@ export class OutreachService {
           .update(s.relationships)
           .set({
             touchCount: sql`${s.relationships.touchCount} + 1`,
-            lastOutboundAt: sql`greatest(coalesce(${s.relationships.lastOutboundAt}, ${new Date(sentAt)}), ${new Date(sentAt)})`,
+            lastOutboundAt: sql`greatest(coalesce(${s.relationships.lastOutboundAt}, ${new Date(sentAt).toISOString()}::timestamptz), ${new Date(sentAt).toISOString()}::timestamptz)`,
             version: sql`${s.relationships.version} + 1`,
           })
           .where(eq(s.relationships.id, relationship.id));

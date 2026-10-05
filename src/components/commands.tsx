@@ -2,6 +2,7 @@
 import t from "@crm/i18n/translations/en.json";
 import { useId, useRef, useState } from "react";
 import { useModalLifecycle } from "./modal-lifecycle";
+import { ShortcutHint } from "./ui/shortcut-hint";
 export interface Command {
   id: string;
   title: string;
@@ -112,7 +113,7 @@ export function Commands({
             onClick={() => execute(command)}
           >
             {command.title}
-            <kbd>{command.shortcut}</kbd>
+            <ShortcutHint keys={command.shortcut} />
           </button>
         ))}
       </div>

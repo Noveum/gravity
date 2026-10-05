@@ -45,6 +45,7 @@ describe("complete keyboard map", () => {
       f: "materials",
       i: "integrations",
       t: "settings",
+      r: "outreach",
     };
     for (const [key, view] of Object.entries(views))
       expect(shortcutFor(input({ key, prefix: true }))).toBe(view);
@@ -68,4 +69,29 @@ describe("complete keyboard map", () => {
     ).toBeNull();
     expect(shortcutFor(input({ key: "Enter", metaKey: true }))).toBeNull();
   });
+});
+
+test("creation chords are distinct from selectors and ignore unsafe input", () => {
+  for (const [key, command] of [
+    ["P", "createProduct"],
+    ["O", "createOrganization"],
+  ]) {
+    expect(shortcutFor(input({ key, shiftKey: true }))).toBe(command);
+    for (const guard of [
+      "isEditing",
+      "isComposing",
+      "isModal",
+      "repeat",
+      "defaultPrevented",
+      "prefix",
+      "metaKey",
+      "ctrlKey",
+      "altKey",
+    ] as const)
+      expect(
+        shortcutFor(input({ key, shiftKey: true, [guard]: true })),
+      ).toBeNull();
+  }
+  expect(shortcutFor(input({ key: "p" }))).toBe("product");
+  expect(shortcutFor(input({ key: "o" }))).toBe("organization");
 });

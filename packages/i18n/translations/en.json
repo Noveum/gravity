@@ -305,7 +305,14 @@
     "integrations": "G I",
     "settings": "G T",
     "create": "C",
-    "sidebar": "["
+    "sidebar": "[",
+    "createProduct": "Shift P",
+    "createOrganization": "Shift O",
+    "organization": "O",
+    "product": "P",
+    "submit": "⌘ / Ctrl Enter",
+    "help": "?",
+    "outreach": "G R"
   },
   "resizeInspector": "Resize detail panel",
   "resizeNavigation": "Resize navigation sidebar",
@@ -958,5 +965,7 @@
   "unipileConfirmRemove": "Remove and disconnect",
   "unipileSetUp": "Set up Unipile",
   "unipileManage": "Manage Unipile",
-  "disconnected": "Disconnected"
+  "disconnected": "Disconnected",
+  "productCreationDetail": "Keep contacts, conversations, follow-ups, and sales materials organized by product.",
+  "productNamePlaceholder": "e.g. Customer platform"
 }

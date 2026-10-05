@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ShortcutHint } from "../ui/shortcut-hint";
 
 const focusableSelector =
   "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])";
@@ -60,7 +61,7 @@ function NavItem({
     "aria-label": collapsed ? item.label : undefined,
     title: collapsed
       ? [item.label, item.hint].filter(Boolean).join(" ")
-      : item.hint || undefined,
+      : [item.label, item.hint].filter(Boolean).join(" · "),
     onClick: item.onSelect,
   };
   const content = (
@@ -76,6 +77,12 @@ function NavItem({
         </span>
       )}
       <span className="nav-label-text">{item.label}</span>
+      {item.hint && !collapsed && (
+        <ShortcutHint
+          keys={item.hint}
+          className="nav-shortcut nav-label-text"
+        />
+      )}
       {item.count !== undefined && (
         <span className="nav-count nav-label-text">{item.count}</span>
       )}
@@ -227,7 +234,7 @@ export function Sidebar({
       >
         <Search size={14} aria-hidden />
         <span className="nav-label-text">{t.searchShort}</span>
-        <kbd className="nav-label-text">{t.keys.commandHint}</kbd>
+        <ShortcutHint className="nav-label-text" keys={t.keys.commands} />
       </button>
       <nav className="sidebar-nav" aria-label={t.mainNavigation}>
         <div className="sidebar-scroll">

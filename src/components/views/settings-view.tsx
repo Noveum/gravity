@@ -4,6 +4,7 @@ import { label } from "../client-api";
 import { useWorkspaceData } from "../crm/crm-context";
 import { Preferences } from "../preferences";
 import { SettingsForm } from "../settings-form";
+import { ShortcutHint } from "../ui/shortcut-hint";
 
 export function SettingsView() {
   const crm = useWorkspaceData();
@@ -16,7 +17,7 @@ export function SettingsView() {
       </section>
       <p className="callout">{t.organizationIsolation}</p>
       <a className="auth-link" href="/onboarding">
-        {t.createWorkspace}
+        {t.createWorkspace} <ShortcutHint keys={t.keys.createOrganization} />
       </a>
       <SettingsForm
         organizationId={crm.organizationId}

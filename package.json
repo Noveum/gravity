@@ -22,7 +22,8 @@
     "licenses": "tsx scripts/licenses.ts",
     "licenses:check": "tsx scripts/licenses.ts --check",
     "test:public": "tsx scripts/smoke-public-site.ts",
-    "test:deployment": "tsx scripts/smoke-deployment.ts"
+    "test:deployment": "tsx scripts/smoke-deployment.ts",
+    "brand:generate": "tsx scripts/brand-assets.ts"
   },
   "dependencies": {
     "next": "16.3.8",

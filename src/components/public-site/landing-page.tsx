@@ -1,15 +1,22 @@
 import { siteCopy as t } from "@crm/public-site/content";
 import {
+  deploymentGuide,
+  gravityRepository,
+} from "@crm/public-site/deployment";
+import {
   ArrowRight,
   Check,
   Command,
   GitBranch,
+  Globe,
   MessageSquare,
+  Server,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { GravityMark } from "@/components/gravity-logo";
+import { DeployButton } from "./deploy-button";
 
 const icons = [MessageSquare, GitBranch, ShieldCheck, Command];
 export function LandingPage() {
@@ -25,18 +32,17 @@ export function LandingPage() {
           <h1>{t.heroTitle}</h1>
           <p className="site-lede">{t.heroDescription}</p>
           <div className="site-actions">
-            <Link className="site-button" href="/actions">
-              {t.startUsing}
+            <Link className="site-button" href="/sign-in">
+              {t.signInToGravity}
               <ArrowRight size={16} />
             </Link>
-            <a
-              className="site-button site-secondary"
-              href="https://github.com/Noveum/gravity"
-            >
-              {t.viewSource}
-            </a>
+            <DeployButton />
           </div>
           <p className="site-note">{t.heroNote}</p>
+          <a className="site-inline-link" href={gravityRepository}>
+            <GitBranch size={14} aria-hidden="true" />
+            {t.viewSource}
+          </a>
         </div>
         <div className="site-orbit-art" aria-hidden="true">
           <GravityMark size={130} />
@@ -88,7 +94,7 @@ export function LandingPage() {
         </div>
         <p className="site-preview-caption">
           {t.previewCaption}
-          <Link href="/actions">
+          <Link href="/sign-in">
             {t.tryDemo}
             <ArrowRight size={12} />
           </Link>
@@ -126,6 +132,34 @@ export function LandingPage() {
           <p>{t.mcpBoundary}</p>
         </div>
       </section>
+      <section id="deploy" className="site-section site-deployment">
+        <p className="site-eyebrow">{t.deploymentEyebrow}</p>
+        <h2>{t.deploymentTitle}</h2>
+        <p className="site-section-intro">{t.deploymentDescription}</p>
+        <div className="site-deployment-grid">
+          <article>
+            <Globe size={23} aria-hidden="true" />
+            <h3>{t.hostedTitle}</h3>
+            <p>{t.hostedDescription}</p>
+            <Link className="site-button" href="/sign-in">
+              {t.signInToGravity}
+              <ArrowRight size={16} aria-hidden="true" />
+            </Link>
+            <small>{t.hostedNote}</small>
+          </article>
+          <article>
+            <Server size={23} aria-hidden="true" />
+            <h3>{t.vercelTitle}</h3>
+            <p>{t.vercelDescription}</p>
+            <DeployButton />
+            <Link className="site-inline-link" href={deploymentGuide}>
+              {t.deploymentGuide}
+              <ArrowRight size={15} aria-hidden="true" />
+            </Link>
+            <small>{t.vercelNote}</small>
+          </article>
+        </div>
+      </section>
       <section className="site-section site-open-source">
         <p className="site-eyebrow">{t.openSourceEyebrow}</p>
         <h2>{t.openSourceTitle}</h2>
@@ -138,10 +172,7 @@ export function LandingPage() {
             </article>
           ))}
         </div>
-        <a
-          className="site-inline-link"
-          href="https://github.com/Noveum/gravity"
-        >
+        <a className="site-inline-link" href={gravityRepository}>
           {t.viewSource}
           <ArrowRight size={15} />
         </a>
@@ -214,14 +245,11 @@ export function LandingPage() {
         <h2>{t.finalTitle}</h2>
         <p>{t.finalDescription}</p>
         <div className="site-actions">
-          <Link className="site-button" href="/actions">
-            {t.startUsing}
+          <Link className="site-button" href="/sign-in">
+            {t.signInToGravity}
             <ArrowRight size={16} />
           </Link>
-          <a
-            className="site-button site-secondary"
-            href="https://github.com/Noveum/gravity"
-          >
+          <a className="site-button site-secondary" href={gravityRepository}>
             {t.viewSource}
           </a>
         </div>

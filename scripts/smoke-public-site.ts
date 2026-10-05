@@ -81,6 +81,15 @@ try {
       throw new Error(`SMOKE_PAGE_FAILED: ${path}`);
     if (path === "/" && !html.includes(siteCopy.heroTitle))
       throw new Error("SMOKE_COPY_MISSING");
+    if (!html.includes('href="/sign-in"'))
+      throw new Error(`SMOKE_LOGIN_LINK_MISSING: ${path}`);
+    if (path === "/" && !html.includes("https://vercel.com/new/clone?"))
+      throw new Error("SMOKE_DEPLOY_LINK_MISSING");
+    if (
+      !html.includes('rel="apple-touch-icon"') ||
+      !html.includes("favicon.ico")
+    )
+      throw new Error(`SMOKE_ICON_METADATA_MISSING: ${path}`);
   }
   const welcome = await fetch(new URL("/welcome", base), {
     redirect: "manual",
@@ -103,8 +112,24 @@ try {
     response.text(),
   );
   if (sitemap.includes("<loc>")) throw new Error("SMOKE_SITEMAP_FAILED");
+  for (const path of [
+    "/icon.svg",
+    "/favicon.ico",
+    "/apple-icon",
+    "/brand/gravity-app-192.png",
+    "/brand/gravity-app-512.png",
+  ]) {
+    const response = await request(path);
+    if (!response.ok || !(await response.arrayBuffer()).byteLength)
+      throw new Error(`SMOKE_BRAND_ASSET_FAILED: ${path}`);
+  }
+  const manifest = await request("/manifest.webmanifest").then((response) =>
+    response.json(),
+  );
+  if (manifest.name !== "Gravity" || manifest.icons?.length !== 2)
+    throw new Error("SMOKE_MANIFEST_FAILED");
   console.log(
-    `Verified ${publicPaths.length} built public pages, two 404s, robots and sitemap with demo mode disabled.`,
+    `Verified ${publicPaths.length} built public pages, login/deploy links, browser/app icons, manifest, two 404s, robots and sitemap with demo mode disabled.`,
   );
 } finally {
   child.kill("SIGTERM");

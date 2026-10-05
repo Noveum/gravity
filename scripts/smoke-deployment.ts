@@ -28,6 +28,12 @@ for (const path of publicPaths) {
     (path === "/" && !html.includes(siteCopy.heroTitle))
   )
     throw new Error(`DEPLOYMENT_PUBLIC_PAGE_FAILED: ${path}`);
+  if (!html.includes('href="/sign-in"'))
+    throw new Error(`DEPLOYMENT_LOGIN_LINK_MISSING: ${path}`);
+  if (path === "/" && !html.includes("https://vercel.com/new/clone?"))
+    throw new Error("DEPLOYMENT_DEPLOY_LINK_MISSING");
+  if (!html.includes('rel="apple-touch-icon"') || !html.includes("favicon.ico"))
+    throw new Error(`DEPLOYMENT_ICON_METADATA_MISSING: ${path}`);
 }
 const welcome = await fetch(new URL("/welcome", origin), {
   redirect: "manual",
@@ -48,6 +54,9 @@ for (const [path, type] of [
   ["/icon.svg", "image/svg+xml"],
   ["/opengraph-image", "image/png"],
   ["/brand/gravity-social.png", "image/png"],
+  ["/apple-icon", "image/png"],
+  ["/brand/gravity-app-192.png", "image/png"],
+  ["/brand/gravity-app-512.png", "image/png"],
 ] as const) {
   const response = await request(path);
   if (
@@ -57,6 +66,14 @@ for (const [path, type] of [
     throw new Error(`DEPLOYMENT_ASSET_FAILED: ${path}`);
   await response.arrayBuffer();
 }
+const favicon = await request("/favicon.ico");
+if (!favicon.ok || !(await favicon.arrayBuffer()).byteLength)
+  throw new Error("DEPLOYMENT_FAVICON_FAILED");
+const manifest = await request("/manifest.webmanifest").then((response) =>
+  response.json(),
+);
+if (manifest.name !== "Gravity" || manifest.icons?.length !== 2)
+  throw new Error("DEPLOYMENT_MANIFEST_FAILED");
 const protectedResource = await request("/mcp", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -75,5 +92,5 @@ if (
 )
   throw new Error("DEPLOYMENT_OAUTH_CHALLENGE_FAILED");
 console.log(
-  `Verified ${publicPaths.length} deployed public pages, sign-in, health, three brand assets and the OAuth MCP challenge at ${origin.origin}.`,
+  `Verified ${publicPaths.length} deployed public pages, login/deploy links, sign-in, health, browser/app icons, manifest and the OAuth MCP challenge at ${origin.origin}.`,
 );

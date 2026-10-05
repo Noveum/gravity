@@ -1,4 +1,5 @@
 import { act, cleanup, render } from "@testing-library/react";
+import { eq } from "drizzle-orm";
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
 import { AssistantsView } from "@/components/views/assistants-view";
@@ -37,6 +38,7 @@ import {
   RecordService,
 } from "../../packages/core/records";
 import { createLocalDatabase } from "../../packages/database/client";
+import { organizations as organizationTable } from "../../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../../packages/database/seed";
 import { RequestError, requestJson } from "../../src/components/client-api";
 import { CrmApp } from "../../src/components/crm-app";
@@ -282,6 +284,12 @@ export function installCrmHarness() {
   beforeEach(async () => {
     harness.local = await createLocalDatabase();
     await seedDemo(harness.local.db);
+    // The UI and service must use the same workspace zone, including at midnight.
+    for (const organization of organizations)
+      await harness.local.db
+        .update(organizationTable)
+        .set({ timezone: organization.timezone })
+        .where(eq(organizationTable.id, organization.id));
     harness.service = new CrmService(harness.local.db);
     harness.posts = [];
     harness.clock = Date.now;

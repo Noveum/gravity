@@ -7,6 +7,12 @@ import {
   siteCopy,
 } from "../packages/public-site/content";
 import {
+  deploymentEnvironment,
+  deploymentGuide,
+  gravityRepository,
+  vercelDeployUrl,
+} from "../packages/public-site/deployment";
+import {
   canIndexPublicSite,
   publicMetadata,
   publicOrigin,
@@ -94,13 +100,36 @@ test("every content route has a unique slug and anchor; missing articles stay mi
   expect(findArticle("articles", "missing")).toBeUndefined();
 });
 
-test("the landing page sends its primary calls to action into the hosted workspace", () => {
+test("the landing page offers explicit login and an independently configured Vercel deployment", () => {
   const html = renderToStaticMarkup(createElement(LandingPage));
   expect(html).toContain(siteCopy.heroTitle);
   expect(html).toContain(siteCopy.heroNote);
-  expect((html.match(/href="\/actions"/g) ?? []).length).toBe(3);
+  expect((html.match(/href="\/sign-in"/g) ?? []).length).toBe(4);
   expect(html).not.toContain("Run Gravity locally");
-  expect(html).not.toContain('href="/sign-in"');
+  expect(html).toContain(siteCopy.signInToGravity);
+  expect(html).toContain(siteCopy.deployWithVercel);
+  expect(html).toContain(`href="${deploymentGuide}"`);
+  expect(html).toContain(siteCopy.vercelNote);
+});
+
+test("the deploy URL clones public source and includes no credential defaults", () => {
+  const url = new URL(vercelDeployUrl());
+  expect(url.origin).toBe("https://vercel.com");
+  expect(url.pathname).toBe("/new/clone");
+  expect(url.searchParams.get("repository-url")).toBe(gravityRepository);
+  expect(url.searchParams.get("env")?.split(",")).toEqual(
+    deploymentEnvironment,
+  );
+  expect(JSON.parse(url.searchParams.get("envDefaults") ?? "{}")).toEqual({
+    CRM_DEMO_MODE: "false",
+    DATABASE_SSL_MODE: "verify-full",
+    PUBLIC_SITE_INDEXING: "false",
+  });
+  expect(url.searchParams.has("DATABASE_URL")).toBe(false);
+  expect(deploymentEnvironment).not.toContain("DATABASE_MIGRATION_URL");
+  expect(url.searchParams.get("envLink")).toBe(
+    `${gravityRepository}/blob/main/docs/vercel.md#environment`,
+  );
 });
 
 test("getting started leads with hosted access and leaves development setup optional", () => {

@@ -120,6 +120,18 @@ function raise(element: HTMLElement) {
   element.showPopover();
 }
 
+const holdsDialog = (node: Node) =>
+  node instanceof HTMLDialogElement ||
+  (node instanceof Element && !!node.querySelector("dialog"));
+
+export function dialogChanged(mutations: readonly MutationRecord[]) {
+  return mutations.some((mutation) =>
+    mutation.type === "attributes"
+      ? mutation.target instanceof HTMLDialogElement
+      : [...mutation.addedNodes, ...mutation.removedNodes].some(holdsDialog),
+  );
+}
+
 function useOpenDialog() {
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
   useEffect(() => {
@@ -130,7 +142,9 @@ function useOpenDialog() {
         ) ?? null,
       );
     sync();
-    const observer = new MutationObserver(sync);
+    const observer = new MutationObserver((mutations) => {
+      if (dialogChanged(mutations)) sync();
+    });
     observer.observe(document.body, {
       subtree: true,
       childList: true,

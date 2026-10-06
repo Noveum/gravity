@@ -80,3 +80,22 @@ export async function authorize(
     throw new DomainError("FORBIDDEN", 403);
   return { membership, products: allowed };
 }
+export async function authorizeAdministrator(
+  db: Database,
+  principal: Principal,
+  organizationId: string,
+) {
+  const permission = await authorize(
+    db,
+    principal,
+    organizationId,
+    undefined,
+    true,
+  );
+  if (
+    permission.membership.role !== "admin" ||
+    principal.productIds !== undefined
+  )
+    throw new DomainError("FORBIDDEN", 403);
+  return permission;
+}

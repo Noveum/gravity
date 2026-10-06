@@ -269,7 +269,11 @@
     "CHANNEL_MISMATCH": "Select your connected account for this message channel.",
     "CONTACT_POLICY_BLOCKED": "Sending is blocked by the workspace contact policy.",
     "IDEMPOTENCY_CONFLICT": "This send key belongs to a different request.",
-    "RECEIPT_MISMATCH": "The provider receipt does not match this send."
+    "RECEIPT_MISMATCH": "The provider receipt does not match this send.",
+    "LAST_ADMIN": "The workspace needs at least one active admin. Make someone else an admin first.",
+    "REASSIGN_TARGET_INVALID": "Choose another active member to take over this work.",
+    "MEMBER_INACTIVE": "This member is already deactivated.",
+    "MEMBER_ACTIVE": "This member is already active."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
   "addPerson": "Add person",

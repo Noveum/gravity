@@ -34,6 +34,14 @@ import {
   workspaceSchema,
 } from "../core/crm";
 import {
+  deactivateMemberSchema,
+  listMembersSchema,
+  MemberService,
+  memberProductsSchema,
+  memberRoleSchema,
+  reactivateMemberSchema,
+} from "../core/members";
+import {
   contactPreferencesSchema,
   contactRulesSchema,
   enrollmentChangeSchema,
@@ -126,6 +134,7 @@ const outreach = ({ db }: OperationContext) => new OutreachService(db);
 const integrations = ({ db }: OperationContext) => new IntegrationService(db);
 const settings = ({ db }: OperationContext) =>
   new ProviderConfigurationService(db);
+const members = ({ db }: OperationContext) => new MemberService(db);
 const nameSchema = z.string().trim().min(1).max(100);
 const overviewSchema = scopeSchema.extend({
   days: z.coerce
@@ -431,6 +440,56 @@ export const operations: Operation[] = [
     destructive: false,
     run: (c, input) =>
       crm(c).createProduct(c.principal, input.organizationId, input.name),
+  }),
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "members",
+    name: "list_members",
+    description:
+      "List workspace members with name, email, role, active state, explicit product access and counts of owned relationships, open actions and open touches in products you can read.",
+    schema: listMembersSchema,
+    run: (c, input) => members(c).list(c.principal, input.organizationId),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "member-role",
+    name: "change_member_role",
+    description:
+      "Switch a member between admin and member. The last active admin cannot be demoted. Requires admin membership and an all-products grant.",
+    schema: memberRoleSchema,
+    run: (c, input) => members(c).changeRole(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "member-products",
+    name: "set_member_products",
+    description:
+      "Replace the products a member can access with the supplied product IDs; an empty list removes all product access. Admins already see every product. Requires admin membership and an all-products grant.",
+    schema: memberProductsSchema,
+    run: (c, input) => members(c).setProducts(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "member-deactivate",
+    name: "deactivate_member",
+    description:
+      "Deactivate a member. Their relationships, open actions and open touches move in one transaction to reassignToUserId (default: you), approvals on moved touches and actions are cleared, and their assistant grants and sessions for this organization stop working. Actions from their private conversations stay with them. The last active admin cannot be deactivated. Requires admin membership and an all-products grant.",
+    schema: deactivateMemberSchema,
+    run: (c, input) => members(c).deactivate(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "member-reactivate",
+    name: "reactivate_member",
+    description:
+      "Reactivate a deactivated member. Reassigned work and revoked assistant grants are not restored. Requires admin membership and an all-products grant.",
+    schema: reactivateMemberSchema,
+    run: (c, input) => members(c).reactivate(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -962,12 +1021,19 @@ export function operationInput(item: Operation) {
   const { organizationId: _organizationId, ...shape } = item.schema.shape;
   return z.object(shape);
 }
+const memberAdministration = [
+  "change_member_role",
+  "set_member_products",
+  "deactivate_member",
+  "reactivate_member",
+];
 const adminOperations = new Set([
   "create_workspace",
   "create_organization",
   "create_product",
   "create_pipeline",
   "update_contact_rules",
+  ...memberAdministration,
 ]);
 const allProductOperations = new Set([
   "create_workspace",
@@ -976,6 +1042,7 @@ const allProductOperations = new Set([
   "update_contact_rules",
   "configure_unipile",
   "remove_unipile",
+  ...memberAdministration,
 ]);
 const ownerOperations = new Set([
   "get_integrations",

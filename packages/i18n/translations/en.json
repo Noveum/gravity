@@ -1722,7 +1722,10 @@
   "memberMoved": "Member deactivated. Moved {relationships}, {actions} and {touches}.",
   "ownedWork": "{relationships} · {actions} · {touches}",
   "workCounts": {
-    "relationships": { "one": "{count} relationship", "other": "{count} relationships" },
+    "relationships": {
+      "one": "{count} relationship",
+      "other": "{count} relationships"
+    },
     "actions": { "one": "{count} action", "other": "{count} actions" },
     "touches": { "one": "{count} touch", "other": "{count} touches" }
   },

@@ -233,3 +233,19 @@ export async function activeCompany(
     throw new DomainError("NOT_FOUND", 404);
   return company;
 }
+export async function shareLockStage(
+  tx: Transaction,
+  organizationId: string,
+  stageId: string,
+) {
+  await tx
+    .select({ id: s.stages.id })
+    .from(s.stages)
+    .where(
+      and(
+        eq(s.stages.id, stageId),
+        eq(s.stages.organizationId, organizationId),
+      ),
+    )
+    .for("share");
+}

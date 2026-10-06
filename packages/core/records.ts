@@ -13,6 +13,7 @@ import {
   emailTaken,
   lockOrganization,
   personVisible,
+  shareLockStage,
 } from "./visibility";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -750,6 +751,8 @@ export class RecordService {
   ) {
     requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
+      if (input.stageId)
+        await shareLockStage(tx, input.organizationId, input.stageId);
       const [opportunity] = await tx
         .select()
         .from(s.opportunities)

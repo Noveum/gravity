@@ -40,6 +40,7 @@ async function lockMemberships(db: Reader, organizationId: string) {
     .select()
     .from(s.memberships)
     .where(eq(s.memberships.organizationId, organizationId))
+    .orderBy(s.memberships.id)
     .for("update");
 }
 function findMember(

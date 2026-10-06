@@ -34,6 +34,7 @@ import {
   assertActiveRelationships,
   clearApprovals,
   personVisible,
+  shareLockStage,
 } from "./visibility";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -1806,6 +1807,8 @@ export class OutreachService {
       if (input.productId && input.productId !== found.productId)
         throw new DomainError("FORBIDDEN", 403);
       await assertActiveRelationships(tx, input.organizationId, [found.id]);
+      if (input.stageId)
+        await shareLockStage(tx, input.organizationId, input.stageId);
       const [relationship] = await tx
         .select()
         .from(s.relationships)

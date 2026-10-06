@@ -24,7 +24,7 @@ Reviewed the V1 repair against the official documentation MCP, the DSN's public 
 
 The existing owner/product isolation and unknown-send safeguards were sound and remain covered by regression tests. There is no database migration or provider-account migration.
 
-The pre-merge review integrated current main, preserving its relationship-context changes, and removed obsolete manual-webhook UI copy. The focused setup, registration, ingress and V1 adapter tests passed: four files, 27 tests. The pull request's verification section records the final combined full-suite, type checking, lint, build and CI results separately.
+The pre-merge review integrated current main, preserving its relationship-context and organization-settings changes, and removed obsolete manual-webhook UI copy. The focused setup, registration, ingress and V1 adapter tests passed: four files, 27 tests. The pull request's verification section records the final combined full-suite, type checking, lint, build and CI results separately.
 
 ## Live qualification limits
 

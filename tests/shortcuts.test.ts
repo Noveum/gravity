@@ -13,6 +13,10 @@ import {
   toggleSelection,
 } from "../packages/core/shortcuts";
 import t from "../packages/i18n/translations/en.json";
+import {
+  shellShortcutGuideScopes,
+  shellShortcutScopes,
+} from "../src/components/shell/shortcut-context";
 
 const stroke = (key: string, extra: Partial<KeyStroke> = {}): KeyStroke => ({
   key,
@@ -196,6 +200,64 @@ describe("selection", () => {
 });
 
 describe("review follow-ups", () => {
+  test("list help includes row actions while settings help excludes them", () => {
+    const context = { hasData: true, recordId: "", showPeek: false };
+    expect(
+      shellShortcutGuideScopes({
+        ...context,
+        section: "people",
+        pathname: "/people",
+      }),
+    ).toContain("row");
+    expect(
+      shellShortcutGuideScopes({
+        ...context,
+        section: "settings",
+        pathname: "/settings",
+      }),
+    ).toEqual(["global"]);
+  });
+  test("actual shell contexts never activate duplicate shortcuts, including outreach peeks", () => {
+    const contexts = [
+      ["settings", "/settings"],
+      ["overview", "/overview"],
+      ["actions", "/actions"],
+      ["people", "/people"],
+      ["companies", "/companies"],
+      ["meetings", "/meetings"],
+      ["opportunities", "/opportunities"],
+      ["materials", "/materials"],
+      ["sequences", "/outreach/sequences"],
+      ["outreach", "/outreach/pipeline"],
+      ["outreach", "/outreach/today"],
+    ] as const;
+    for (const [section, pathname] of contexts)
+      for (const showPeek of [true, false])
+        for (const recordId of ["", "record"])
+          for (const hasData of [true, false]) {
+            const scopes = shellShortcutScopes({
+              section,
+              pathname,
+              showPeek,
+              recordId,
+              hasData,
+            });
+            const active = shortcuts.filter((entry) =>
+              scopes.includes(entry.scope),
+            );
+            const seen = new Set<string>();
+            for (const entry of active)
+              for (const binding of entry.bindings) {
+                expect(
+                  seen.has(binding),
+                  `${pathname}: ${scopes.join(",")} ${binding}`,
+                ).toBe(false);
+                seen.add(binding);
+              }
+            if (section === "settings" && !recordId && !showPeek)
+              expect(scopes).toEqual(["global"]);
+          }
+  });
   test("no two entries share a binding in any set of scopes that are active together", () => {
     const together: ShortcutScope[][] = [
       ["global", "list", "actions", "peek", "detail"],

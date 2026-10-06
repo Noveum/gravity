@@ -1,15 +1,13 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import { Moon, Sun } from "lucide-react";
-import { useId } from "react";
 import {
-  type Density,
   setDensity,
   setThemePreference,
-  type ThemePreference,
   toggleTheme,
   useAppearance,
 } from "./appearance";
+import { Select } from "./ui/select";
 
 export function Preferences({
   showDensity = true,
@@ -19,58 +17,58 @@ export function Preferences({
   labelled?: boolean;
 } = {}) {
   const appearance = useAppearance();
-  const id = useId();
   const theme = (
-    <select
-      id={`${id}-theme`}
-      aria-label={t.appearance}
+    <Select
+      label={t.appearance}
       value={appearance.theme}
-      onChange={(event) =>
-        setThemePreference(event.target.value as ThemePreference)
-      }
-    >
-      <option value="system">{t.system}</option>
-      <option value="light">{t.light}</option>
-      <option value="dark">{t.dark}</option>
-    </select>
+      options={[
+        { value: "system", label: t.system },
+        { value: "light", label: t.light },
+        { value: "dark", label: t.dark },
+      ]}
+      onChange={(value) => {
+        if (value === "system" || value === "light" || value === "dark")
+          setThemePreference(value);
+      }}
+    />
   );
   const rows = (
-    <select
-      id={`${id}-density`}
-      aria-label={t.density}
+    <Select
+      label={t.density}
       value={appearance.density}
-      onChange={(event) => setDensity(event.target.value as Density)}
-    >
-      <option value="compact">{t.compact}</option>
-      <option value="comfortable">{t.comfortable}</option>
-    </select>
+      options={[
+        { value: "compact", label: t.compact },
+        { value: "comfortable", label: t.comfortable },
+      ]}
+      onChange={(value) => {
+        if (value === "compact" || value === "comfortable") setDensity(value);
+      }}
+    />
   );
-  if (labelled)
-    return (
-      <div className="preference-fields">
-        <label className="field" htmlFor={`${id}-theme`}>
+  return (
+    <div className={labelled ? "preference-fields" : "preferences"}>
+      {labelled ? (
+        <div className="field">
           <span>{t.appearance}</span>
           {theme}
-        </label>
-        {showDensity && (
-          <label className="field" htmlFor={`${id}-density`}>
+        </div>
+      ) : (
+        theme
+      )}
+      {showDensity &&
+        (labelled ? (
+          <div className="field">
             <span>{t.density}</span>
             {rows}
-          </label>
-        )}
-      </div>
-    );
-  return (
-    <div className="preferences">
-      {theme}
-      {showDensity && rows}
+          </div>
+        ) : (
+          rows
+        ))}
     </div>
   );
 }
-
 export function ThemeToggle() {
-  const { resolved } = useAppearance();
-  const dark = resolved === "dark";
+  const dark = useAppearance().resolved === "dark";
   return (
     <button
       type="button"

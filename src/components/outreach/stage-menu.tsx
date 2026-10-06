@@ -3,26 +3,12 @@ import t from "@crm/i18n/translations/en.json";
 import { Check } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-
-const menuWidth = 240;
-const gap = 8;
+import { useMenuPosition } from "../ui/menu-position";
 
 export interface StageChoice {
   id: string;
   name: string;
   category: keyof typeof t.stageCategory;
-}
-
-function placement(anchor: HTMLElement | null) {
-  if (!anchor) return { top: 120, left: gap };
-  const rect = anchor.getBoundingClientRect();
-  return {
-    top: Math.max(gap, Math.min(rect.bottom + 4, window.innerHeight - 320)),
-    left: Math.max(
-      gap,
-      Math.min(rect.left, window.innerWidth - menuWidth - gap),
-    ),
-  };
 }
 
 export function StageMenu({
@@ -42,7 +28,7 @@ export function StageMenu({
 }) {
   const menu = useRef<HTMLDivElement>(null);
   const popup = useRef<HTMLDivElement>(null);
-  const position = placement(anchor);
+  const { position, layer } = useMenuPosition(anchor, popup, 240);
   useEffect(() => {
     (
       menu.current?.querySelector<HTMLElement>("[aria-checked=true]") ??
@@ -81,7 +67,7 @@ export function StageMenu({
     <div
       ref={popup}
       className="menu stage-menu"
-      style={{ top: `${position.top}px`, left: `${position.left}px` }}
+      style={{ ...position, overflowY: "auto" }}
     >
       <div className="menu-label" aria-hidden>
         {label}
@@ -114,6 +100,6 @@ export function StageMenu({
         ))}
       </div>
     </div>,
-    document.body,
+    layer ?? document.body,
   );
 }

@@ -342,7 +342,9 @@ describe("signing out", () => {
       .spyOn(browserNavigation, "assign")
       .mockImplementation(() => {});
     await mountCrm(harness);
-    fireEvent.click(screen.getByRole("button", { name: /^Account:/ }));
+    fireEvent.keyDown(screen.getByRole("button", { name: /^Account:/ }), {
+      key: "Enter",
+    });
     const menu = screen.getByRole("menu", { name: t.account });
     fireEvent.click(within(menu).getByRole("menuitem", { name: t.signOut }));
     await waitFor(() => expect(assign).toHaveBeenCalledWith("/sign-in"));

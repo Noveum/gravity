@@ -548,6 +548,11 @@ export function IntegrationCards({
           organizationId={organizationId}
           configuration={overview?.unipileConfiguration ?? null}
           onClose={() => setSettingsOpen(false)}
+          onContinue={() => {
+            setSettingsOpen(false);
+            setExisting(undefined);
+            setModal("linkedin");
+          }}
           onChanged={async () => {
             await currentLoad.current();
             await onChanged();
@@ -604,6 +609,8 @@ function ConnectDialog({
   const [error, setError] = useState("");
   const [key, setKey] = useState("");
   const [allowSending, setAllowSending] = useState(true);
+  const [completedConnectionId, setCompletedConnectionId] = useState<string>();
+  const [completedProductId, setCompletedProductId] = useState<string>();
   const v1 = provider === "linkedin" && unipileVersion === "v1";
   const [accounts, setAccounts] = useState<
     { id: string; name: string; status: string }[]
@@ -716,14 +723,17 @@ function ConnectDialog({
             pending.current = true;
             setBusy(true);
             setError("");
-            const selected = connectionId
-              ? productId
-              : new FormData(event.currentTarget).get("productId");
+            const selected =
+              completedProductId ??
+              (connectionId
+                ? productId
+                : new FormData(event.currentTarget).get("productId"));
             try {
               const result = await requestJson<{
                 url?: string;
                 webhookUrl?: string;
                 signingSecret?: string;
+                connectionId?: string;
               }>("/api/integrations", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -732,10 +742,10 @@ function ConnectDialog({
                   organizationId,
                   productId: selected,
                   provider,
-                  connectionId,
+                  connectionId: completedConnectionId ?? connectionId,
                   ...(provider === "gmail" ? { allowSending } : {}),
                   ...(provider === "fireflies" ? { apiKey: key } : {}),
-                  ...(v1 && !connectionId
+                  ...(v1 && !connectionId && !completedConnectionId
                     ? {
                         accountId: new FormData(event.currentTarget).get(
                           "accountId",
@@ -746,6 +756,20 @@ function ConnectDialog({
               });
               if (!alive.current) return;
               setKey("");
+              if (v1 && result.connectionId) {
+                setCompletedConnectionId(result.connectionId);
+                if (typeof selected === "string")
+                  setCompletedProductId(selected);
+                await requestJson("/api/integrations", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    operation: "register-unipile-webhooks",
+                    organizationId,
+                    connectionId: result.connectionId,
+                  }),
+                });
+              }
               if (result.url) {
                 const target = new URL(result.url);
                 if (
@@ -924,7 +948,9 @@ function ConnectDialog({
               {busy
                 ? t.connecting
                 : v1
-                  ? t.connectProvider.replace("{provider}", t.linkedin)
+                  ? completedConnectionId
+                    ? t.unipileRetryWebhooks
+                    : t.connectProvider.replace("{provider}", t.linkedin)
                   : provider === "fireflies"
                     ? t.verifyConnect
                     : t.continueProvider.replace(

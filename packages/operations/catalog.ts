@@ -765,7 +765,7 @@ export const operations: Operation[] = [
     operation: "unipile-accounts",
     name: "list_unipile_accounts",
     description:
-      "List selectable LinkedIn accounts from the acting user's private Unipile V1 setup. Only account IDs, names and messaging statuses are returned.",
+      "List selectable LinkedIn accounts from the acting user's private Unipile V1 setup. Requires all-products MCP access. Only account IDs, names and messaging statuses are returned.",
     schema: integrationScope.extend({
       cursor: z.string().min(1).max(2000).optional(),
     }),
@@ -858,6 +858,22 @@ export const operations: Operation[] = [
     publish: false,
     run: (c, input) =>
       settings(c).configure(c.principal, unipileSettingsInput.parse(input)),
+  }),
+  operation({
+    api: "integrations",
+    method: "POST",
+    operation: "register-unipile-webhooks",
+    name: "register_unipile_webhooks",
+    description:
+      "Register private, account-scoped Unipile V1 messaging and status webhooks using the acting owner's saved API key. Generates an encrypted webhook token and reuses matching registrations on retry. Requires an owned connected account and all-products MCP access. Never sends LinkedIn messages.",
+    schema: integrationScope.extend({ connectionId: z.uuid() }),
+    publish: false,
+    run: (c, input) =>
+      settings(c).registerWebhooks(
+        c.principal,
+        input.organizationId,
+        input.connectionId,
+      ),
   }),
   operation({
     api: "integrations",

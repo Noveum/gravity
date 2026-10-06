@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { randomBytes, randomUUID } from "node:crypto";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { appUrl } from "../auth/options";
 import { publishChange } from "../core/changes";
@@ -14,6 +14,10 @@ import {
   unipileV1Json,
   unipileV1Status,
 } from "./unipile-v1";
+import {
+  registerUnipileV1Webhooks,
+  removeUnipileV1Webhooks,
+} from "./unipile-webhooks";
 
 export const unipileSettingsInput = z
   .object({
@@ -30,6 +34,9 @@ interface UnipileCredentials {
   signingSecret?: string;
   apiVersion?: "v1" | "v2";
   dsn?: string;
+  webhookRegistration?: { id: string; until: number };
+  webhooksManaged?: boolean;
+  webhooks?: Record<string, { messaging: string; account_status: string }>;
 }
 type Configuration = typeof s.providerConfigurations.$inferSelect;
 const context = (
@@ -152,6 +159,18 @@ export class ProviderConfigurationService {
       if (current?.id !== prior?.id || current?.version !== prior?.version)
         throw new DomainError("STALE_CONFIGURATION", 409);
       if (current) {
+        const currentCredentials = unipileCredentials(current);
+        if (
+          currentCredentials.webhookRegistration &&
+          currentCredentials.webhookRegistration.until > Date.now()
+        )
+          throw new DomainError("UNIPILE_WEBHOOK_BUSY", 409);
+        if (
+          value.signingSecret &&
+          (currentCredentials.webhooksManaged ||
+            Object.keys(currentCredentials.webhooks ?? {}).length)
+        )
+          throw new DomainError("UNIPILE_WEBHOOK_MANAGED", 409);
         const [connected] = await tx
           .select({ id: s.connections.id })
           .from(s.connections)
@@ -215,6 +234,8 @@ export class ProviderConfigurationService {
     organizationId: string,
     cursor?: string,
   ) {
+    if (principal.source === "mcp" && principal.productIds !== undefined)
+      throw new DomainError("FORBIDDEN", 403);
     const configuration = await this.own(principal, organizationId);
     if (!configuration) throw new DomainError("UNIPILE_SETUP_REQUIRED", 422);
     const credentials = unipileCredentials(configuration);
@@ -245,6 +266,155 @@ export class ProviderConfigurationService {
     });
     return { accounts, nextCursor: result.cursor ?? null };
   }
+  async registerWebhooks(
+    principal: Principal,
+    organizationId: string,
+    connectionId: string,
+  ) {
+    if (principal.source === "mcp" && principal.productIds !== undefined)
+      throw new DomainError("FORBIDDEN", 403);
+    const prior = await this.own(principal, organizationId);
+    if (!prior) throw new DomainError("UNIPILE_SETUP_REQUIRED", 422);
+    const registrationId = randomUUID();
+    const claim = await this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(s.providerConfigurations)
+        .where(eq(s.providerConfigurations.id, prior.id))
+        .for("update");
+      if (!current?.active) throw new DomainError("STALE_CONFIGURATION", 409);
+      const [connection] = await tx
+        .select()
+        .from(s.connections)
+        .where(
+          and(
+            eq(s.connections.id, connectionId),
+            eq(s.connections.providerConfigurationId, current.id),
+            eq(s.connections.organizationId, organizationId),
+            eq(s.connections.ownerId, principal.userId),
+            eq(s.connections.status, "connected"),
+            isNotNull(s.connections.encryptedCredentials),
+          ),
+        );
+      if (!connection) throw new DomainError("NOT_FOUND", 404);
+      await authorize(
+        tx,
+        principal,
+        organizationId,
+        connection.productId ?? undefined,
+        true,
+      );
+      const credentials = unipileCredentials(current);
+      if (credentials.apiVersion !== "v1")
+        throw new DomainError("INVALID_INPUT", 400);
+      if (
+        credentials.webhookRegistration &&
+        credentials.webhookRegistration.until > Date.now()
+      )
+        throw new DomainError("UNIPILE_WEBHOOK_BUSY", 409);
+      credentials.signingSecret ??= randomBytes(32).toString("hex");
+      credentials.webhooksManaged = true;
+      credentials.webhookRegistration = {
+        id: registrationId,
+        until: Date.now() + 300000,
+      };
+      await tx
+        .update(s.providerConfigurations)
+        .set({
+          encryptedCredentials: seal(credentials, context(current)),
+          version: current.version + 1,
+        })
+        .where(eq(s.providerConfigurations.id, current.id));
+      return {
+        credentials,
+        accountId: connection.externalAccountId,
+        url: publicUnipileConfiguration(current).webhookUrl,
+      };
+    });
+    try {
+      const hooks = await registerUnipileV1Webhooks(
+        claim.credentials,
+        prior.id,
+        claim.accountId,
+        claim.url,
+        claim.credentials.signingSecret ?? "",
+        this.transport,
+      );
+      const result = await this.db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(s.providerConfigurations)
+          .where(eq(s.providerConfigurations.id, prior.id))
+          .for("update");
+        if (!current?.active) throw new DomainError("STALE_CONFIGURATION", 409);
+        const [connection] = await tx
+          .select()
+          .from(s.connections)
+          .where(
+            and(
+              eq(s.connections.id, connectionId),
+              eq(s.connections.providerConfigurationId, current.id),
+              eq(s.connections.status, "connected"),
+              isNotNull(s.connections.encryptedCredentials),
+            ),
+          )
+          .for("update");
+        if (!connection) throw new DomainError("STALE_CONFIGURATION", 409);
+        await authorize(
+          tx,
+          principal,
+          organizationId,
+          connection.productId ?? undefined,
+          true,
+        );
+        const credentials = unipileCredentials(current);
+        if (credentials.webhookRegistration?.id !== registrationId)
+          throw new DomainError("STALE_CONFIGURATION", 409);
+        credentials.webhooks = {
+          ...credentials.webhooks,
+          [claim.accountId]: hooks,
+        };
+        delete credentials.webhookRegistration;
+        const [saved] = await tx
+          .update(s.providerConfigurations)
+          .set({
+            encryptedCredentials: seal(credentials, context(current)),
+            webhookReady: true,
+            version: current.version + 1,
+          })
+          .where(eq(s.providerConfigurations.id, current.id))
+          .returning();
+        await tx.insert(s.changeEvents).values({
+          organizationId,
+          actorId: principal.userId,
+          type: "provider.webhooks_registered",
+          entityId: current.id,
+        });
+        return publicUnipileConfiguration(saved);
+      });
+      publishChange(organizationId);
+      return result;
+    } finally {
+      await this.db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(s.providerConfigurations)
+          .where(eq(s.providerConfigurations.id, prior.id))
+          .for("update");
+        if (!current?.active) return;
+        const credentials = unipileCredentials(current);
+        if (credentials.webhookRegistration?.id !== registrationId) return;
+        delete credentials.webhookRegistration;
+        await tx
+          .update(s.providerConfigurations)
+          .set({
+            encryptedCredentials: seal(credentials, context(current)),
+            version: current.version + 1,
+          })
+          .where(eq(s.providerConfigurations.id, current.id));
+      });
+    }
+  }
   async remove(
     principal: Principal,
     organizationId: string,
@@ -254,7 +424,7 @@ export class ProviderConfigurationService {
       throw new DomainError("FORBIDDEN", 403);
     const prior = await this.own(principal, organizationId);
     if (prior?.id !== configurationId) throw new DomainError("NOT_FOUND", 404);
-    await this.db.transaction(async (tx) => {
+    const removedCredentials = await this.db.transaction(async (tx) => {
       await authorize(tx, principal, organizationId, undefined, true);
       const [current] = await tx
         .select()
@@ -262,6 +432,12 @@ export class ProviderConfigurationService {
         .where(eq(s.providerConfigurations.id, prior.id))
         .for("update");
       if (!current?.active) throw new DomainError("NOT_FOUND", 404);
+      const credentials = unipileCredentials(current);
+      if (
+        credentials.webhookRegistration &&
+        credentials.webhookRegistration.until > Date.now()
+      )
+        throw new DomainError("UNIPILE_WEBHOOK_BUSY", 409);
       await tx
         .update(s.providerConfigurations)
         .set({
@@ -299,8 +475,28 @@ export class ProviderConfigurationService {
         type: "provider.removed",
         entityId: current.id,
       });
+      return credentials;
     });
+    const ids = new Set(
+      Object.values(removedCredentials.webhooks ?? {}).flatMap((hooks) => [
+        hooks.messaging,
+        hooks.account_status,
+      ]),
+    );
+    const webhookCleanupPending =
+      removedCredentials.apiVersion === "v1" && removedCredentials.signingSecret
+        ? await removeUnipileV1Webhooks(
+            removedCredentials,
+            prior.id,
+            removedCredentials.signingSecret,
+            [...ids],
+            this.transport,
+          )
+        : false;
     publishChange(organizationId);
-    return { ok: true };
+    return {
+      ok: true,
+      webhookCleanupPending,
+    };
   }
 }

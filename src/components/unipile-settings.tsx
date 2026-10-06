@@ -23,11 +23,13 @@ export function UnipileSettings({
   organizationId,
   configuration,
   onClose,
+  onContinue,
   onChanged,
 }: {
   organizationId: string;
   configuration: ConnectionOverview["unipileConfiguration"];
   onClose: () => void;
+  onContinue?: () => void;
   onChanged: () => Promise<void>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -65,7 +67,9 @@ export function UnipileSettings({
     setError("");
     try {
       const result = await requestJson<
-        NonNullable<ConnectionOverview["unipileConfiguration"]>
+        NonNullable<ConnectionOverview["unipileConfiguration"]> & {
+          webhookCleanupPending?: boolean;
+        }
       >("/api/integrations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -85,7 +89,11 @@ export function UnipileSettings({
       setSigningSecret("");
       setSaved(remove ? null : result);
       await onChanged();
-      if (remove && alive.current) onClose();
+      if (remove && alive.current) {
+        if (result.webhookCleanupPending)
+          setError(t.unipileWebhookCleanupPending);
+        else onClose();
+      }
     } catch (cause) {
       if (alive.current) setError(errorText(cause));
     } finally {
@@ -171,8 +179,22 @@ export function UnipileSettings({
       {saved?.webhookReady ? (
         <p className="provider-ready" role="status">
           <ShieldCheck size={18} aria-hidden="true" />
-          {t.unipileReady}
+          {saved.apiVersion === "v1" ? t.unipileV1Ready : t.unipileReady}
         </p>
+      ) : saved?.apiVersion === "v1" ? (
+        <div>
+          <p>{t.unipileV1WebhookInstructions}</p>
+          <div className="dialog-actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={busy}
+              onClick={onContinue ?? onClose}
+            >
+              {t.unipileContinuePolling}
+            </button>
+          </div>
+        </div>
       ) : (
         <form
           onKeyDown={submitOnSaveKey}
@@ -183,16 +205,8 @@ export function UnipileSettings({
         >
           {saved ? (
             <>
-              <p>
-                {saved.apiVersion === "v1"
-                  ? t.unipileV1WebhookInstructions
-                  : t.unipileWebhookInstructions}
-              </p>
-              <p className="muted">
-                {saved.apiVersion === "v1"
-                  ? t.unipileV1WebhookEvents
-                  : t.unipileWebhookEvents}
-              </p>
+              <p>{t.unipileWebhookInstructions}</p>
+              <p className="muted">{t.unipileWebhookEvents}</p>
               <label>
                 {t.signingSecret}
                 <input
@@ -208,40 +222,6 @@ export function UnipileSettings({
                   onChange={(event) => setSigningSecret(event.target.value)}
                 />
               </label>
-              {saved.apiVersion === "v1" && (
-                <div className="dialog-actions">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      setSigningSecret(
-                        Array.from(
-                          crypto.getRandomValues(new Uint8Array(32)),
-                          (byte) => byte.toString(16).padStart(2, "0"),
-                        ).join(""),
-                      )
-                    }
-                  >
-                    {t.unipileGenerateWebhookToken}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || !signingSecret}
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(
-                          `Bearer ${signingSecret}`,
-                        );
-                        if (alive.current) setCopied(true);
-                      } catch {
-                        if (alive.current) setError(t.copyFailed);
-                      }
-                    }}
-                  >
-                    {copied ? t.copied : t.unipileCopyAuthorization}
-                  </button>
-                </div>
-              )}
             </>
           ) : (
             <>
@@ -321,11 +301,6 @@ export function UnipileSettings({
             <ExternalLink size={14} aria-hidden="true" />
           </a>
           <div className="dialog-actions">
-            {saved?.apiVersion === "v1" && (
-              <button type="button" disabled={busy} onClick={onClose}>
-                {t.unipileContinuePolling}
-              </button>
-            )}
             <button type="button" disabled={busy} onClick={onClose}>
               <X size={14} aria-hidden="true" />
               {t.cancel}

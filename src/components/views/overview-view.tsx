@@ -12,7 +12,6 @@ import {
   Mail,
   Plus,
   Reply,
-  Target,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -108,10 +107,17 @@ export function OverviewView() {
       action: () => open(t.openPipeline, "deals", report.open),
     },
     {
-      title: t.wonValue,
-      value: values(report.wonValue),
-      icon: Target,
-      action: () => open(t.wonValue, "deals", report.won),
+      title: t.expectedRevenue,
+      value: values(report.weightedValue),
+      icon: ChartNoAxesCombined,
+      action: () =>
+        open(
+          t.expectedRevenue,
+          "deals",
+          report.open.filter(
+            (deal) => deal.amountMinor !== null && deal.probability !== null,
+          ),
+        ),
     },
   ];
   return (
@@ -186,6 +192,20 @@ export function OverviewView() {
           </button>
         ))}
       </div>
+      <p className="muted report-note forecast-explanation">
+        {t.forecastCoverage
+          .replace(
+            "{included}",
+            String(
+              report.open.filter(
+                (deal) =>
+                  deal.amountMinor !== null && deal.probability !== null,
+              ).length,
+            ),
+          )
+          .replace("{total}", String(report.open.length))}{" "}
+        {t.forecastFormula}
+      </p>
       <div className="overview-grid">
         <section className="report-card report-wide">
           <div className="section-heading">
@@ -349,18 +369,10 @@ export function OverviewView() {
           <div className="pipeline-summary">
             <button
               type="button"
-              onClick={() =>
-                open(
-                  t.weightedPipeline,
-                  "deals",
-                  report.open.filter(
-                    (d) => d.amountMinor !== null && d.probability !== null,
-                  ),
-                )
-              }
+              onClick={() => open(t.wonValue, "deals", report.won)}
             >
-              <span>{t.weightedPipeline}</span>
-              <strong>{values(report.weightedValue)}</strong>
+              <span>{t.wonValue}</span>
+              <strong>{values(report.wonValue)}</strong>
             </button>
             <button
               type="button"

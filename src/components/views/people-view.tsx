@@ -61,7 +61,7 @@ export function PeopleView() {
             <th>{t.company}</th>
             <th>{t.products}</th>
             <th>{t.qualification}</th>
-            <th>{t.dealSize}</th>
+            <th>{t.estimatedDealSize}</th>
             <th>{t.tags}</th>
           </tr>
         </thead>

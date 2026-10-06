@@ -1,5 +1,5 @@
 "use client";
-import { parseMoney } from "@crm/core/analytics";
+import { parseMoney, weightedAmount } from "@crm/core/analytics";
 import { instantFromZonedInput, zonedInputValue } from "@crm/core/calendar";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
@@ -7,7 +7,7 @@ import { useState } from "react";
 import { label } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { pipelineStages } from "../crm/use-stage-moves";
-import { fromMinor, minorStep } from "../money";
+import { formatMoney, fromMinor, minorStep } from "../money";
 import { RecordDialog, text } from "./record-dialog";
 
 type Snapshot = ClientSnapshot;
@@ -358,9 +358,11 @@ export function MeetingDialog({
 
 export function OpportunityDialog({
   opportunity: initialOpportunity,
+  relationshipId: initialRelationshipId,
   onClose,
 }: {
   opportunity?: Opportunity;
+  relationshipId?: string;
   onClose: () => void;
 }) {
   const [opportunity] = useState(initialOpportunity);
@@ -368,10 +370,13 @@ export function OpportunityDialog({
   const snapshot = crm.sourceData;
   const [currency, setCurrency] = useState(opportunity?.currency ?? "USD");
   const [relationshipId, setRelationshipId] = useState(
-    opportunity?.relationshipId ?? "",
+    opportunity?.relationshipId ?? initialRelationshipId ?? "",
   );
   const [pipelineId, setPipeline] = useState("");
   const [stageId, setStage] = useState(opportunity?.stageId ?? "");
+  const [amount, setAmount] = useState(
+    opportunity ? fromMinor(opportunity.amountMinor, opportunity.currency) : "",
+  );
   const [probability, setProbability] = useState(
     opportunity?.probability?.toString() ?? "",
   );
@@ -393,13 +398,41 @@ export function OpportunityDialog({
   const stage =
     stages.find((s) => s.id === stageId) ??
     stages.find((s) => s.category === "open");
+  const effectiveProbability =
+    stage?.category === "won"
+      ? "100"
+      : stage?.category === "lost"
+        ? "0"
+        : probability;
+  let forecast: number | null = null;
+  try {
+    if (
+      effectiveProbability &&
+      Intl.supportedValuesOf("currency").includes(currency) &&
+      Number.isInteger(Number(effectiveProbability)) &&
+      Number(effectiveProbability) >= 0 &&
+      Number(effectiveProbability) <= 100
+    )
+      forecast = weightedAmount(
+        parseMoney(amount, currency),
+        Number(effectiveProbability),
+      );
+  } catch {}
   return (
     <RecordDialog
       title={opportunity ? t.editOpportunity : t.newOpportunity}
       submitLabel={opportunity ? t.save : t.create}
       onClose={onClose}
-      onSubmit={async (fields) =>
-        failure(
+      onSubmit={async (fields) => {
+        let amountMinor: number | null;
+        try {
+          if (!Intl.supportedValuesOf("currency").includes(currency))
+            return t.errors.INVALID_INPUT;
+          amountMinor = parseMoney(text(fields, "amount"), currency);
+        } catch {
+          return t.errors.INVALID_INPUT;
+        }
+        return failure(
           await crm.send(
             {
               operation: "deal",
@@ -417,7 +450,7 @@ export function OpportunityDialog({
                 .split(",")
                 .map((tag) => tag.trim())
                 .filter(Boolean),
-              amountMinor: parseMoney(text(fields, "amount"), currency),
+              amountMinor,
               currency,
               probability:
                 text(fields, "probability") === ""
@@ -430,8 +463,8 @@ export function OpportunityDialog({
             t.opportunitySaved,
             false,
           ),
-        )
-      }
+        );
+      }}
     >
       {opportunity ? (
         <p className="muted">
@@ -440,6 +473,7 @@ export function OpportunityDialog({
       ) : (
         <RelationshipField
           snapshot={snapshot}
+          value={relationshipId}
           onChange={(id) => {
             setRelationshipId(id);
             setPipeline("");
@@ -528,11 +562,8 @@ export function OpportunityDialog({
             inputMode="decimal"
             aria-describedby="amount-hint"
             placeholder={t.amountPlaceholder}
-            defaultValue={
-              opportunity
-                ? fromMinor(opportunity.amountMinor, opportunity.currency)
-                : ""
-            }
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
           />
         </label>
         <label>
@@ -559,13 +590,7 @@ export function OpportunityDialog({
             min={0}
             max={100}
             step={1}
-            value={
-              stage?.category === "won"
-                ? "100"
-                : stage?.category === "lost"
-                  ? "0"
-                  : probability
-            }
+            value={effectiveProbability}
             readOnly={stage?.category === "won" || stage?.category === "lost"}
             onChange={(e) => setProbability(e.target.value)}
             placeholder={t.unspecified}
@@ -579,6 +604,21 @@ export function OpportunityDialog({
             defaultValue={opportunity?.expectedCloseDate ?? ""}
           />
         </label>
+      </div>
+      <div
+        className="forecast-preview"
+        role="status"
+        aria-label={t.expectedRevenue}
+      >
+        <span>{t.expectedRevenue}</span>
+        <strong>
+          {forecast === null
+            ? t.forecastUnknown
+            : formatMoney(forecast, currency)}
+        </strong>
+        <small>
+          {forecast === null ? t.forecastNeedsFields : t.forecastFormula}
+        </small>
       </div>
       <label>
         {t.dealDescription}

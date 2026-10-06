@@ -73,7 +73,9 @@ export function breadcrumbsFor({
 }): Crumb[] {
   return [
     ...(workspace ? [{ id: "workspace", label: workspace }] : []),
-    ...(product ? [{ id: "product", label: product }] : []),
+    ...(product && product !== workspace
+      ? [{ id: "product", label: product }]
+      : []),
     {
       id: "view",
       label: view,

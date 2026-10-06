@@ -116,6 +116,7 @@ export function CompanyRecord({ companyId }: { companyId: string }) {
             <RelatedOpportunities
               className="record-section"
               opportunities={context.opportunities}
+              allowOpportunityCreation={!!active}
               onReveal={crm.reveal}
             />
           </>

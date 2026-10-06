@@ -1,11 +1,11 @@
 "use client";
-import { money, totals } from "@crm/core/analytics";
+import { money, totals, weightedAmount } from "@crm/core/analytics";
 import { productColorToken } from "@crm/core/product-colors";
 import t from "@crm/i18n/translations/en.json";
 import { Pencil, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { type DragEvent, useLayoutEffect, useState } from "react";
+import { type DragEvent, useEffect, useLayoutEffect, useState } from "react";
 import { useCreate, useEdit, useWorkspaceData } from "../crm/crm-context";
 import { useRevealedRecord } from "../crm/use-revealed-record";
 import { pipelineStages, useStageMoves } from "../crm/use-stage-moves";
@@ -18,6 +18,7 @@ import {
   useRecordBrowser,
   useRecordIndex,
 } from "../records/list-browser";
+import { RecordText } from "../records/record-text";
 
 const dragType = "application/x-gravity-opportunity";
 
@@ -34,6 +35,34 @@ export function OpportunitiesView() {
     next.delete("deal");
     router.replace(`/opportunities${next.size ? `?${next}` : ""}`);
   };
+  const pipelineFilter = query.get("pipeline");
+  const stageFilter = query.get("stage");
+  useEffect(() => {
+    const pipeline = data.pipelines.find(
+      (item) =>
+        item.id === pipelineFilter &&
+        (!productId || item.productId === productId),
+    );
+    const stage = data.stages.find(
+      (item) =>
+        item.id === stageFilter &&
+        (!productId || item.productId === productId) &&
+        (!pipelineFilter || item.pipelineId === pipeline?.id),
+    );
+    if ((!pipelineFilter || pipeline) && (!stageFilter || stage)) return;
+    const next = new URLSearchParams(query.toString());
+    if (pipelineFilter && !pipeline) next.delete("pipeline");
+    next.delete("stage");
+    router.replace(`/opportunities${next.size ? `?${next}` : ""}`);
+  }, [
+    data.pipelines,
+    data.stages,
+    pipelineFilter,
+    stageFilter,
+    productId,
+    query,
+    router,
+  ]);
   const focusedId = useRevealedRecord();
   const moves = useStageMoves();
   const [dragging, setDragging] = useState("");
@@ -124,11 +153,13 @@ export function OpportunitiesView() {
             }}
           >
             <option value="">{t.allPipelines}</option>
-            {data.pipelines.map((p) => (
-              <option key={p.id} value={p.id}>
-                {crm.product(p.productId)?.name} · {p.name}
-              </option>
-            ))}
+            {data.pipelines
+              .filter((p) => !productId || p.productId === productId)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {crm.product(p.productId)?.name} · {p.name}
+                </option>
+              ))}
           </select>
         </label>
         <Link className="button primary" href="/opportunities?deal=new">
@@ -322,6 +353,30 @@ export function OpportunitiesView() {
                                   ? t.unspecified
                                   : `${opportunity.probability}%`}
                               </small>
+                              <small>
+                                {t.expectedRevenue}:{" "}
+                                {weightedAmount(
+                                  opportunity.amountMinor,
+                                  opportunity.probability,
+                                ) === null
+                                  ? t.forecastUnknown
+                                  : formatMoney(
+                                      weightedAmount(
+                                        opportunity.amountMinor,
+                                        opportunity.probability,
+                                      ),
+                                      opportunity.currency,
+                                    )}
+                              </small>
+                              {opportunity.description && (
+                                <details className="deal-context">
+                                  <summary>{t.dealDescription}</summary>
+                                  <RecordText
+                                    value={opportunity.description}
+                                    limit={160}
+                                  />
+                                </details>
+                              )}
                               <small>
                                 {t.expectedCloseDate}:{" "}
                                 {opportunity.expectedCloseDate ?? t.unspecified}

@@ -228,10 +228,12 @@ export function PersonDetails({
   context,
   onCompany,
   onPerson,
+  includeSummary = true,
 }: {
   context: ClientContext;
   onCompany: (companyId: string) => void;
   onPerson: (relationshipId: string) => void;
+  includeSummary?: boolean;
 }) {
   return (
     <section className="record-section">
@@ -307,7 +309,8 @@ export function PersonDetails({
           </>
         )}
       </dl>
-      {context.person?.summary &&
+      {includeSummary &&
+        context.person?.summary &&
         context.person.summary !== context.relationship.context && (
           <RecordText value={context.person.summary} />
         )}

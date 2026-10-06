@@ -25,6 +25,96 @@ const inspector = () =>
   within(screen.getByRole("complementary", { name: t.recordDetails }));
 
 describe("browsing records", () => {
+  test.each(["/companies", "/materials", `/people/${demoId(200)}`])(
+    "sidebar products open the overview from %s and clear the old record",
+    async (path) => {
+      await mountCrm(harness, path);
+      const sidebar = document.getElementById("navigation-panel");
+      const product = sidebar?.querySelector<HTMLElement>(
+        `[data-nav-item="product-${demoId(10)}"]`,
+      );
+      if (!product) throw new Error("missing product navigation");
+      fireEvent.click(product);
+      expect(window.location.pathname).toBe("/overview");
+      expect(screen.getByRole("combobox", { name: t.product })).toHaveProperty(
+        "value",
+        demoId(10),
+      );
+      expect(document.querySelector(".record-page")).toBeNull();
+      expect(
+        screen.queryByRole("complementary", { name: t.recordDetails }),
+      ).toBeNull();
+      const all = sidebar?.querySelector<HTMLElement>(
+        '[data-nav-item="all-products"]',
+      );
+      if (!all) throw new Error("missing all-products navigation");
+      fireEvent.click(all);
+      expect(window.location.pathname).toBe("/overview");
+      expect(screen.getByRole("combobox", { name: t.product })).toHaveProperty(
+        "value",
+        "",
+      );
+    },
+  );
+  test("the toolbar product picker filters companies without navigating", async () => {
+    await mountCrm(harness, "/companies");
+    fireEvent.change(screen.getByRole("combobox", { name: t.product }), {
+      target: { value: demoId(10) },
+    });
+    expect(window.location.pathname).toBe("/companies");
+    expect(screen.getByRole("table")).toBeTruthy();
+  });
+  test("long person notes stay out of contact details and remain readable in the main panel", async () => {
+    const summary = "A fictional imported review. ".repeat(40);
+    await harness.local.db
+      .update(s.people)
+      .set({ summary })
+      .where(eq(s.people.id, demoId(200)));
+    await mountCrm(harness, `/people/${demoId(200)}`);
+    const notes = await screen.findByRole("region", { name: t.personNotes });
+    expect(
+      document.querySelector(".record-attributes .record-text"),
+    ).toBeNull();
+    const details = notes.querySelector("details");
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector("p")?.textContent).toBe(summary);
+    expect(
+      notes.querySelector(".record-text-preview")?.textContent?.length,
+    ).toBeLessThan(330);
+    const timeline = document.querySelector(".record-timeline");
+    expect(timeline?.firstElementChild?.className).toBe("tabs");
+  });
+  test("calendar descriptions are bounded while full details and editing preserve the original", async () => {
+    const summary =
+      "Fictional invitation and meeting link https://example.test/meeting ".repeat(
+        30,
+      );
+    const [meeting] = await harness.local.db.select().from(s.meetings).limit(1);
+    if (!meeting) throw new Error("missing meeting fixture");
+    await harness.local.db
+      .update(s.meetings)
+      .set({ summary })
+      .where(eq(s.meetings.id, meeting.id));
+    await mountCrm(harness, "/meetings");
+    const article = document.querySelector(`[data-record-id="${meeting.id}"]`);
+    expect(
+      article?.querySelector(".record-text-preview")?.textContent?.length,
+    ).toBeLessThan(250);
+    const details = article?.querySelector("details");
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector("p")?.textContent).toBe(summary);
+    if (!article) throw new Error("missing meeting row");
+    fireEvent.click(
+      within(article as HTMLElement).getByRole("button", {
+        name: `${t.editMeeting}: ${meeting.title}`,
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: t.editMeeting });
+    expect(within(dialog).getByLabelText(t.summary)).toHaveProperty(
+      "value",
+      summary,
+    );
+  });
   test("URL filters reset the current list page", async () => {
     const [existing] = await harness.local.db.select().from(s.actions).limit(1);
     if (!existing) throw new Error("missing action fixture");

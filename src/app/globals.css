@@ -419,6 +419,7 @@
 }
 
 .sidebar {
+  container-type: inline-size;
   background: var(--gravity-surface);
   border-right: 1px solid var(--gravity-border-subtle);
   display: flex;
@@ -1683,6 +1684,12 @@ ul.timeline {
   padding: 8px 0 20px;
   margin-bottom: 20px;
   font-size: var(--text-dense);
+}
+.timeline-event p,
+.evidence-item p,
+.meeting h2 {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 .commitment-box {
   padding: 12px 14px;
@@ -3791,6 +3798,11 @@ tbody tr[data-selected] td:first-child::before {
   flex: 0 0 auto;
   overflow: visible;
 }
+@container (max-width: 260px) {
+  .nav-item > .nav-shortcut {
+    display: none;
+  }
+}
 .product-picker {
   display: inline-flex;
   align-items: center;
@@ -4302,7 +4314,7 @@ nav.list-pagination > label:has(select) {
 }
 .source-details summary {
   cursor: pointer;
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 .source-details pre {
   max-height: 280px;
@@ -4315,6 +4327,40 @@ nav.list-pagination > label:has(select) {
 .context-summary {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+.record-text {
+  min-width: 0;
+  max-width: 72ch;
+}
+.record-text .context-summary {
+  border: 0;
+  padding: 0;
+  margin: 8px 0;
+  font-size: var(--text-dense);
+  line-height: 1.65;
+}
+.record-text-details > summary {
+  cursor: pointer;
+  color: var(--gravity-accent);
+  font-size: var(--text-xs);
+  padding: 4px 0;
+}
+.record-text-details > .context-summary {
+  max-height: 360px;
+  overflow-y: auto;
+}
+.record-text:has(> .record-text-details[open]) > .record-text-preview {
+  display: none;
+}
+.record-text-details > summary:focus-visible {
+  outline: 2px solid var(--gravity-accent);
+  outline-offset: 2px;
+}
+.meeting .section-heading > :first-child {
+  min-width: 0;
+}
+.meeting .section-heading {
+  align-items: flex-start;
 }
 .row-deal-size {
   width: 90px;

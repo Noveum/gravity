@@ -12,6 +12,7 @@ import { useState } from "react";
 import { dateLabel } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { ImportedContext } from "./imported-context";
+import { RecordText } from "./record-text";
 import { RelationshipContextDialog } from "./relationship-context-dialog";
 
 export function RelationshipContext({
@@ -58,7 +59,7 @@ export function RelationshipContext({
         {!isImported && relationship.context && (
           <div className="context-note">
             <h4>{t.summary}</h4>
-            <p>{relationship.context}</p>
+            <RecordText value={relationship.context} />
           </div>
         )}
         {contextSectionKeys
@@ -66,7 +67,7 @@ export function RelationshipContext({
           .map((key) => (
             <div key={key} className="context-note">
               <h4>{t.contextFields.sections[key]}</h4>
-              <p>{details[key]}</p>
+              <RecordText value={details[key]} />
             </div>
           ))}
       </div>
@@ -119,7 +120,7 @@ export function RelationshipContext({
                   {signal.classification === "fact" ? t.fact : t.hypothesis}
                 </span>
               </div>
-              <p>{signal.description}</p>
+              <RecordText value={signal.description} />
               <div className="signal-meta">
                 {signal.observedAt && (
                   <span>

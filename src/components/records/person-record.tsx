@@ -22,6 +22,7 @@ import {
   RelationshipProperties,
 } from "./person-panels";
 import { ArchivedNotice, RecordActions } from "./record-actions";
+import { RecordText } from "./record-text";
 import { RelationshipContext } from "./relationship-context";
 
 export function PersonRecord({ personId }: { personId: string }) {
@@ -122,20 +123,21 @@ export function PersonRecord({ personId }: { personId: string }) {
         />
         {context ? (
           <>
-            <MetadataSection entity="person" record={person} />
-            <MetadataSection
-              entity="relationship"
-              record={context.relationship}
-            />
             <PersonDetails
               context={context}
               onCompany={toCompany}
               onPerson={(id) => focus(id)}
+              includeSummary={false}
             />
             <RelationshipProperties
               context={context}
               action={action}
               includeContext={false}
+            />
+            <MetadataSection entity="person" record={person} />
+            <MetadataSection
+              entity="relationship"
+              record={context.relationship}
             />
             {action && (
               <ActionSummary action={action} version={draft.version} />
@@ -158,11 +160,18 @@ export function PersonRecord({ personId }: { personId: string }) {
       <section className="record-timeline" aria-label={t.activity}>
         {context ? (
           <>
+            <PersonActivity context={context} action={action} draft={draft} />
+            {context.person?.summary &&
+              context.person.summary !== context.relationship.context && (
+                <section className="record-section" aria-label={t.personNotes}>
+                  <h3>{t.personNotes}</h3>
+                  <RecordText value={context.person.summary} />
+                </section>
+              )}
             <RelationshipContext
               key={context.relationship.id}
               relationship={context.relationship}
             />
-            <PersonActivity context={context} action={action} draft={draft} />
           </>
         ) : missing ? (
           unavailable

@@ -369,6 +369,9 @@
   "clearFilters": "Clear filters",
   "domain": "Domain",
   "summary": "Summary",
+  "personNotes": "Person notes",
+  "fullNotes": "Read full notes",
+  "meetingDetails": "Read full meeting details",
   "retry": "Retry",
   "defaultFolder": "Overview",
   "outreachCopy": {

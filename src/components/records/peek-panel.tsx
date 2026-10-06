@@ -25,6 +25,8 @@ import {
   RelationshipProperties,
 } from "./person-panels";
 import { RecordActions } from "./record-actions";
+import { RecordText } from "./record-text";
+import { RelationshipContext } from "./relationship-context";
 
 function PersonPeek() {
   const crm = useWorkspaceData();
@@ -56,17 +58,33 @@ function PersonPeek() {
           }}
         />
       )}
-      {context.person && (
-        <MetadataSection entity="person" record={context.person} />
-      )}
-      <MetadataSection entity="relationship" record={context.relationship} />
       <PersonDetails
         context={context}
         onCompany={crm.openCompany}
         onPerson={crm.openPerson}
+        includeSummary={false}
       />
-      <RelationshipProperties context={context} action={action} />
+      <RelationshipProperties
+        context={context}
+        action={action}
+        includeContext={false}
+      />
+      {context.person && (
+        <MetadataSection entity="person" record={context.person} />
+      )}
+      <MetadataSection entity="relationship" record={context.relationship} />
       <PersonActivity context={context} action={action} draft={draft} />
+      {context.person?.summary &&
+        context.person.summary !== context.relationship.context && (
+          <section className="record-section" aria-label={t.personNotes}>
+            <h3>{t.personNotes}</h3>
+            <RecordText value={context.person.summary} />
+          </section>
+        )}
+      <RelationshipContext
+        key={context.relationship.id}
+        relationship={context.relationship}
+      />
       <RelatedWork
         actions={context.actions}
         meetings={context.meetings}

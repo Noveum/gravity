@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
@@ -392,6 +392,18 @@ export class MemberService {
           ),
         )
         .returning({ id: s.mcpGrants.id });
+      const invitations = await tx
+        .update(s.invitations)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(s.invitations.organizationId, organizationId),
+            eq(s.invitations.invitedBy, member.userId),
+            isNull(s.invitations.acceptedAt),
+            isNull(s.invitations.revokedAt),
+          ),
+        )
+        .returning({ id: s.invitations.id });
       await tx.insert(s.changeEvents).values([
         {
           organizationId,
@@ -399,6 +411,12 @@ export class MemberService {
           type: "member.deactivated",
           entityId: member.id,
         },
+        ...invitations.map((row) => ({
+          organizationId,
+          actorId: principal.userId,
+          type: "invitation.revoked",
+          entityId: row.id,
+        })),
         ...relationships.map((row) => ({
           organizationId,
           productId: row.productId,
@@ -426,6 +444,7 @@ export class MemberService {
         },
         privateActionsKept: actions.length - shared.length,
         revokedGrants: revoked.length,
+        revokedInvitations: invitations.length,
       };
     });
   }

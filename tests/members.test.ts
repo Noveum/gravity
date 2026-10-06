@@ -492,3 +492,40 @@ describe("agents reduce access but never grant it", () => {
     );
   });
 });
+
+test("deactivating an admin revokes the invitations they still have pending", async () => {
+  await addMember("fixture-admin", "admin");
+  const pending = (email: string, invitedBy: string) => ({
+    organizationId: org,
+    email,
+    tokenHash: `hash-${email}`,
+    expiresAt: new Date(Date.now() + 86400000),
+    invitedBy,
+  });
+  const [theirs, accepted, mine] = await local.db
+    .insert(s.invitations)
+    .values([
+      pending("theirs@example.test", "fixture-admin"),
+      {
+        ...pending("accepted@example.test", "fixture-admin"),
+        acceptedAt: new Date(),
+        acceptedBy: demoUser,
+      },
+      pending("mine@example.test", demoUser),
+    ])
+    .returning();
+  await run("deactivate_member", admin, { userId: "fixture-admin" });
+  const rows = await local.db
+    .select()
+    .from(s.invitations)
+    .where(eq(s.invitations.organizationId, org));
+  const state = (id: string | undefined) => rows.find((row) => row.id === id);
+  expect(state(theirs?.id)?.revokedAt).toBeInstanceOf(Date);
+  expect(state(accepted?.id)?.revokedAt).toBeNull();
+  expect(state(mine?.id)?.revokedAt).toBeNull();
+  const events = await local.db
+    .select()
+    .from(s.changeEvents)
+    .where(eq(s.changeEvents.type, "invitation.revoked"));
+  expect(events.map((event) => event.entityId)).toEqual([theirs?.id]);
+});

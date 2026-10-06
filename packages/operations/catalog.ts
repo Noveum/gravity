@@ -666,7 +666,7 @@ export const operations: Operation[] = [
     operation: "member-deactivate",
     name: "deactivate_member",
     description:
-      "Deactivate a member. Their relationships, open actions and open touches move in one transaction to reassignToUserId (default: you), approvals on moved touches and actions are cleared, and their assistant grants and sessions for this organization stop working. Actions from their private conversations stay with them. The last active admin cannot be deactivated. Requires admin membership and an all-products grant. Assistants may deactivate members.",
+      "Deactivate a member. Their relationships, open actions and open touches move in one transaction to reassignToUserId (default: you), approvals on moved touches and actions are cleared, their assistant grants and sessions for this organization stop working, and invitations they sent that are still pending are revoked. Actions from their private conversations stay with them. The last active admin cannot be deactivated. Requires admin membership and an all-products grant. Assistants may deactivate members.",
     schema: deactivateMemberSchema,
     run: (c, input) => members(c).deactivate(c.principal, input),
   }),

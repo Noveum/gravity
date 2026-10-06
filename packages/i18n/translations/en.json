@@ -273,7 +273,15 @@
     "LAST_ADMIN": "The workspace needs at least one active admin. Make someone else an admin first.",
     "REASSIGN_TARGET_INVALID": "Choose another active member to take over this work.",
     "MEMBER_INACTIVE": "This member is already deactivated.",
-    "MEMBER_ACTIVE": "This member is already active."
+    "MEMBER_ACTIVE": "This member is already active.",
+    "ALREADY_MEMBER": "This person is already an active member of the workspace.",
+    "INVITATION_PENDING": "This person already has a pending invitation. Resend it instead.",
+    "INVITATION_EXPIRED": "This invitation has expired. Ask an admin to send a new one.",
+    "INVITATION_REVOKED": "This invitation was revoked by an admin.",
+    "INVITATION_USED": "This invitation has already been accepted.",
+    "INVITATION_EMAIL_MISMATCH": "This invitation was sent to a different email address. Sign in with the invited address.",
+    "EMAIL_NOT_VERIFIED": "Verify your email address before accepting this invitation.",
+    "EMAIL_DOMAIN_NOT_ALLOWED": "Email addresses on this domain cannot join this workspace."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
   "addPerson": "Add person",
@@ -1482,5 +1490,7 @@
     "sequence": "Read the selected product, existing sequences and contact policies. Use create_sequence/update_sequence to define steps, delays, channels and templates. Preview enroll_in_sequence with dryRun=true before enrollment. Use get_sequence and advance_sequences to inspect/plan touches. Save and approve current drafts with edit_touch_draft/approve_touch. Pause/resume/stop via change_enrollment; skip/snooze/reopen via the corresponding touch tools. Sequence planning and approval do not send. Explicitly requested sending uses the send-approved-message workflow.",
     "connections": "Start with get_permission_audit and get_integrations. Each connection belongs to the current user, organization and product. Configure private Unipile settings with configure_unipile only when the owner supplies credentials through an appropriate private setup flow. connect_integration starts Gmail/Calendar/LinkedIn authorization or Fireflies setup; show the returned URL to the user for provider consent. Gmail allowSending=true requests send permission; reconnect old read-only mailboxes before sending. Use sync_integration to import a bounded page and repeat when more=true. Review unmatched imports with get_integrations/link_import/ignore_import. Never log or disclose keys or another owner’s data.",
     "send": "Use get_permission_audit to confirm crm:read crm:write crm:send, then read the intended touch/action and person context. Identify the owner’s connected sender and, for replies, the linked conversation. Gmail draft format is Subject: title, a blank line, and the body; for a Gmail reply the subject must match its thread. Save and approve the exact draft using current versions, then call get_send_readiness. Resolve policy or authorization blockers without bypassing them. Only when sending is explicitly requested, call send_touch or send_action with the current version and one newly generated stable idempotencyKey. Reuse that key if the response is interrupted. Inspect the returned delivery status: sent means provider accepted and CRM receipt persisted, not recipient delivery/read. For unknown, get_delivery/reconcile_delivery may verify a provider receipt; absence of proof does not make a retry safe. Never call record_touch_sent to pretend an unsent draft was sent."
-  }
+  },
+  "inviteEmailSubject": "You are invited to {workspace} on Gravity",
+  "inviteEmailBody": "You have been invited to join {workspace} on Gravity.\n\nAccept the invitation:\n{link}\n\nThe link works once and expires on {expires}. If you did not expect this invitation, you can ignore this email."
 }

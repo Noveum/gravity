@@ -331,12 +331,23 @@ export async function seedDemo(db: Database) {
     await tx
       .insert(s.user)
       .values([
-        { id: demoUser, name: "Alex Morgan", email: "alex@example.test" },
-        { id: "demo-teammate", name: "Sam Rivera", email: "sam@example.test" },
+        {
+          id: demoUser,
+          name: "Alex Morgan",
+          email: "alex@example.test",
+          emailVerified: true,
+        },
+        {
+          id: "demo-teammate",
+          name: "Sam Rivera",
+          email: "sam@example.test",
+          emailVerified: true,
+        },
         {
           id: "demo-restricted",
           name: "Restricted member",
           email: "restricted@example.test",
+          emailVerified: true,
         },
       ])
       .onConflictDoNothing();

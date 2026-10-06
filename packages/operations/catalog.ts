@@ -34,6 +34,14 @@ import {
   workspaceSchema,
 } from "../core/crm";
 import {
+  acceptInvitationSchema,
+  createInvitationSchema,
+  InvitationService,
+  listInvitationsSchema,
+  resendInvitationSchema,
+  revokeInvitationSchema,
+} from "../core/invitations";
+import {
   deactivateMemberSchema,
   listMembersSchema,
   MemberService,
@@ -135,6 +143,7 @@ const integrations = ({ db }: OperationContext) => new IntegrationService(db);
 const settings = ({ db }: OperationContext) =>
   new ProviderConfigurationService(db);
 const members = ({ db }: OperationContext) => new MemberService(db);
+const invitations = ({ db }: OperationContext) => new InvitationService(db);
 const nameSchema = z.string().trim().min(1).max(100);
 const overviewSchema = scopeSchema.extend({
   days: z.coerce
@@ -490,6 +499,63 @@ export const operations: Operation[] = [
       "Reactivate a deactivated member. Reassigned work and revoked assistant grants are not restored. Requires admin membership and an all-products grant.",
     schema: reactivateMemberSchema,
     run: (c, input) => members(c).reactivate(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "invitations",
+    name: "list_invitations",
+    description:
+      "List workspace invitations with email, role, products, status and expiry. Tokens are never returned. Requires admin membership and an all-products grant.",
+    schema: listInvitationsSchema,
+    run: (c, input) => invitations(c).list(c.principal, input.organizationId),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "invitation",
+    name: "create_invitation",
+    description:
+      "Invite an email address as admin or member with optional product access. Expires after expiresInDays (default 7). Returns a one-time accept link to share; the email is also sent when Resend is configured. Deployment and workspace email-domain allowlists apply. Requires admin membership and an all-products grant.",
+    schema: createInvitationSchema,
+    destructive: false,
+    run: (c, input) => invitations(c).create(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "invitation-resend",
+    name: "resend_invitation",
+    description:
+      "Issue a fresh accept link for a pending or expired invitation and send it again. The previous link stops working. Requires admin membership and an all-products grant.",
+    schema: resendInvitationSchema,
+    run: (c, input) => invitations(c).resend(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "invitation-revoke",
+    name: "revoke_invitation",
+    description:
+      "Revoke a pending invitation so its link can no longer be accepted. Requires admin membership and an all-products grant.",
+    schema: revokeInvitationSchema,
+    run: (c, input) => invitations(c).revoke(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "invitation-accept",
+    name: "accept_invitation",
+    description:
+      "Accept an invitation with its token as the signed-in person whose verified email matches it. Creates the membership and product access. Assistants cannot accept on a person's behalf.",
+    schema: acceptInvitationSchema,
+    destructive: false,
+    publish: false,
+    run: async (c, input) => {
+      const accepted = await invitations(c).accept(c.principal, input);
+      publishChange(accepted.organizationId);
+      return accepted;
+    },
   }),
   operation({
     api: "crm",
@@ -1026,6 +1092,10 @@ const memberAdministration = [
   "set_member_products",
   "deactivate_member",
   "reactivate_member",
+  "list_invitations",
+  "create_invitation",
+  "resend_invitation",
+  "revoke_invitation",
 ];
 const adminOperations = new Set([
   "create_workspace",
@@ -1044,6 +1114,7 @@ const allProductOperations = new Set([
   "remove_unipile",
   ...memberAdministration,
 ]);
+const humanSessionOperations = new Set(["accept_invitation"]);
 const ownerOperations = new Set([
   "get_integrations",
   "connect_integration",
@@ -1073,6 +1144,7 @@ export function operationRequirements(item: Operation) {
     administrator: adminOperations.has(item.name),
     allProducts: allProductOperations.has(item.name),
     currentAccountOrSourceOwner: ownerOperations.has(item.name),
+    humanSession: humanSessionOperations.has(item.name),
     productAuthorization: true,
   };
 }
@@ -1090,7 +1162,8 @@ export function operationAvailable(
       principal.source === "session" ||
       principal.canSend === true) &&
     (!requirements.administrator || role === "admin") &&
-    (!requirements.allProducts || principal.productIds === undefined)
+    (!requirements.allProducts || principal.productIds === undefined) &&
+    (!requirements.humanSession || principal.source !== "mcp")
   );
 }
 export async function permissionAudit(

@@ -64,7 +64,9 @@ import {
   enrollSchema,
   OutreachService,
   relationshipChangeSchema,
+  sequenceArchiveSchema,
   sequenceCreateSchema,
+  sequenceRestoreSchema,
   sequenceUpdateSchema,
   touchApproveSchema,
   touchDraftSchema,
@@ -346,6 +348,26 @@ export const operations: Operation[] = [
     schema: sequenceCreateSchema,
     destructive: false,
     run: (c, input) => outreach(c).createSequence(c.principal, input),
+  }),
+  operation({
+    api: "outreach",
+    method: "POST",
+    operation: "sequence-archive",
+    name: "archive_sequence",
+    description:
+      "Archive a sequence with its current version. Its running enrollments pause with reason manual, it refuses new enrollments and paused enrollments cannot resume until it is restored. Steps, history and enrollments are kept. Requires write access to the sequence's product.",
+    schema: sequenceArchiveSchema,
+    run: (c, input) => outreach(c).archiveSequence(c.principal, input),
+  }),
+  operation({
+    api: "outreach",
+    method: "POST",
+    operation: "sequence-restore",
+    name: "restore_sequence",
+    description:
+      "Restore an archived sequence with its current version so it accepts enrollments again. Paused enrollments stay paused until resumed. Requires write access to the sequence's product.",
+    schema: sequenceRestoreSchema,
+    run: (c, input) => outreach(c).restoreSequence(c.principal, input),
   }),
   operation({
     api: "crm",

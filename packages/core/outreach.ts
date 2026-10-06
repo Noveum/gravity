@@ -132,6 +132,11 @@ export const sequenceCreateSchema = scopeSchema.extend({
   name: z.string().trim().min(1).max(100),
   steps: sequenceUpdateSchema.shape.steps,
 });
+export const sequenceArchiveSchema = scopeSchema.extend({
+  sequenceId: z.uuid(),
+  version,
+});
+export const sequenceRestoreSchema = sequenceArchiveSchema;
 export const contactRulesSchema = z.object({
   organizationId: z.uuid(),
   version: z.number().int().min(0),
@@ -773,7 +778,8 @@ export class OutreachService {
             eq(s.sequences.id, input.sequenceId),
             eq(s.sequences.organizationId, input.organizationId),
           ),
-        );
+        )
+        .for("share");
       if (!sequence) throw new DomainError("NOT_FOUND", 404);
       const permission = await authorize(
         tx,
@@ -785,6 +791,7 @@ export class OutreachService {
       if (input.productId && input.productId !== sequence.productId)
         throw new DomainError("FORBIDDEN", 403);
       await assertProductActive(tx, input.organizationId, sequence.productId);
+      if (sequence.archivedAt) throw new DomainError("SEQUENCE_ARCHIVED", 409);
       const readable = new Set(
         permission.products.map((product) => product.id),
       );
@@ -1717,6 +1724,11 @@ export class OutreachService {
       await assertActiveRelationships(tx, input.organizationId, [
         relationship.id,
       ]);
+      const [sequence] = await tx
+        .select({ archivedAt: s.sequences.archivedAt })
+        .from(s.sequences)
+        .where(eq(s.sequences.id, found.sequenceId))
+        .for("share");
       const [enrollment] = await tx
         .select()
         .from(s.enrollments)
@@ -1733,6 +1745,8 @@ export class OutreachService {
         if (enrollment.status !== "paused")
           throw new DomainError("CONFLICT", 409);
         if (person.doNotContact) throw new DomainError("DO_NOT_CONTACT", 409);
+        if (sequence?.archivedAt)
+          throw new DomainError("SEQUENCE_ARCHIVED", 409);
         await assertProductActive(tx, input.organizationId, found.productId);
       }
       const now = this.clock();
@@ -1930,6 +1944,113 @@ export class OutreachService {
         entityId: sequence.id,
       });
       return sequence;
+    });
+  }
+  private async lockSequence(
+    tx: Transaction,
+    principal: Principal,
+    input: z.infer<typeof sequenceArchiveSchema>,
+  ) {
+    const [found] = await tx
+      .select()
+      .from(s.sequences)
+      .where(
+        and(
+          eq(s.sequences.id, input.sequenceId),
+          eq(s.sequences.organizationId, input.organizationId),
+        ),
+      );
+    if (!found) throw new DomainError("NOT_FOUND", 404);
+    await authorize(tx, principal, input.organizationId, found.productId, true);
+    if (input.productId && input.productId !== found.productId)
+      throw new DomainError("FORBIDDEN", 403);
+    const [sequence] = await tx
+      .select()
+      .from(s.sequences)
+      .where(eq(s.sequences.id, found.id))
+      .for("update");
+    if (!sequence) throw new DomainError("NOT_FOUND", 404);
+    if (sequence.version !== input.version)
+      throw new DomainError("CONFLICT", 409);
+    return sequence;
+  }
+  async archiveSequence(
+    principal: Principal,
+    input: z.infer<typeof sequenceArchiveSchema>,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const sequence = await this.lockSequence(tx, principal, input);
+      if (sequence.archivedAt) throw new DomainError("SEQUENCE_ARCHIVED", 409);
+      const [archived] = await tx
+        .update(s.sequences)
+        .set({
+          archivedAt: new Date(this.clock()),
+          version: sequence.version + 1,
+        })
+        .where(eq(s.sequences.id, sequence.id))
+        .returning();
+      if (!archived) throw new DomainError("CONFLICT", 409);
+      const running = await tx
+        .select()
+        .from(s.enrollments)
+        .where(
+          and(
+            eq(s.enrollments.organizationId, input.organizationId),
+            eq(s.enrollments.sequenceId, sequence.id),
+            eq(s.enrollments.status, "running"),
+          ),
+        )
+        .orderBy(asc(s.enrollments.id))
+        .for("update");
+      for (const enrollment of running)
+        await tx
+          .update(s.enrollments)
+          .set({
+            status: "paused",
+            pauseReason: "manual",
+            version: enrollment.version + 1,
+          })
+          .where(eq(s.enrollments.id, enrollment.id));
+      await tx.insert(s.changeEvents).values([
+        {
+          organizationId: input.organizationId,
+          productId: sequence.productId,
+          actorId: principal.userId,
+          type: "sequence.archived",
+          entityId: sequence.id,
+        },
+        ...running.map((enrollment) => ({
+          organizationId: input.organizationId,
+          productId: sequence.productId,
+          actorId: principal.userId,
+          type: "enrollment.paused",
+          entityId: enrollment.id,
+        })),
+      ]);
+      return { ...archived, pausedEnrollments: running.length };
+    });
+  }
+  async restoreSequence(
+    principal: Principal,
+    input: z.infer<typeof sequenceRestoreSchema>,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const sequence = await this.lockSequence(tx, principal, input);
+      if (!sequence.archivedAt) throw new DomainError("SEQUENCE_ACTIVE", 409);
+      const [restored] = await tx
+        .update(s.sequences)
+        .set({ archivedAt: null, version: sequence.version + 1 })
+        .where(eq(s.sequences.id, sequence.id))
+        .returning();
+      if (!restored) throw new DomainError("CONFLICT", 409);
+      await tx.insert(s.changeEvents).values({
+        organizationId: input.organizationId,
+        productId: sequence.productId,
+        actorId: principal.userId,
+        type: "sequence.restored",
+        entityId: sequence.id,
+      });
+      return restored;
     });
   }
   async updateSequence(

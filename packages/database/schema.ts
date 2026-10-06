@@ -227,6 +227,7 @@ export const sequences = pgTable(
         }[]
       >()
       .notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => [
     serverAccessPolicy(),

@@ -318,4 +318,7 @@ test("bracketed prose stays readable while JSON-looking malformed imports use th
   expect(isImportedContext('{"history":"truncated')).toBe(true);
   expect(isImportedContext('[{"history":"truncated')).toBe(true);
   expect(isImportedContext('["first", "second"]')).toBe(true);
+  expect(isImportedContext(`[1,${" ".repeat(200000)}`)).toBe(true);
+  expect(isImportedContext(`[false,${" ".repeat(200000)}`)).toBe(true);
+  expect(isImportedContext(`[[${" ".repeat(200000)}`)).toBe(true);
 });

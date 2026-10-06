@@ -124,6 +124,8 @@ export function isImportedContext(value: string) {
   // JSON-looking malformed/oversized documents still use the bounded source viewer.
   return (
     importedContext(value) !== null ||
-    /^\s*(?:\{\s*"|\[\s*(?:\{|"))/.test(value)
+    /^\s*(?:\{\s*(?:"|\})|\[\s*(?:\{|"|\[|\]|-?\d|true\b|false\b|null\b))/.test(
+      value,
+    )
   );
 }

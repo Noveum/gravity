@@ -59,6 +59,10 @@ let counter = 0;
 async function fixture(
   channel: "gmail" | "linkedin" = "gmail",
   actionSource = false,
+  actionFields: {
+    kind?: typeof s.actions.$inferSelect.kind;
+    owedBy?: typeof s.actions.$inferSelect.owedBy;
+  } = {},
 ) {
   counter++;
   const crm = new CrmService(local.db);
@@ -134,12 +138,12 @@ async function fixture(
       organizationId: org,
       relationshipId: person.relationshipId,
       ownerId: demoUser,
-      kind: "reply",
+      kind: actionFields.kind ?? "reply",
       title: "Fictional follow-up",
       reason: "Synthetic test",
       dueAt: new Date(now).toISOString(),
       channel,
-      owedBy: "us",
+      owedBy: actionFields.owedBy ?? "us",
     });
     const approved = await crm.changeAction(principal, {
       organizationId: org,
@@ -215,6 +219,29 @@ async function fixture(
     service: new OutboundService(local.db, transport, clock),
   };
 }
+
+test.each([
+  { kind: "review" as const, owedBy: "us" as const },
+  { kind: "research" as const, owedBy: "us" as const },
+  { kind: "reply" as const, owedBy: "them" as const },
+  { kind: "commitment" as const, owedBy: "unknown" as const },
+])("an approved $kind task owed by $owedBy cannot dispatch", async (fields) => {
+  const f = await fixture("gmail", true, fields);
+  expect(await f.service.readiness(principal, f.input)).toMatchObject({
+    ready: false,
+    approved: true,
+    blockedBy: "SOURCE_NOT_SENDABLE",
+  });
+  await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
+    code: "SOURCE_NOT_SENDABLE",
+  });
+  expect(f.transport).not.toHaveBeenCalled();
+  const deliveries = await local.db
+    .select()
+    .from(s.deliveries)
+    .where(eq(s.deliveries.relationshipId, f.relationshipId));
+  expect(deliveries).toHaveLength(0);
+});
 
 test("an in-flight send reserves the sender's last daily slot across different products", async () => {
   const first = await fixture();

@@ -51,6 +51,32 @@ test("readiness exercises migrated CRM and auth tables without returning records
   });
 });
 
+test.each([
+  ["relationships", "context_source"],
+  ["relationships", "context_details"],
+  ["people", "tags"],
+  ["companies", "amount_minor"],
+  ["relationships", "currency"],
+  ["opportunities", "tags"],
+  ["invitations", "token_hash"],
+])(
+  "readiness rejects an incomplete upgrade missing %s.%s",
+  async (table, column) => {
+    configure();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await local.client.exec(
+      `BEGIN; ALTER TABLE "${table}" DROP COLUMN "${column}" CASCADE;`,
+    );
+    try {
+      const response = await GET();
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ status: "unavailable" });
+    } finally {
+      await local.client.exec("ROLLBACK;");
+    }
+  },
+);
+
 test("database access without a configured login is unavailable, while email-only login is ready", async () => {
   configure();
   vi.spyOn(console, "error").mockImplementation(() => {});

@@ -300,6 +300,14 @@ export class OutboundService {
       source;
     if (record.version !== input.version)
       throw new DomainError("CONFLICT", 409);
+    if (
+      !touch &&
+      "kind" in record &&
+      (record.kind === "review" ||
+        record.kind === "research" ||
+        record.owedBy !== "us")
+    )
+      throw new DomainError("SOURCE_NOT_SENDABLE", 409);
     if (person.doNotContact) throw new DomainError("DO_NOT_CONTACT", 409);
     if (
       touch

@@ -1,5 +1,6 @@
 import { appUrl } from "@crm/auth/options";
 import { getDatabase, isDemoMode } from "@crm/database/client";
+import { assertDatabaseSchema } from "@crm/database/readiness";
 import { sql } from "drizzle-orm";
 
 export const runtime = "nodejs";
@@ -23,6 +24,7 @@ export async function GET() {
     await db.execute(
       sql`SELECT owner_id, probability, expected_close_date, closed_at FROM public.opportunities LIMIT 0`,
     );
+    await assertDatabaseSchema(db);
     isReady = true;
   } catch {
     // Errors can contain SQL, URLs or credentials. Log only bounded status.

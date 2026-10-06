@@ -1375,6 +1375,7 @@
   "pipelineChooseBrand": "Choose a brand to see its outreach pipeline",
   "pipelineChooseBrandDetail": "The pipeline shows one brand at a time, because each brand has its own stages.",
   "pipelineShow": "Show pipeline",
+  "pipelineBrand": "Brand shown",
   "pipelineBoard": "Outreach pipeline for {brand}",
   "relationshipClosedMove": "Won, lost and not now move only through Move to (M) or a drag.",
   "relationshipOpenEnd": "Already in the last open stage. Use Move to (M) to close it.",

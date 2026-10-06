@@ -3772,6 +3772,11 @@ tbody tr[data-selected] td:first-child::before {
   gap: 8px;
   align-items: center;
 }
+.pipeline-brand-bar {
+  padding: 8px var(--gravity-row-x) 0;
+  color: var(--gravity-muted);
+  font-size: var(--text-xs);
+}
 .stage-menu {
   width: 240px;
   max-height: 320px;

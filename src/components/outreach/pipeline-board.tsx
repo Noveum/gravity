@@ -42,11 +42,15 @@ export function adjacentOpenStage(
       };
 }
 
-function BrandPrompt() {
+function useBrands() {
   const crm = useWorkspaceData();
-  const products = crm.data.products.filter(
+  return crm.data.products.filter(
     (product) => product.organizationId === crm.organizationId,
   );
+}
+
+function BrandPrompt({ onChoose }: { onChoose: (brand: string) => void }) {
+  const products = useBrands();
   const [brand, setBrand] = useState(products[0]?.id ?? "");
   return (
     <EmptyState
@@ -57,7 +61,7 @@ function BrandPrompt() {
           className="pipeline-brand"
           onSubmit={(event) => {
             event.preventDefault();
-            if (brand) crm.switchProduct(brand);
+            if (brand) onChoose(brand);
           }}
         >
           <label htmlFor="pipeline-brand" className="sr-only">
@@ -83,10 +87,46 @@ function BrandPrompt() {
   );
 }
 
+function BrandSwitch({
+  brand,
+  onChoose,
+}: {
+  brand: string;
+  onChoose: (brand: string) => void;
+}) {
+  const products = useBrands();
+  return (
+    <div className="pipeline-brand pipeline-brand-bar">
+      <label htmlFor="pipeline-brand-shown">{t.pipelineBrand}</label>
+      <select
+        id="pipeline-brand-shown"
+        value={brand}
+        onChange={(event) => onChoose(event.target.value)}
+      >
+        {products.map((product) => (
+          <option key={product.id} value={product.id}>
+            {product.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 export function PipelineBoard() {
   const crm = useWorkspaceData();
-  if (!crm.productId) return <BrandPrompt />;
-  return <Board key={crm.productId} productId={crm.productId} />;
+  const products = useBrands();
+  const [chosen, setChosen] = useState("");
+  if (crm.productId)
+    return <Board key={crm.productId} productId={crm.productId} />;
+  const brand = products.some((product) => product.id === chosen) ? chosen : "";
+  if (!brand) return <BrandPrompt onChoose={setChosen} />;
+  return (
+    <>
+      <BrandSwitch brand={brand} onChoose={setChosen} />
+      <Board key={brand} productId={brand} />
+    </>
+  );
 }
 
 function Board({ productId }: { productId: string }) {

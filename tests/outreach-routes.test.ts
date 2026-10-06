@@ -25,6 +25,7 @@ vi.mock("@crm/auth/server", () => ({
   },
 }));
 
+import { POST as crmPost } from "../src/app/api/crm/route";
 import { GET, POST } from "../src/app/api/outreach/route";
 
 let local: Awaited<
@@ -251,4 +252,88 @@ describe("outreach HTTP contracts", () => {
     expect(reopened.status).toBe(200);
     expect((await reopened.json()).status).toBe("drafted");
   });
+});
+
+test("HTTP relationship context accepts the same typed fields and checks origin, product and version", async () => {
+  const [record] = await db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, demoId(300)));
+  const body = {
+    operation: "relationship",
+    organizationId: org,
+    productId: demoId(10),
+    relationshipId: record.id,
+    version: record.version,
+    context: "Readable route context",
+    contextDetails: {
+      timing: "Next quarter",
+      fields: [
+        {
+          id: demoId(8910),
+          label: "Public site",
+          type: "url",
+          value: "https://example.test",
+        },
+      ],
+    },
+  };
+  expect((await post(body, demoUser, "http://evil.test")).status).toBe(403);
+  expect((await post({ ...body, productId: demoId(11) })).status).toBe(403);
+  const saved = await post(body);
+  expect(saved.status).toBe(200);
+  expect((await saved.json()).contextDetails.timing).toBe("Next quarter");
+  expect((await post(body)).status).toBe(409);
+  expect(
+    (
+      await post({
+        ...body,
+        version: record.version + 1,
+        contextDetails: {
+          fields: [
+            {
+              id: demoId(8910),
+              label: "Site",
+              type: "url",
+              value: "javascript:alert(1)",
+            },
+          ],
+        },
+      })
+    ).status,
+  ).toBe(400);
+});
+
+test("HTTP creation supports structured context above the old 50 KB adapter limit", async () => {
+  const fields = Array.from({ length: 6 }, (_, index) => ({
+    id: demoId(9400 + index),
+    label: `Fictional field ${index}`,
+    type: "text",
+    value: "x".repeat(9000),
+  }));
+  const body = JSON.stringify({
+    operation: "person",
+    organizationId: org,
+    productId: demoId(10),
+    name: "Large fictional context fixture",
+    context: "Readable summary",
+    contextDetails: { fields },
+    review: false,
+  });
+  expect(new TextEncoder().encode(body).length).toBeGreaterThan(50000);
+  const response = await crmPost(
+    new Request("http://localhost/api/crm", {
+      method: "POST",
+      headers: { "x-test-user": demoUser, origin: "http://localhost" },
+      body,
+    }),
+  );
+  expect(response.status).toBe(200);
+  const record = await response.json();
+  const context = await new CrmService(db).context(
+    { userId: demoUser, source: "session" },
+    org,
+    record.relationshipId,
+  );
+  expect(context.relationship.contextDetails.fields).toHaveLength(6);
 });

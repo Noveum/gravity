@@ -29,6 +29,12 @@ import {
 } from "./outreach-rules";
 import { authorize, DomainError, type Principal } from "./policy";
 import {
+  emptyRelationshipDetails,
+  fitsRelationshipInput,
+  relationshipDetailsPatchSchema,
+  relationshipDetailsSchema,
+} from "./relationship-context";
+import {
   assertActiveRelationships,
   clearApprovals,
   personVisible,
@@ -88,6 +94,8 @@ export const relationshipChangeSchema = scopeSchema
   .extend({
     relationshipId: z.uuid(),
     version,
+    context: z.string().trim().max(10000).optional(),
+    contextDetails: relationshipDetailsPatchSchema.optional(),
     stageId: z.uuid().optional(),
     priority: z.enum(["low", "normal", "high"]).optional(),
     nextStep: z.string().trim().max(500).optional(),
@@ -95,11 +103,14 @@ export const relationshipChangeSchema = scopeSchema
   })
   .refine(
     (value) =>
+      value.context !== undefined ||
+      value.contextDetails !== undefined ||
       value.stageId !== undefined ||
       value.priority !== undefined ||
       value.nextStep !== undefined ||
       value.nextStepDueAt !== undefined,
-  );
+  )
+  .refine(fitsRelationshipInput);
 const stepSchema = z.object({
   number: z.number().int().min(1).max(20),
   name: z.string().trim().min(1).max(100),
@@ -1779,6 +1790,7 @@ export class OutreachService {
     principal: Principal,
     input: z.infer<typeof relationshipChangeSchema>,
   ) {
+    input = relationshipChangeSchema.parse(input);
     return this.db.transaction(async (tx) => {
       const [found] = await tx
         .select()
@@ -1828,6 +1840,26 @@ export class OutreachService {
       const [updated] = await tx
         .update(s.relationships)
         .set({
+          ...(input.context !== undefined
+            ? {
+                context: input.context,
+                // Preserve the original imported document when replacing it with readable notes.
+                ...(relationship.contextSource === null &&
+                relationship.context !== input.context &&
+                relationship.context.trim()
+                  ? { contextSource: relationship.context }
+                  : {}),
+              }
+            : {}),
+          ...(input.contextDetails !== undefined
+            ? {
+                contextDetails: relationshipDetailsSchema.parse({
+                  ...emptyRelationshipDetails(),
+                  ...relationship.contextDetails,
+                  ...input.contextDetails,
+                }),
+              }
+            : {}),
           ...(moved ? { stageId: input.stageId } : {}),
           ...(input.priority !== undefined ? { priority: input.priority } : {}),
           ...(input.nextStep !== undefined ? { nextStep: input.nextStep } : {}),

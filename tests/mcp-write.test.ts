@@ -938,3 +938,63 @@ test("MCP contact policies require current versions and organization-wide grants
     "CONFLICT",
   );
 });
+
+test("MCP exposes typed relationship context and edits it without crm:send", async () => {
+  const created = await call("create_person", {
+    productId: demoId(10),
+    name: "MCP context fixture",
+    review: false,
+  });
+  const context = await call("get_person_context", {
+    relationshipId: created.relationshipId,
+  });
+  const listing = await rpc("tools/list", {});
+  const tool = listing.result.tools.find(
+    (item: { name: string }) => item.name === "change_relationship",
+  );
+  expect(tool.inputSchema.properties.context).toBeTruthy();
+  expect(
+    tool.inputSchema.properties.contextDetails.properties.signals,
+  ).toBeTruthy();
+  const args = {
+    productId: demoId(10),
+    relationshipId: created.relationshipId,
+    version: context.relationship.version,
+    context: "Readable MCP notes",
+    contextDetails: {
+      needs: "Fictional requirement",
+      fields: [
+        { id: demoId(8900), label: "Target seats", type: "number", value: 25 },
+      ],
+    },
+  };
+  const edited = await call("change_relationship", args);
+  expect(edited.contextDetails.fields[0].value).toBe(25);
+  expect(edited.context).toBe("Readable MCP notes");
+  expect((await call("change_relationship", args)).error).toContain("CONFLICT");
+  expect(
+    (
+      await call(
+        "change_relationship",
+        { ...args, version: edited.version },
+        { ...writable, readOnly: true },
+      )
+    ).error,
+  ).toBeTruthy();
+  expect(
+    (
+      await call(
+        "change_relationship",
+        { ...args, version: edited.version },
+        { ...writable, productIds: [demoId(11)] },
+      )
+    ).error,
+  ).toContain("FORBIDDEN");
+  expect(
+    (
+      await call("get_person_context", {
+        relationshipId: created.relationshipId,
+      })
+    ).relationship.contextDetails.needs,
+  ).toBe("Fictional requirement");
+});

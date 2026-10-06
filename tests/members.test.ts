@@ -529,3 +529,28 @@ test("deactivating an admin revokes the invitations they still have pending", as
     .where(eq(s.changeEvents.type, "invitation.revoked"));
   expect(events.map((event) => event.entityId)).toEqual([theirs?.id]);
 });
+
+test("a read-only grant reads members but every administration change is refused", async () => {
+  const reader = { ...agent, readOnly: true };
+  await expect(run("list_members", reader, {})).resolves.toBeTruthy();
+  const changes: [string, Record<string, unknown>][] = [
+    ["change_member_role", { userId: "demo-restricted", role: "member" }],
+    ["set_member_products", { userId: "demo-restricted", productIds: [] }],
+    ["deactivate_member", { userId: "demo-restricted" }],
+    ["reactivate_member", { userId: "demo-restricted" }],
+  ];
+  for (const [name, input] of changes)
+    await expect(run(name, reader, input), name).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  const [membership] = await local.db
+    .select()
+    .from(s.memberships)
+    .where(
+      and(
+        eq(s.memberships.organizationId, org),
+        eq(s.memberships.userId, "demo-restricted"),
+      ),
+    );
+  expect(membership?.active).toBe(true);
+});

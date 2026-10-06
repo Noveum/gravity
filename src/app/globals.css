@@ -4279,6 +4279,9 @@ tbody tr[data-selected] td:first-child::before {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 .settings-row {
   display: flex;

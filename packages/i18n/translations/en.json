@@ -1547,5 +1547,26 @@
   "allowedDomains": "Allowed email domains",
   "allowedDomainsHint": "One domain per line. Invitations and new members must use one of them. Leave it empty to allow any domain.",
   "workspaceSaved": "Workspace saved",
-  "createAnotherWorkspace": "Create another workspace"
+  "createAnotherWorkspace": "Create another workspace",
+  "productNameFor": "Name for {name}",
+  "productColorFor": "Colour for {name}",
+  "productColors": {
+    "violet": "Violet",
+    "blue": "Blue",
+    "teal": "Teal",
+    "green": "Green",
+    "yellow": "Yellow",
+    "orange": "Orange",
+    "red": "Red",
+    "pink": "Pink",
+    "gray": "Gray"
+  },
+  "activeProducts": "Active products",
+  "archivedProducts": "Archived products",
+  "archivedProductsDetail": "Archived products keep their records but take no new ones. Restoring does not resume paused sequences.",
+  "archiveProductConfirm": "Archive product",
+  "archiveProductDetail": "Running sequences pause.",
+  "productCreated": "Product added",
+  "productArchived": "Product archived",
+  "productRestored": "Product restored"
 }

@@ -101,3 +101,90 @@ describe("workspace settings", () => {
     expect(within(region).getByText(t.adminOnly)).toBeTruthy();
   });
 });
+
+describe("product settings", () => {
+  const row = (name: string) =>
+    within(panel("brands")).getByRole("listitem", { name });
+
+  test("an admin renames, recolours, archives, restores and adds products through the product operations", async () => {
+    await mountSettings(harness, "/settings/brands");
+    fireEvent.change(
+      within(row("Services")).getByLabelText(
+        t.productNameFor.replace("{name}", "Services"),
+      ),
+      { target: { value: "Services Plus" } },
+    );
+    fireEvent.click(
+      within(row("Services")).getByRole("button", { name: t.save }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "update_product")?.body).toMatchObject({
+        productId: demoId(12),
+        name: "Services Plus",
+      }),
+    );
+    fireEvent.change(
+      within(row("AI Platform")).getByLabelText(
+        t.productColorFor.replace("{name}", "AI Platform"),
+      ),
+      { target: { value: "blue" } },
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "update_product")?.body).toMatchObject({
+        productId: demoId(10),
+        colorKey: "blue",
+      }),
+    );
+    fireEvent.click(
+      within(row("API Marketplace")).getByRole("button", { name: t.archive }),
+    );
+    fireEvent.click(
+      within(row("API Marketplace")).getByRole("button", {
+        name: t.archiveProductConfirm,
+      }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "archive_product")?.body).toMatchObject({
+        productId: demoId(11),
+      }),
+    );
+    const restore = await within(row("API Marketplace")).findByRole("button", {
+      name: t.restore,
+    });
+    fireEvent.click(restore);
+    await waitFor(() =>
+      expect(lastCall(harness, "restore_product")?.body).toMatchObject({
+        productId: demoId(11),
+      }),
+    );
+    fireEvent.change(within(panel("brands")).getByLabelText(t.productName), {
+      target: { value: "Fixture Product" },
+    });
+    fireEvent.click(
+      within(panel("brands")).getByRole("button", { name: t.newProduct }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "create_product")?.body).toMatchObject({
+        name: "Fixture Product",
+      }),
+    );
+    expect(
+      await within(panel("brands")).findByRole("listitem", {
+        name: "Fixture Product",
+      }),
+    ).toBeTruthy();
+    const [renamed] = await harness.local.db
+      .select()
+      .from(s.products)
+      .where(eq(s.products.id, demoId(12)));
+    expect(renamed?.name).toBe("Services Plus");
+  });
+
+  test("a member sees products without any way to change them", async () => {
+    await mountSettings(harness, "/settings/brands", member);
+    expect(row("Services")).toBeTruthy();
+    expect(within(panel("brands")).queryByRole("textbox")).toBeNull();
+    expect(within(panel("brands")).queryByRole("button")).toBeNull();
+    expect(within(panel("brands")).getByText(t.adminOnly)).toBeTruthy();
+  });
+});

@@ -5,6 +5,7 @@ import { useWorkspaceData } from "../crm/crm-context";
 import { EmptyState } from "../ui/states";
 import {
   AdminNotice,
+  ConfirmButton,
   QueryState,
   SettingsGroup,
   SettingsPanel,
@@ -186,13 +187,15 @@ export function OutreachSettings() {
                   </span>
                 </span>
                 <div className="settings-row-actions">
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => void setContact(person.id, false)}
+                  <ConfirmButton
+                    label={t.allowContact}
+                    confirmLabel={t.allowContactConfirm}
+                    onConfirm={() => setContact(person.id, false)}
                   >
-                    {t.allowContact}
-                  </button>
+                    <span className="settings-row-meta">
+                      {t.allowContactDetail}
+                    </span>
+                  </ConfirmButton>
                 </div>
               </li>
             ))}

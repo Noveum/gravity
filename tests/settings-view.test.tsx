@@ -598,9 +598,16 @@ describe("outreach settings", () => {
     const listed = await within(region()).findByRole("listitem", {
       name: "Mira Chen",
     });
+    const calls = harness.calls.length;
     fireEvent.click(
       within(listed).getByRole("button", { name: t.allowContact }),
     );
+    const confirm = await within(listed).findByRole("button", {
+      name: t.allowContactConfirm,
+    });
+    expect(harness.calls.length).toBe(calls);
+    expect(within(listed).getByText(t.allowContactDetail)).toBeTruthy();
+    fireEvent.click(confirm);
     await waitFor(() =>
       expect(lastCall(harness, "set_contact_preferences")?.body).toMatchObject({
         personId: demoId(200),

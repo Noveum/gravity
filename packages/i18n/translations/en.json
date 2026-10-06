@@ -1741,6 +1741,8 @@
   "doNotContactDetail": "These people are never sent a message from any product, and their running sequences pause.",
   "doNotContactEmpty": "Nobody is marked do not contact.",
   "allowContact": "Allow contact",
+  "allowContactConfirm": "Allow contact again",
+  "allowContactDetail": "Their sequences stay paused until resumed.",
   "markDoNotContact": "Mark do not contact",
   "markedDoNotContact": "Marked do not contact",
   "contactAllowed": "Contact allowed again",

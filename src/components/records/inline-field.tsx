@@ -1,6 +1,12 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import { type ChangeEvent, useId, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { errorText } from "../client-api";
 
 export function InlineField<T extends { version: number }>({
@@ -14,6 +20,7 @@ export function InlineField<T extends { version: number }>({
   required = false,
   readOnly = false,
   options,
+  spacious = false,
 }: {
   label: string;
   record: T;
@@ -25,6 +32,7 @@ export function InlineField<T extends { version: number }>({
   required?: boolean;
   readOnly?: boolean;
   options?: { value: string; label: string }[];
+  spacious?: boolean;
 }) {
   const id = useId();
   const [draft, setDraft] = useState<{ value: string; original: T } | null>(
@@ -38,9 +46,30 @@ export function InlineField<T extends { version: number }>({
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const submitting = useRef(false);
+  const textarea = useRef<HTMLTextAreaElement>(null);
   const current =
     accepted && record.version < accepted.version ? accepted.value : value;
   const dirty = draft !== null;
+  const displayed = draft?.value ?? current;
+  useLayoutEffect(() => {
+    const element = textarea.current;
+    if (!spacious || !element || element.value !== displayed) return;
+    const resize = () => {
+      element.style.height = "0px";
+      element.style.height = `${Math.max(112, Math.min(460, element.scrollHeight + 2))}px`;
+    };
+    resize();
+    if (typeof ResizeObserver === "undefined") return;
+    let width = element.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      const next = element.getBoundingClientRect().width;
+      if (width === next) return;
+      width = next;
+      resize();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [spacious, displayed]);
   const change = (
     event: ChangeEvent<
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
@@ -71,7 +100,7 @@ export function InlineField<T extends { version: number }>({
   };
   return (
     <form
-      className="inline-field"
+      className={`inline-field${spacious ? " inline-notes" : ""}`}
       data-dirty={dirty || undefined}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -124,9 +153,13 @@ export function InlineField<T extends { version: number }>({
       ) : multiline ? (
         <textarea
           {...control}
+          ref={textarea}
           rows={Math.min(
-            8,
-            Math.max(3, (draft?.value ?? current).split("\n").length),
+            spacious ? 18 : 8,
+            Math.max(
+              spacious ? 5 : 3,
+              (draft?.value ?? current).split("\n").length,
+            ),
           )}
           maxLength={maxLength}
         />

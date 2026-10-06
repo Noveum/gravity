@@ -14,6 +14,7 @@ import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { ImportedContext } from "../src/components/records/imported-context";
+import { contactTab } from "./support/contact-workspace";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
@@ -26,6 +27,7 @@ const harness = installCrmHarness();
 
 test("context editor saves readable notes, signals and each custom field type on the full person record", async () => {
   await mountCrm(harness, `/people/${demoId(200)}`);
+  await contactTab(t.contactWorkspace.context);
   fireEvent.click(
     await screen.findByRole("button", { name: t.contextFields.edit }),
   );
@@ -134,6 +136,7 @@ test("legacy JSON is lazy readable source data, survives editing, and cannot cre
     .set({ context: source })
     .where(eq(s.relationships.id, demoId(300)));
   await mountCrm(harness, `/people/${demoId(200)}`);
+  await contactTab(t.contactWorkspace.context);
   const heading = await screen.findByText(t.contextFields.importedSource);
   expect(screen.queryByText("Fictional conversation")).toBeNull();
   fireEvent.click(heading);
@@ -175,6 +178,7 @@ test("legacy JSON is lazy readable source data, survives editing, and cannot cre
 
 test("an agent edit while the dialog is open rejects a stale save and keeps the user's draft", async () => {
   await mountCrm(harness, `/people/${demoId(200)}`);
+  await contactTab(t.contactWorkspace.context);
   fireEvent.click(
     await screen.findByRole("button", { name: t.contextFields.edit }),
   );
@@ -250,6 +254,7 @@ test("all imported fields are reachable through bounded pages", async () => {
 
 test("the default summary field saves directly through the authorized outreach operation", async () => {
   await mountCrm(harness, `/people/${demoId(200)}`);
+  await contactTab(t.contactWorkspace.context);
   const summary = await screen.findByRole("textbox", {
     name: t.summary,
   });

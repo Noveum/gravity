@@ -20,22 +20,17 @@ import { useArchive } from "../crm/use-archive";
 import { useDraft } from "../crm/use-draft";
 import { FileInspector } from "../files/file-library";
 import { PersonDialog } from "../person-dialog";
-import { CompanyDetails, PersonDetails, RelatedWork } from "../record-details";
+import { CompanyDetails, PersonDetails } from "../record-details";
 import { companyPath, personPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
 import { PersonFields } from "./contact-fields";
+import { ContactWorkspace } from "./contact-workspace";
+import { ConversationHistory } from "./conversation-history";
 import { MetadataSection } from "./metadata-section";
-import {
-  ActionSummary,
-  findAction,
-  PersonActivity,
-  PersonProfile,
-  RelationshipProperties,
-} from "./person-panels";
+import { findAction, PersonProfile } from "./person-panels";
 import { ArchivedNotice, RecordActions } from "./record-actions";
 import { RecordEditorMode } from "./record-dialog";
 import { RecordDialogHost } from "./record-dialog-host";
-import { RelationshipContext } from "./relationship-context";
 
 function PersonPeek() {
   const crm = useWorkspaceData();
@@ -53,59 +48,41 @@ function PersonPeek() {
   if (!context) return <LoadingState rows={4} />;
   return (
     <>
-      <PersonProfile
-        person={context.person ?? undefined}
-        name={context.person?.name ?? ""}
-        title={context.person?.title ?? ""}
-        company={context.company}
-        onCompany={crm.openCompany}
-      />
-      {context.person && (
-        <RecordActions
-          key={context.person.id}
-          busy={crm.busy}
-          onEdit={() =>
-            crm.openRecordDialog({
-              kind: "person",
-              id: context.person?.id ?? "",
-            })
-          }
-          onArchive={() => {
-            if (context.person) void archive.archive("person", context.person);
-          }}
+      <div className="contact-header">
+        <PersonProfile
+          person={context.person ?? undefined}
+          name={context.person?.name ?? ""}
+          title={context.person?.title ?? ""}
+          company={context.company}
+          onCompany={crm.openCompany}
         />
-      )}
-      <PersonDetails
-        context={context}
-        onCompany={crm.openCompany}
-        onPerson={crm.openPerson}
-        includeSummary={false}
-      />
-      <RelationshipProperties
+        {context.person && (
+          <RecordActions
+            key={context.person.id}
+            inlineEditing
+            busy={crm.busy}
+            onEdit={() =>
+              crm.openRecordDialog({
+                kind: "person",
+                id: context.person?.id ?? "",
+              })
+            }
+            onArchive={() => {
+              if (context.person)
+                void archive.archive("person", context.person);
+            }}
+          />
+        )}
+      </div>
+      <ContactWorkspace
+        key={context.relationship.id}
         context={context}
         action={action}
-        includeContext={false}
-      />
-      {context.person && (
-        <MetadataSection entity="person" record={context.person} />
-      )}
-      <MetadataSection entity="relationship" record={context.relationship} />
-      {context.person && <PersonFields person={context.person} notesOnly />}
-      <RelationshipContext
-        key={context.relationship.id}
-        relationship={context.relationship}
-      />
-      <PersonActivity context={context} action={action} draft={draft} />
-      <RelatedWork
-        actions={context.actions}
-        meetings={context.meetings}
-        opportunities={context.opportunities}
-        relationshipId={context.relationship.id}
-        timeZone={crm.timeZone}
+        draft={draft}
+        onCompany={crm.openCompany}
+        onPerson={crm.openPerson}
         onAction={crm.openPerson}
-        onReveal={crm.reveal}
       />
-      {action && <ActionSummary action={action} version={draft.version} />}
     </>
   );
 }
@@ -135,7 +112,10 @@ function ArchivedPersonPeek() {
         context={context}
         onCompany={crm.openCompany}
         onPerson={() => {}}
+        includeSummary={false}
       />
+      <PersonFields person={context.person} notesOnly />
+      <ConversationHistory person={context.person} timeZone={crm.timeZone} />
     </>
   );
 }
@@ -153,39 +133,29 @@ function PersonWithoutRelationship() {
   );
   return (
     <>
-      <PersonProfile
-        name={person.name}
-        person={person}
-        title={person.title}
-        company={company}
-        onCompany={crm.openCompany}
-      />
-      <RecordActions
-        key={person.id}
-        busy={crm.busy}
-        onEdit={() => crm.openRecordDialog({ kind: "person", id: person.id })}
-        onArchive={() => void archive.archive("person", person)}
-      />
-      <section className="record-section">
-        <h3>{t.contactDetails}</h3>
-        <PersonFields person={person} />
-        <dl>
-          <dt>{t.email}</dt>
-          <dd>{person.email || t.unknown}</dd>
-          {person.linkedinUrl && (
-            <>
-              <dt>{t.linkedin}</dt>
-              <dd>
-                <a href={person.linkedinUrl} target="_blank" rel="noreferrer">
-                  {t.linkedinProfile}
-                </a>
-              </dd>
-            </>
-          )}
-        </dl>
-      </section>
-      <MetadataSection entity="person" record={person} />
+      <div className="contact-header">
+        <PersonProfile
+          name={person.name}
+          person={person}
+          title={person.title}
+          company={company}
+          onCompany={crm.openCompany}
+        />
+        <RecordActions
+          key={person.id}
+          inlineEditing
+          busy={crm.busy}
+          onEdit={() => crm.openRecordDialog({ kind: "person", id: person.id })}
+          onArchive={() => void archive.archive("person", person)}
+        />
+      </div>
       <PersonFields person={person} notesOnly />
+      <ConversationHistory person={person} timeZone={crm.timeZone} />
+      <details className="contact-secondary">
+        <summary>{t.contactWorkspace.details}</summary>
+        <PersonFields person={person} />
+        <MetadataSection entity="person" record={person} />
+      </details>
     </>
   );
 }

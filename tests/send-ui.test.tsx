@@ -272,7 +272,7 @@ describe("sending an approved follow-up", () => {
       `/people/${demoId(202)}?relationship=${demoId(302)}&action=${demoId(602)}`,
       { demo: false },
     );
-    fireEvent.click(await screen.findByRole("button", { name: t.draft }));
+    fireEvent.click(await screen.findByRole("tab", { name: t.draft }));
     fireEvent.click(
       await screen.findByRole("button", { name: t.touchVerbs.send }),
     );

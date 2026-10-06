@@ -56,8 +56,15 @@ test("a contact's deal opens directly, previews weighted revenue and persists al
   const row = await screen.findByRole("button", {
     name: /Northstar evaluation project/,
   });
-  await waitFor(() => expect(row.textContent).toContain("$1,234.56"));
-  expect(row.textContent).toContain("$617.28");
+  const card = row.closest("article");
+  if (!card) throw new Error("Missing opportunity card");
+  await waitFor(() =>
+    expect(within(card).getByLabelText(t.dealSize)).toHaveProperty(
+      "value",
+      "1234.56",
+    ),
+  );
+  expect(screen.getByText("$617.28")).toBeTruthy();
 });
 
 test("creating a deal from a relationship preselects its person, product, pipeline and owner", async () => {

@@ -11,6 +11,7 @@ import { describe, expect, test, vi } from "vitest";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { archiveRecord, contactTab } from "./support/contact-workspace";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 import { visit } from "./support/memory-router";
 
@@ -70,9 +71,9 @@ describe("browsing records", () => {
     ).toBeNull();
     const field = within(notes).getByRole("textbox", { name: t.personNotes });
     expect(field).toHaveProperty("value", summary);
-    expect(field.getAttribute("rows")).toBe("3");
+    expect(field.getAttribute("rows")).toBe("5");
     const timeline = document.querySelector(".record-timeline");
-    expect(timeline?.firstElementChild?.className).toBe("tabs");
+    expect(timeline?.querySelector("[role=tablist]")).toBeTruthy();
   });
   test("calendar descriptions are bounded while full details and editing preserve the original", async () => {
     const summary =
@@ -131,9 +132,7 @@ describe("browsing records", () => {
     );
     if (!action) throw new Error("missing action fixture");
     fireEvent.click(action);
-    fireEvent.click(
-      await inspector().findByRole("button", { name: t.archive }),
-    );
+    await archiveRecord();
     expect(
       harness.posts.some((post) => post.operation === "person-archive"),
     ).toBe(false);
@@ -159,7 +158,7 @@ describe("browsing records", () => {
       const id = entity === "person" ? demoId(201) : demoId(100);
       const name = entity === "person" ? "Jonah Reed" : "Northstar Labs";
       fireEvent.click(screen.getByRole("link", { name }));
-      fireEvent.click(await inspector().findByRole("button", { name: t.edit }));
+
       const field = await inspector().findByRole("textbox", {
         name: t.name,
       });
@@ -195,6 +194,7 @@ describe("browsing records", () => {
     await mountCrm(harness, "/people");
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
     await inspector().findByRole("heading", { name: "Jonah Reed" });
+    await contactTab(t.contactWorkspace.details);
     const estimate = inspector()
       .getByText(t.personDealSizeAndTags)
       .closest("summary");
@@ -284,6 +284,7 @@ describe("browsing records", () => {
     await mountCrm(harness, "/people");
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
     await inspector().findByRole("heading", { name: "Jonah Reed" });
+    await contactTab(t.contactWorkspace.details);
     const estimate = inspector()
       .getByText(t.personDealSizeAndTags)
       .closest("summary");
@@ -320,6 +321,7 @@ describe("browsing records", () => {
     await mountCrm(harness, "/people");
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
     await inspector().findByRole("heading", { name: "Jonah Reed" });
+    await contactTab(t.contactWorkspace.details);
     const estimate = inspector()
       .getByText(t.personDealSizeAndTags)
       .closest("summary");

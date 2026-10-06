@@ -2,6 +2,10 @@
 import type { ClientCompanyContext, ClientContext } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { useWorkspaceData } from "../crm/crm-context";
+import {
+  replacePersonalNotes,
+  splitImportedConversation,
+} from "./imported-conversation";
 import { InlineField } from "./inline-field";
 
 type Person = NonNullable<ClientContext["person"]>;
@@ -53,11 +57,21 @@ export function PersonFields({
           key={person.id}
           label={t.personNotes}
           record={person}
-          value={person.summary}
+          value={splitImportedConversation(person.summary).notes}
           multiline
+          spacious
           readOnly={!!person.archivedAt}
-          onSave={(value, original) => save("summary", value, original)}
+          onSave={(value, original) =>
+            save(
+              "summary",
+              replacePersonalNotes(crm.currentRecord(original).summary, value),
+              original,
+            )
+          }
         />
+        {!splitImportedConversation(person.summary).notes && (
+          <p className="notes-hint">{t.contactWorkspace.notesHint}</p>
+        )}
       </section>
     );
   const fields = [

@@ -9,6 +9,7 @@ import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { browserNavigation, requestJson } from "../src/components/client-api";
+import { archiveRecord, contactTab } from "./support/contact-workspace";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
@@ -24,6 +25,7 @@ const pathname = () => window.location.pathname;
 describe("people", () => {
   test("contact fields are editable directly and each save persists on the record", async () => {
     await mountCrm(harness, `/people/${demoId(201)}`);
+    await contactTab(t.contactWorkspace.details);
     const saveField = async (label: string, value: string) => {
       const field = screen.getByLabelText(label);
       fireEvent.change(field, { target: { value } });
@@ -70,6 +72,7 @@ describe("people", () => {
 
   test("a refused inline edit retains the draft and explains the reason", async () => {
     await mountCrm(harness, `/people/${demoId(201)}`);
+    await contactTab(t.contactWorkspace.details);
     const email = screen.getByLabelText(t.email);
     fireEvent.change(email, { target: { value: "person0@example.test" } });
     const form = email.closest("form");
@@ -89,7 +92,7 @@ describe("people", () => {
       await screen.findByRole("link", { name: t.inlineEditing.openFullPage }),
     );
     expect(pathname()).toBe(`/people/${demoId(201)}`);
-    fireEvent.click(await screen.findByRole("button", { name: t.archive }));
+    await archiveRecord();
     fireEvent.click(
       screen.getByRole("button", { name: t.inlineEditing.confirmArchive }),
     );
@@ -107,7 +110,9 @@ describe("people", () => {
     expect(screen.getByText(t.archivedRecords)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: t.undo }));
     expect(pathname()).toBe("/people");
-    expect(await screen.findByRole("button", { name: t.archive })).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: t.contactWorkspace.more }),
+    ).toBeTruthy();
     const [stored] = await harness.local.db
       .select()
       .from(s.people)
@@ -117,7 +122,7 @@ describe("people", () => {
 
   test("an archived person opens read-only from the archived list and restores in place", async () => {
     await mountCrm(harness, `/people/${demoId(204)}`);
-    fireEvent.click(await screen.findByRole("button", { name: t.archive }));
+    await archiveRecord();
     fireEvent.click(
       screen.getByRole("button", { name: t.inlineEditing.confirmArchive }),
     );
@@ -130,7 +135,9 @@ describe("people", () => {
     const restore = screen.getByRole("button", { name: t.restore });
     await waitFor(() => expect(restore).toHaveProperty("disabled", false));
     fireEvent.click(restore);
-    expect(await screen.findByRole("button", { name: t.archive })).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: t.contactWorkspace.more }),
+    ).toBeTruthy();
     expect(screen.queryByText(t.archivedPersonNote)).toBeNull();
   });
 });
@@ -150,9 +157,11 @@ describe("fix round 1", () => {
     await mountCrm(harness, `/people/${demoId(205)}`);
     const archivedName = `Vale Software ${t.archivedSuffix}`;
     expect(await screen.findAllByText(archivedName)).not.toHaveLength(0);
+    await contactTab(t.contactWorkspace.details);
     const company = screen.getByLabelText(t.company) as HTMLSelectElement;
     expect(company.value).toBe(demoId(105));
     expect(company.selectedOptions[0]?.textContent).toBe(archivedName);
+    await contactTab(t.contactWorkspace.details);
     const phone = screen.getByLabelText(t.phone);
     fireEvent.change(phone, { target: { value: "+1 555 0199" } });
     const form = phone.closest("form");
@@ -236,6 +245,7 @@ describe("fix round 1", () => {
 
   test("a save pressed while another change is in flight says to try again", async () => {
     await mountCrm(harness, `/people/${demoId(201)}`);
+    await contactTab(t.contactWorkspace.details);
     const request = vi.mocked(requestJson);
     const respond = request.getMockImplementation();
     request.mockImplementation((url, init) =>
@@ -243,10 +253,11 @@ describe("fix round 1", () => {
         ? new Promise(() => {})
         : (respond?.(url, init) ?? Promise.resolve({})),
     );
-    fireEvent.click(await screen.findByRole("button", { name: t.archive }));
+    await archiveRecord();
     fireEvent.click(
       screen.getByRole("button", { name: t.inlineEditing.confirmArchive }),
     );
+    await contactTab(t.contactWorkspace.details);
     const phone = screen.getByLabelText(t.phone);
     fireEvent.change(phone, { target: { value: "+1 555 0199" } });
     const form = phone.closest("form");
@@ -296,7 +307,7 @@ describe("companies", () => {
     await waitFor(() =>
       expect(form.querySelector("[role=status]")).toBeTruthy(),
     );
-    fireEvent.click(screen.getByRole("button", { name: t.archive }));
+    await archiveRecord();
     fireEvent.click(
       screen.getByRole("button", { name: t.inlineEditing.confirmArchive }),
     );
@@ -307,7 +318,9 @@ describe("companies", () => {
     const restore = screen.getByRole("button", { name: t.restore });
     await waitFor(() => expect(restore).toHaveProperty("disabled", false));
     fireEvent.click(restore);
-    expect(await screen.findByRole("button", { name: t.archive })).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: t.contactWorkspace.more }),
+    ).toBeTruthy();
   });
 });
 
@@ -397,29 +410,29 @@ describe("signing out", () => {
 
 test("two dirty contact fields save in sequence without overwriting each other", async () => {
   await mountCrm(harness, `/people/${demoId(201)}`);
-  const phone = screen.getByRole("textbox", { name: t.phone });
+  const name = screen.getByRole("textbox", { name: t.name });
   const notes = screen.getByRole("textbox", {
     name: t.personNotes,
   });
-  fireEvent.change(phone, { target: { value: "+1 555 0170" } });
+  fireEvent.change(name, { target: { value: "Fictional updated name" } });
   fireEvent.change(notes, { target: { value: "My personal notes." } });
   const notesForm = notes.closest("form"),
-    phoneForm = phone.closest("form");
-  if (!notesForm || !phoneForm) throw new Error("Missing contact fields");
+    nameForm = name.closest("form");
+  if (!notesForm || !nameForm) throw new Error("Missing contact fields");
   fireEvent.submit(notesForm);
   await waitFor(() =>
     expect(notesForm.querySelector("[role=status]")).toBeTruthy(),
   );
-  fireEvent.submit(phoneForm);
+  fireEvent.submit(nameForm);
   await waitFor(() =>
-    expect(phoneForm.querySelector("[role=status]")).toBeTruthy(),
+    expect(nameForm.querySelector("[role=status]")).toBeTruthy(),
   );
   const [stored] = await harness.local.db
     .select()
     .from(s.people)
     .where(eq(s.people.id, demoId(201)));
   expect(stored).toMatchObject({
-    phone: "+1 555 0170",
+    name: "Fictional updated name",
     summary: "My personal notes.",
     version: 3,
   });

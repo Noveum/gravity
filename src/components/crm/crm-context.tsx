@@ -30,7 +30,12 @@ import { DraftBuffersProvider, useDraftBufferActions } from "./draft-buffers";
 import { LocalRecordVersions } from "./local-record-versions";
 import { isAccessError, useLiveSnapshot } from "./use-live-snapshot";
 
-export type RecordTab = "timeline" | "evidence" | "draft";
+export type RecordTab =
+  | "timeline"
+  | "evidence"
+  | "draft"
+  | "context"
+  | "details";
 export interface Peek {
   relationshipId: string;
   personId: string;

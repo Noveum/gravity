@@ -300,7 +300,7 @@ describe("palette, search, guide and create", () => {
     row(/Leena Rao.*Prepare the pilot proposal/).focus();
     await press(" ");
     await waitFor(() => expect(peek()).toBeTruthy());
-    await screen.findByRole("button", { name: label("draft") });
+    await screen.findByRole("tab", { name: label("draft") });
     guide = await openGuide();
     expect(within(guide).getByText(t.shortcutLabels.draft)).toBeTruthy();
   });
@@ -1040,7 +1040,7 @@ describe("detail bindings", () => {
     row(/Leena Rao.*Prepare the pilot proposal/).focus();
     await press(" ");
     await waitFor(() => expect(peek()).toBeTruthy());
-    await screen.findByRole("button", { name: label("draft") });
+    await screen.findByRole("tab", { name: label("draft") });
     await press("e");
     expect(document.querySelector(".inspector-expanded")).toBeTruthy();
     await press("e");

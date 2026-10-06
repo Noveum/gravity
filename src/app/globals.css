@@ -5556,3 +5556,297 @@ nav.list-pagination > label:has(select) {
     overflow-x: auto;
   }
 }
+
+/* Contact preparation: notes and work first, supporting properties in tabs. */
+.contact-workspace {
+  min-width: 0;
+}
+.contact-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--gravity-surface);
+  gap: 12px;
+  overflow-x: auto;
+}
+.contact-tabs :where(button) {
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  padding: 12px 0;
+}
+.contact-tab-content {
+  padding-top: 18px;
+}
+.contact-tab-content > :where(.record-section:first-child) {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.notes-hint {
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--gravity-muted);
+  margin: 0 0 10px;
+}
+.inline-notes :where(textarea) {
+  padding: 12px;
+  min-height: 112px;
+  max-height: 460px;
+  font-size: var(--text-sm);
+  line-height: 1.75;
+  background: var(--gravity-surface-2);
+  border: 1px solid var(--gravity-field-border);
+  border-radius: var(--gravity-radius);
+}
+.contact-workspace .inline-notes > :where(label) {
+  margin-bottom: 10px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--gravity-text);
+}
+.contact-workspace .related-work {
+  gap: 0;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.contact-workspace .related-work > :where(section) {
+  border-top: 1px solid var(--gravity-border-subtle);
+  padding: 14px 0;
+}
+.contact-workspace .related-work :where(h3) {
+  font-size: var(--text-sm);
+  margin: 0;
+}
+.contact-workspace .section-heading {
+  margin-bottom: 10px;
+}
+.contact-workspace .action-summary {
+  margin: 0 0 8px;
+  padding: 12px;
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: var(--gravity-radius);
+  background: var(--gravity-surface-2);
+}
+.contact-workspace .action-summary :where(h3) {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.action-due {
+  margin: 4px 0 8px;
+  font-size: var(--text-xs);
+}
+.contact-workspace .action-summary :where(button) {
+  margin-top: 8px;
+  font-size: var(--text-xs);
+}
+.related-deal {
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: var(--gravity-radius);
+  margin-top: 8px;
+  padding: 0 10px 10px;
+}
+.related-deal > :where(.related-row) {
+  border-bottom: 0;
+  padding: 10px 0;
+}
+.deal-estimate-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 100px;
+  gap: 8px;
+  align-items: start;
+}
+.deal-estimate-fields .inline-field {
+  min-width: 0;
+}
+.deal-estimate-fields :where(input, select) {
+  width: 100%;
+}
+.inspector > .record-actions {
+  justify-content: flex-end;
+  margin: -8px 0 4px;
+}
+.contact-secondary {
+  margin: 16px 0;
+}
+.contact-secondary > :where(summary) {
+  cursor: pointer;
+  color: var(--gravity-muted);
+  font-size: var(--text-xs);
+}
+.conversation-history {
+  border-top: 1px solid var(--gravity-border-subtle);
+  padding-top: 20px;
+  margin-top: 2px;
+}
+.history-toolbar {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+.history-toolbar > :where(input) {
+  min-width: 0;
+  flex: 1;
+}
+.history-toolbar > :where(select) {
+  width: 135px;
+  font-size: var(--text-xs);
+}
+.conversation-cards {
+  display: grid;
+  gap: 12px;
+}
+.conversation-card {
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: var(--gravity-radius-lg);
+  background: var(--gravity-surface);
+  overflow: hidden;
+}
+.conversation-card > :where(header) {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--gravity-surface-2);
+  color: var(--gravity-muted);
+  font-size: var(--text-xs);
+}
+.conversation-channel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.conversation-card :where(time) {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.conversation-sender {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 14px 14px 0;
+  font-size: var(--text-xs);
+}
+.conversation-sender > :where(span) {
+  color: var(--gravity-muted);
+}
+.conversation-body {
+  padding: 0 14px 14px;
+  font-size: var(--text-sm);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.conversation-body > :where(p) {
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+}
+.conversation-source {
+  margin: 0 14px 14px;
+  font-size: var(--text-2xs);
+  color: var(--gravity-faint);
+}
+.conversation-source :where(summary) {
+  cursor: pointer;
+}
+.conversation-source :where(code) {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 6px;
+}
+.contact-record-page:not([data-archived]) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.contact-record-page:not([data-archived]) > .record-attributes {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px 4px;
+  border-right: 0;
+  overflow: visible;
+}
+.contact-record-page:not([data-archived]) > .record-timeline {
+  padding-top: 0;
+}
+.record-page .contact-tab-content:has(> .related-work),
+.inspector-expanded .contact-tab-content:has(> .related-work) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  align-items: start;
+}
+.record-page .contact-tab-content > .related-work,
+.inspector-expanded .contact-tab-content > .related-work {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.record-page .contact-tab-content > .conversation-history,
+.inspector-expanded .contact-tab-content > .conversation-history {
+  grid-column: 1;
+}
+@media (max-width: 1000px) {
+  .record-page .contact-tab-content:has(> .related-work),
+  .inspector-expanded .contact-tab-content:has(> .related-work) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .record-page .contact-tab-content > .related-work,
+  .inspector-expanded .contact-tab-content > .related-work {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+.contact-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--gravity-accent);
+  color: var(--gravity-text);
+}
+
+.contact-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.contact-header > :where(.profile) {
+  min-width: 0;
+  flex: 1;
+}
+.contact-header > :where(.record-actions) {
+  margin: 8px 0 0;
+}
+.contact-header:has(.inline-archive) {
+  flex-wrap: wrap;
+}
+.contact-header > :where(.record-actions:has(.inline-archive)) {
+  flex-basis: 100%;
+}
+.contact-workspace .related-work > :where(section) {
+  margin-bottom: 0;
+}
+.contact-forecast {
+  font-size: var(--text-xs);
+  margin-top: 10px;
+}
+.contact-forecast > :where(summary) {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--gravity-muted);
+}
+
+.contact-record-page .record-attributes > .profile {
+  flex: 1;
+  min-width: 0;
+  max-width: 800px;
+}
+.contact-record-page .profile > :where(div),
+.contact-header .profile > :where(div) {
+  flex: 1;
+}
+
+.inspector-expanded .contact-workspace .related-work {
+  display: block;
+}

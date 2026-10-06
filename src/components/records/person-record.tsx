@@ -10,20 +10,14 @@ import {
 } from "../crm/record-context";
 import { useArchive } from "../crm/use-archive";
 import { useDraft } from "../crm/use-draft";
-import { PersonDetails, RelatedWork } from "../record-details";
-import { companyPath, personPath, sectionPath } from "../routes";
+import { PersonDetails } from "../record-details";
+import { personPath, sectionPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
 import { PersonFields } from "./contact-fields";
-import { MetadataSection } from "./metadata-section";
-import {
-  ActionSummary,
-  findAction,
-  PersonActivity,
-  PersonProfile,
-  RelationshipProperties,
-} from "./person-panels";
+import { ContactWorkspace } from "./contact-workspace";
+import { ConversationHistory } from "./conversation-history";
+import { findAction, PersonProfile } from "./person-panels";
 import { ArchivedNotice, RecordActions } from "./record-actions";
-import { RelationshipContext } from "./relationship-context";
 
 export function PersonRecord({ personId }: { personId: string }) {
   const crm = useWorkspaceData();
@@ -96,6 +90,7 @@ export function PersonRecord({ personId }: { personId: string }) {
       name: `${archivedCompany.name} ${t.archivedSuffix}`,
     });
   const focus = (relationshipId: string, actionId = "") => {
+    if (!crm.canLeaveEditor()) return;
     const owner = sourceData.relationships.find(
       (item) => item.id === relationshipId,
     )?.personId;
@@ -104,10 +99,10 @@ export function PersonRecord({ personId }: { personId: string }) {
     if (owner === personId) router.replace(href, { scroll: false });
     else crm.go(href);
   };
-  const toCompany = (companyId: string) => crm.go(companyPath(companyId));
+  const toCompany = crm.openCompany;
   const unavailable = <EmptyState title={t.recordUnavailable} compact />;
   return (
-    <div className="record-page" data-record={person.id}>
+    <div className="record-page contact-record-page" data-record={person.id}>
       <div className="record-attributes">
         <PersonProfile
           person={context?.person ?? undefined}
@@ -119,59 +114,23 @@ export function PersonRecord({ personId }: { personId: string }) {
         />
         <RecordActions
           key={person.id}
+          inlineEditing
           busy={crm.busy}
           onEdit={() => crm.openRecordDialog({ kind: "person", id: person.id })}
           onArchive={() => void archive.archive("person", person)}
         />
-        {context ? (
-          <>
-            <PersonDetails
-              context={context}
-              onCompany={toCompany}
-              onPerson={(id) => focus(id)}
-              includeSummary={false}
-            />
-            <RelationshipProperties
-              context={context}
-              action={action}
-              includeContext={false}
-            />
-            <MetadataSection entity="person" record={person} />
-            <MetadataSection
-              entity="relationship"
-              record={context.relationship}
-            />
-            {action && (
-              <ActionSummary action={action} version={draft.version} />
-            )}
-            <RelatedWork
-              actions={context.actions}
-              meetings={context.meetings}
-              opportunities={context.opportunities}
-              relationshipId={context.relationship.id}
-              timeZone={crm.timeZone}
-              onAction={focus}
-              onReveal={crm.reveal}
-            />
-          </>
-        ) : missing ? (
-          unavailable
-        ) : (
-          <LoadingState rows={5} />
-        )}
       </div>
       <section className="record-timeline" aria-label={t.activity}>
         {context ? (
-          <>
-            <PersonActivity context={context} action={action} draft={draft} />
-            {context.person && (
-              <PersonFields person={context.person} notesOnly />
-            )}
-            <RelationshipContext
-              key={context.relationship.id}
-              relationship={context.relationship}
-            />
-          </>
+          <ContactWorkspace
+            key={context.relationship.id}
+            context={context}
+            action={action}
+            draft={draft}
+            onCompany={toCompany}
+            onPerson={(id) => focus(id)}
+            onAction={focus}
+          />
         ) : missing ? (
           unavailable
         ) : (
@@ -189,7 +148,7 @@ function ArchivedPersonRecord({ personId }: { personId: string }) {
   const summary = crm.sourceData.archived.people.find(
     (person) => person.id === personId,
   );
-  const toCompany = (companyId: string) => crm.go(companyPath(companyId));
+  const toCompany = crm.openCompany;
   return (
     <div className="record-page" data-record={personId} data-archived="">
       <div className="record-attributes">
@@ -213,6 +172,7 @@ function ArchivedPersonRecord({ personId }: { personId: string }) {
             context={context}
             onCompany={toCompany}
             onPerson={() => {}}
+            includeSummary={false}
           />
         ) : missing ? (
           <EmptyState title={t.recordUnavailable} compact />
@@ -220,6 +180,15 @@ function ArchivedPersonRecord({ personId }: { personId: string }) {
           <LoadingState rows={3} />
         )}
       </div>
+      {context?.person && (
+        <section className="record-timeline" aria-label={t.activity}>
+          <PersonFields person={context.person} notesOnly />
+          <ConversationHistory
+            person={context.person}
+            timeZone={crm.timeZone}
+          />
+        </section>
+      )}
     </div>
   );
 }

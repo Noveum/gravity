@@ -38,7 +38,9 @@ export function MetadataValues({
 export function MetadataSection({
   entity,
   record,
+  compact = false,
 }: {
+  compact?: boolean;
   entity: "person" | "company" | "relationship" | "opportunity";
   record: MetadataRecord;
 }) {
@@ -74,13 +76,9 @@ export function MetadataSection({
     );
     return result.ok ? null : (result.error ?? t.errors.INVALID_INPUT);
   };
-  return (
-    <section className="record-section metadata-section">
-      <details className="estimate-details">
-        <summary>
-          <h3>{heading}</h3>
-          <MetadataValues record={record} />
-        </summary>
+  const fields = (
+    <>
+      {!compact && (
         <InlineField
           key={`${record.id}:tags`}
           label={t.tags}
@@ -96,41 +94,53 @@ export function MetadataSection({
             })
           }
         />
-        <InlineField
-          key={`${record.id}:amount`}
-          label={t.dealSize}
-          record={record}
-          value={fromMinor(record.amountMinor, record.currency)}
-          type="number"
-          readOnly={!!record.archivedAt}
-          onSave={async (value, original) => {
-            try {
-              return await save(original, {
-                amountMinor: parseMoney(
-                  value,
-                  crm.currentRecord(original).currency,
-                ),
-              });
-            } catch {
-              return t.errors.INVALID_INPUT;
-            }
-          }}
-        />
-        <InlineField
-          key={`${record.id}:currency`}
-          label={t.currency}
-          record={record}
-          value={record.currency}
-          readOnly={!!record.archivedAt}
-          options={Intl.supportedValuesOf("currency").map((value) => ({
-            value,
-            label: value,
-          }))}
-          onSave={(value, original) => save(original, { currency: value })}
-        />
-        {entity !== "opportunity" && (
-          <p className="muted field-hint">{t.estimateForecastNote}</p>
-        )}
+      )}
+      <InlineField
+        key={`${record.id}:amount`}
+        label={t.dealSize}
+        record={record}
+        value={fromMinor(record.amountMinor, record.currency)}
+        type="number"
+        readOnly={!!record.archivedAt}
+        onSave={async (value, original) => {
+          try {
+            return await save(original, {
+              amountMinor: parseMoney(
+                value,
+                crm.currentRecord(original).currency,
+              ),
+            });
+          } catch {
+            return t.errors.INVALID_INPUT;
+          }
+        }}
+      />
+      <InlineField
+        key={`${record.id}:currency`}
+        label={t.currency}
+        record={record}
+        value={record.currency}
+        readOnly={!!record.archivedAt}
+        options={Intl.supportedValuesOf("currency").map((value) => ({
+          value,
+          label: value,
+        }))}
+        onSave={(value, original) => save(original, { currency: value })}
+      />
+      {!compact && entity !== "opportunity" && (
+        <p className="muted field-hint">{t.estimateForecastNote}</p>
+      )}
+    </>
+  );
+  if (compact) return <div className="deal-estimate-fields">{fields}</div>;
+  return (
+    <section className="record-section metadata-section">
+      <details className="estimate-details">
+        <summary>
+          <h3>{heading}</h3>
+          <MetadataValues record={record} />
+        </summary>
+        {fields}
       </details>
     </section>
   );

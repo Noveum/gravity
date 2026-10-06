@@ -1,13 +1,14 @@
 "use client";
-import { money, totals, weightedAmount } from "@crm/core/analytics";
+import { money, totals } from "@crm/core/analytics";
 import type { ClientCompanyContext, ClientContext } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { Building2, ChevronRight } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { dateLabel, label } from "./client-api";
 import { useWorkspaceData } from "./crm/crm-context";
-import { formatMoney } from "./money";
 import { CompanyFields, PersonFields } from "./records/contact-fields";
 import { Pagination, useListPage } from "./records/list-browser";
+import { MetadataSection } from "./records/metadata-section";
 import { RecordText } from "./records/record-text";
 
 interface WorkProps {
@@ -19,6 +20,8 @@ interface WorkProps {
   relationshipId?: string;
   allowOpportunityCreation?: boolean;
   onReveal: (view: "meetings" | "opportunities", id: string) => void;
+  selectedAction?: ReactNode;
+  selectedActionId?: string;
 }
 export function RelatedWork({
   actions,
@@ -29,57 +32,126 @@ export function RelatedWork({
   onReveal,
   relationshipId,
   allowOpportunityCreation,
+  selectedAction,
+  selectedActionId,
 }: WorkProps) {
+  const crm = useWorkspaceData();
+  const [allActions, setAllActions] = useState(false);
+  const [allMeetings, setAllMeetings] = useState(false);
   const actionPage = useListPage(
-    actions.filter((action) => action.status !== "completed"),
+    actions
+      .filter(
+        (action) =>
+          action.status !== "completed" && action.id !== selectedActionId,
+      )
+      .sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt)),
     actions[0]?.relationshipId ?? "",
   );
-  const meetingPage = useListPage(meetings, meetings[0]?.relationshipId ?? "");
+  const now = Date.parse(crm.sourceData.asOf);
+  const meetingPage = useListPage(
+    [...meetings].sort((a, b) => {
+      const upcomingA =
+        a.status === "scheduled" && Date.parse(a.startsAt) >= now;
+      const upcomingB =
+        b.status === "scheduled" && Date.parse(b.startsAt) >= now;
+      if (upcomingA !== upcomingB) return upcomingA ? -1 : 1;
+      return upcomingA
+        ? Date.parse(a.startsAt) - Date.parse(b.startsAt)
+        : Date.parse(b.startsAt) - Date.parse(a.startsAt);
+    }),
+    meetings[0]?.relationshipId ?? "",
+  );
   return (
     <div className="related-work">
       <section>
-        <h3>{t.actions}</h3>
-        {actionPage.items.map((a) => (
+        <div className="section-heading">
+          <h3>{t.actions}</h3>
+          {relationshipId && (
+            <button
+              type="button"
+              className="small ghost"
+              onClick={() => crm.setActionDialog(true, relationshipId)}
+            >
+              {t.contactWorkspace.newAction}
+            </button>
+          )}
+        </div>
+        {selectedAction}
+        {(allActions ? actionPage.items : actionPage.items.slice(0, 3)).map(
+          (a) => (
+            <button
+              type="button"
+              className="related-row"
+              key={a.id}
+              onClick={() => onAction(a.relationshipId, a.id)}
+            >
+              <span>
+                {a.title}
+                <small>
+                  {label(a.kind)} · {label(a.status)} ·{" "}
+                  {dateLabel(a.dueAt, timeZone)}
+                </small>
+              </span>
+              <ChevronRight size={13} />
+            </button>
+          ),
+        )}
+        {actionPage.total > 3 && (
           <button
             type="button"
-            className="related-row"
-            key={a.id}
-            onClick={() => onAction(a.relationshipId, a.id)}
+            className="small ghost"
+            onClick={() => setAllActions(!allActions)}
           >
-            <span>
-              {a.title}
-              <small>
-                {label(a.kind)} · {label(a.status)} ·{" "}
-                {dateLabel(a.dueAt, timeZone)}
-              </small>
-            </span>
-            <ChevronRight size={13} />
+            {allActions
+              ? t.contactWorkspace.showLess
+              : t.contactWorkspace.showAll.replace(
+                  "{count}",
+                  String(actionPage.total),
+                )}
           </button>
-        ))}
-        {actionPage.total > actionPage.size && <Pagination page={actionPage} />}
-        {!actions.some((a) => a.status !== "completed") && (
+        )}
+        {allActions && actionPage.total > actionPage.size && (
+          <Pagination page={actionPage} />
+        )}
+        {!actions.some((a) => a.status !== "completed") && !selectedAction && (
           <p className="muted">{t.noActions}</p>
         )}
       </section>
       <section>
         <h3>{t.meetings}</h3>
-        {meetingPage.items.map((m) => (
+        {(allMeetings ? meetingPage.items : meetingPage.items.slice(0, 3)).map(
+          (m) => (
+            <button
+              type="button"
+              className="related-row"
+              key={m.id}
+              onClick={() => onReveal("meetings", m.id)}
+            >
+              <span>
+                {m.title}
+                <small>
+                  {label(m.status)} · {dateLabel(m.startsAt, timeZone)}
+                </small>
+              </span>
+              <ChevronRight size={13} />
+            </button>
+          ),
+        )}
+        {meetingPage.total > 3 && (
           <button
             type="button"
-            className="related-row"
-            key={m.id}
-            onClick={() => onReveal("meetings", m.id)}
+            className="small ghost"
+            onClick={() => setAllMeetings(!allMeetings)}
           >
-            <span>
-              {m.title}
-              <small>
-                {label(m.status)} · {dateLabel(m.startsAt, timeZone)}
-              </small>
-            </span>
-            <ChevronRight size={13} />
+            {allMeetings
+              ? t.contactWorkspace.showLess
+              : t.contactWorkspace.showAll.replace(
+                  "{count}",
+                  String(meetingPage.total),
+                )}
           </button>
-        ))}
-        {meetingPage.total > meetingPage.size && (
+        )}
+        {allMeetings && meetingPage.total > meetingPage.size && (
           <Pagination page={meetingPage} />
         )}
         {!meetings.length && <p className="muted">{t.noRelatedMeetings}</p>}
@@ -104,6 +176,7 @@ export function RelatedOpportunities({
   "opportunities" | "onReveal" | "relationshipId" | "allowOpportunityCreation"
 > & { className?: string }) {
   const crm = useWorkspaceData();
+  const [allDeals, setAllDeals] = useState(false);
   const open = opportunities.filter((deal) => deal.status === "open");
   const included = open.filter(
     (deal) => deal.amountMinor !== null && deal.probability !== null,
@@ -129,64 +202,61 @@ export function RelatedOpportunities({
           </button>
         )}
       </div>
+      {(allDeals ? page.items : page.items.slice(0, 3)).map((o) => (
+        <article className="related-deal" key={o.id}>
+          <button
+            type="button"
+            className="related-row"
+            onClick={() =>
+              !crm.sourceData.opportunities.some((deal) => deal.id === o.id)
+                ? onReveal("opportunities", o.id)
+                : crm.openRecordDialog({ kind: "opportunity", id: o.id })
+            }
+          >
+            <span>
+              {o.name}
+              <small>
+                {crm.product(o.productId)?.name} ·{" "}
+                {crm.sourceData.stages.find((stage) => stage.id === o.stageId)
+                  ?.name ?? label(o.status)}
+              </small>
+            </span>
+            <ChevronRight size={13} />
+          </button>
+          <MetadataSection entity="opportunity" record={o} compact />
+        </article>
+      ))}
       {!!included.length && (
-        <div className="record-forecast">
-          <span>{t.expectedRevenue}</span>
-          <strong>
-            {forecast.length
-              ? forecast
-                  .map((row) => money(row.amountMinor, row.currency))
-                  .join(" · ")
-              : t.forecastUnknown}
-          </strong>
+        <details className="record-forecast contact-forecast">
+          <summary>
+            <span>{t.expectedRevenue}</span>
+            <strong>
+              {forecast.length
+                ? forecast
+                    .map((row) => money(row.amountMinor, row.currency))
+                    .join(" · ")
+                : t.forecastUnknown}
+            </strong>
+          </summary>
           <small>
             {t.forecastCoverage
               .replace("{included}", String(included.length))
               .replace("{total}", String(open.length))}
           </small>
-        </div>
+        </details>
       )}
-      {page.items.map((o) => (
+      {page.total > 3 && (
         <button
           type="button"
-          className="related-row"
-          key={o.id}
-          onClick={() =>
-            !crm.sourceData.opportunities.some((deal) => deal.id === o.id)
-              ? onReveal("opportunities", o.id)
-              : crm.openRecordDialog({ kind: "opportunity", id: o.id })
-          }
+          className="small ghost"
+          onClick={() => setAllDeals(!allDeals)}
         >
-          <span>
-            {o.name}
-            <small>
-              {o.amountMinor !== null && (
-                <>{formatMoney(o.amountMinor, o.currency)} · </>
-              )}
-              {crm.product(o.productId)?.name} · {label(o.status)}
-            </small>
-            {o.probability !== null && (
-              <small>
-                {t.probability}:{" "}
-                {o.probability === null ? t.unspecified : `${o.probability}%`}
-              </small>
-            )}
-            {o.amountMinor !== null && o.probability !== null && (
-              <small>
-                {t.expectedRevenue}:{" "}
-                {weightedAmount(o.amountMinor, o.probability) === null
-                  ? t.forecastUnknown
-                  : formatMoney(
-                      weightedAmount(o.amountMinor, o.probability),
-                      o.currency,
-                    )}
-              </small>
-            )}
-          </span>
-          <ChevronRight size={13} />
+          {allDeals
+            ? t.contactWorkspace.showLess
+            : t.contactWorkspace.showAll.replace("{count}", String(page.total))}
         </button>
-      ))}
-      {page.total > page.size && <Pagination page={page} />}
+      )}
+      {allDeals && page.total > page.size && <Pagination page={page} />}
       {!opportunities.length && (
         <p className="muted">{t.noRelatedOpportunities}</p>
       )}

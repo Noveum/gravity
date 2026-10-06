@@ -48,6 +48,7 @@ import { OverviewView } from "../src/components/views/overview-view";
 import { PeopleView } from "../src/components/views/people-view";
 import { SequencesView } from "../src/components/views/sequences-view";
 import { SettingsView } from "../src/components/views/settings-view";
+import { contactTab } from "./support/contact-workspace";
 import { usePathname, visit } from "./support/memory-router";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
@@ -820,11 +821,13 @@ test("a reload on a record page keeps the record, its relationship and the revie
   mount(`/people/${demoId(200)}?relationship=${demoId(306)}`);
   const relationship = () =>
     screen.getByRole("button", { name: /API Marketplace/, pressed: true });
+  await contactTab(t.contactWorkspace.details);
   await waitFor(() => expect(relationship()).toBeTruthy());
   cleanup();
   mount();
   expect(window.location.search).toBe(`?relationship=${demoId(306)}`);
   expect(heading("Mira Chen", 2)).toBeTruthy();
+  await contactTab(t.contactWorkspace.details);
   await waitFor(() => expect(relationship()).toBeTruthy());
   cleanup();
   mount(
@@ -848,7 +851,7 @@ test("a reload on a record page keeps the record, its relationship and the revie
     ).value,
   ).toBe(saved?.draft);
   expect(
-    screen.getByRole("button", { name: t.draft }).getAttribute("aria-pressed"),
+    screen.getByRole("tab", { name: t.draft }).getAttribute("aria-selected"),
   ).toBe("true");
   expect(screen.getByRole("heading", { name: saved?.title })).toBeTruthy();
 });
@@ -1074,6 +1077,7 @@ test("under a remembered brand a person's company opens in the inspector", async
   act(() => visit(`/people/${demoId(200)}`));
   expect(heading("Mira Chen", 2)).toBeTruthy();
   const main = within(screen.getByRole("main"));
+  await contactTab(t.contactWorkspace.details);
   expect(
     await main.findByRole("button", { name: /AI Platform/, pressed: true }),
   ).toBeTruthy();
@@ -1186,7 +1190,7 @@ test("the record page saves, approves and reworks drafts through the same comman
     `/people/${demoId(202)}?relationship=${demoId(302)}&action=${demoId(602)}`,
   );
   persistWrites();
-  fireEvent.click(await screen.findByRole("button", { name: t.draft }));
+  fireEvent.click(await screen.findByRole("tab", { name: t.draft }));
   fireEvent.change(screen.getByRole("textbox", { name: t.draftLabel }), {
     target: { value: "Fictional record page proposal" },
   });

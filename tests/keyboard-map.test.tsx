@@ -353,6 +353,18 @@ describe("palette, search, guide and create", () => {
       screen.getByRole("heading", { name: t.upload, level: 2 }),
     ).toBeTruthy();
   });
+  test("the Sequences command palette opens the same creation form", async () => {
+    await mountCrm(harness, "/outreach/sequences");
+    await press("{Meta>}k{/Meta}");
+    fireEvent.click(
+      await screen.findByRole("option", {
+        name: new RegExp(`^${t.newSequence}`),
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: t.newSequence });
+    expect(within(dialog).getByLabelText(t.product)).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: t.commands })).toBeNull();
+  });
   test("Shift P opens product creation for an admin and Shift O starts a new workspace", async () => {
     binding("create-product");
     binding("create-organization");

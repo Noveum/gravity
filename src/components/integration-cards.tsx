@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Mic,
   Plug,
+  Plus,
   RefreshCw,
   Search,
   Settings2,
@@ -173,6 +174,8 @@ export function IntegrationCards({
   return (
     <>
       <div className="integration-intro">
+        <h2>{t.myProviderAccounts}</h2>
+        <p>{t.accountPrivacyNote}</p>
         <p>{t.integrationIntro}</p>
         <p>{t.integrationTimeZone.replace("{zone}", timeZone)}</p>
         {loading && <span role="status">{t.loading}</span>}
@@ -200,16 +203,25 @@ export function IntegrationCards({
           overview?.connections.filter((c) => c.provider === provider) ?? [];
         const configured = overview?.configured[provider] ?? false;
         return (
-          <article key={provider} className="integration-card">
+          <article
+            key={provider}
+            className="integration-card"
+            aria-label={t[provider]}
+          >
             <div className="section-heading">
               <h2>
                 <Icon size={18} aria-hidden="true" />
                 {t[provider]}
               </h2>
               <span className="badge">
-                {rows.some((row) => row.status === "connected")
-                  ? t.connected
-                  : t.notConnected}
+                {rows.length > 1
+                  ? t.connectedAccountCount.replace(
+                      "{count}",
+                      String(rows.length),
+                    )
+                  : rows.some((row) => row.status === "connected")
+                    ? t.connected
+                    : t.notConnected}
               </span>
             </div>
             <p>{t.integrationDescriptions[provider]}</p>
@@ -320,8 +332,11 @@ export function IntegrationCards({
                     setModal(provider);
                   }}
                 >
-                  <Plug size={15} aria-hidden="true" />
-                  {t.connectProvider.replace("{provider}", t[provider])}
+                  <Plus size={15} aria-hidden="true" />
+                  {(rows.length
+                    ? t.addProviderAccount
+                    : t.connectProvider
+                  ).replace("{provider}", t[provider])}
                 </button>
               )}
               {provider === "linkedin" && configured && (

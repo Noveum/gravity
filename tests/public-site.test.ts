@@ -104,7 +104,7 @@ test("the landing page offers explicit login and an independently configured Ver
   const html = renderToStaticMarkup(createElement(LandingPage));
   expect(html).toContain(siteCopy.heroTitle);
   expect(html).toContain(siteCopy.heroNote);
-  expect((html.match(/href="\/sign-in"/g) ?? []).length).toBe(4);
+  expect((html.match(/href="\/sign-in"/g) ?? []).length).toBe(3);
   expect(html).not.toContain("Run Gravity locally");
   expect(html).toContain(siteCopy.signInToGravity);
   expect(html).toContain(siteCopy.deployWithVercel);

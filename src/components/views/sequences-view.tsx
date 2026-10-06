@@ -7,10 +7,12 @@ import { useState } from "react";
 import { label } from "../client-api";
 import { useCreate, useWorkspaceData } from "../crm/crm-context";
 import { useOutreachSend } from "../outreach/outreach-data";
+import { SequenceDialog } from "../outreach/sequence-dialog";
 import { SequenceEditor } from "../outreach/sequence-editor";
 import { followUpLabel } from "../outreach/touch-labels";
-import { RecordDialog, text } from "../records/record-dialog";
+import { RecordDialog } from "../records/record-dialog";
 import { personPath } from "../routes";
+import { ShortcutHint } from "../ui/shortcut-hint";
 import { EmptyState } from "../ui/states";
 
 type Sequence = ClientSnapshot["sequences"][number];
@@ -65,28 +67,6 @@ export function SequencesView() {
       ),
       "success",
     );
-  }
-  async function create(fields: FormData) {
-    const name = text(fields, "name");
-    const result = await send<{ id: string }>({
-      operation: "create-sequence",
-      productId: text(fields, "productId"),
-      name,
-      steps: [
-        {
-          number: 1,
-          name: t.firstStep,
-          delayDays: 0,
-          channel: text(fields, "channel"),
-          template: "",
-          followUp: 0,
-        },
-      ],
-    });
-    if (!result.ok) return result.error;
-    crm.notify(t.sequenceCreated.replace("{name}", name), "success");
-    setEditing(result.result.id);
-    return null;
   }
   async function archive(sequence: Sequence) {
     const result = await send({
@@ -299,17 +279,22 @@ export function SequencesView() {
     : 0;
   return (
     <div className="page-content sequences-page">
-      <div className="sequences-toolbar">
+      <div className="section-heading">
+        <p className="muted">{t.sequenceCreationHint}</p>
         <button
           type="button"
           className="primary"
+          aria-label={t.newSequence}
+          aria-keyshortcuts="C"
           disabled={!data.products.length}
           onClick={() => setCreating(true)}
         >
           <Plus size={14} aria-hidden />
           {t.newSequence}
+          <ShortcutHint id="create" />
         </button>
       </div>
+      {creating && <SequenceDialog onClose={() => setCreating(false)} />}
       {!sequences.length && <EmptyState title={t.noSequences} compact />}
       {active.map(card)}
       {archived.length > 0 && (
@@ -323,41 +308,6 @@ export function SequencesView() {
           </div>
           {archived.map(card)}
         </section>
-      )}
-      {creating && (
-        <RecordDialog
-          title={t.newSequence}
-          submitLabel={t.create}
-          onClose={() => setCreating(false)}
-          onSubmit={create}
-        >
-          <label>
-            {t.product}
-            <select
-              name="productId"
-              required
-              defaultValue={crm.productId || data.products[0]?.id}
-            >
-              {data.products.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {t.sequenceName}
-            <input name="name" required maxLength={100} data-primary-field />
-          </label>
-          <label>
-            {t.firstStepChannel}
-            <select name="channel" defaultValue="gmail">
-              <option value="gmail">{t.gmail}</option>
-              <option value="linkedin">{t.linkedin}</option>
-            </select>
-          </label>
-          <small className="field-hint muted">{t.newSequenceHint}</small>
-        </RecordDialog>
       )}
       {archiving && (
         <RecordDialog

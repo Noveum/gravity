@@ -3757,6 +3757,17 @@ tbody tr[data-selected] td:first-child::before {
   gap: 12px;
   margin: 12px 0 16px;
 }
+.sequence-create-dialog {
+  width: 860px;
+}
+.sequence-editor-content {
+  display: grid;
+  gap: 12px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
 .sequence-name {
   max-width: 360px;
 }
@@ -3815,11 +3826,6 @@ tbody tr[data-selected] td:first-child::before {
   height: var(--gravity-list-row);
   padding: 0 8px 0 0;
   border-bottom: 1px solid var(--gravity-border-hairline);
-}
-.sequences-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 12px;
 }
 .sequence-heading-actions {
   display: flex;
@@ -4653,4 +4659,49 @@ tbody tr[data-selected] td:first-child::before {
   .search-pill kbd {
     display: none;
   }
+}
+.conversation-sharing {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 20px;
+}
+.conversation-sharing :where(h3) {
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+.conversation-sharing :where(p) {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.conversation-sharing-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.conversation-sharing-row :where(small) {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.integration-intro > h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.conversation-sharing-thread {
+  min-width: 0;
+  flex: 1;
+}
+.conversation-sharing-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 8px 0 0;
 }

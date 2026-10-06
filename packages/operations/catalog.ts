@@ -31,6 +31,7 @@ import {
   actionChangeSchema,
   actionPlanSchema,
   CrmService,
+  conversationSharingSchema,
   folderSchema,
   meetingChangeSchema,
   messageActivitySchema,
@@ -208,6 +209,16 @@ export function materialBytes(value: string) {
 }
 
 export const operations: Operation[] = [
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "conversation-sharing",
+    name: "set_conversation_visibility",
+    description:
+      "Explicitly share one of your imported threads with authorized members of its product, or make it private again. Sharing includes past and future messages in that thread; it never shares credentials, unrelated threads or sending access. Get conversationId and expectedVisibility from get_relationship_context, explain the scope to the user and apply their sharing preference. Only the conversation owner can change visibility, including when an administrator makes the request.",
+    schema: conversationSharingSchema,
+    run: (c, input) => crm(c).shareConversation(c.principal, input),
+  }),
   operation({
     api: "crm",
     method: "GET",
@@ -1327,6 +1338,7 @@ const humanSessionOperations = new Set([
   "resolve_delivery",
 ]);
 const ownerOperations = new Set([
+  "set_conversation_visibility",
   "get_integrations",
   "connect_integration",
   "sync_integration",

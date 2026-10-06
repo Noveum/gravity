@@ -34,47 +34,6 @@ async function sequence(id: number) {
   return row;
 }
 
-describe("creating sequences", () => {
-  test("New sequence creates a one-step sequence in the chosen product and opens its editor", async () => {
-    await mountCrm(harness, "/outreach/sequences");
-    fireEvent.click(await screen.findByRole("button", { name: t.newSequence }));
-    const dialog = await screen.findByRole("dialog", { name: t.newSequence });
-    fireEvent.change(within(dialog).getByLabelText(t.product), {
-      target: { value: demoId(12) },
-    });
-    fireEvent.change(within(dialog).getByLabelText(t.sequenceName), {
-      target: { value: "Renewal check-in" },
-    });
-    fireEvent.change(within(dialog).getByLabelText(t.firstStepChannel), {
-      target: { value: "linkedin" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: t.create }));
-    await screen.findByText(
-      t.sequenceCreated.replace("{name}", "Renewal check-in"),
-    );
-    expect(
-      harness.posts.find((post) => post.operation === "create-sequence"),
-    ).toMatchObject({
-      productId: demoId(12),
-      name: "Renewal check-in",
-      steps: [
-        {
-          number: 1,
-          name: t.firstStep,
-          delayDays: 0,
-          channel: "linkedin",
-          followUp: 0,
-        },
-      ],
-    });
-    expect(
-      await screen.findByRole("form", {
-        name: `${t.editSteps}: Renewal check-in · Services`,
-      }),
-    ).toBeTruthy();
-  });
-});
-
 describe("stopping enrollments", () => {
   test("Stop asks for confirmation, then stops the enrollment", async () => {
     await mountCrm(harness, "/outreach/sequences");

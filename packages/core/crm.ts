@@ -35,6 +35,12 @@ export const scopeSchema = z.object({
   organizationId: z.uuid(),
   productId: z.uuid().optional(),
 });
+export const conversationSharingSchema = scopeSchema.extend({
+  productId: z.uuid(),
+  conversationId: z.uuid(),
+  visibility: z.enum(["private", "product"]),
+  expectedVisibility: z.enum(["private", "product"]),
+});
 export const actionChangeSchema = scopeSchema.extend({
   actionId: z.uuid(),
   version: z.number().int().positive(),
@@ -861,6 +867,7 @@ export class CrmService {
       this.db
         .select({
           id: s.messages.id,
+          conversationId: s.messages.conversationId,
           direction: s.messages.direction,
           body: s.messages.body,
           occurredAt: s.messages.occurredAt,
@@ -961,12 +968,66 @@ export class CrmService {
       meetings,
       opportunities,
       messages,
+      conversations: sources.map(({ id, ownerId, channel, visibility }) => ({
+        id,
+        ownerId,
+        channel,
+        visibility,
+        preview:
+          messages
+            .find((message) => message.conversationId === id)
+            ?.body.slice(0, 160) ?? null,
+      })),
       evidence,
       actions,
       asOf: new Date().toISOString(),
       coverage: { complete: false, note: "CONTEXT_PARTIAL", pageSize: 30 },
       unknowns: ["BUDGET_UNVERIFIED", "PRIVATE_HISTORY_NOT_ASSERTED"],
     };
+  }
+  async shareConversation(
+    principal: Principal,
+    input: z.input<typeof conversationSharingSchema>,
+  ) {
+    const value = conversationSharingSchema.parse(input);
+    return this.db.transaction(async (tx) => {
+      await authorize(
+        tx,
+        principal,
+        value.organizationId,
+        value.productId,
+        true,
+      );
+      const [source] = await tx
+        .select()
+        .from(s.conversations)
+        .where(
+          and(
+            eq(s.conversations.id, value.conversationId),
+            eq(s.conversations.organizationId, value.organizationId),
+            eq(s.conversations.productId, value.productId),
+            eq(s.conversations.ownerId, principal.userId),
+          ),
+        )
+        .for("update");
+      // Product access (including admin access) never transfers mailbox ownership.
+      if (!source) throw new DomainError("NOT_FOUND", 404);
+      if (source.visibility !== value.expectedVisibility)
+        throw new DomainError("CONFLICT", 409);
+      if (source.visibility === value.visibility) return { ok: true };
+      await tx
+        .update(s.conversations)
+        .set({ visibility: value.visibility })
+        .where(eq(s.conversations.id, source.id));
+      await tx.insert(s.changeEvents).values({
+        organizationId: source.organizationId,
+        productId: source.productId,
+        actorId: principal.userId,
+        type: "conversation.visibility",
+        entityId: source.id,
+      });
+      return { ok: true };
+    });
   }
   async companyContext(
     principal: Principal,

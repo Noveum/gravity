@@ -17,6 +17,7 @@ import {
 import Link from "next/link";
 import { GravityMark } from "@/components/gravity-logo";
 import { DeployButton } from "./deploy-button";
+import { ProductTour } from "./product-tour";
 
 const icons = [MessageSquare, GitBranch, ShieldCheck, Command];
 export function LandingPage() {
@@ -50,56 +51,7 @@ export function LandingPage() {
           <span />
         </div>
       </section>
-      <section className="site-preview" aria-label={t.previewLabel}>
-        <div className="site-preview-bar">
-          <GravityMark size={20} />
-          <strong>{t.previewOrg}</strong>
-          <span>{t.previewProduct}</span>
-          <span className="site-preview-key">
-            <Command size={12} />K
-          </span>
-        </div>
-        <div className="site-preview-body">
-          <div className="site-preview-list">
-            <h2>{t.previewQueue}</h2>
-            <small>{t.previewToday}</small>
-            {t.previewTasks.map((task, index) => (
-              <div
-                className={`site-preview-task ${index === 0 ? "selected" : ""}`}
-                key={task.name}
-              >
-                <span className="site-preview-avatar">
-                  {task.name
-                    .split(" ")
-                    .map((part) => part[0])
-                    .join("")}
-                </span>
-                <div>
-                  <strong>{task.name}</strong>
-                  <span>{task.company}</span>
-                  <p>{task.task}</p>
-                  <small>{task.label}</small>
-                </div>
-                <time>{task.time}</time>
-              </div>
-            ))}
-          </div>
-          <aside className="site-preview-context">
-            <span className="site-eyebrow">{t.previewContext}</span>
-            <h3>{t.previewTasks[0].name}</h3>
-            <span className="site-badge">{t.previewProduct}</span>
-            <blockquote>{t.previewMessage}</blockquote>
-            <p>{t.previewHistory}</p>
-          </aside>
-        </div>
-        <p className="site-preview-caption">
-          {t.previewCaption}
-          <Link href="/sign-in">
-            {t.tryDemo}
-            <ArrowRight size={12} />
-          </Link>
-        </p>
-      </section>
+      <ProductTour />
       <section id="product" className="site-section">
         <p className="site-eyebrow">{t.featureEyebrow}</p>
         <h2>{t.featureTitle}</h2>
@@ -114,6 +66,44 @@ export function LandingPage() {
               </article>
             );
           })}
+        </div>
+      </section>
+      <section className="site-section site-workflow">
+        <p className="site-eyebrow">{t.workflowEyebrow}</p>
+        <h2>{t.workflowTitle}</h2>
+        <ol>
+          {t.workflowSteps.map((step, index) => (
+            <li key={step.title}>
+              <span className="site-workflow-number">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+      <section className="site-section site-privacy">
+        <div>
+          <p className="site-eyebrow">{t.privacyEyebrow}</p>
+          <h2>{t.privacyTitle}</h2>
+          <p>{t.privacyDescription}</p>
+          <Link className="site-inline-link" href="/docs/accounts-and-privacy">
+            {t.privacyLink}
+            <ArrowRight size={15} aria-hidden="true" />
+          </Link>
+        </div>
+        <div className="site-privacy-diagram" aria-hidden="true">
+          <div>
+            <MessageSquare size={22} />
+            <span>{t.tourProviderLabels}</span>
+          </div>
+          <ShieldCheck size={28} />
+          <div>
+            <GravityMark size={30} />
+            <span>{t.previewOrg}</span>
+          </div>
+          <p>{t.privacyTitle}</p>
         </div>
       </section>
       <section className="site-section site-assistant">

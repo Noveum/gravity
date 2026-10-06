@@ -11,6 +11,7 @@ import { keyInput } from "../keyboard-navigation";
 import { SendDialog } from "../outreach/send-dialog";
 import { initials } from "../shell/workspace-menu";
 import { ShortcutHint } from "../ui/shortcut-hint";
+import { ConversationSharing } from "./conversation-sharing";
 
 type Action = ClientSnapshot["actions"][number];
 type DraftState = ReturnType<typeof useDraft>;
@@ -107,7 +108,16 @@ export function PersonActivity({
   action: Action | undefined;
   draft: DraftState;
 }) {
-  const { tab, setTab, timeZone } = useCrm();
+  const {
+    tab,
+    setTab,
+    timeZone,
+    userId,
+    product,
+    mutate,
+    busy,
+    organizationId,
+  } = useCrm();
   const tabs: RecordTab[] = [
     "timeline",
     "evidence",
@@ -153,6 +163,25 @@ export function PersonActivity({
             )}
           </div>
           <p className="coverage-note">{t.partialHistory}</p>
+          <ConversationSharing
+            conversations={context.conversations ?? []}
+            userId={userId}
+            productName={
+              product(context.relationship.productId)?.name ?? t.product
+            }
+            busy={busy}
+            onChange={async (source, visibility) => {
+              const result = await mutate({
+                operation: "conversation-sharing",
+                organizationId,
+                productId: context.relationship.productId,
+                conversationId: source.id,
+                expectedVisibility: source.visibility,
+                visibility,
+              });
+              return result;
+            }}
+          />
         </>
       )}
       {current === "evidence" && (

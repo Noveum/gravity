@@ -598,6 +598,17 @@ function CrmShell({ children }: { children: ReactNode }) {
                   crm.setPersonDialog(true);
                 },
               },
+              ...(section === "sequences" || outreachTab === "sequences"
+                ? [
+                    {
+                      id: "create-sequence",
+                      title: t.newSequence,
+                      shortcut: hint("create"),
+                      disabled: !data?.products.length,
+                      run: () => crm.create(),
+                    },
+                  ]
+                : []),
             ]}
           />
         )}

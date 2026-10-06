@@ -16,6 +16,7 @@ import {
   enrollSchema,
   OutreachService,
   relationshipChangeSchema,
+  sequenceCreateSchema,
   sequenceUpdateSchema,
   touchApproveSchema,
   touchDraftSchema,
@@ -164,6 +165,8 @@ async function respondOutreach(
           ),
         sequence: () =>
           outreach.updateSequence(principal, sequenceUpdateSchema.parse(body)),
+        "create-sequence": () =>
+          outreach.createSequence(principal, sequenceCreateSchema.parse(body)),
       };
       const run = operations[body.operation];
       if (!run) return viaCatalog(harness, "outreach", "POST", body);

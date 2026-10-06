@@ -206,18 +206,30 @@ export async function dispatchMessage(
   const base = `/${encodeURIComponent(message.accountId)}`;
   if (credentials.apiVersion === "v1") {
     if (message.threadId) {
-      const chat = z
-        .object({ id: z.string(), account_id: z.string() })
-        .parse(
-          await unipileV1Json(
-            credentials,
-            `/chats/${encodeURIComponent(message.threadId)}`,
-            {},
-            transport,
-          ),
+      try {
+        const chat = z
+          .object({ id: z.string(), account_id: z.string() })
+          .parse(
+            await unipileV1Json(
+              credentials,
+              `/chats/${encodeURIComponent(message.threadId)}`,
+              {},
+              transport,
+            ),
+          );
+        if (
+          chat.id !== message.threadId ||
+          chat.account_id !== message.accountId
+        )
+          throw new DomainError("RECIPIENT_MISMATCH", 422);
+      } catch (error) {
+        throw Object.assign(
+          error instanceof DomainError
+            ? error
+            : new DomainError("PROVIDER_RESPONSE_INVALID", 502),
+          { dispatchNotAttempted: true },
         );
-      if (chat.id !== message.threadId || chat.account_id !== message.accountId)
-        throw new DomainError("RECIPIENT_MISMATCH", 422);
+      }
     }
     const body = new FormData();
     body.set("text", message.body);

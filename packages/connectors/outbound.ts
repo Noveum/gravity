@@ -643,7 +643,11 @@ export class OutboundService {
           ? (error as DomainError & { providerStatus?: number }).providerStatus
           : undefined;
       const definite =
-        status !== undefined && [400, 401, 403, 404, 422, 429].includes(status);
+        (error instanceof DomainError &&
+          (error as DomainError & { dispatchNotAttempted?: boolean })
+            .dispatchNotAttempted === true) ||
+        (status !== undefined &&
+          [400, 401, 403, 404, 422, 429].includes(status));
       const errorCode =
         error instanceof DomainError ? error.code : "PROVIDER_RESPONSE_INVALID";
       await this.db.transaction(async (tx) => {

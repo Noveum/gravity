@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { OutboundService } from "../packages/connectors/outbound";
+import * as outboundProvider from "../packages/connectors/outbound-provider";
 import {
   emailDraft,
   gmailSendScope,
@@ -20,7 +21,7 @@ import { seal } from "../packages/connectors/security";
 import { IntegrationService } from "../packages/connectors/service";
 import { CrmService } from "../packages/core/crm";
 import { OutreachService } from "../packages/core/outreach";
-import type { Principal } from "../packages/core/policy";
+import { DomainError, type Principal } from "../packages/core/policy";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
@@ -497,6 +498,25 @@ test("definitive provider rejection allows a new deliberate attempt but the same
   });
   expect(sent.status).toBe("sent");
 });
+test("a rejected preflight is a definite failure and does not strand an approved send as unknown", async () => {
+  const f = await fixture();
+  const dispatch = vi
+    .spyOn(outboundProvider, "dispatchMessage")
+    .mockRejectedValueOnce(
+      Object.assign(new DomainError("RECIPIENT_MISMATCH", 422), {
+        dispatchNotAttempted: true,
+      }),
+    );
+  try {
+    const result = await f.service.send(principal, f.input);
+    expect(result.status).toBe("failed");
+    expect(result.retrySafe).toBe(true);
+    expect(f.transport).not.toHaveBeenCalled();
+  } finally {
+    dispatch.mockRestore();
+  }
+});
+
 test("provider 5xx and malformed success receipts remain unknown and are never retried", async () => {
   for (const response of [
     () => json({}, 503),

@@ -72,7 +72,10 @@ test("V1 dispatch verifies the chat belongs to the selected account before submi
   );
   await expect(
     dispatchMessage(message, credentials, wrongAccount),
-  ).rejects.toMatchObject({ code: "RECIPIENT_MISMATCH" });
+  ).rejects.toMatchObject({
+    code: "RECIPIENT_MISMATCH",
+    dispatchNotAttempted: true,
+  });
   expect(wrongAccount).toHaveBeenCalledOnce();
 });
 

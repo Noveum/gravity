@@ -91,9 +91,11 @@ export function unipileV1Envelope(input: unknown) {
     const value = status.data.AccountStatus;
     const types: Record<string, string> = {
       OK: "account.status.running",
+      RECONNECTED: "account.status.running",
       CREDENTIALS: "account.status.disconnected",
       ERROR: "account.status.errored",
       STOPPED: "account.status.errored",
+      PERMISSIONS: "account.status.permission",
       DELETED: "account.remove",
     };
     return {

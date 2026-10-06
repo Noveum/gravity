@@ -34,13 +34,16 @@ export async function POST(request: Request) {
         and(
           eq(providerConfigurations.id, configurationId.data),
           eq(providerConfigurations.active, true),
-          eq(providerConfigurations.webhookReady, true),
         ),
       );
     if (!configuration) throw new DomainError("UNAUTHORIZED", 401);
     const credentials = unipileCredentials(configuration);
     const secret = credentials.signingSecret;
-    if (!secret) throw new DomainError("UNAUTHORIZED", 401);
+    if (
+      !secret ||
+      (credentials.apiVersion !== "v1" && !configuration.webhookReady)
+    )
+      throw new DomainError("UNAUTHORIZED", 401);
     const raw = await limitedBody(request, 200000);
     if (
       !(credentials.apiVersion === "v1"
@@ -86,12 +89,19 @@ export async function POST(request: Request) {
     if (!connection) throw new DomainError("CONNECTION_UNAVAILABLE", 422);
     if (
       credentials.apiVersion === "v1" &&
-      event.type === "account.status.errored" &&
+      ["account.status.errored", "account.status.permission"].includes(
+        event.type,
+      ) &&
       connection.encryptedCredentials
     ) {
       await db
         .update(connections)
-        .set({ errorCode: "PROVIDER_UNAVAILABLE" })
+        .set({
+          errorCode:
+            event.type === "account.status.permission"
+              ? "PROVIDER_PERMISSION"
+              : "PROVIDER_UNAVAILABLE",
+        })
         .where(
           and(
             eq(connections.id, connection.id),

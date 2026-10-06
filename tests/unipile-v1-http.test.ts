@@ -117,6 +117,15 @@ test("V1 account status separates provider interruptions from expired LinkedIn a
     status: "connected",
     errorCode: "PROVIDER_UNAVAILABLE",
   });
+  expect((await send(payload("PERMISSIONS"))).status).toBe(200);
+  [connection] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.id, connectionId));
+  expect(connection).toMatchObject({
+    status: "connected",
+    errorCode: "PROVIDER_PERMISSION",
+  });
   expect((await send(payload("CREDENTIALS"))).status).toBe(200);
   [connection] = await local.db
     .select()
@@ -126,10 +135,23 @@ test("V1 account status separates provider interruptions from expired LinkedIn a
     status: "reconnect_required",
     errorCode: "RECONNECT_REQUIRED",
   });
-  expect((await send(payload("OK"))).status).toBe(200);
+  expect((await send(payload("RECONNECTED"))).status).toBe(200);
   [connection] = await local.db
     .select()
     .from(s.connections)
     .where(eq(s.connections.id, connectionId));
   expect(connection).toMatchObject({ status: "connected", errorCode: null });
+  expect((await send(payload("OK"))).status).toBe(200);
+});
+test("a V1 receiver accepts authenticated delivery while registration is still completing", async () => {
+  await local.db
+    .update(s.providerConfigurations)
+    .set({ webhookReady: false })
+    .where(eq(s.providerConfigurations.id, configurationId));
+  expect((await send(message)).status).toBe(200);
+  expect((await send(message, "Bearer wrong-secret")).status).toBe(401);
+  await local.db
+    .update(s.providerConfigurations)
+    .set({ webhookReady: true })
+    .where(eq(s.providerConfigurations.id, configurationId));
 });

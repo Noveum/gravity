@@ -1,14 +1,6 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import {
-  ArrowLeft,
-  Maximize2,
-  Minimize2,
-  PanelTop,
-  Plus,
-  X,
-} from "lucide-react";
-import Link from "next/link";
+import { ArrowLeft, Maximize2, Minimize2, Plus, X } from "lucide-react";
 import { useWorkspaceData } from "../crm/crm-context";
 import {
   useArchivedPersonContext,
@@ -25,7 +17,6 @@ import {
   RelatedOpportunities,
   RelatedWork,
 } from "../record-details";
-import { companyPath, personPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
 import { CompanyActivity } from "./company-activity";
 import { MetadataSection } from "./metadata-section";
@@ -246,17 +237,6 @@ function CompanyPeek() {
 export function PeekPanel() {
   const crm = useWorkspaceData();
   const { peek, recordHistory, expanded } = crm;
-  const personId = crm.sourceData.relationships.find(
-    (relationship) => relationship.id === peek.relationshipId,
-  )?.personId;
-  const recordHref = peek.companyId
-    ? companyPath(peek.companyId)
-    : personId
-      ? personPath(personId, {
-          relationshipId: peek.relationshipId,
-          actionId: peek.actionId,
-        })
-      : "";
   return (
     <aside
       id="record-inspector"
@@ -295,19 +275,6 @@ export function PeekPanel() {
             >
               <Plus size={15} />
             </button>
-          )}
-          {recordHref && (
-            <Link
-              href={recordHref}
-              className="button icon-button"
-              aria-label={t.openRecord}
-              title={t.openRecord}
-              onClick={() => {
-                crm.titleFocus.current = recordHref.split("?")[0] ?? "";
-              }}
-            >
-              <PanelTop size={15} aria-hidden />
-            </Link>
           )}
           <button
             type="button"

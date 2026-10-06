@@ -795,7 +795,10 @@ test("sidebar links push history so Back and Forward return to the previous view
   expect(heading(t.people)).toBeTruthy();
   fireEvent.click(screen.getByRole("link", { name: "Mira Chen" }));
   expect(window.location.pathname).toBe("/people");
-  fireEvent.click(await screen.findByRole("link", { name: t.openRecord }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: t.expandInspector }),
+  );
+  expect(document.querySelector(".inspector-expanded")).toBeTruthy();
   expect(window.location.pathname).toBe("/people");
   expect(
     await screen.findByRole("complementary", { name: t.recordDetails }),
@@ -857,11 +860,7 @@ test("Enter on an action opens its person draft in the inspector", async () => {
   const peek = await screen.findByRole("complementary", {
     name: t.recordDetails,
   });
-  expect(
-    within(peek).getByRole("link", { name: t.openRecord }).getAttribute("href"),
-  ).toBe(
-    `/people/${demoId(200)}?relationship=${demoId(300)}&action=${demoId(600)}`,
-  );
+  expect(within(peek).queryByRole("link", { name: t.openRecord })).toBeNull();
   expect(window.location.pathname).toBe("/actions");
   row.focus();
   fireEvent.keyDown(row, { key: "Enter" });

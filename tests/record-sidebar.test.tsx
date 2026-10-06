@@ -70,7 +70,11 @@ describe("records stay in the inspector", () => {
     await panel().findByRole("heading", { name: "Jonah Reed" });
     expect(screen.getByRole("table")).toBe(list);
     expect(navigations.length).toBe(before);
-    fireEvent.click(panel().getByRole("link", { name: t.openRecord }));
+    expect(panel().queryByRole("link", { name: t.openRecord })).toBeNull();
+    fireEvent.click(panel().getByRole("button", { name: t.expandInspector }));
+    expect(document.querySelector(".inspector-expanded")).toBeTruthy();
+    fireEvent.click(panel().getByRole("button", { name: t.collapseInspector }));
+    expect(document.querySelector(".inspector-expanded")).toBeNull();
     expect(window.location.pathname).toBe("/people");
     expect(navigations.length).toBe(before);
     expect(

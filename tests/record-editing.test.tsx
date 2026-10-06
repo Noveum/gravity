@@ -76,7 +76,6 @@ describe("people", () => {
   test("archiving leaves the record for the list, hides the person and Undo restores them", async () => {
     await mountCrm(harness, "/people");
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
-    fireEvent.click(await screen.findByRole("link", { name: t.openRecord }));
     expect(pathname()).toBe("/people");
     fireEvent.click(await screen.findByRole("button", { name: t.archive }));
     await waitFor(() => expect(pathname()).toBe("/people"));

@@ -282,11 +282,12 @@ describe("browsing records", () => {
     expect(
       await inspector().findByRole("heading", { name: "Northstar Labs" }),
     ).toBeTruthy();
-    expect(
-      inspector()
-        .getByRole("link", { name: t.openRecord })
-        .getAttribute("href"),
-    ).toBe(`/companies/${demoId(100)}`);
+    expect(inspector().queryByRole("link", { name: t.openRecord })).toBeNull();
+    fireEvent.click(
+      inspector().getByRole("button", { name: t.expandInspector }),
+    );
+    expect(document.querySelector(".inspector-expanded")).toBeTruthy();
+    expect(window.location.pathname).toBe("/companies");
   });
   test("inspector edits persist tags and deal size, and filters use them", async () => {
     await mountCrm(harness, "/people");

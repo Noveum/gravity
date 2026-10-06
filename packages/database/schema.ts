@@ -44,6 +44,10 @@ export const organizations = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull().unique(),
     timezone: text("timezone").notNull().default("UTC"),
+    allowedEmailDomains: jsonb("allowed_email_domains")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     createdAt: createdAt(),
   },
   () => [serverAccessPolicy()],
@@ -120,6 +124,14 @@ export const invitations = pgTable(
   (t) => [
     serverAccessPolicy(),
     index("invitations_organization_idx").on(t.organizationId),
+    uniqueIndex("invitations_pending_email")
+      .on(t.organizationId, t.email)
+      .where(sql`${t.acceptedAt} IS NULL AND ${t.revokedAt} IS NULL`),
+    check("invitation_email_lowercase", sql`${t.email} = lower(${t.email})`),
+    check(
+      "invitation_single_outcome",
+      sql`${t.acceptedAt} IS NULL OR ${t.revokedAt} IS NULL`,
+    ),
   ],
 ).enableRLS();
 export const companies = pgTable(

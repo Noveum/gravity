@@ -35,6 +35,8 @@ async function recipient() {
     .values({ id, email, name: "Fictional Teammate", emailVerified: true });
   return { id, email, principal: { userId: id, source: "session" as const } };
 }
+const tokenOf = (created: { acceptUrl: string }) =>
+  new URL(created.acceptUrl).hash.slice(1);
 const invitation = (email: string) => ({
   organizationId,
   email,
@@ -52,31 +54,33 @@ test("invitations join only their verified recipient with the selected product a
   expect(listed.find((entry) => entry.id === created.id)?.email).toBe(
     user.email,
   );
-  expect(JSON.stringify(listed)).not.toContain(created.token);
+  expect(JSON.stringify(listed)).not.toContain(tokenOf(created));
   const [stored] = await local.db
     .select()
     .from(s.invitations)
     .where(eq(s.invitations.id, created.id));
-  expect(stored.tokenHash).not.toBe(created.token);
+  expect(stored.tokenHash).not.toBe(tokenOf(created));
+  expect(created.acceptUrl).toMatch(/\/invite#[a-f0-9]{64}$/);
+  expect(created).not.toHaveProperty("token");
   await expect(
-    settings.accept(admin, { token: created.token }),
+    settings.accept(admin, { token: tokenOf(created) }),
   ).rejects.toMatchObject({ code: "INVITE_EMAIL_MISMATCH" });
   await local.db
     .update(s.user)
     .set({ emailVerified: false })
     .where(eq(s.user.id, user.id));
   await expect(
-    settings.accept(user.principal, { token: created.token }),
+    settings.accept(user.principal, { token: tokenOf(created) }),
   ).rejects.toMatchObject({ code: "INVITE_EMAIL_MISMATCH" });
   await local.db
     .update(s.user)
     .set({ emailVerified: true })
     .where(eq(s.user.id, user.id));
   expect(
-    await settings.accept(user.principal, { token: created.token }),
+    await settings.accept(user.principal, { token: tokenOf(created) }),
   ).toEqual({ organizationId });
   expect(
-    await settings.accept(user.principal, { token: created.token }),
+    await settings.accept(user.principal, { token: tokenOf(created) }),
   ).toEqual({ organizationId });
   const snapshot = await new CrmService(local.db).snapshot(user.principal, {
     organizationId,
@@ -98,7 +102,7 @@ test("invitations join only their verified recipient with the selected product a
       ),
     );
   await expect(
-    settings.accept(user.principal, { token: created.token }),
+    settings.accept(user.principal, { token: tokenOf(created) }),
   ).rejects.toMatchObject({ code: "INVITE_UNAVAILABLE" });
 });
 
@@ -107,7 +111,7 @@ test("revoked, replaced and expired links cannot join and invitations remain ten
   const first = await settings.invite(admin, invitation(user.email));
   const second = await settings.invite(admin, invitation(user.email));
   await expect(
-    settings.accept(user.principal, { token: first.token }),
+    settings.accept(user.principal, { token: tokenOf(first) }),
   ).rejects.toMatchObject({ code: "INVITE_UNAVAILABLE" });
   await settings.revoke(admin, {
     organizationId: demoId(2),
@@ -120,12 +124,12 @@ test("revoked, replaced and expired links cannot join and invitations remain ten
   ).toBe(true);
   await settings.revoke(admin, { organizationId, invitationId: second.id });
   await expect(
-    settings.accept(user.principal, { token: second.token }),
+    settings.accept(user.principal, { token: tokenOf(second) }),
   ).rejects.toMatchObject({ code: "INVITE_UNAVAILABLE" });
   const expiring = await settings.invite(admin, invitation(user.email));
   now += 15 * 24 * 60 * 60 * 1000;
   await expect(
-    settings.accept(user.principal, { token: expiring.token }),
+    settings.accept(user.principal, { token: tokenOf(expiring) }),
   ).rejects.toMatchObject({ code: "INVITE_UNAVAILABLE" });
   now = Date.now();
 });
@@ -159,7 +163,7 @@ test("members, read-only assistants and product restricted assistants cannot man
   await expect(
     settings.accept(
       { ...user.principal, source: "mcp", readOnly: false },
-      { token: created.token },
+      { token: tokenOf(created) },
     ),
   ).rejects.toMatchObject({ code: "FORBIDDEN" });
   await local.db
@@ -172,10 +176,10 @@ test("members, read-only assistants and product restricted assistants cannot man
       ),
     );
   await expect(
-    settings.accept(user.principal, { token: created.token }),
+    settings.accept(user.principal, { token: tokenOf(created) }),
   ).rejects.toMatchObject({ code: "INVITE_UNAVAILABLE" });
   await expect(
-    settings.preview(user.principal, { token: created.token }),
+    settings.preview(user.principal, { token: tokenOf(created) }),
   ).rejects.toMatchObject({ code: "INVITE_UNAVAILABLE" });
   await local.db
     .update(s.memberships)
@@ -263,14 +267,16 @@ test("organization details validate time zones and enforce admin permissions thr
   expect(
     operationAvailable(create, { ...assistant, productIds }, "admin"),
   ).toBe(false);
+  expect(operationAvailable(create, assistant, "admin")).toBe(false);
   const user = await recipient();
-  const result = await executeMcpOperation(
-    create,
-    { db: local.db, principal: assistant },
-    organizationId,
-    { email: user.email, role: "member", productIds },
-  );
-  expect(result).toHaveProperty("token");
+  await expect(
+    executeMcpOperation(
+      create,
+      { db: local.db, principal: assistant },
+      organizationId,
+      { email: user.email, role: "member", productIds },
+    ),
+  ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
   expect(
     operationAvailable(
       apiOperation("crm", "POST", "invitation-accept"),
@@ -287,16 +293,16 @@ test("membership removal revokes reads, preserves records, blocks old links and 
   const created = await settings.invite(admin, invitation(user.email));
   expect(await crm.revision(admin, organizationId)).not.toBe(before);
   await expect(
-    settings.preview(admin, { token: created.token }),
+    settings.preview(admin, { token: tokenOf(created) }),
   ).rejects.toMatchObject({ code: "INVITE_EMAIL_MISMATCH" });
   expect(
-    await settings.preview(user.principal, { token: created.token }),
+    await settings.preview(user.principal, { token: tokenOf(created) }),
   ).toMatchObject({
     email: user.email,
     role: "member",
     products: ["AI Platform"],
   });
-  await settings.accept(user.principal, { token: created.token });
+  await settings.accept(user.principal, { token: tokenOf(created) });
   const joinedRevision = await crm.revision(admin, organizationId);
   await settings.removeMember(admin, { organizationId, userId: user.id });
   expect(await crm.revision(admin, organizationId)).not.toBe(joinedRevision);
@@ -304,13 +310,13 @@ test("membership removal revokes reads, preserves records, blocks old links and 
     crm.snapshot(user.principal, { organizationId }),
   ).rejects.toMatchObject({ code: "FORBIDDEN" });
   await expect(
-    settings.accept(user.principal, { token: created.token }),
+    settings.accept(user.principal, { token: tokenOf(created) }),
   ).rejects.toMatchObject({ code: "INVITE_UNAVAILABLE" });
   await expect(
     settings.removeMember(admin, { organizationId, userId: demoUser }),
   ).rejects.toMatchObject({ code: "LAST_ADMIN" });
   const replacement = await settings.invite(admin, invitation(user.email));
-  await settings.accept(user.principal, { token: replacement.token });
+  await settings.accept(user.principal, { token: tokenOf(replacement) });
   expect(
     (await crm.snapshot(user.principal, { organizationId })).products.map(
       (product) => product.id,
@@ -331,7 +337,7 @@ test("concurrent admin demotions keep an administrator", async () => {
     role: "admin",
     productIds: [],
   });
-  await settings.accept(user.principal, { token: created.token });
+  await settings.accept(user.principal, { token: tokenOf(created) });
   const results = await Promise.allSettled(
     [admin, user.principal].map((principal) =>
       settings.updateMember(principal, {

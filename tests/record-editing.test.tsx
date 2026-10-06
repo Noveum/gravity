@@ -8,8 +8,7 @@ import { RecordService } from "../packages/core/records";
 import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
-import { requestJson } from "../src/components/client-api";
-import { browserNavigation } from "../src/components/shell/user-menu";
+import { browserNavigation, requestJson } from "../src/components/client-api";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));

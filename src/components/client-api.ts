@@ -1,5 +1,9 @@
 import t from "@crm/i18n/translations/en.json";
 
+export const browserNavigation = {
+  assign: (url: string) => window.location.assign(url),
+};
+
 export class RequestError extends Error {
   constructor(
     code: string,

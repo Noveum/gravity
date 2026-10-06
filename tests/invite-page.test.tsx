@@ -14,7 +14,7 @@ import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { operations } from "../packages/operations/catalog";
-import { requestJson } from "../src/components/client-api";
+import { browserNavigation, requestJson } from "../src/components/client-api";
 import { signInDestination } from "../src/components/sign-in-destination";
 
 const principal = vi.fn();
@@ -125,6 +125,9 @@ test("a signed-in invitee sees the workspace name and accepts", async () => {
     organizationId: demoId(1),
     organizationName: "Northstar Collective",
   });
+  const assign = vi
+    .spyOn(browserNavigation, "assign")
+    .mockImplementation(() => {});
   await show(token);
   expect(screen.getAllByText(/Northstar Collective/).length).toBeGreaterThan(0);
   expect(screen.getByRole("link", { name: t.inviteDecline })).toBeTruthy();
@@ -142,6 +145,10 @@ test("a signed-in invitee sees the workspace name and accepts", async () => {
   expect(open.getAttribute("href")).toBe(
     `/api/workspace?organizationId=${demoId(1)}&next=%2Factions`,
   );
+  expect(assign).toHaveBeenCalledWith(
+    `/api/workspace?organizationId=${demoId(1)}&next=%2Factions`,
+  );
+  assign.mockRestore();
 });
 
 test("an unusable invitation explains why and offers no accept button", async () => {

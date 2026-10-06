@@ -1,7 +1,7 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import { useRef, useState } from "react";
-import { errorText, requestJson } from "./client-api";
+import { browserNavigation, errorText, requestJson } from "./client-api";
 import { homePath } from "./routes";
 
 export function workspaceEntryPath(organizationId: string) {
@@ -34,7 +34,7 @@ export function InviteAcceptance({
       );
       const target = workspaceEntryPath(accepted.organizationId);
       setJoined(target);
-      window.location.assign(target);
+      browserNavigation.assign(target);
     } catch (cause) {
       setError(errorText(cause));
       submitting.current = false;

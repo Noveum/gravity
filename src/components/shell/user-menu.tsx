@@ -11,16 +11,12 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { errorText, requestJson } from "../client-api";
+import { browserNavigation, errorText, requestJson } from "../client-api";
 import { sectionPath } from "../routes";
 import { initials, layerFor } from "./workspace-menu";
 
 const menuWidth = 224;
 const viewportGap = 8;
-
-export const browserNavigation = {
-  assign: (url: string) => window.location.assign(url),
-};
 
 export async function signOut(demo: boolean) {
   if (!demo)

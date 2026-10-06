@@ -965,7 +965,7 @@ export const operations: Operation[] = [
     operation: "rules",
     name: "update_contact_rules",
     description:
-      "Update workspace cooldown, daily cap and quiet hours. Requires admin and current version; product-restricted grants cannot change organization-wide rules.",
+      "Update workspace cooldown, daily cap and quiet hours. Requires admin and current version; product-restricted grants cannot change organization-wide rules. Assistants may only tighten the rules: raising the cap, shortening the cooldown or narrowing quiet hours returns HUMAN_ACTION_REQUIRED.",
     schema: contactRulesSchema,
     run: (c, input) => outreach(c).updateContactRules(c.principal, input),
   }),
@@ -975,7 +975,7 @@ export const operations: Operation[] = [
     operation: "contact",
     name: "set_contact_preferences",
     description:
-      "Set do-not-contact and contact timezone with current person version. Respects cross-product visibility.",
+      "Set do-not-contact and contact timezone with current person version. Respects cross-product visibility. Assistants can mark a person do-not-contact; clearing it returns HUMAN_ACTION_REQUIRED.",
     schema: contactPreferencesSchema,
     run: (c, input) => outreach(c).setContactPreferences(c.principal, input),
   }),

@@ -232,7 +232,7 @@ test("an in-flight send reserves the sender's last daily slot across different p
       ),
     );
   const rules = await first.outreach.contactRules(principal, org);
-  await first.outreach.updateContactRules(principal, {
+  await first.outreach.updateContactRules(human, {
     organizationId: org,
     ...rules,
     dailyCapPerSender: baseline.count + 1,
@@ -266,7 +266,7 @@ test("an in-flight send reserves the sender's last daily slot across different p
   } finally {
     release();
     expect((await sending).status).toBe("sent");
-    await first.outreach.updateContactRules(principal, {
+    await first.outreach.updateContactRules(human, {
       organizationId: org,
       ...rules,
       version: rules.version + 1,
@@ -434,7 +434,7 @@ test("opt-outs, quiet hours, future dates, paused enrollments and daily caps blo
     .set({ status: "running", pauseReason: null })
     .where(eq(s.enrollments.relationshipId, f.relationshipId));
   const rules = await f.outreach.contactRules(principal, org);
-  await f.outreach.updateContactRules(principal, {
+  await f.outreach.updateContactRules(human, {
     organizationId: org,
     ...rules,
     dailyCapPerSender: 1,
@@ -442,7 +442,7 @@ test("opt-outs, quiet hours, future dates, paused enrollments and daily caps blo
   await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
     code: "CONTACT_POLICY_BLOCKED",
   });
-  await f.outreach.updateContactRules(principal, {
+  await f.outreach.updateContactRules(human, {
     organizationId: org,
     ...rules,
     version: rules.version + 1,

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { subscribeChanges } from "../packages/core/changes";
 import { CrmService } from "../packages/core/crm";
+import { OutreachService } from "../packages/core/outreach";
 import { authorize, type Principal } from "../packages/core/policy";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
@@ -939,7 +940,7 @@ test("MCP contact policies require current versions and organization-wide grants
     version: before.version,
     cooldownDays: 3,
     dailyCapPerSender: 25,
-    quietHoursStart: 21,
+    quietHoursStart: 19,
     quietHoursEnd: 8,
   };
   expect(
@@ -984,4 +985,93 @@ test("MCP contact policies require current versions and organization-wide grants
   expect((await call("set_contact_preferences", prefs)).error).toContain(
     "CONFLICT",
   );
+});
+
+test("assistants may tighten contact safety but loosening it is human-only", async () => {
+  const human: Principal = { userId: demoUser, source: "session" };
+  const outreach = new OutreachService(local.db);
+  const start = await outreach.contactRules(human, demoId(1));
+  const baseline = await outreach.updateContactRules(human, {
+    organizationId: demoId(1),
+    version: start.version,
+    cooldownDays: 5,
+    dailyCapPerSender: 30,
+    quietHoursStart: 20,
+    quietHoursEnd: 8,
+  });
+  const base = {
+    version: baseline.version,
+    cooldownDays: 5,
+    dailyCapPerSender: 30,
+    quietHoursStart: 20,
+    quietHoursEnd: 8,
+  };
+  for (const looser of [
+    { dailyCapPerSender: 31 },
+    { cooldownDays: 4 },
+    { quietHoursStart: 21 },
+    { quietHoursEnd: 7 },
+    { quietHoursStart: 8, quietHoursEnd: 8 },
+    { quietHoursStart: 22, quietHoursEnd: 9 },
+  ])
+    expect(
+      (await call("update_contact_rules", { ...base, ...looser })).error,
+      JSON.stringify(looser),
+    ).toContain("HUMAN_ACTION_REQUIRED");
+  expect((await outreach.contactRules(human, demoId(1))).version).toBe(
+    baseline.version,
+  );
+  const tightened = await call("update_contact_rules", {
+    ...base,
+    cooldownDays: 6,
+    dailyCapPerSender: 20,
+    quietHoursStart: 19,
+    quietHoursEnd: 9,
+  });
+  expect(tightened).toMatchObject({
+    cooldownDays: 6,
+    dailyCapPerSender: 20,
+    quietHoursStart: 19,
+    quietHoursEnd: 9,
+  });
+  const relaxed = await outreach.updateContactRules(human, {
+    organizationId: demoId(1),
+    version: tightened.version,
+    cooldownDays: 3,
+    dailyCapPerSender: 40,
+    quietHoursStart: 20,
+    quietHoursEnd: 8,
+  });
+  expect(relaxed.dailyCapPerSender).toBe(40);
+  const created = await call("create_person", {
+    productId: demoId(11),
+    name: "Fictional Safety Client",
+    review: false,
+  });
+  const before = await call("get_person", { personId: created.personId });
+  const optedOut = await call("set_contact_preferences", {
+    personId: created.personId,
+    version: before.person.version,
+    doNotContact: true,
+    timeZone: null,
+  });
+  expect(optedOut.doNotContact).toBe(true);
+  expect(
+    (
+      await call("set_contact_preferences", {
+        personId: created.personId,
+        version: optedOut.version,
+        doNotContact: false,
+        timeZone: null,
+      })
+    ).error,
+  ).toContain("HUMAN_ACTION_REQUIRED");
+  const cleared = await outreach.setContactPreferences(human, {
+    organizationId: demoId(1),
+    personId: created.personId,
+    version: optedOut.version,
+    doNotContact: false,
+    timeZone: null,
+  });
+  expect(cleared.doNotContact).toBe(false);
 });

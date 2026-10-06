@@ -26,6 +26,7 @@ import {
   type ContactViolation,
   contactViolations,
   defaultContactRules,
+  loosensContactRules,
   sendWindow,
 } from "./outreach-rules";
 import { authorize, DomainError, type Principal } from "./policy";
@@ -2105,6 +2106,14 @@ export class OutreachService {
         (principal.source === "mcp" && principal.productIds !== undefined)
       )
         throw new DomainError("FORBIDDEN", 403);
+      if (
+        principal.source === "mcp" &&
+        loosensContactRules(
+          await readContactRules(tx, input.organizationId),
+          input,
+        )
+      )
+        throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
       const values = {
         cooldownDays: input.cooldownDays,
         dailyCapPerSender: input.dailyCapPerSender,
@@ -2175,6 +2184,12 @@ export class OutreachService {
       if (person.version !== input.version)
         throw new DomainError("CONFLICT", 409);
       if (person.archivedAt) throw new DomainError("RECORD_ARCHIVED", 409);
+      if (
+        principal.source === "mcp" &&
+        person.doNotContact &&
+        !input.doNotContact
+      )
+        throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
       const [updated] = await tx
         .update(s.people)
         .set({

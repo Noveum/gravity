@@ -6,7 +6,12 @@ import { appUrl } from "../auth/options";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { emailDomainAllowed } from "./email-domains";
-import { authorizeAdministrator, DomainError, type Principal } from "./policy";
+import {
+  authorizeAdministrator,
+  DomainError,
+  type Principal,
+  uniqueViolation,
+} from "./policy";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Reader = Database | Transaction;
@@ -70,12 +75,6 @@ function assertUsable(invitation: Invitation) {
   if (current === "revoked") throw new DomainError("INVITATION_REVOKED", 410);
   if (current === "accepted") throw new DomainError("INVITATION_USED", 409);
   if (current === "expired") throw new DomainError("INVITATION_EXPIRED", 410);
-}
-function uniqueViolation(error: unknown) {
-  const cause = (error as { cause?: { code?: string } }).cause;
-  return (
-    (error as { code?: string }).code === "23505" || cause?.code === "23505"
-  );
 }
 async function workspace(db: Reader, organizationId: string) {
   const [organization] = await db

@@ -43,7 +43,7 @@ describe("stopping enrollments", () => {
     fireEvent.click(
       within(amara).getByRole("button", { name: `${t.stop}: Amara Stone` }),
     );
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("region", {
       name: t.stopEnrollmentTitle.replace("{name}", "Amara Stone"),
     });
     expect(dialog.textContent).toContain("Thoughtful introduction");
@@ -69,7 +69,7 @@ describe("archiving sequences", () => {
         name: `${t.archiveSequence}: ${aiTitle}`,
       }),
     );
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("region", {
       name: t.archiveSequence,
     });
     expect(dialog.textContent).toContain(

@@ -51,6 +51,7 @@ export function ConversationHistory({
         (message) =>
           !native.some(
             (existing) =>
+              existing.direction === message.direction &&
               existing.body.trim() === message.body.trim() &&
               Date.parse(existing.occurredAt) ===
                 Date.parse(message.occurredAt),

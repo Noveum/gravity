@@ -160,7 +160,7 @@ test("the sequence command keeps its C hint while the person command has none", 
   fireEvent.click(
     within(commands).getByRole("option", { name: `${t.newSequence}C` }),
   );
-  expect(screen.getByRole("dialog", { name: t.newSequence })).toBeTruthy();
+  expect(screen.getByRole("region", { name: t.newSequence })).toBeTruthy();
 });
 
 test("a refreshed snapshot updates pending invitations and organization details from another client", async () => {

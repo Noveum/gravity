@@ -1799,18 +1799,34 @@ function Preview({
               current && (
                 <>
                   {editing ? (
-                    <>
-                      <div
-                        className="library-markdown-editor"
-                        data-record-editor
-                        data-dirty={
-                          draft !== query.data?.body || busy || undefined
+                    <form
+                      data-record-editor
+                      data-dirty={
+                        draft !== query.data?.body || busy || undefined
+                      }
+                      onKeyDown={submitOnSaveKey}
+                      onSubmit={async (event) => {
+                        event.preventDefault();
+                        if (busy) return;
+                        setError("");
+                        try {
+                          await run("update", {
+                            id: entry.id,
+                            body: draft,
+                            expectedSyncId: version,
+                          });
+                          setEditing(false);
+                        } catch (failure) {
+                          setError(errorText(failure));
                         }
-                      >
+                      }}
+                    >
+                      <div className="library-markdown-editor">
                         <textarea
                           aria-label={labels.source}
                           maxLength={1_000_000}
                           value={draft}
+                          disabled={busy}
                           onChange={(event) => setDraft(event.target.value)}
                         />
                         <MarkdownPreview
@@ -1822,31 +1838,22 @@ function Preview({
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => setEditing(false)}
+                          onClick={() => {
+                            setEditing(false);
+                            setError("");
+                          }}
                         >
                           {t.cancel}
                         </button>
                         <button
-                          type="button"
+                          type="submit"
                           className="primary"
                           disabled={busy}
-                          onClick={async () => {
-                            try {
-                              await run("update", {
-                                id: entry.id,
-                                body: draft,
-                                expectedSyncId: version,
-                              });
-                              setEditing(false);
-                            } catch (failure) {
-                              setError(errorText(failure));
-                            }
-                          }}
                         >
                           {t.save}
                         </button>
                       </div>
-                    </>
+                    </form>
                   ) : (
                     <>
                       <MarkdownPreview
@@ -1857,6 +1864,7 @@ function Preview({
                         <button
                           type="button"
                           onClick={() => {
+                            setError("");
                             setDraft(query.data?.body ?? "");
                             setVersion(current.syncId);
                             setEditing(true);

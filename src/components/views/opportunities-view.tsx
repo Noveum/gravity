@@ -210,12 +210,23 @@ export function OpportunitiesView() {
           </button>
         </fieldset>
         {crm.isAdmin && (
-          <button type="button" onClick={() => setPipelineDialog(true)}>
+          <button
+            type="button"
+            onClick={() => {
+              if (crm.canLeaveEditor()) setPipelineDialog(true);
+            }}
+          >
             <Plus size={14} aria-hidden />
             {t.newPipeline}
           </button>
         )}
       </div>
+      {pipelineDialog && (
+        <PipelineDialog
+          key={crm.organizationId}
+          onClose={() => setPipelineDialog(false)}
+        />
+      )}
       <RecordFilters browser={browser} />
       {!browser.rows.length ? (
         <EmptyState
@@ -562,12 +573,6 @@ export function OpportunitiesView() {
       )}
       {layout === "list" && browser.rows.length > 0 && (
         <Pagination page={browser.page} />
-      )}
-      {pipelineDialog && (
-        <PipelineDialog
-          key={crm.organizationId}
-          onClose={() => setPipelineDialog(false)}
-        />
       )}
     </>
   );

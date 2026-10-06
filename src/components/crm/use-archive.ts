@@ -45,7 +45,8 @@ export function useArchive() {
     return !!restored;
   }
   async function archive(kind: Kind, record: Archivable) {
-    const archived = await change(kind, record, true);
+    if (!crm.canLeaveEditor()) return false;
+    const archived = await change(kind, crm.currentRecord(record), true);
     if (!archived) return false;
     crm.closePeek(true);
     crm.leaveRecord();
@@ -60,7 +61,8 @@ export function useArchive() {
         run: () => {
           void restore(kind, { ...record, version: archived.version }).then(
             (ok) => {
-              if (ok) current.current.go(recordPath(kind, record.id));
+              if (ok && current.current.organizationId === crm.organizationId)
+                current.current.go(recordPath(kind, record.id));
             },
           );
         },

@@ -346,8 +346,10 @@ describe("palette, search, guide and create", () => {
     await waitFor(() => expect(pathname()).toBe("/outreach/sequences"));
     (document.activeElement as HTMLElement | null)?.blur();
     await press("c");
-    const sequenceDialog = screen.getByRole("dialog", { name: t.newSequence });
-    fireEvent(sequenceDialog, new Event("cancel"));
+    const sequenceDialog = screen.getByRole("region", { name: t.newSequence });
+    fireEvent.click(
+      within(sequenceDialog).getByRole("button", { name: t.cancel }),
+    );
     fireEvent.click(
       within(
         screen.getByRole("navigation", { name: t.outreachTabsLabel }),
@@ -373,7 +375,7 @@ describe("palette, search, guide and create", () => {
         name: new RegExp(`^${t.newSequence}`),
       }),
     );
-    const dialog = await screen.findByRole("dialog", { name: t.newSequence });
+    const dialog = await screen.findByRole("region", { name: t.newSequence });
     expect(within(dialog).getByLabelText(t.product)).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: t.commands })).toBeNull();
   });
@@ -382,7 +384,7 @@ describe("palette, search, guide and create", () => {
     binding("create-organization");
     await mountCrm(harness, "/companies");
     await press("{Shift>}P{/Shift}");
-    const dialog = screen.getByRole("dialog", { name: t.newProduct });
+    const dialog = screen.getByRole("region", { name: t.newProduct });
     expect(within(dialog).getByText(organizations[0]?.name ?? "")).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: t.cancel }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -759,7 +761,7 @@ describe("outreach verbs", () => {
       await mountCrm(harness, "/outreach/today");
       (await touchRow("Amara Stone")).focus();
       await press("d");
-      const dialog = await screen.findByRole("dialog", {
+      const dialog = await screen.findByRole("region", {
         name: t.markSentTitle,
       });
       await userEvent
@@ -800,7 +802,7 @@ describe("outreach verbs", () => {
       );
       (await touchRow("Noor Haddad")).focus();
       await press("d");
-      const again = await screen.findByRole("dialog", {
+      const again = await screen.findByRole("region", {
         name: t.markSentTitle,
       });
       await press("{Meta>}{Enter}{/Meta}");
@@ -827,7 +829,7 @@ describe("outreach verbs", () => {
     await mountCrm(harness, "/outreach/today");
     (await touchRow("Ellis Park")).focus();
     await press("{Shift>}S{/Shift}");
-    const dialog = await screen.findByRole("dialog", { name: t.skipTitle });
+    const dialog = await screen.findByRole("region", { name: t.skipTitle });
     await userEvent
       .setup()
       .type(within(dialog).getByLabelText(t.skipReason), "Met at an event");
@@ -944,7 +946,7 @@ describe("outreach pipeline", () => {
         name: new RegExp(`^${t.outreachStages.won}`),
       }),
     );
-    const confirm = await screen.findByRole("dialog", {
+    const confirm = await screen.findByRole("region", {
       name: t.closeStageTitle
         .replace("{name}", "Amara Stone")
         .replace("{stage}", t.outreachStages.won),
@@ -1003,7 +1005,7 @@ describe("outreach pipeline", () => {
     fireEvent.dragStart(article);
     fireEvent.dragOver(stage(t.outreachStages.lost));
     fireEvent.drop(stage(t.outreachStages.lost));
-    const confirm = await screen.findByRole("dialog", {
+    const confirm = await screen.findByRole("region", {
       name: t.closeStageTitle
         .replace("{name}", "Noor Haddad")
         .replace("{stage}", t.outreachStages.lost),

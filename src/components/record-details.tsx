@@ -100,7 +100,10 @@ export function RelatedWork({
           <button
             type="button"
             className="small ghost"
-            onClick={() => setAllActions(!allActions)}
+            onClick={() => {
+              if (allActions) actionPage.setPage(0);
+              setAllActions(!allActions);
+            }}
           >
             {allActions
               ? t.contactWorkspace.showLess
@@ -141,7 +144,10 @@ export function RelatedWork({
           <button
             type="button"
             className="small ghost"
-            onClick={() => setAllMeetings(!allMeetings)}
+            onClick={() => {
+              if (allMeetings) meetingPage.setPage(0);
+              setAllMeetings(!allMeetings);
+            }}
           >
             {allMeetings
               ? t.contactWorkspace.showLess
@@ -249,7 +255,10 @@ export function RelatedOpportunities({
         <button
           type="button"
           className="small ghost"
-          onClick={() => setAllDeals(!allDeals)}
+          onClick={() => {
+            if (allDeals) page.setPage(0);
+            setAllDeals(!allDeals);
+          }}
         >
           {allDeals
             ? t.contactWorkspace.showLess

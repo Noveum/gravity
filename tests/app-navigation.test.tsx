@@ -1309,7 +1309,7 @@ test("product creation is reachable from sidebar, toolbar, keyboard and commands
   for (const button of buttons) {
     expect(button.textContent).toContain(shortcutLabel("create-product"));
     fireEvent.click(button);
-    const dialog = screen.getByRole("dialog", { name: t.newProduct });
+    const dialog = screen.getByRole("region", { name: t.newProduct });
     expect(within(dialog).getByText(organizations[0].name)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: t.cancel }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1318,17 +1318,19 @@ test("product creation is reachable from sidebar, toolbar, keyboard and commands
   fireEvent.keyDown(search, { key: "P", shiftKey: true });
   expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.keyDown(document.body, { key: "P", shiftKey: true });
-  expect(screen.getByRole("dialog", { name: t.newProduct })).toBeTruthy();
-  fireEvent(
-    screen.getByRole("dialog"),
-    new Event("cancel", { cancelable: true }),
+  expect(screen.getByRole("region", { name: t.newProduct })).toBeTruthy();
+  fireEvent.click(
+    within(screen.getByRole("region", { name: t.newProduct })).getByRole(
+      "button",
+      { name: t.cancel },
+    ),
   );
   fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
   const palette = screen.getByRole("dialog", { name: t.commands });
   fireEvent.click(
     within(palette).getByRole("option", { name: new RegExp(t.newProduct) }),
   );
-  expect(screen.getByRole("dialog", { name: t.newProduct })).toBeTruthy();
+  expect(screen.getByRole("region", { name: t.newProduct })).toBeTruthy();
   const regular = request.getMockImplementation();
   if (!regular) throw new Error("Missing request implementation");
   request.mockImplementation(async (url, init) => {
@@ -1548,13 +1550,13 @@ test("pipeline form creates a second pipeline and refreshes the board", async ()
   );
   mount("/opportunities");
   fireEvent.click(screen.getByRole("button", { name: t.newPipeline }));
-  const dialog = screen.getByRole("dialog", { name: t.newPipeline });
+  const dialog = screen.getByRole("region", { name: t.newPipeline });
   fireEvent.change(within(dialog).getByLabelText(t.name), {
     target: { value: "Fictional enterprise sales" },
   });
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   await waitFor(() =>
-    expect(screen.queryByRole("dialog", { name: t.newPipeline })).toBeNull(),
+    expect(screen.queryByRole("region", { name: t.newPipeline })).toBeNull(),
   );
   expect(
     screen.getByRole("option", { name: /Fictional enterprise sales/ }),

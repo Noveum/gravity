@@ -41,7 +41,15 @@ function PersonPeek() {
     )?.id ||
     "";
   const { context, missing } = usePersonContext(relationshipId);
-  const action = findAction(crm.peek.actionId, crm.sourceData, context);
+  const requestedAction = findAction(
+    crm.peek.actionId,
+    crm.sourceData,
+    context,
+  );
+  const action =
+    requestedAction?.relationshipId === relationshipId
+      ? requestedAction
+      : undefined;
   const draft = useDraft(action);
   const archive = useArchive();
   if (missing) return <EmptyState title={t.recordUnavailable} compact />;
@@ -199,9 +207,11 @@ function CompanyPeek() {
 export function PeekPanel() {
   const crm = useWorkspaceData();
   const { peek, recordHistory, expanded } = crm;
-  const personId = crm.sourceData.relationships.find(
-    (relationship) => relationship.id === peek.relationshipId,
-  )?.personId;
+  const personId =
+    peek.personId ||
+    crm.sourceData.relationships.find(
+      (relationship) => relationship.id === peek.relationshipId,
+    )?.personId;
   const recordHref = peek.companyId
     ? companyPath(peek.companyId)
     : personId

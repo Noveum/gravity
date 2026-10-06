@@ -442,3 +442,30 @@ test("two dirty contact fields save in sequence without overwriting each other",
       .map((post) => post.version),
   ).toEqual([1, 2]);
 });
+
+test("archiving cannot discard unsaved contact notes and uses the version after saving", async () => {
+  await mountCrm(harness, `/people/${demoId(201)}`);
+  const notes = await screen.findByRole("textbox", { name: t.personNotes });
+  fireEvent.change(notes, {
+    target: { value: "Fictional meeting preparation" },
+  });
+  await archiveRecord();
+  fireEvent.click(
+    screen.getByRole("button", { name: t.inlineEditing.confirmArchive }),
+  );
+  expect(
+    harness.posts.some((post) => post.operation === "person-archive"),
+  ).toBe(false);
+  expect(notes).toHaveProperty("value", "Fictional meeting preparation");
+  const form = notes.closest("form");
+  if (!form) throw new Error("Missing notes form");
+  fireEvent.submit(form);
+  await within(form).findByRole("status");
+  fireEvent.click(
+    screen.getByRole("button", { name: t.inlineEditing.confirmArchive }),
+  );
+  await screen.findByText(t.personArchived.replace("{name}", "Jonah Reed"));
+  expect(
+    harness.posts.find((post) => post.operation === "person-archive"),
+  ).toMatchObject({ version: 2 });
+});

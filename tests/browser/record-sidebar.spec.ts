@@ -100,7 +100,7 @@ test("records and files share a persistent resizable inspector", async ({
   ).toBeVisible();
   await panel.getByRole("button", { name: "Edit Markdown" }).click();
   await panel.getByLabel("Markdown source").fill("# Saved in the panel");
-  await panel.getByRole("button", { name: "Save", exact: true }).click();
+  await panel.getByLabel("Markdown source").press("ControlOrMeta+Enter");
   await expect(
     panel.getByRole("heading", { name: "Saved in the panel" }),
   ).toBeVisible();

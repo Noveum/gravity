@@ -25,10 +25,10 @@ afterEach(() => {
 });
 
 test("a pending product submit cannot duplicate writes or close; a failed write keeps the entered name", async () => {
-  let release = (_value: boolean) => {};
+  let release = (_value: string | null) => {};
   const mutate = vi.fn(
     () =>
-      new Promise<boolean>((resolve) => {
+      new Promise<string | null>((resolve) => {
         release = resolve;
       }),
   );
@@ -37,7 +37,7 @@ test("a pending product submit cannot duplicate writes or close; a failed write 
     <ProductDialog
       organizationId="org-a"
       organizationName="Fictional workspace"
-      mutate={mutate}
+      onSubmit={mutate}
       onClose={close}
     />,
   );
@@ -54,20 +54,14 @@ test("a pending product submit cannot duplicate writes or close; a failed write 
   expect(
     screen.getByRole("button", { name: t.cancel }).matches(":disabled"),
   ).toBe(true);
-  expect(
-    fireEvent(
-      screen.getByRole("dialog"),
-      new Event("cancel", { cancelable: true }),
-    ),
-  ).toBe(false);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: t.cancel }));
   expect(close).not.toHaveBeenCalled();
-  release(false);
+  release(t.errors.CONFLICT);
   await waitFor(() => expect(input.matches(":disabled")).toBe(false));
   expect((input as HTMLInputElement).value).toBe("  Fictional product  ");
-  fireEvent(
-    screen.getByRole("dialog"),
-    new Event("cancel", { cancelable: true }),
-  );
+  expect(screen.getByRole("alert").textContent).toBe(t.errors.CONFLICT);
+  fireEvent.click(screen.getByRole("button", { name: t.cancel }));
   expect(close).toHaveBeenCalledOnce();
 });
 

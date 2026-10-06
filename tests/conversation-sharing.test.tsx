@@ -35,7 +35,7 @@ beforeAll(() => {
 });
 afterEach(cleanup);
 test("only owned threads have access controls, and sharing requires confirmation with the product scope", async () => {
-  const onChange = vi.fn(async () => true);
+  const onChange = vi.fn(async () => null);
   render(
     <ConversationSharing
       conversations={[own, other]}
@@ -47,7 +47,9 @@ test("only owned threads have access controls, and sharing requires confirmation
   );
   expect(screen.queryByRole("button", { name: t.unshareThread })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: t.shareThread }));
-  const dialog = screen.getByRole("dialog");
+  const dialog = screen.getByRole("region", {
+    name: /Share thread|Make private/,
+  });
   expect(dialog.textContent).toContain(
     t.shareThreadDescription.replace("{product}", "Fictional product"),
   );
@@ -57,17 +59,21 @@ test("only owned threads have access controls, and sharing requires confirmation
   fireEvent.click(screen.getByRole("button", { name: t.shareThread }));
   await act(async () =>
     fireEvent.submit(
-      screen.getByRole("dialog").querySelector("form") as HTMLFormElement,
+      screen
+        .getByRole("region", {
+          name: /Share thread|Make private/,
+        })
+        .querySelector("form") as HTMLFormElement,
     ),
   );
   expect(onChange).toHaveBeenCalledExactlyOnceWith(own, "product");
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 test("pending and failed sharing keep the dialog safe from duplicate submissions", async () => {
-  let resolve!: (ok: boolean) => void;
+  let resolve!: (error: string | null) => void;
   const onChange = vi.fn(
     () =>
-      new Promise<boolean>((done) => {
+      new Promise<string | null>((done) => {
         resolve = done;
       }),
   );
@@ -81,7 +87,9 @@ test("pending and failed sharing keep the dialog safe from duplicate submissions
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: t.unshareThread }));
-  const dialog = screen.getByRole("dialog");
+  const dialog = screen.getByRole("region", {
+    name: /Share thread|Make private/,
+  });
   expect(dialog.textContent).toContain(t.unshareThreadDescription);
   const form = dialog.querySelector("form") as HTMLFormElement;
   fireEvent.submit(form);
@@ -90,8 +98,12 @@ test("pending and failed sharing keep the dialog safe from duplicate submissions
   expect(
     within(dialog).getByRole("button", { name: t.cancel }).matches(":disabled"),
   ).toBe(true);
-  await act(async () => resolve(false));
-  expect(screen.getByRole("dialog")).toBeTruthy();
+  await act(async () => resolve(t.errors.CONFLICT));
+  expect(
+    screen.getByRole("region", {
+      name: /Share thread|Make private/,
+    }),
+  ).toBeTruthy();
   expect(
     within(dialog).getByRole("button", { name: t.cancel }).matches(":disabled"),
   ).toBe(false);

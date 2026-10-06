@@ -53,27 +53,30 @@ export function TouchRow({
         <span className="row-avatar" aria-hidden>
           {initials(touch.person.name)}
         </span>
-        <span className="row-name">{touch.person.name}</span>
-        <span className="row-kind">{step}</span>
-        <span className={`row-action${touch.draft.trim() ? "" : " muted"}`}>
-          {(touch.status === "planned"
-            ? mergeText(touch.draft, mergePerson(crm, touch.person))
-            : touch.draft
-          ).trim() || t.emptyDraft}
-        </span>
-        {overdue && <span className="badge warning">{t.overdue}</span>}
-        {gated && touch.sendAfter && (
-          <span className="badge warning" title={reasons}>
-            {t.sendAfter.replace(
-              "{time}",
-              dateLabel(touch.sendAfter, crm.timeZone),
-            )}
+        <span className="row-main">
+          <span className="touch-identity">
+            <span className="row-name">{touch.person.name}</span>
+            <span className="row-kind">{step}</span>
+            <span className="badge">{t.touchStatus[touch.status]}</span>
+            {overdue && <span className="badge warning">{t.overdue}</span>}
           </span>
-        )}
-        {gated && !touch.sendAfter && (
-          <span className="badge warning">{reasons}</span>
-        )}
-        <span className="badge">{t.touchStatus[touch.status]}</span>
+          <span className={`row-action${touch.draft.trim() ? "" : " muted"}`}>
+            {(touch.status === "planned"
+              ? mergeText(touch.draft, mergePerson(crm, touch.person))
+              : touch.draft
+            ).trim() || t.emptyDraft}
+          </span>
+          {gated && (
+            <span className="touch-row-gate warning-text" title={reasons}>
+              {touch.sendAfter
+                ? t.sendAfter.replace(
+                    "{time}",
+                    dateLabel(touch.sendAfter, crm.timeZone),
+                  )
+                : reasons}
+            </span>
+          )}
+        </span>
         <span className="row-meta">
           {product && (
             <span className="row-product">

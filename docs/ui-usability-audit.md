@@ -70,7 +70,38 @@ Context has its own tab. Details contains contact information, product relations
 
 Opportunity amount and currency fields edit directly on the related opportunity card. Stage labels are visible; forecast totals occupy a secondary disclosure. The selected action is expanded once instead of appearing again below the record.
 
-Personal notes grow with their content and retain their draft and conflict behavior. Recognized legacy transcript headers become chronological message cards with sender, direction, year, paragraphs and collapsed import identifiers. Updating the personal note prefix preserves the exact original transcript suffix. Unrecognized note formats stay editable as notes. Native Gmail and LinkedIn messages retain their real channel labels; legacy blocks without known provenance are labelled Imported conversation. History supports search and channel filtering, with an initial eight cards and Show all. The same rendering also covers archived contacts and contacts without product relationships.
+Personal notes grow with their content and retain their draft and conflict behavior. Recognized legacy transcript headers become chronological message cards with sender, direction, year, paragraphs and collapsed import identifiers. Updating the personal note prefix preserves the exact original transcript suffix. Unrecognized note formats stay editable as notes. Native Gmail and LinkedIn messages retain their real channel labels; legacy blocks without known provenance are labelled Imported conversation. History supports search and channel filtering, with an initial eight cards and Show all. The same rendering also covers archived contacts.
+
+## Complete PR review and modal decisions
+
+The review covers the branch against `main`: shell navigation, inspector lifecycle, record/context/metadata editors, version tracking, archive/Undo, reports, opportunity and outreach boards, file operations, responsive/theme styles and their regressions. No backend grant, ingestion, dispatch or file-access policy is bypassed to obtain a different UI outcome.
+
+| Flow | Placement and reason | Verification |
+| --- | --- | --- |
+| Contact/company fields, notes, context, tags and estimates | Inline fields; the structured context form stays within Context. | Persistence, consecutive saves, conflicts, dirty tab/navigation guards and private history tests. |
+| Contact/company/action/meeting/deal creation or editing | Persistent inspector beside the originating list or report. | Mouse, Enter, shortcuts, resizing, related work and same-route browser scenarios. |
+| Overview reports | Bounded, paginated inline results. | Report selection opens the inspector without closing the report. |
+| Files, Markdown, folder creation/rename/delete/sharing | Inline library forms and inspector previews. The native file chooser selects local files. | Upload/drop/transfer/preview/version tests, large virtualized folders, Markdown keyboard saving and draft guards. |
+| Legacy `/materials` folder/upload/rename/delete | Inline forms on the existing page. | Folder mutation integration tests and a real-browser creation/cancellation check. |
+| Product and pipeline setup | Small inline forms that preserve the current page. | Shortcut/button access, pending/failed writes, dirty navigation, light/dark screenshots. |
+| Sequence creation and step editing | Inline editor; step-button changes also mark the draft dirty. Archive and enrollment-stop confirmations stay inline. | Create/reorder/remove/save tests, cancellation, duplicate-write protection, dirty navigation and narrow browser layout. |
+| Outreach drafts, Mark sent and Skip | Inline editors; Cancel explicitly discards an edit. Rows expose controls on hover and keyboard focus. | Real-pointer browser clicks, keyboard access, draft navigation guards, pending writes and remote-version conflicts. |
+| Outreach closing stages and delivery reconciliation/resolution | Inline confirmations; outcome/reason/confirmation requirements remain. | Stage movement, Undo, provider-receipt checks and explicit manual-resolution tests. |
+| Conversation sharing | Inline confirmation that names the product scope. | Only owned threads expose controls; cancellation, failures and pending duplicate submissions are tested. |
+| Actual sending | Dialog retained for the explicit recipient/account/approval check before an irreversible dispatch. | Existing send/authorization/idempotency suites plus browser cancellation proving no dispatch occurs. |
+| Bulk sequence enrollment | Dialog retained for a separate review of eligible and skipped contacts before applying a batch. | Dry-run/confirmation, product matching, ineligible contacts and zero-send tests. |
+| Member invitations/access and provider connections/settings | Dialogs retained for permissions, credentials, account selection and provider consent. | Existing access/integration/error/pending suites; native backdrop, dirty-field, Escape and focus-return checks. |
+| Commands, keyboard help and mobile navigation | Temporary overlays/drawer for cross-workspace navigation and search. | Search dismissal, keyboard navigation, narrow layouts and focus return. |
+
+A clean dialog backdrop now requests cancellation through the dialog's existing pending-write handler. Changed form fields retain their draft; search terms remain dismissible. Access changes made through custom role controls also mark the dialog dirty. Cancel remains explicit.
+
+| Review dimension | Assessment | Findings addressed |
+| --- | --- | --- |
+| Security | Pass within the existing authorized UI scope | Imported message bodies remain escaped text; grants/private histories/provider consent stay enforced. Unlinked contacts are not exposed by weakening product access. Undo only navigates to the restored record when its organization is still selected. |
+| Correctness | Pass after regressions | Archive no longer discards unsaved notes and uses the latest local version. Outreach edits capture their original version, retain conflicts, and cannot be silently replaced by status actions or another row. Inspector actions must match their relationship. Conversation deduplication includes direction. |
+| Accessibility | Pass for reviewed interactions | Inline editors have labels and save/error feedback; contact tabs use tab semantics; outreach controls can receive keyboard focus; remaining dialogs restore focus and dismiss cleanly. |
+| Performance | Rendering bounded; existing data limits remain | Boards paginate each stage, lists/reports paginate, file lists virtualize, and related work previews expand on demand. Collapsing related work returns to the first page. Server index loading and the latest-30 native-message limit remain unchanged. |
+| Maintainability | Pass | Shared record editor and modal lifecycle handle locking/dismissal. Removed setup dialogs reuse the existing authorized forms and operations. Markdown saving uses the same form shortcut path. |
 
 ## Verification
 
@@ -81,7 +112,7 @@ Unit and integration tests exercise inline save conflicts, duplicate submission 
 ## Remaining boundaries
 
 - The item called MacDonator could not be identified from the screenshots or source. Document/Markdown editing is covered; a specific unrelated screen with that name remains unverified.
-- Explicit send confirmation, account/access changes and pipeline/sequence configuration retain their dedicated dialogs. Ordinary record editing, context editing and document editing do not open them.
+- Explicit sending, bulk enrollment review, account/access changes, provider consent and temporary command/help overlays retain dialogs. Product/pipeline/sequence setup, ordinary record editing, status updates, sharing confirmations and document editing stay inline.
 - The workspace still loads the existing compact authorized record index. Rendering is paginated and file lists remain virtualized; this change does not introduce server pagination for that index or manufacture opportunities from imported contacts.
 - The existing native history endpoint returns the latest 30 permitted messages. The UI retains its partial-history notice; older native-message pagination is outside this UI change. Recognized transcripts stored in notes remain available in full.
 - These changes are on a review branch and have not been deployed to production. No production contacts or imported private content are included in this audit.

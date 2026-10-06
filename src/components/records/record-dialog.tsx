@@ -121,17 +121,6 @@ export function RecordDialog({
       onKeyDown={(event) => {
         if (event.key === "Escape" && !busy) onClose();
       }}
-      onClick={(event) => {
-        if (event.target !== event.currentTarget || dirty || busy) return;
-        const box = event.currentTarget.getBoundingClientRect();
-        if (
-          event.clientX < box.left ||
-          event.clientX > box.right ||
-          event.clientY < box.top ||
-          event.clientY > box.bottom
-        )
-          onClose();
-      }}
       onCancel={(event) => {
         if (busy) event.preventDefault();
         else onClose();

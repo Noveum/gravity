@@ -69,7 +69,6 @@ export function TouchActions({
     <button
       key={item.id}
       type="button"
-      tabIndex={-1}
       className="icon-button"
       aria-label={`${item.label}: ${name}`}
       title={item.label}

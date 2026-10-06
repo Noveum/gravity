@@ -233,7 +233,7 @@ describe("touch rows, the draft drawer and paused work", () => {
     fireEvent.click(
       within(drawer).getByRole("button", { name: t.touchVerbs.skip }),
     );
-    const skip = await screen.findByRole("dialog", { name: t.skipTitle });
+    const skip = await screen.findByRole("region", { name: t.skipTitle });
     fireEvent.change(within(skip).getByLabelText(t.skipReason), {
       target: { value: "Not relevant now" },
     });
@@ -446,7 +446,7 @@ describe("the sequences tab", () => {
       .select()
       .from(s.enrollments);
     fireEvent.click(await screen.findByRole("button", { name: t.newSequence }));
-    const dialog = await screen.findByRole("dialog", { name: t.newSequence });
+    const dialog = await screen.findByRole("region", { name: t.newSequence });
     const save = within(dialog).getByRole("button", {
       name: t.createSequence,
     }) as HTMLButtonElement;
@@ -474,7 +474,7 @@ describe("the sequences tab", () => {
     await screen.findByText(
       t.sequenceCreated.replace("{name}", "Services pilot follow-up"),
     );
-    expect(screen.queryByRole("dialog", { name: t.newSequence })).toBeNull();
+    expect(screen.queryByRole("region", { name: t.newSequence })).toBeNull();
     const [created] = await harness.local.db
       .select()
       .from(s.sequences)
@@ -497,17 +497,17 @@ describe("the sequences tab", () => {
     ).toHaveLength(1);
   });
 
-  test("C opens sequence creation and Escape cancels it without a mutation", async () => {
+  test("C opens inline sequence creation and Cancel discards it without a mutation", async () => {
     await mountCrm(harness, "/outreach/sequences");
     await screen.findByRole("button", { name: t.newSequence });
     fireEvent.keyDown(document.body, { key: "c" });
-    const dialog = await screen.findByRole("dialog", { name: t.newSequence });
+    const dialog = await screen.findByRole("region", { name: t.newSequence });
     fireEvent.change(within(dialog).getByLabelText(t.sequenceName), {
       target: { value: "Unsaved sequence" },
     });
-    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t.cancel }));
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: t.newSequence })).toBeNull(),
+      expect(screen.queryByRole("region", { name: t.newSequence })).toBeNull(),
     );
     expect(
       harness.posts.some((post) => post.operation === "create-sequence"),
@@ -517,7 +517,7 @@ describe("the sequences tab", () => {
   test("pending creation blocks duplicate submissions and closing, and a failure preserves the draft", async () => {
     await mountCrm(harness, "/outreach/sequences");
     fireEvent.click(await screen.findByRole("button", { name: t.newSequence }));
-    const dialog = await screen.findByRole("dialog", { name: t.newSequence });
+    const dialog = await screen.findByRole("region", { name: t.newSequence });
     fireEvent.change(within(dialog).getByLabelText(t.sequenceName), {
       target: { value: "Keep this draft" },
     });
@@ -549,9 +549,8 @@ describe("the sequences tab", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
-    const cancel = new Event("cancel", { cancelable: true });
-    fireEvent(dialog, cancel);
-    expect(cancel.defaultPrevented).toBe(true);
+    fireEvent.click(within(dialog).getByRole("button", { name: t.cancel }));
+    expect(screen.getByRole("region", { name: t.newSequence })).toBe(dialog);
     await act(async () => release());
     await within(form).findByRole("alert");
     expect(
@@ -699,7 +698,7 @@ describe("fix round 1", () => {
   const verbButton = (name: keyof typeof t.touchVerbs, person: string) =>
     screen.findByRole("button", { name: `${t.touchVerbs[name]}: ${person}` });
 
-  test("the Edit draft, Mark sent and Skip row buttons open the drawer and their dialogs", async () => {
+  test("the Edit draft, Mark sent and Skip row buttons open inline editors", async () => {
     await mountCrm(harness, "/outreach/today");
     fireEvent.click(await verbButton("edit", "Noor Haddad"));
     const drawer = await screen.findByRole("region", {
@@ -717,12 +716,12 @@ describe("fix round 1", () => {
       ).toBeNull(),
     );
     fireEvent.click(await verbButton("sent", "Noor Haddad"));
-    const sent = await screen.findByRole("dialog", { name: t.markSentTitle });
+    const sent = await screen.findByRole("region", { name: t.markSentTitle });
     fireEvent.click(within(sent).getByRole("button", { name: t.cancel }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     fireEvent.click(await verbButton("skip", "Noor Haddad"));
     expect(
-      await screen.findByRole("dialog", { name: t.skipTitle }),
+      await screen.findByRole("region", { name: t.skipTitle }),
     ).toBeTruthy();
     expect(harness.posts).toEqual([]);
   });
@@ -785,4 +784,117 @@ describe("fix round 1", () => {
     ]);
     expect(current[0]?.getAttribute("href")).toBe("/outreach/sequences");
   });
+});
+
+test("unsaved outreach text survives row changes, status actions and Close until Cancel is explicit", async () => {
+  await mountCrm(harness, "/outreach/today");
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: `${t.touchVerbs.edit}: Noor Haddad`,
+    }),
+  );
+  const drawer = await screen.findByRole("region", {
+    name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
+  });
+  const field = within(drawer).getByLabelText(t.draftLabel);
+  fireEvent.change(field, { target: { value: "Fictional unsaved outreach" } });
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: `${t.touchVerbs.edit}: Ellis Park`,
+    }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: `${t.touchVerbs.sent}: Noor Haddad`,
+    }),
+  );
+  fireEvent.click(within(drawer).getByRole("button", { name: t.close }));
+  expect(field).toHaveProperty("value", "Fictional unsaved outreach");
+  expect(screen.queryByRole("region", { name: t.markSentTitle })).toBeNull();
+  expect(harness.posts).toEqual([]);
+  fireEvent.click(within(drawer).getByRole("button", { name: t.cancel }));
+  fireEvent.click(within(drawer).getByRole("button", { name: t.close }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("region", {
+        name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
+      }),
+    ).toBeNull(),
+  );
+});
+
+test("live outreach refreshes preserve the draft's original version and expose a conflict instead of overwriting remote text", async () => {
+  await mountCrm(harness, "/outreach/today");
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: `${t.touchVerbs.edit}: Noor Haddad`,
+    }),
+  );
+  const drawer = await screen.findByRole("region", {
+    name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
+  });
+  const field = within(drawer).getByLabelText(t.draftLabel);
+  const [original] = await harness.local.db
+    .select()
+    .from(s.touches)
+    .where(eq(s.touches.id, demoId(1307)));
+  if (!original) throw new Error("Missing touch fixture");
+  fireEvent.change(field, { target: { value: "Local unsaved draft" } });
+  await harness.local.db
+    .update(s.touches)
+    .set({
+      draft: "Remote saved draft",
+      version: original.version + 1,
+      updatedAt: new Date(),
+    })
+    .where(eq(s.touches.id, original.id));
+  fireEvent.focus(window);
+  await waitFor(
+    () =>
+      expect(
+        vi
+          .mocked(requestJson)
+          .mock.calls.some(([url]) =>
+            String(url).includes(
+              `touchId=${original.id}&version=${original.version + 1}`,
+            ),
+          ),
+      ).toBe(true),
+    { timeout: 5000 },
+  );
+  expect(field).toHaveProperty("value", "Local unsaved draft");
+  fireEvent.click(within(drawer).getByRole("button", { name: t.saveDraft }));
+  expect(await within(drawer).findByRole("alert")).toHaveProperty(
+    "textContent",
+    t.errors.CONFLICT,
+  );
+  expect(field).toHaveProperty("value", "Local unsaved draft");
+  const [stored] = await harness.local.db
+    .select()
+    .from(s.touches)
+    .where(eq(s.touches.id, original.id));
+  expect(stored?.draft).toBe("Remote saved draft");
+});
+
+test("sequence step buttons protect edits even before a text field changes", async () => {
+  await mountCrm(harness, "/outreach/sequences");
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: `${t.editSteps}: Thoughtful introduction · AI Platform`,
+    }),
+  );
+  const editor = screen.getByRole("form", {
+    name: `${t.editSteps}: Thoughtful introduction · AI Platform`,
+  });
+  fireEvent.click(
+    within(editor).getByRole("button", {
+      name: t.moveStepDown.replace("{number}", "1"),
+    }),
+  );
+  fireEvent.click(screen.getByRole("link", { name: t.companies }));
+  expect(pathname()).toBe("/outreach/sequences");
+  expect(editor.getAttribute("data-dirty")).toBe("true");
+  fireEvent.click(within(editor).getByRole("button", { name: t.cancel }));
+  fireEvent.click(screen.getByRole("link", { name: t.companies }));
+  await waitFor(() => expect(pathname()).toBe("/companies"));
 });

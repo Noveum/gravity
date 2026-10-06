@@ -14,6 +14,7 @@ export function MaterialsView() {
       onError={(text) => crm.notify(text, "danger")}
       timeZone={crm.timeZone}
       registerCreate={crm.registerCreate}
+      canLeaveEditor={crm.canLeaveEditor}
     />
   );
 }

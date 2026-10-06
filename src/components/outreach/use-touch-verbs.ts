@@ -48,8 +48,16 @@ export function useTouchVerbs({
   const versionOf = (touch: Touch) =>
     Math.max(touch.version, versions.current.get(touch.id) ?? 0);
   function openDrawer(touch: Touch, edit: boolean) {
-    if (drawer?.touch.id !== touch.id && !crm.canLeaveEditor()) return;
+    if (
+      (drawer?.touch.id !== touch.id || drawer.edit !== edit) &&
+      !crm.canLeaveEditor()
+    )
+      return;
     setDrawer({ touch, edit });
+  }
+  function openDialog(kind: TouchDialog["kind"], touch: Touch) {
+    if (!crm.canLeaveEditor()) return;
+    setDialog({ kind, touch });
   }
   function enqueue<T>(task: () => Promise<T>) {
     const next = queue.current.then(task, task);
@@ -93,6 +101,7 @@ export function useTouchVerbs({
     return true;
   };
   function approve(touch: Touch) {
+    if (!crm.canLeaveEditor()) return;
     if (touch.status === "approved") {
       crm.notify(t.touchAlreadyApproved, "neutral");
       return;
@@ -111,6 +120,7 @@ export function useTouchVerbs({
     });
   }
   function snooze(touch: Touch) {
+    if (!crm.canLeaveEditor()) return;
     const now = Date.now();
     const morning = nextWorkingMorning(now, crm.timeZone);
     const when = snoozeLabel(morning, now, crm.timeZone);
@@ -230,15 +240,17 @@ export function useTouchVerbs({
     dialog,
     drawer,
     canSend,
-    askSend: (touch: Touch) => setDialog({ kind: "send", touch }),
+    askSend: (touch: Touch) => openDialog("send", touch),
     closeDialog: () => setDialog(null),
-    closeDrawer: () => setDrawer(null),
+    closeDrawer: () => {
+      if (crm.canLeaveEditor()) setDrawer(null);
+    },
     peek: (touch: Touch) => openDrawer(touch, false),
     edit: (touch: Touch) => openDrawer(touch, true),
     approve,
     snooze,
-    askSkip: (touch: Touch) => setDialog({ kind: "skip", touch }),
-    askSent: (touch: Touch) => setDialog({ kind: "sent", touch }),
+    askSkip: (touch: Touch) => openDialog("skip", touch),
+    askSent: (touch: Touch) => openDialog("sent", touch),
     skip,
     markSent,
     versionOf,
@@ -247,8 +259,8 @@ export function useTouchVerbs({
       versions.current.set(touch.id, version),
     keys: {
       "touch-snooze": onFocused(snooze),
-      "touch-skip": onFocused((touch) => setDialog({ kind: "skip", touch })),
-      "touch-sent": onFocused((touch) => setDialog({ kind: "sent", touch })),
+      "touch-skip": onFocused((touch) => openDialog("skip", touch)),
+      "touch-sent": onFocused((touch) => openDialog("sent", touch)),
       "touch-edit": onFocused((touch) => openDrawer(touch, true)),
       "touch-undo": undo,
     },

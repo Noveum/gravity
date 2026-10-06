@@ -151,3 +151,31 @@ test("upcoming meetings stay in the short preparation list when a contact has ma
     screen.getAllByRole("button", { name: /Fictional past meeting/ }),
   ).toHaveLength(5);
 });
+
+test("conversation deduplication keeps opposite-direction messages at the same timestamp", async () => {
+  const [message] = await harness.local.db.select().from(s.messages).limit(1);
+  if (!message) throw new Error("Missing message fixture");
+  const [conversation] = await harness.local.db
+    .select()
+    .from(s.conversations)
+    .where(eq(s.conversations.id, message.conversationId));
+  if (!conversation) throw new Error("Missing conversation fixture");
+  const [relationship] = await harness.local.db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, conversation.relationshipId));
+  if (!relationship) throw new Error("Missing relationship fixture");
+  const source = `SENT by Fictional owner · ${message.occurredAt.toISOString()} · imported-sent\n${message.body}\n\nRECEIVED from Fictional contact · ${message.occurredAt.toISOString()} · imported-received\n${message.body}`;
+  await harness.local.db
+    .update(s.people)
+    .set({ summary: source })
+    .where(eq(s.people.id, relationship.personId));
+  await mountCrm(
+    harness,
+    `/people/${relationship.personId}?relationship=${relationship.id}`,
+  );
+  const history = await screen.findByRole("region", {
+    name: t.contactWorkspace.history,
+  });
+  expect(within(history).getAllByText(message.body)).toHaveLength(2);
+});

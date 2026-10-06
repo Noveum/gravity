@@ -137,7 +137,7 @@ function CrmShell({ children }: { children: ReactNode }) {
   const [productDialog, setProductDialog] = useState("");
   const canCreateProduct = !!organizationId && !!data && crm.isAdmin;
   function openProductDialog() {
-    if (!canCreateProduct) return false;
+    if (!canCreateProduct || !crm.canLeaveEditor()) return false;
     setDrawerOpen(false);
     setProductDialog(organizationId);
     return true;
@@ -705,7 +705,12 @@ function CrmShell({ children }: { children: ReactNode }) {
             key={organizationId}
             organizationName={crm.currentOrg?.name ?? ""}
             organizationId={organizationId}
-            mutate={crm.mutate}
+            onSubmit={async (body) => {
+              const result = await crm.send(body, false, false);
+              return result.ok
+                ? null
+                : (result.error ?? t.errors.INTERNAL_ERROR);
+            }}
             onClose={() => setProductDialog("")}
           />
         )}

@@ -59,6 +59,15 @@ export function SequenceEditor({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const dirty =
+    name !== (sequence?.name ?? "") ||
+    productId !== (crm.productId || products[0]?.id || "") ||
+    JSON.stringify(
+      steps.map(({ key: _key, ...step }, index) => ({
+        ...step,
+        number: index + 1,
+      })),
+    ) !== JSON.stringify(initialSteps);
   const change = (key: number, patch: Partial<DraftStep>) =>
     setSteps((current) =>
       current.map((step) => (step.key === key ? { ...step, ...patch } : step)),
@@ -143,6 +152,8 @@ export function SequenceEditor({
   return (
     <form
       className="sequence-editor"
+      data-record-editor
+      data-dirty={dirty || busy || undefined}
       aria-label={sequence ? `${t.editSteps}: ${label}` : t.newSequence}
       aria-describedby={hintId}
       onKeyDown={submitOnSaveKey}
@@ -172,6 +183,7 @@ export function SequenceEditor({
           {t.sequenceName}
           <input
             value={name}
+            data-primary-field
             maxLength={100}
             required
             onChange={(event) => setName(event.target.value)}

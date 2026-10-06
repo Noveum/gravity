@@ -15,6 +15,7 @@ export function MarkSentDialog({
   const hint = useId();
   return (
     <RecordDialog
+      inline
       title={t.markSentTitle}
       submitLabel={t.markSentSubmit}
       onClose={onClose}
@@ -51,6 +52,7 @@ export function SkipDialog({
   const hint = useId();
   return (
     <RecordDialog
+      inline
       title={t.skipTitle}
       submitLabel={t.skipSubmit}
       onClose={onClose}

@@ -3594,6 +3594,7 @@ tbody tr[data-selected] td:first-child::before {
 }
 .touch-actions {
   position: absolute;
+  z-index: 2;
   top: 0;
   right: 0;
   bottom: 1px;
@@ -3611,6 +3612,10 @@ tbody tr[data-selected] td:first-child::before {
     opacity: 1;
     pointer-events: auto;
   }
+}
+.touch-row:focus-within .touch-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 .touch-actions.visible {
   position: static;
@@ -5281,6 +5286,10 @@ nav.list-pagination > label:has(select) {
   margin: 0 0 16px;
 }
 .inline-record-editor .dialog-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
   display: grid;
   gap: 16px;
 }
@@ -5510,6 +5519,7 @@ nav.list-pagination > label:has(select) {
 }
 .outreach-workspace > .outreach-panel {
   min-width: 0;
+  container-type: inline-size;
 }
 .inline-touch-editor {
   display: block;
@@ -5849,4 +5859,77 @@ nav.list-pagination > label:has(select) {
 
 .inspector-expanded .contact-workspace .related-work {
   display: block;
+}
+
+/* Editors outside the inspector retain the surrounding list and bounded fields. */
+.content > .inline-record-editor,
+.page-content > .inline-record-editor,
+.delivery-checks + .inline-record-editor,
+.conversation-sharing > .inline-record-editor {
+  margin: 16px 24px;
+  padding: 20px;
+  max-width: 820px;
+  border: 1px solid var(--gravity-border);
+  border-radius: var(--gravity-radius);
+  background: var(--gravity-surface);
+}
+.product-editor {
+  margin: 16px 24px;
+  padding: 20px;
+  max-width: 680px;
+  border: 1px solid var(--gravity-border);
+  border-radius: var(--gravity-radius);
+}
+@media (max-width: 600px) {
+  .content > .inline-record-editor,
+  .page-content > .inline-record-editor,
+  .conversation-sharing > .inline-record-editor,
+  .product-editor {
+    margin: 12px;
+    padding: 16px;
+  }
+}
+
+.touch-row > .action-row {
+  height: auto;
+  min-height: 64px;
+  padding-block: 10px;
+}
+.touch-identity {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.touch-identity .row-name {
+  max-width: 100%;
+}
+.touch-identity .row-kind {
+  display: inline;
+  color: var(--gravity-muted);
+  font-size: var(--text-xs);
+}
+.touch-row .row-main > .row-action {
+  display: block;
+  font-weight: 400;
+  color: var(--gravity-secondary);
+}
+.touch-row-gate {
+  font-size: var(--text-xs);
+  white-space: normal;
+}
+.touch-draft {
+  display: grid;
+  gap: 10px;
+}
+.touch-draft > .field-hint {
+  margin: 0;
+}
+@container (max-width: 600px) {
+  .touch-row .row-meta {
+    display: none;
+  }
+  .touch-identity .badge:not(.warning) {
+    display: inline-flex;
+  }
 }

@@ -446,6 +446,7 @@ function Board({ productId }: { productId: string }) {
       )}
       {closing && (
         <RecordDialog
+          inline
           title={t.closeStageTitle
             .replace("{name}", nameOf(closing.relationship))
             .replace("{stage}", closing.stage.name)}

@@ -127,16 +127,8 @@ export function PersonActivity({
   hideTabs?: boolean;
   mode?: RecordTab;
 }) {
-  const {
-    tab,
-    setTab,
-    timeZone,
-    userId,
-    product,
-    mutate,
-    busy,
-    organizationId,
-  } = useCrm();
+  const { tab, setTab, timeZone, userId, product, send, busy, organizationId } =
+    useCrm();
   const tabs: RecordTab[] = [
     "timeline",
     "evidence",
@@ -175,15 +167,19 @@ export function PersonActivity({
           }
           busy={busy}
           onChange={async (source, visibility) => {
-            const result = await mutate({
-              operation: "conversation-sharing",
-              organizationId,
-              productId: context.relationship.productId,
-              conversationId: source.id,
-              expectedVisibility: source.visibility,
-              visibility,
-            });
-            return result;
+            const result = await send(
+              {
+                operation: "conversation-sharing",
+                organizationId,
+                productId: context.relationship.productId,
+                conversationId: source.id,
+                expectedVisibility: source.visibility,
+                visibility,
+              },
+              false,
+              false,
+            );
+            return result.ok ? null : (result.error ?? t.errors.INTERNAL_ERROR);
           }}
         />
       )}

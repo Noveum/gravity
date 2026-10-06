@@ -29,7 +29,7 @@ export function SequencesView() {
   const [archiving, setArchiving] = useState<Sequence | null>(null);
   const [stopping, setStopping] = useState<Stopping | null>(null);
   useCreate(() => {
-    if (!data.products.length) return false;
+    if (!data.products.length || !crm.canLeaveEditor()) return false;
     setCreating(true);
     return true;
   });
@@ -125,7 +125,9 @@ export function SequencesView() {
               <button
                 type="button"
                 aria-label={`${t.editSteps}: ${title}`}
-                onClick={() => setEditing(sequence.id)}
+                onClick={() => {
+                  if (crm.canLeaveEditor()) setEditing(sequence.id);
+                }}
               >
                 <Pencil size={13} aria-hidden />
                 {t.editSteps}
@@ -146,7 +148,9 @@ export function SequencesView() {
                 type="button"
                 className="ghost"
                 aria-label={`${t.archiveSequence}: ${title}`}
-                onClick={() => setArchiving(sequence)}
+                onClick={() => {
+                  if (crm.canLeaveEditor()) setArchiving(sequence);
+                }}
               >
                 <Archive size={13} aria-hidden />
                 {t.archive}
@@ -278,6 +282,7 @@ export function SequencesView() {
                               className="ghost"
                               aria-label={`${t.stop}: ${name}`}
                               onClick={() =>
+                                crm.canLeaveEditor() &&
                                 setStopping({ enrollment, sequence, name })
                               }
                             >
@@ -304,21 +309,25 @@ export function SequencesView() {
     : 0;
   return (
     <div className="page-content sequences-page">
-      <div className="section-heading">
-        <p className="muted">{t.sequenceCreationHint}</p>
-        <button
-          type="button"
-          className="primary"
-          aria-label={t.newSequence}
-          aria-keyshortcuts="C"
-          disabled={!data.products.length}
-          onClick={() => setCreating(true)}
-        >
-          <Plus size={14} aria-hidden />
-          {t.newSequence}
-          <ShortcutHint id="create" />
-        </button>
-      </div>
+      {!creating && (
+        <div className="section-heading">
+          <p className="muted">{t.sequenceCreationHint}</p>
+          <button
+            type="button"
+            className="primary"
+            aria-label={t.newSequence}
+            aria-keyshortcuts="C"
+            disabled={!data.products.length}
+            onClick={() => {
+              if (crm.canLeaveEditor()) setCreating(true);
+            }}
+          >
+            <Plus size={14} aria-hidden />
+            {t.newSequence}
+            <ShortcutHint id="create" />
+          </button>
+        </div>
+      )}
       {creating && <SequenceDialog onClose={() => setCreating(false)} />}
       {!sequences.length && <EmptyState title={t.noSequences} compact />}
       {page.items.map(card)}
@@ -337,6 +346,7 @@ export function SequencesView() {
       )}
       {archiving && (
         <RecordDialog
+          inline
           title={t.archiveSequence}
           submitLabel={t.archive}
           onClose={() => setArchiving(null)}
@@ -350,6 +360,7 @@ export function SequencesView() {
       )}
       {stopping && (
         <RecordDialog
+          inline
           title={t.stopEnrollmentTitle.replace("{name}", stopping.name)}
           submitLabel={t.stop}
           onClose={() => setStopping(null)}

@@ -2,7 +2,7 @@
 
 `/files` is the product-scoped document library in the production CRM application. The sidebar opens it under Sales materials. `/materials` retains existing stage-linked assets, folders, hashes, versions and approvals. The new library is additive: migration 0022 creates its tables without rewriting or deleting existing CRM data.
 
-Folders contain folders, uploaded files and editable Markdown documents. List, grid and column views support selection, keyboard cut/copy/paste, folder navigation and internal drag/drop. Native file and directory uploads preserve relative paths and empty folders, with three simultaneous upload workers and per-file progress. Lists with more than 100 items render a viewport window. Transfers are atomic and limited to 1,000 descendants, including nested folders. Copies start private; moving and deleting require ownership of every descendant.
+Folders contain folders, uploaded files and editable Markdown documents. List, grid and column views support selection, keyboard cut/copy/paste, folder navigation and internal drag/drop. Native file and directory uploads preserve relative paths and empty folders, with three simultaneous upload workers and per-file progress. List, grid and column views with more than 100 items render a viewport window. Transfers are atomic and limited to 1,000 descendants, including nested folders. Copies start private; moving and deleting require ownership of every descendant.
 
 ## Storage and release
 
@@ -30,6 +30,6 @@ Office input previews are limited to 32 MiB and validated ZIP expansion budgets.
 
 ## Verification
 
-Run `bun run verify` for lint, dependency licenses, strict types, the complete unit/integration suite, the production build and public-site smoke tests. Run `bun run test:files` for browser uploads and rendering using fictional fixtures and a local demo server with uniquely named fixtures. It checks downloads against original bytes, nested folder copy/paste, native directory uploads and keyboard transfers, view changes, slide navigation, PDF canvas output, image decoding, Markdown persistence, large Excel paging and oversized workbook fallback.
+Run `bun run verify` for lint, dependency licenses, strict types, the complete unit/integration suite, the production build and public-site smoke tests. Run `bun run test:files` for browser uploads and rendering using fictional fixtures and a local demo server with uniquely named fixtures. It checks downloads against original bytes, nested folder copy/paste, native directory uploads and keyboard transfers, virtualized list/grid/column views and offscreen selection, slide navigation, PDF canvas output, image decoding, Markdown persistence, large Excel paging and oversized workbook fallback.
 
 `bun run test:file-storage` qualifies signed transfers against local MinIO at port 9030 in a fresh private bucket and removes that bucket afterward. It checks size mismatches, empty files, UTF-8 decoding, private access and immutable final objects after replaying a signed upload. Override `FILE_STORAGE_TEST_ENDPOINT`, `FILE_STORAGE_TEST_ACCESS_KEY` and `FILE_STORAGE_TEST_SECRET_KEY` for another local instance. Remote endpoints are deliberately rejected.

@@ -1,8 +1,10 @@
+import { createRequire } from "node:module";
 import { expect, test } from "@playwright/test";
-import ExcelJS from "exceljs";
-import JSZip from "jszip";
 import samples from "../fixtures/file-samples.json" with { type: "json" };
 
+const require = createRequire(import.meta.url);
+const ExcelJS: typeof import("exceljs") = require("exceljs");
+const JSZip: typeof import("jszip") = require("jszip");
 const scope = {
   organizationId: "00000000-0000-4000-8000-000000000001",
   productId: "00000000-0000-4000-8000-000000000010",
@@ -184,6 +186,14 @@ test("persistent native uploads, nested navigation, transfers and every preview"
   await page.getByRole("button", { name: "Columns view", exact: true }).click();
   await expect(page.locator(".library-column")).toHaveCount(2);
   await page.getByRole("button", { name: "List view", exact: true }).click();
+  const rootLabel = page
+    .getByRole("navigation", { name: "Folder path" })
+    .getByRole("button", { name: "Files", exact: true });
+  expect(
+    await rootLabel.evaluate(
+      (element) => element.clientWidth >= element.scrollWidth,
+    ),
+  ).toBe(true);
   await page.screenshot({ path: ".data/file-browser-results/library.png" });
   expect(errors).toEqual([]);
 });
@@ -237,6 +247,15 @@ test("large workbooks page in a worker, jump to distant cells, and keep oversize
     .getByRole("button", { name: file.name, exact: true })
     .click();
   const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("table")).toBeVisible();
+  const jumpInput = await dialog
+    .getByLabel("Go to cell", { exact: true })
+    .boundingBox();
+  const jumpButton = await dialog
+    .getByRole("button", { name: "Go", exact: true })
+    .boundingBox();
+  if (!jumpInput || !jumpButton) throw new Error("Cell navigation unavailable");
+  expect(Math.abs(jumpInput.y - jumpButton.y)).toBeLessThan(4);
   await expect(
     dialog.getByRole("cell", { name: "First cell", exact: true }),
   ).toBeVisible();
@@ -464,4 +483,59 @@ test("native directory chooser preserves nested paths and keyboard transfer sele
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("large folders render a window in every view and select offscreen files", async ({
+  page,
+  request,
+}) => {
+  const post = async (input: object) => {
+    const response = await request.post("/api/files?operation=create", {
+      headers: { Origin: "http://127.0.0.1:3024" },
+      data: { ...scope, ...input },
+    });
+    expect(response.ok(), await response.text()).toBe(true);
+    return (await response.json()).entries[0];
+  };
+  const folder = await post({
+    name: `Large folder ${crypto.randomUUID()}`,
+    kind: "folder",
+    visibility: "private",
+  });
+  for (let index = 0; index < 140; index++)
+    await post({
+      name: `Document ${String(index).padStart(3, "0")}.md`,
+      kind: "markdown",
+      visibility: "inherit",
+      parentId: folder.id,
+      body: `# Document ${index}`,
+    });
+  await page.goto(`/files?folder=${folder.id}`);
+  for (const view of ["List", "Grid", "Columns"]) {
+    await page
+      .getByRole("button", { name: `${view} view`, exact: true })
+      .click();
+    const surface =
+      view === "Columns"
+        ? page.locator(".library-column").last()
+        : page.locator(view === "Grid" ? ".library-grid" : ".library-rows");
+    await expect(
+      surface.getByRole("button", { name: "Document 000.md", exact: true }),
+    ).toBeVisible();
+    expect(await surface.getByRole("treeitem").count()).toBeLessThan(140);
+    await surface.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(
+      surface.getByRole("button", { name: "Document 139.md", exact: true }),
+    ).toBeVisible();
+    expect(await surface.getByRole("treeitem").count()).toBeLessThan(140);
+    await page.locator(".file-library").focus();
+    await page.keyboard.press("Control+a");
+    await expect(page.locator(".library-selection")).toContainText("140");
+    await page.keyboard.press("Escape");
+  }
+  await page.screenshot({
+    path: ".data/file-browser-results/large-folder.png",
+  });
 });

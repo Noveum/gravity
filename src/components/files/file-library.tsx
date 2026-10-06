@@ -640,27 +640,29 @@ function Browser({
         >
           <Plus size={15} />
         </button>
-        <button
-          type="button"
-          className="primary"
-          disabled={!writable || uploadLock.current}
-          onClick={() => input.current?.click()}
-        >
-          <Upload size={15} />
-          {labels.uploadFiles}
-        </button>
-        <details className="library-upload-menu">
-          <summary aria-label={labels.uploadFolder}>
-            <ChevronDown size={13} />
-          </summary>
+        <div className="library-upload-controls">
           <button
             type="button"
+            className="primary"
             disabled={!writable || uploadLock.current}
-            onClick={() => folderInput.current?.click()}
+            onClick={() => input.current?.click()}
           >
-            {labels.uploadFolder}
+            <Upload size={15} />
+            {labels.uploadFiles}
           </button>
-        </details>
+          <details className="library-upload-menu">
+            <summary aria-label={labels.uploadFolder}>
+              <ChevronDown size={13} />
+            </summary>
+            <button
+              type="button"
+              disabled={!writable || uploadLock.current}
+              onClick={() => folderInput.current?.click()}
+            >
+              {labels.uploadFolder}
+            </button>
+          </details>
+        </div>
         <input
           ref={input}
           type="file"
@@ -769,21 +771,7 @@ function Browser({
               common={common}
             />
           ) : view === "grid" ? (
-            <div
-              className="library-grid"
-              role="tree"
-              aria-label={labels.title}
-              aria-multiselectable="true"
-            >
-              {visible.map((entry) => (
-                <EntryTile
-                  key={entry.id}
-                  entry={entry}
-                  range={visible}
-                  common={common}
-                />
-              ))}
-            </div>
+            <FileGrid entries={visible} common={common} />
           ) : (
             <FileRows entries={visible} common={common} />
           )}
@@ -1033,6 +1021,82 @@ function FileRows({
     </div>
   );
 }
+function FileGrid({
+  entries,
+  common,
+}: {
+  entries: FileEntry[];
+  common: Common;
+}) {
+  const scroll = useRef<HTMLDivElement>(null);
+  const [columns, setColumns] = useState(1);
+  useEffect(() => {
+    const element = scroll.current;
+    if (!element) return;
+    const resize = () =>
+      setColumns(Math.max(1, Math.floor((element.clientWidth - 22) / 155)));
+    const observer = new ResizeObserver(resize);
+    observer.observe(element);
+    resize();
+    return () => observer.disconnect();
+  }, []);
+  const windowed = entries.length > 100;
+  const virtual = useVirtualizer({
+    count: Math.ceil(entries.length / columns),
+    getScrollElement: () => scroll.current,
+    estimateSize: () => 150,
+    overscan: 2,
+    enabled: windowed,
+  });
+  return (
+    <div
+      ref={scroll}
+      className={`library-grid ${windowed ? "library-grid-virtual" : ""}`}
+      role="tree"
+      aria-label={labels.title}
+      aria-multiselectable="true"
+    >
+      {windowed ? (
+        <div style={{ height: virtual.getTotalSize(), position: "relative" }}>
+          {virtual.getVirtualItems().map((row) => (
+            <div
+              key={row.key}
+              className="library-grid-row"
+              style={{
+                position: "absolute",
+                top: row.start,
+                left: 0,
+                right: 0,
+                height: 140,
+                gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+              }}
+            >
+              {entries
+                .slice(row.index * columns, (row.index + 1) * columns)
+                .map((entry) => (
+                  <EntryTile
+                    key={entry.id}
+                    entry={entry}
+                    range={entries}
+                    common={common}
+                  />
+                ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        entries.map((entry) => (
+          <EntryTile
+            key={entry.id}
+            entry={entry}
+            range={entries}
+            common={common}
+          />
+        ))
+      )}
+    </div>
+  );
+}
 function EntryTile({
   entry,
   range,
@@ -1209,8 +1273,22 @@ function Column({
     queryFn: ({ signal }) => listFiles(scope, parent, signal),
     staleTime: 60_000,
   });
+  const scroll = useRef<HTMLDivElement>(null);
+  const entries = query.data?.entries ?? [];
+  const windowed = entries.length > 100;
+  const virtual = useVirtualizer({
+    count: entries.length,
+    getScrollElement: () => scroll.current,
+    estimateSize: () => 34,
+    overscan: 8,
+    enabled: windowed,
+  });
+  const rows = windowed
+    ? virtual.getVirtualItems()
+    : entries.map((_, index) => ({ index, start: 0 }));
   return (
     <div
+      ref={scroll}
       role="tree"
       aria-label={labels.columns}
       aria-multiselectable="true"
@@ -1223,50 +1301,72 @@ function Column({
       ) : query.error ? (
         <p role="alert">{errorText(query.error)}</p>
       ) : (
-        query.data?.entries.map((entry) => (
-          <div
-            role="treeitem"
-            tabIndex={0}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                event.stopPropagation();
-                common.open(entry);
-              }
-            }}
-            key={entry.id}
-            aria-selected={
-              common.selection.includes(entry.id) || active === entry.id
-            }
-            draggable
-            onDragStart={(event) => common.drag(event, entry)}
-            onClick={(event) =>
-              common.choose(entry, event, query.data?.entries)
-            }
-            onDoubleClick={() => common.open(entry)}
-            onDragOver={(event) => {
-              if (entry.kind === "folder" && entry.canEdit)
-                event.preventDefault();
-            }}
-            onDrop={(event) => {
-              if (entry.kind === "folder" && entry.canEdit)
-                common.drop(event, entry.id);
-            }}
-          >
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                common.open(entry);
-              }}
-            >
-              <Icon entry={entry} />
-              <span>{entry.name}</span>
-              {entry.kind === "folder" && <ChevronRight size={14} />}
-            </button>
-            <EntryActions entry={entry} common={common} />
-          </div>
-        ))
+        <div
+          className="library-column-items"
+          style={windowed ? { height: virtual.getTotalSize() } : undefined}
+        >
+          {rows.map((row) => {
+            const entry = entries[row.index];
+            return (
+              entry && (
+                <div
+                  className="library-column-item"
+                  style={
+                    windowed
+                      ? {
+                          position: "absolute",
+                          top: row.start,
+                          left: 0,
+                          right: 0,
+                          height: 34,
+                        }
+                      : undefined
+                  }
+                  role="treeitem"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      common.open(entry);
+                    }
+                  }}
+                  key={entry.id}
+                  aria-selected={
+                    common.selection.includes(entry.id) || active === entry.id
+                  }
+                  draggable
+                  onDragStart={(event) => common.drag(event, entry)}
+                  onClick={(event) =>
+                    common.choose(entry, event, query.data?.entries)
+                  }
+                  onDoubleClick={() => common.open(entry)}
+                  onDragOver={(event) => {
+                    if (entry.kind === "folder" && entry.canEdit)
+                      event.preventDefault();
+                  }}
+                  onDrop={(event) => {
+                    if (entry.kind === "folder" && entry.canEdit)
+                      common.drop(event, entry.id);
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      common.open(entry);
+                    }}
+                  >
+                    <Icon entry={entry} />
+                    <span>{entry.name}</span>
+                    {entry.kind === "folder" && <ChevronRight size={14} />}
+                  </button>
+                  <EntryActions entry={entry} common={common} />
+                </div>
+              )
+            );
+          })}
+        </div>
       )}
     </div>
   );

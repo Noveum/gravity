@@ -16,7 +16,13 @@ const downloadSchema = z.object({
 async function downloadResponse(value: unknown, preview: boolean) {
   const result = downloadSchema.parse(value);
   if (result.url !== null && !result.url.startsWith("local:"))
-    return Response.redirect(result.url, 307);
+    return new Response(null, {
+      status: 307,
+      headers: {
+        Location: result.url,
+        "Cache-Control": "private, no-store",
+      },
+    });
   const bytes =
     result.url === null
       ? new TextEncoder().encode(result.body ?? "")
@@ -46,7 +52,7 @@ export async function GET(request: Request) {
       fields,
     );
     return name === "download" || name === "public-download"
-      ? downloadResponse(result, fields.preview === "true")
+      ? await downloadResponse(result, fields.preview === "true")
       : Response.json(result, {
           headers: { "Cache-Control": "private, no-store" },
         });

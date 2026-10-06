@@ -4,21 +4,7 @@ import { Check } from "lucide-react";
 import { type KeyboardEvent, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { initials } from "../shell/workspace-menu";
-
-const menuWidth = 256;
-const gap = 8;
-
-function placement(anchor: HTMLElement | null) {
-  if (!anchor) return { top: 120, left: gap };
-  const rect = anchor.getBoundingClientRect();
-  return {
-    top: Math.min(rect.bottom + 4, window.innerHeight - 240),
-    left: Math.max(
-      gap,
-      Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - gap),
-    ),
-  };
-}
+import { useMenuPosition } from "../ui/menu-position";
 
 export function AssignMenu({
   members,
@@ -36,7 +22,7 @@ export function AssignMenu({
   const menu = useRef<HTMLDivElement>(null);
   const popup = useRef<HTMLDivElement>(null);
   const labelId = useId();
-  const position = placement(anchor);
+  const { position, layer } = useMenuPosition(anchor, popup, 256);
   useEffect(() => {
     (
       menu.current?.querySelector<HTMLElement>("[aria-checked=true]") ??
@@ -75,7 +61,7 @@ export function AssignMenu({
     <div
       ref={popup}
       className="menu assign-menu"
-      style={{ top: `${position.top}px`, left: `${position.left}px` }}
+      style={{ ...position, overflowY: "auto" }}
     >
       <div className="menu-label" id={labelId}>
         {t.assignTo}
@@ -105,6 +91,6 @@ export function AssignMenu({
         ))}
       </div>
     </div>,
-    document.body,
+    layer ?? document.body,
   );
 }

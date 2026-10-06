@@ -6,7 +6,7 @@ This consolidates the conversation through October 4, 2026. “Local” means im
 |---|---|---|
 | Gravity by Noveum, generic open-source CRM | Local brand and Apache-2.0 source | New public GitHub repository, release inventory, landing page and deployment |
 | Orbit's fast, clean UI and blue palette | Exact Orbit light/dark semantic colors; system preference, persistent theme and density | Accessibility and high-volume performance qualification |
-| Multiple organizations by default | Guided atomic organization/first-product/time-zone setup, switching and isolated records | Invitations, membership management, organization profile/time-zone editing |
+| Multiple organizations by default | Guided atomic organization/first-product/time-zone setup, switching and isolated records | Live two-user invitation qualification |
 | Multiple products inside each organization | Product creation and membership enforcement | Product settings and member permissions UI |
 | One person/company, several product contexts | Canonical identities; clickable company/contact/relationship navigation; connected actions, meetings and opportunities | Editing, reviewed imports and merge review |
 | Several salespeople, clear ownership | Member/owner filters and product-authorized scheduling | Invitations, assignment handoff, collision warnings and owner capacity |

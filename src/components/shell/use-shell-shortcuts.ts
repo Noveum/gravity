@@ -2,7 +2,6 @@
 import {
   extendSelection,
   type Movement,
-  type ShortcutScope,
   toggleSelection,
 } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
@@ -19,7 +18,9 @@ import {
   navigableRecords,
   useKeyboardNavigation,
 } from "../keyboard-navigation";
-import { outreachTabFor, type Section, touchTabs } from "../routes";
+import { outreachTabFor, type Section } from "../routes";
+
+import { shellShortcutScopes } from "./shortcut-context";
 
 export interface ShellShortcutOptions {
   searchInput: RefObject<HTMLInputElement | null>;
@@ -58,10 +59,6 @@ export function useShellShortcuts({
   const stageMoves = useStageMoves();
   const outreachTab =
     section === "outreach" ? outreachTabFor(crm.pathname) : null;
-  const listed = !!crm.data && !recordId;
-  const editable =
-    !showPeek &&
-    (!!recordId || section === "meetings" || section === "opportunities");
   const listFocusAllowed = () =>
     document.activeElement?.classList.contains("view-title") ||
     !document.activeElement?.closest(
@@ -146,6 +143,7 @@ export function useShellShortcuts({
       return true;
     },
     create: () => {
+      if (section === "settings") return crm.create();
       if (crm.create()) return true;
       if (!crm.data?.products.length) return false;
       crm.setPersonDialog(true);
@@ -232,25 +230,12 @@ export function useShellShortcuts({
   useKeyboardNavigation(
     (id) => shortcutHandlers[id](),
     () =>
-      [
-        "global",
-        ...(crm.data && !recordId ? (["list"] as const) : []),
-        ...(crm.data && !recordId && section === "actions"
-          ? (["actions"] as const)
-          : []),
-        ...(showPeek ? (["peek", "detail"] as const) : []),
-        ...(recordId ? (["detail"] as const) : []),
-        ...(crm.data && editable ? (["record"] as const) : []),
-        ...(listed &&
-        (section === "opportunities" || outreachTab === "pipeline")
-          ? (["board"] as const)
-          : []),
-        ...(listed && outreachTab === "pipeline"
-          ? (["pipeline"] as const)
-          : []),
-        ...(listed && !showPeek && outreachTab && touchTabs.has(outreachTab)
-          ? (["outreach"] as const)
-          : []),
-      ] satisfies ShortcutScope[],
+      shellShortcutScopes({
+        hasData: !!crm.data,
+        section,
+        recordId,
+        showPeek,
+        pathname: crm.pathname,
+      }),
   );
 }

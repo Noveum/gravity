@@ -45,6 +45,7 @@ import {
 import { createLocalDatabase } from "../../packages/database/client";
 import { organizations as organizationTable } from "../../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../../packages/database/seed";
+import { apiOperation } from "../../packages/operations/catalog";
 import { RequestError, requestJson } from "../../src/components/client-api";
 import { CrmApp } from "../../src/components/crm-app";
 import { CompanyRecord } from "../../src/components/records/company-record";
@@ -182,6 +183,28 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
   if (init?.method === "POST") {
     const body = JSON.parse(String(init.body));
     harness.posts.push(body);
+    if (
+      [
+        "invitation",
+        "invitation-revoke",
+        "member-access",
+        "member-remove",
+        "organization-settings",
+      ].includes(body.operation)
+    ) {
+      try {
+        return serialize(
+          await apiOperation("crm", "POST", body.operation).execute(
+            { db: harness.local.db, principal },
+            body,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof DomainError)
+          throw new RequestError(error.code, error.details ?? {});
+        throw error;
+      }
+    }
     if (body.operation === "plan")
       return serialize(
         await service.planActions(principal, actionPlanSchema.parse(body)),
@@ -231,6 +254,15 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
   }
   const params = new URL(url, "http://localhost").searchParams;
   const organizationId = params.get("organizationId") || demoId(1);
+  if (params.get("operation") === "invitations")
+    return serialize(
+      await apiOperation("crm", "GET", "invitations").execute(
+        { db: harness.local.db, principal },
+        { organizationId },
+      ),
+    );
+  if (params.get("operation") === "organizations")
+    return service.organizations(principal);
   if (params.get("operation") === "context")
     return serialize(
       await service.context(

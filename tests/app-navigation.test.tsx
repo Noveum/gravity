@@ -154,6 +154,7 @@ beforeEach(() => {
     if (url.startsWith("/api/outreach")) throw new Error("NOT_FOUND");
     const params = new URL(url, "http://localhost").searchParams;
     const organizationId = params.get("organizationId") || demoId(1);
+    if (params.get("operation") === "invitations") return [];
     if (
       params.get("operation") === "context" &&
       missingContexts.has(params.get("relationshipId") ?? "")
@@ -366,10 +367,11 @@ test("a delayed previous-organization snapshot cannot reappear after switching o
       : regular(url, init),
   );
   mount();
-  fireEvent.click(
+  fireEvent.keyDown(
     screen.getByRole("button", {
       name: `${t.switchOrganization}: Northstar Collective`,
     }),
+    { key: "Enter" },
   );
   fireEvent.click(screen.getByRole("menuitemradio", { name: "Lunar Studio" }));
   expect(screen.queryByText("Mira Chen")).toBeNull();
@@ -602,7 +604,7 @@ test("the header theme toggle persists across a reload and agrees with preferenc
   const preference = screen.getByRole("combobox", {
     name: t.appearance,
   }) as HTMLSelectElement;
-  expect(preference.value).toBe("dark");
+  expect(preference.textContent).toContain(t.dark);
   cleanup();
   document.documentElement.className = "";
   new Function(appearanceBootScript)();
@@ -613,9 +615,10 @@ test("the header theme toggle persists across a reload and agrees with preferenc
   expect(document.documentElement.classList.contains("dark")).toBe(false);
   expect(localStorage.getItem("gravity-theme")).toBe("light");
   fireEvent.click(screen.getByRole("link", { name: t.settings }));
-  fireEvent.change(screen.getByRole("combobox", { name: t.appearance }), {
-    target: { value: "system" },
+  fireEvent.keyDown(screen.getByRole("combobox", { name: t.appearance }), {
+    key: "Enter",
   });
+  fireEvent.click(await screen.findByRole("option", { name: t.system }));
   expect(localStorage.getItem("gravity-theme")).toBe("system");
   expect(toggle().getAttribute("aria-pressed")).toBe("false");
 });
@@ -909,10 +912,11 @@ test("saved views are links whose filter lives in the URL", async () => {
 test("switching workspace remembers its slug and leaves a record of the old workspace", async () => {
   mount(`/companies/${demoId(100)}`);
   expect(heading("Northstar Labs", 2)).toBeTruthy();
-  fireEvent.click(
+  fireEvent.keyDown(
     screen.getByRole("button", {
       name: `${t.switchOrganization}: Northstar Collective`,
     }),
+    { key: "Enter" },
   );
   fireEvent.click(screen.getByRole("menuitemradio", { name: "Lunar Studio" }));
   expect(window.location.pathname).toBe("/companies");
@@ -947,10 +951,11 @@ test("the workspace menu opens above a collapsed sidebar and still switches orga
   mount();
   fireEvent.keyDown(document.body, { key: "[" });
   expect(document.documentElement.dataset.sidebar).toBe("collapsed");
-  fireEvent.click(
+  fireEvent.keyDown(
     screen.getByRole("button", {
       name: `${t.switchOrganization}: Northstar Collective`,
     }),
+    { key: "Enter" },
   );
   const menu = screen.getByRole("menu");
   expect(document.getElementById("navigation-panel")?.contains(menu)).toBe(
@@ -1129,10 +1134,11 @@ test("the company timeline puts upcoming work first and past work newest first",
 
 test("switching workspace drops an owner filter that names a member of the old workspace", async () => {
   mount("/actions?owner=demo-teammate&kind=reply");
-  fireEvent.click(
+  fireEvent.keyDown(
     screen.getByRole("button", {
       name: `${t.switchOrganization}: Northstar Collective`,
     }),
+    { key: "Enter" },
   );
   fireEvent.click(screen.getByRole("menuitemradio", { name: "Lunar Studio" }));
   expect(window.location.pathname).toBe("/actions");
@@ -1248,10 +1254,11 @@ test("the workspace menu opened from the drawer lives inside the drawer", async 
   setCompactScreen(true);
   mount();
   fireEvent.click(screen.getByRole("button", { name: t.openNavigation }));
-  fireEvent.click(
+  fireEvent.keyDown(
     screen.getByRole("button", {
       name: `${t.switchOrganization}: Northstar Collective`,
     }),
+    { key: "Enter" },
   );
   const drawer = document.getElementById("navigation-panel") as HTMLElement;
   const menu = document.querySelector('[role="menu"]');

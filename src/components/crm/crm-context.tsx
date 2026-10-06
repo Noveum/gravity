@@ -175,7 +175,17 @@ function useCrmState({
   const setActionDialog = (open: boolean, relationshipId = "") =>
     setActionDialogState({ open, relationshipId: open ? relationshipId : "" });
   const setSearch = (text: string) => setSearchState({ path: pathname, text });
-  const currentOrg = organizations.find((org) => org.id === organizationId);
+  const currentOrg =
+    sourceData?.organization?.id === organizationId
+      ? sourceData.organization
+      : organizations.find((org) => org.id === organizationId);
+  const visibleOrganizations = useMemo(
+    () =>
+      organizations.map((org) =>
+        org.id === sourceData?.organization?.id ? sourceData.organization : org,
+      ),
+    [organizations, sourceData?.organization],
+  );
   const timeZone = currentOrg?.timezone || "UTC";
 
   function showPeek(next: Peek, path = pathname) {
@@ -483,7 +493,7 @@ function useCrmState({
     dismiss,
     pauseToasts: pause,
     resumeToasts: resume,
-    organizations,
+    organizations: visibleOrganizations,
     organizationId,
     currentOrg,
     timeZone,

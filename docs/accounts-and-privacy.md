@@ -14,7 +14,7 @@ The shared `set_conversation_visibility` operation is available at `POST /api/cr
 
 MCP discovery now contains **64 current business operations (19 reads, 45 mutations)** plus eight identity/context helpers. Sequences, enrollments, follow-ups, contact policy, materials, deals and personal connector configuration use the common registry. Provider login/consent remains interactive. Sending additionally requires `crm:send`, a currently approved draft, provider consent and contact-policy checks; unknown delivery outcomes cannot be blindly retried.
 
-Capabilities distinguish multiple-account support and thread sharing from features still absent: member invitation/administration, delegated shared-mailbox sending, Calendar event writes, message attachments and contract signing. An implemented operation is not proof that a particular provider account or assistant has completed authorization.
+Capabilities distinguish multiple-account support and thread sharing from features still absent: delegated shared-mailbox sending, Calendar event writes, message attachments and contract signing. An implemented operation is not proof that a particular provider account or assistant has completed authorization.
 
 The Sequences page also offers **New sequence** (keyboard **C**) with product selection, ordered steps, channels, delays and templates. It calls the same `create_sequence` business operation as MCP. Creating a sequence neither enrolls contacts nor sends messages. Failed saves retain the form; pending saves prevent duplicate submissions and dismissal.
 

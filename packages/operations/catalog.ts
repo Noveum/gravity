@@ -35,6 +35,16 @@ import {
   workspaceSchema,
 } from "../core/crm";
 import {
+  acceptInviteSchema,
+  inviteSchema,
+  memberAccessSchema,
+  OrganizationSettingsService,
+  organizationScope,
+  organizationSettingsSchema,
+  removeMemberSchema,
+  revokeInviteSchema,
+} from "../core/organization-settings";
+import {
   contactPreferencesSchema,
   contactRulesSchema,
   enrollmentChangeSchema,
@@ -114,12 +124,13 @@ function operation<S extends z.ZodObject>(
         const output = value as
           | { organizationId?: string; id?: string }
           | undefined;
-        const organizationId =
-          definition.operation === "workspace"
-            ? output?.organizationId
-            : definition.operation === "organization"
-              ? output?.id
-              : fields.organizationId;
+        const organizationId = ["workspace", "invitation-accept"].includes(
+          definition.operation,
+        )
+          ? output?.organizationId
+          : definition.operation === "organization"
+            ? output?.id
+            : fields.organizationId;
         if (organizationId) publishChange(organizationId);
       }
       return value ?? { ok: true };
@@ -160,6 +171,97 @@ export function materialBytes(value: string) {
 }
 
 export const operations: Operation[] = [
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "invitation-preview",
+    name: "preview_invitation",
+    description:
+      "Preview the workspace and access in an invitation as its verified recipient. Requires a human session, never an MCP grant.",
+    schema: acceptInviteSchema,
+    run: (c, input) =>
+      new OrganizationSettingsService(c.db).preview(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "member-remove",
+    name: "remove_member",
+    description:
+      "Deactivate a workspace membership. Requires admin and all-products access. The last administrator cannot be removed. Historical records are preserved.",
+    schema: removeMemberSchema,
+    run: (c, input) =>
+      new OrganizationSettingsService(c.db).removeMember(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "invitations",
+    name: "list_invitations",
+    description:
+      "List pending workspace invitations. Requires admin and all-products access.",
+    schema: organizationScope,
+    run: (c, input) =>
+      new OrganizationSettingsService(c.db).invitations(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "invitation",
+    name: "create_invitation",
+    description:
+      "Create a 14-day invitation for a verified email with explicit role and product access. Share the returned token using /invite/TOKEN. Requires admin and all-products access. This does not send email.",
+    schema: inviteSchema,
+    run: (c, input) =>
+      new OrganizationSettingsService(c.db).invite(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "invitation-revoke",
+    name: "revoke_invitation",
+    description:
+      "Revoke a pending invitation. Requires admin and all-products access.",
+    schema: revokeInviteSchema,
+    run: (c, input) =>
+      new OrganizationSettingsService(c.db).revoke(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "invitation-accept",
+    name: "accept_invitation",
+    description:
+      "Accept an invitation as its verified recipient. Requires a human session, never an MCP grant.",
+    schema: acceptInviteSchema,
+    run: (c, input) =>
+      new OrganizationSettingsService(c.db).accept(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "member-access",
+    name: "update_member_access",
+    description:
+      "Change an active workspace member role and product access. Requires admin and all-products access; the last administrator cannot be demoted.",
+    schema: memberAccessSchema,
+    run: (c, input) =>
+      new OrganizationSettingsService(c.db).updateMember(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "organization-settings",
+    name: "update_organization",
+    description:
+      "Update organization name and timezone. Requires admin and all-products access.",
+    schema: organizationSettingsSchema,
+    run: (c, input) =>
+      new OrganizationSettingsService(c.db).updateOrganization(
+        c.principal,
+        input,
+      ),
+  }),
   operation({
     api: "crm",
     method: "POST",
@@ -963,6 +1065,12 @@ export function operationInput(item: Operation) {
   return z.object(shape);
 }
 const adminOperations = new Set([
+  "remove_member",
+  "update_organization",
+  "update_member_access",
+  "revoke_invitation",
+  "create_invitation",
+  "list_invitations",
   "create_workspace",
   "create_organization",
   "create_product",
@@ -970,6 +1078,12 @@ const adminOperations = new Set([
   "update_contact_rules",
 ]);
 const allProductOperations = new Set([
+  "remove_member",
+  "update_organization",
+  "update_member_access",
+  "revoke_invitation",
+  "create_invitation",
+  "list_invitations",
   "create_workspace",
   "create_organization",
   "create_product",
@@ -1016,6 +1130,11 @@ export function operationAvailable(
   role: string,
 ) {
   const requirements = operationRequirements(item);
+  if (
+    ["accept_invitation", "preview_invitation"].includes(item.name) &&
+    principal.source === "mcp"
+  )
+    return false;
   return (
     (item.method === "GET" ||
       principal.source === "session" ||

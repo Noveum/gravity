@@ -278,7 +278,15 @@ export function mcpHandler(
             importedMessageVisibility: "private-by-default",
             conversationSharing: "owner-controlled-with-product-members",
             delegatedMailboxSending: false,
-            memberAdministration: false,
+            memberAdministration:
+              writable &&
+              principal.productIds === undefined &&
+              membership.role === "admin",
+            workspaceInvitations:
+              writable &&
+              principal.productIds === undefined &&
+              membership.role === "admin",
+            invitationDelivery: "copy-link",
             accountConnectionRequired: true,
             providerConsentRequired: true,
             organizationBound: true,

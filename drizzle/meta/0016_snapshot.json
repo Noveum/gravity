@@ -1,6 +1,6 @@
 {
-  "id": "32a32d35-7288-427d-a405-06784bf95216",
-  "prevId": "2aeacda6-63d2-4d27-b3fa-0f9a27ae1bcf",
+  "id": "5ebc6715-3640-4619-928d-e4ba05a5f3a7",
+  "prevId": "32a32d35-7288-427d-a405-06784bf95216",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -746,9 +746,57 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
+        },
+        "tags": {
+          "name": "tags",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "amount_minor": {
+          "name": "amount_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'USD'"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "companies_browse": {
+          "name": "companies_browse",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "companies_organization_id_organizations_id_fk": {
           "name": "companies_organization_id_organizations_id_fk",
@@ -787,7 +835,16 @@
           "withCheck": "true"
         }
       },
-      "checkConstraints": {},
+      "checkConstraints": {
+        "company_amount_nonnegative": {
+          "name": "company_amount_nonnegative",
+          "value": "\"companies\".\"amount_minor\" IS NULL OR \"companies\".\"amount_minor\" >= 0"
+        },
+        "company_currency_valid": {
+          "name": "company_currency_valid",
+          "value": "\"companies\".\"currency\" ~ '^[A-Z]{3}$'"
+        }
+      },
       "isRLSEnabled": true
     },
     "public.connections": {
@@ -3426,6 +3483,13 @@
           "notNull": true,
           "default": "'USD'"
         },
+        "tags": {
+          "name": "tags",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
         "owner_id": {
           "name": "owner_id",
           "type": "text",
@@ -3757,9 +3821,84 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
+        },
+        "tags": {
+          "name": "tags",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "amount_minor": {
+          "name": "amount_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'USD'"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "people_company_browse": {
+          "name": "people_company_browse",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "archived_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "people_name_browse": {
+          "name": "people_name_browse",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "people_organization_id_organizations_id_fk": {
           "name": "people_organization_id_organizations_id_fk",
@@ -3813,7 +3952,16 @@
           "withCheck": "true"
         }
       },
-      "checkConstraints": {},
+      "checkConstraints": {
+        "person_amount_nonnegative": {
+          "name": "person_amount_nonnegative",
+          "value": "\"people\".\"amount_minor\" IS NULL OR \"people\".\"amount_minor\" >= 0"
+        },
+        "person_currency_valid": {
+          "name": "person_currency_valid",
+          "value": "\"people\".\"currency\" ~ '^[A-Z]{3}$'"
+        }
+      },
       "isRLSEnabled": true
     },
     "public.pipelines": {
@@ -4395,9 +4543,57 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
+        },
+        "tags": {
+          "name": "tags",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "amount_minor": {
+          "name": "amount_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'USD'"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "relationships_person_browse": {
+          "name": "relationships_person_browse",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "relationships_organization_id_organizations_id_fk": {
           "name": "relationships_organization_id_organizations_id_fk",
@@ -4520,6 +4716,14 @@
         }
       },
       "checkConstraints": {
+        "relationship_amount_nonnegative": {
+          "name": "relationship_amount_nonnegative",
+          "value": "\"relationships\".\"amount_minor\" IS NULL OR \"relationships\".\"amount_minor\" >= 0"
+        },
+        "relationship_currency_valid": {
+          "name": "relationship_currency_valid",
+          "value": "\"relationships\".\"currency\" ~ '^[A-Z]{3}$'"
+        },
         "relationship_stage_outreach": {
           "name": "relationship_stage_outreach",
           "value": "\"relationships\".\"stage_pipeline\" = 'outreach'"

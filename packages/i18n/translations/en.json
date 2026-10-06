@@ -292,6 +292,10 @@
     "STAGE_ORDER_INVALID": "List every active stage of this pipeline exactly once.",
     "STAGE_TARGET_INVALID": "Choose another active stage in the same pipeline to move records to."
   },
+  "consentAccess": "Access",
+  "consentLevelRead": "Read",
+  "consentLevelWrite": "Read and write",
+  "consentLevelSend": "Read, write and send",
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
   "addPerson": "Add person",
   "newPerson": "New person",

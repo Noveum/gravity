@@ -475,3 +475,54 @@ test("new assistant grants default to all permitted current and future products 
   );
   expect(screen.getByText(new RegExp(t.allProductsAndFuture))).toBeTruthy();
 });
+
+test("consent offers read, read and write, or read, write and send, and narrows the accepted scope", async () => {
+  query = new URLSearchParams(
+    "sig=signed&client_id=assistant&scope=openid+offline_access+crm%3Aread+crm%3Awrite+crm%3Asend",
+  );
+  request.mockResolvedValueOnce({
+    organization: "Org",
+    products: ["Product"],
+    clientName: "Assistant",
+  });
+  render(<Consent />);
+  await waitFor(() => expect(screen.getByText("Assistant")).toBeTruthy());
+  const read = screen.getByLabelText(t.consentLevelRead) as HTMLInputElement;
+  const write = screen.getByLabelText(t.consentLevelWrite) as HTMLInputElement;
+  const send = screen.getByLabelText(t.consentLevelSend) as HTMLInputElement;
+  expect(send.checked).toBe(true);
+  expect(screen.getByText(t.consentReadWriteSend)).toBeTruthy();
+  fireEvent.click(read);
+  expect(read.checked).toBe(true);
+  expect(screen.getByText(t.consentReadOnly)).toBeTruthy();
+  const pending = deferred();
+  request.mockReturnValueOnce(pending.promise);
+  fireEvent.click(screen.getByRole("button", { name: t.accept }));
+  expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toMatchObject({
+    accept: true,
+    scope: "openid offline_access crm:read",
+  });
+  expect(write.matches(":disabled")).toBe(true);
+});
+
+test("consent only offers access levels the assistant requested", async () => {
+  query = new URLSearchParams(
+    "sig=signed&client_id=assistant&scope=crm%3Aread+crm%3Awrite",
+  );
+  request.mockResolvedValueOnce({
+    organization: "Org",
+    products: ["Product"],
+    clientName: "Assistant",
+  });
+  render(<Consent />);
+  await waitFor(() => expect(screen.getByText("Assistant")).toBeTruthy());
+  expect(screen.queryByLabelText(t.consentLevelSend)).toBeNull();
+  expect(
+    (screen.getByLabelText(t.consentLevelWrite) as HTMLInputElement).checked,
+  ).toBe(true);
+  request.mockReturnValueOnce(deferred().promise);
+  fireEvent.click(screen.getByRole("button", { name: t.accept }));
+  expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toMatchObject({
+    scope: "crm:read crm:write",
+  });
+});

@@ -72,7 +72,11 @@ async function call(
 }
 
 test("MCP discovery exposes every business API with valid schemas and read-only tokens cannot discover writes", async () => {
-  const { result, error } = await rpc("tools/list", {});
+  const { result, error } = await rpc(
+    "tools/list",
+    {},
+    { ...writable, canSend: true },
+  );
   expect(error).toBeUndefined();
   const names = result.tools.map((tool: { name: string }) => tool.name);
   expect(new Set(names).size).toBe(names.length);
@@ -175,7 +179,63 @@ test("ordinary CRM write permission cannot perform outbound sending", async () =
     version: 1,
     idempotencyKey: "stable-key-without-permission",
   });
-  expect(blocked.error).toContain("SEND_PERMISSION_REQUIRED");
+  expect(blocked.error).toMatch(/send_touch/);
+  expect(blocked.result).toBeUndefined();
+});
+test("each assistant scope combination lists only its tools and refuses the rest", async () => {
+  const sendNames = operations
+    .filter((item) => item.permission === "crm:send")
+    .map((item) => item.name);
+  const writeNames = operations
+    .filter((item) => item.method !== "GET" && !item.permission)
+    .map((item) => item.name);
+  const readNames = operations
+    .filter((item) => item.method === "GET")
+    .map((item) => item.name);
+  expect(sendNames).toEqual([
+    "send_touch",
+    "send_action",
+    "reconcile_delivery",
+  ]);
+  const listed = async (principal: Principal) =>
+    (await rpc("tools/list", {}, principal)).result.tools.map(
+      (tool: { name: string }) => tool.name,
+    );
+  const reader = { ...writable, readOnly: true, canSend: false };
+  const writer = { ...writable, readOnly: false, canSend: false };
+  const sender = { ...writable, readOnly: false, canSend: true };
+  const readTools = await listed(reader);
+  expect(readTools).toEqual(expect.arrayContaining(readNames));
+  for (const name of [...writeNames, ...sendNames])
+    expect(readTools).not.toContain(name);
+  const writeTools = await listed(writer);
+  expect(writeTools).toEqual(
+    expect.arrayContaining([...readNames, ...writeNames]),
+  );
+  for (const name of sendNames) expect(writeTools).not.toContain(name);
+  expect(await listed(sender)).toEqual(
+    expect.arrayContaining([...readNames, ...writeNames, ...sendNames]),
+  );
+  const draft = {
+    name: "Scope refusal fixture",
+    productId: demoId(11),
+    email: "scope-refusal@example.test",
+  };
+  expect((await call("create_person", draft, reader)).error).toMatch(
+    /create_person/,
+  );
+  const sendInput = {
+    touchId: demoId(990),
+    connectionId: demoId(991),
+    version: 1,
+    idempotencyKey: "stable-key-for-scope-refusal",
+  };
+  expect((await call("send_touch", sendInput, writer)).error).toMatch(
+    /send_touch/,
+  );
+  expect((await call("send_touch", sendInput, sender)).error).not.toMatch(
+    /SEND_PERMISSION_REQUIRED|not found/i,
+  );
 });
 
 test("MCP writes create records, notify listeners, audit changes and reject stale approval versions", async () => {

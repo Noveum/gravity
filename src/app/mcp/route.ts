@@ -3,7 +3,12 @@ import { resourceUrl } from "@crm/auth/options";
 import { getAuth } from "@crm/auth/server";
 import { errorResponse, limitedBody } from "@crm/core/http";
 import { getDatabase } from "@crm/database/client";
-import { mcpHandler, principalForVerifiedToken } from "@crm/mcp/server";
+import {
+  mcpChallengeScopes,
+  mcpHandler,
+  mcpRequiredScopes,
+  principalForVerifiedToken,
+} from "@crm/mcp/server";
 import { maxFileSize } from "@crm/storage/files";
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -30,7 +35,8 @@ export async function POST(request: Request) {
       },
       {
         resource: resourceUrl(),
-        requiredScopes: ["crm:read", "crm:write", "crm:send"],
+        requiredScopes: mcpRequiredScopes,
+        challengeScopes: mcpChallengeScopes,
       },
     )(request);
   } catch (error) {

@@ -21,7 +21,9 @@ import { errorResponse } from "../packages/core/http";
 import { createLocalDatabase } from "../packages/database/client";
 import * as schema from "../packages/database/schema";
 import {
+  mcpChallengeScopes,
   mcpHandler,
+  mcpRequiredScopes,
   principalForGrant,
   principalForVerifiedToken,
 } from "../packages/mcp/server";
@@ -66,7 +68,8 @@ const server = createServer(async (incoming, outgoing) => {
         },
         {
           resource: `${origin}/mcp`,
-          requiredScopes: ["crm:read", "crm:write", "crm:send"],
+          requiredScopes: mcpRequiredScopes,
+          challengeScopes: mcpChallengeScopes,
         },
       )(request);
     else
@@ -314,19 +317,20 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
   });
   expect(readTokenResponse.status).toBe(200);
   const readToken = await readTokenResponse.json();
-  const insufficient = await fetch(`${origin}/mcp`, {
+  const readOnlyList = await fetch(`${origin}/mcp`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${readToken.access_token}`,
       "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
     },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
   });
-  expect(insufficient.status).toBe(403);
-  expect(insufficient.headers.get("www-authenticate")).toContain(
-    "insufficient_scope",
-  );
-  expect(insufficient.headers.get("www-authenticate")).toContain("crm:write");
+  expect(readOnlyList.status).toBe(200);
+  const readOnlyTools = await readOnlyList.text();
+  expect(readOnlyTools).toContain('"list_products"');
+  expect(readOnlyTools).not.toContain('"create_person"');
+  expect(readOnlyTools).not.toContain('"send_touch"');
   const refreshed = await fetch(`${origin}/api/auth/oauth2/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -396,6 +400,7 @@ test("MCP requests without credentials receive OAuth discovery instead of data",
     "resource_metadata",
   );
   const header = response.headers.get("www-authenticate") ?? "";
+  expect(header).toContain('scope="crm:read crm:write crm:send"');
   const url = header.match(/resource_metadata="([^"]+)"/)?.[1];
   expect(url).toBeTruthy();
   const metadataResponse = await fetch(url ?? "");

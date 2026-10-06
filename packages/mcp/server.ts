@@ -23,6 +23,8 @@ import {
 } from "../operations/catalog";
 import { downloadAsset } from "../storage/files";
 // Call only after the OAuth library has verified signature, issuer, audience and scope.
+export const mcpRequiredScopes = ["crm:read"];
+export const mcpChallengeScopes = ["crm:read", "crm:write", "crm:send"];
 export async function principalForVerifiedToken(db: Database, claims: unknown) {
   const identity = z
     .object({
@@ -175,6 +177,7 @@ export function mcpHandler(
       }
       for (const operation of operations) {
         if (operation.method !== "GET" && !writable) continue;
+        if (operation.permission === "crm:send" && !canSend) continue;
         server.registerTool(
           operation.name,
           {

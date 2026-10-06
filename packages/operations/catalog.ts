@@ -743,7 +743,7 @@ export const operations: Operation[] = [
     operation: "person-update",
     name: "update_person",
     description:
-      "Edit contact fields, company and summary with optimistic version checking. Email/channel edits invalidate affected approvals.",
+      "Edit contact fields, company and summary with optimistic version checking. Email/channel edits invalidate affected approvals. Assistants cannot change the email addresses or LinkedIn profile of a do-not-contact person; that returns HUMAN_ACTION_REQUIRED.",
     schema: personUpdateSchema,
     run: (c, input) => records(c).updatePerson(c.principal, input),
   }),

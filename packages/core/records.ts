@@ -252,6 +252,13 @@ export class RecordService {
       const otherEmails = [...new Set(input.otherEmails)].filter(
         (email) => email !== input.email,
       );
+      const reachChanged =
+        (input.email ?? null) !== (person.email ?? null) ||
+        input.linkedinUrl !== person.linkedinUrl ||
+        [...otherEmails].sort().join(" ") !==
+          [...person.otherEmails].sort().join(" ");
+      if (principal.source === "mcp" && person.doNotContact && reachChanged)
+        throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
       const [updated] = await tx
         .update(s.people)
         .set({

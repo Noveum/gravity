@@ -4,6 +4,7 @@ import { subscribeChanges } from "../packages/core/changes";
 import { CrmService } from "../packages/core/crm";
 import { OutreachService } from "../packages/core/outreach";
 import { authorize, type Principal } from "../packages/core/policy";
+import { RecordService } from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
@@ -1103,4 +1104,54 @@ test("assistants may tighten contact safety but loosening it is human-only", asy
     timeZone: null,
   });
   expect(cleared.doNotContact).toBe(false);
+});
+test("an assistant cannot change where a do-not-contact person is reached", async () => {
+  const created = await call("create_person", {
+    productId: demoId(11),
+    name: "Fictional Opted Out Client",
+    email: "opted-out@example.test",
+    review: false,
+  });
+  const before = await call("get_person", { personId: created.personId });
+  const optedOut = await call("set_contact_preferences", {
+    personId: created.personId,
+    version: before.person.version,
+    doNotContact: true,
+    timeZone: null,
+  });
+  const base = {
+    personId: created.personId,
+    version: optedOut.version,
+    name: "Fictional Opted Out Client",
+    email: "opted-out@example.test",
+    otherEmails: [],
+    linkedinUrl: "",
+  };
+  for (const change of [
+    { email: "new-route@example.test" },
+    { otherEmails: ["second-route@example.test"] },
+    { linkedinUrl: "https://www.linkedin.com/in/opted-out-fixture/" },
+  ])
+    expect(
+      (await call("update_person", { ...base, ...change })).error,
+    ).toContain("HUMAN_ACTION_REQUIRED");
+  const renamed = await call("update_person", {
+    ...base,
+    name: "Fictional Renamed Client",
+  });
+  expect(renamed.name).toBe("Fictional Renamed Client");
+  const edited = await new RecordService(local.db).updatePerson(
+    { userId: demoUser, source: "session" },
+    {
+      organizationId: demoId(1),
+      ...base,
+      version: renamed.version,
+      name: renamed.name,
+      title: "",
+      phone: "",
+      summary: "",
+      email: "new-route@example.test",
+    },
+  );
+  expect(edited.email).toBe("new-route@example.test");
 });

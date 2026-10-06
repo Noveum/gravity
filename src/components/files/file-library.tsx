@@ -172,7 +172,6 @@ function Browser({
     ids: string[];
     operation: "copy" | "move";
   } | null>(null);
-  const [opened, setOpened] = useState<FileEntry | null>(null);
   const [dialog, setDialog] = useState<{
     kind: "folder" | "markdown" | "rename" | "share" | "delete";
     entry?: FileEntry;
@@ -223,7 +222,6 @@ function Browser({
     previousFolder.current = parentId;
     setSelection([]);
     setSearch("");
-    setOpened(null);
     setError("");
   }, [parentId]);
   useEffect(
@@ -311,12 +309,15 @@ function Browser({
           ? current.filter((id) => id !== entry.id)
           : [...current, entry.id],
       );
-    else setSelection([entry.id]);
+    else {
+      setSelection([entry.id]);
+      if (entry.kind !== "folder") open(entry);
+    }
     if (!event.shiftKey) setAnchor(entry.id);
   }
   function open(entry: FileEntry) {
     if (entry.kind === "folder") navigate(entry.id);
-    else setOpened(entry);
+    else crm.openFile(entry.id, scope.productId);
   }
   function prefetch(entry: FileEntry) {
     if (entry.kind === "folder")
@@ -522,7 +523,7 @@ function Browser({
         if (writable) drop(event, parentId);
       }}
       onKeyDown={(event) => {
-        if (isFileInput(event.target) || dialog || opened || busy) return;
+        if (isFileInput(event.target) || dialog || busy) return;
         const shortcut = fileShortcut(event);
         if (!shortcut) return;
         event.stopPropagation();
@@ -815,16 +816,6 @@ function Browser({
           members={crm.data.members}
           run={run}
           close={() => setDialog(null)}
-          busy={busy}
-        />
-      )}
-      {opened && (
-        <Preview
-          entry={opened}
-          scope={scope}
-          cacheScope={cacheScope}
-          run={run}
-          close={() => setOpened(null)}
           busy={busy}
         />
       )}
@@ -1635,19 +1626,77 @@ function EntryDialog({
     </Modal>
   );
 }
+export function FileInspector({
+  fileId,
+  productId,
+}: {
+  fileId: string;
+  productId: string;
+}) {
+  const [client] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  );
+  useEffect(() => () => client.clear(), [client]);
+  return (
+    <QueryClientProvider client={client}>
+      <InspectorPreview fileId={fileId} productId={productId} />
+    </QueryClientProvider>
+  );
+}
+function InspectorPreview({
+  fileId,
+  productId,
+}: {
+  fileId: string;
+  productId: string;
+}) {
+  const crm = useWorkspaceData();
+  const client = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
+  const scope = { organizationId: crm.organizationId, productId };
+  const cacheScope = `${scope.organizationId}/${scope.productId}`;
+  const revision = useRef(crm.sourceData.asOf);
+  useEffect(() => {
+    if (revision.current === crm.sourceData.asOf) return;
+    revision.current = crm.sourceData.asOf;
+    void client.invalidateQueries({ queryKey: fileKey(cacheScope, fileId) });
+  }, [crm.sourceData.asOf, client, cacheScope, fileId]);
+  async function run(operation: string, input: object) {
+    if (lock.current) throw new Error(t.stillSaving);
+    lock.current = true;
+    setBusy(true);
+    try {
+      const result = await command(scope, operation, input);
+      await client.invalidateQueries({ queryKey: fileKey(cacheScope, fileId) });
+      await crm.refresh();
+      return result;
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+  return (
+    <Preview
+      entry={{ id: fileId, name: labels.loading }}
+      scope={scope}
+      cacheScope={cacheScope}
+      run={run}
+      busy={busy}
+    />
+  );
+}
 function Preview({
   entry,
   scope,
   cacheScope,
   run,
-  close,
   busy,
 }: {
-  entry: FileEntry;
+  entry: Pick<FileEntry, "id" | "name">;
   scope: FileScope;
   cacheScope: string;
   run: (operation: string, input: object) => Promise<unknown>;
-  close: () => void;
   busy: boolean;
 }) {
   const client = useQueryClient();
@@ -1657,6 +1706,7 @@ function Preview({
     staleTime: 0,
     gcTime: 0,
   });
+  const crm = useWorkspaceData();
   const current = query.data?.entry;
   const [editing, setEditing] = useState(false),
     [draft, setDraft] = useState(""),
@@ -1673,20 +1723,18 @@ function Preview({
     }
   }, [query.error, query.data?.entry.canEdit, client, entry.id]);
   return (
-    <Modal
-      title={current?.name ?? entry.name}
-      close={close}
-      wide
-      busy={busy}
-      subtitle={
-        current
-          ? `${current.kind === "markdown" ? labels.markdown : current.name.split(".").at(-1)?.toUpperCase()} · ${sizeLabel(current.size)}`
-          : labels.loading
-      }
-      actions={
-        current &&
-        !query.isFetching &&
-        !query.error && (
+    <>
+      <header className="library-inspector-heading">
+        <h2>{current?.name ?? entry.name}</h2>
+        {current && (
+          <p>
+            {current.kind === "markdown"
+              ? labels.markdown
+              : current.name.split(".").at(-1)?.toUpperCase()}{" "}
+            · {sizeLabel(current.size)}
+          </p>
+        )}
+        {current && !query.isFetching && !query.error && (
           <a
             className="button"
             aria-label={`${t.download} ${current.name}`}
@@ -1695,9 +1743,8 @@ function Preview({
             <Download size={15} />
             {t.download}
           </a>
-        )
-      }
-    >
+        )}
+      </header>
       <div className="file-preview">
         {query.isFetching && <p role="status">{labels.loading}</p>}
         {query.error ? (
@@ -1724,7 +1771,10 @@ function Preview({
                           value={draft}
                           onChange={(event) => setDraft(event.target.value)}
                         />
-                        <MarkdownPreview body={draft} />
+                        <MarkdownPreview
+                          body={draft}
+                          onOpenRecord={crm.openRecord}
+                        />
                       </div>
                       <div className="dialog-actions">
                         <button type="button" onClick={() => setEditing(false)}>
@@ -1753,7 +1803,10 @@ function Preview({
                     </>
                   ) : (
                     <>
-                      <MarkdownPreview body={query.data?.body ?? ""} />
+                      <MarkdownPreview
+                        body={query.data?.body ?? ""}
+                        onOpenRecord={crm.openRecord}
+                      />
                       {current.canEdit && (
                         <button
                           type="button"
@@ -1775,6 +1828,6 @@ function Preview({
           </div>
         )}
       </div>
-    </Modal>
+    </>
   );
 }

@@ -85,7 +85,6 @@ export function CompaniesView() {
                 </td>
                 <td>
                   {people.slice(0, 3).map((person) => {
-                    const relationship = index.byPerson.get(person.id)?.[0];
                     return (
                       <Link
                         href={personPath(person.id)}
@@ -93,10 +92,10 @@ export function CompaniesView() {
                         key={person.id}
                         prefetch={false}
                         onClick={peekLink(() =>
-                          crm.openPerson(relationship?.id ?? ""),
+                          crm.openPersonRecord(person.id),
                         )}
                         onKeyDown={peekOnSpace(() =>
-                          crm.openPerson(relationship?.id ?? ""),
+                          crm.openPersonRecord(person.id),
                         )}
                       >
                         {person.name}

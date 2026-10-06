@@ -204,6 +204,8 @@ export function useShellShortcuts({
         crm.peek.actionId,
         crm.peek.relationshipId,
         crm.peek.companyId,
+        crm.peek.personId,
+        crm.peek.fileId,
         crm.personFor(crm.peek.relationshipId)?.id,
       ].filter(Boolean);
       const records = navigableRecords();

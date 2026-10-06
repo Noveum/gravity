@@ -117,7 +117,7 @@ describe("list movement, peek and open", () => {
     await press("{Home}");
     expect(document.activeElement).toBe(order[0]);
   });
-  test("Space peeks the focused action and Enter opens its record", async () => {
+  test("Space and Enter open the focused action in the inspector", async () => {
     binding("peek");
     binding("open");
     await mountCrm(harness);
@@ -126,13 +126,14 @@ describe("list movement, peek and open", () => {
     await waitFor(() => expect(peek()).toBeTruthy());
     expect(pathname()).toBe("/actions");
     await press("{Enter}");
-    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(205)}`));
-    expect(window.location.search).toContain(`action=${demoId(605)}`);
+    expect(pathname()).toBe("/actions");
+    expect(peek()).toBeTruthy();
+    expect(window.location.search).toBe("");
   });
 });
 
 describe("Escape backs out one level", () => {
-  test("peek, then selection, then the record page each close in turn and focus returns to the row", async () => {
+  test("peek, selection and an Enter preview close in turn and focus returns to the row", async () => {
     binding("back");
     await mountCrm(harness);
     const ellis = row(/Ellis Park.*Verify role/);
@@ -148,29 +149,26 @@ describe("Escape backs out one level", () => {
     expect(ellis.dataset.selected).toBeUndefined();
     row(/Ellis Park.*Verify role/).focus();
     await press("{Enter}");
-    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(205)}`));
-    await waitFor(() =>
-      expect(document.activeElement?.hasAttribute("data-record-heading")).toBe(
-        true,
-      ),
-    );
+    expect(pathname()).toBe("/actions");
+    expect(peek()).toBeTruthy();
     await press("{Escape}");
     await waitFor(() => expect(pathname()).toBe("/actions"));
     await waitFor(() =>
       expect(document.activeElement).toBe(row(/Ellis Park.*Verify role/)),
     );
   });
-  test("Escape on a record returns to the list that record was opened from, not an older one", async () => {
+  test("Escape closes records within their current list", async () => {
     await mountCrm(harness);
     row(/Ellis Park.*Verify role/).focus();
     await press("{Enter}");
-    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(205)}`));
+    expect(peek()).toBeTruthy();
     await press("gp");
     await waitFor(() => expect(pathname()).toBe("/people"));
     const leena = screen.getByRole("link", { name: /Leena Rao/ });
     leena.focus();
     await press("{Enter}");
-    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(202)}`));
+    expect(pathname()).toBe("/people");
+    expect(peek()).toBeTruthy();
     await press("{Escape}");
     await waitFor(() => expect(pathname()).toBe("/people"));
     await waitFor(() =>
@@ -180,7 +178,8 @@ describe("Escape backs out one level", () => {
     );
     screen.getByRole("link", { name: /Ellis Park/ }).focus();
     await press("{Enter}");
-    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(205)}`));
+    expect(pathname()).toBe("/people");
+    expect(peek()).toBeTruthy();
     await press("{Escape}");
     await waitFor(() => expect(pathname()).toBe("/people"));
   });
@@ -227,8 +226,13 @@ describe("palette, search, guide and create", () => {
       ),
     ).toBeTruthy();
     await press("{Enter}");
-    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(202)}`));
-    expect(window.location.search).toContain(`action=${demoId(602)}`);
+    expect(pathname()).toBe("/actions");
+    await waitFor(() => expect(peek()).toBeTruthy());
+    expect(
+      await within(peek() as HTMLElement).findByRole("heading", {
+        name: "Leena Rao",
+      }),
+    ).toBeTruthy();
   });
   test("a company found in the palette opens its record", async () => {
     await mountCrm(harness);
@@ -237,7 +241,13 @@ describe("palette, search, guide and create", () => {
       .setup()
       .type(screen.getByRole("combobox", { name: t.commandSearch }), "cedar");
     await press("{Enter}");
-    await waitFor(() => expect(pathname()).toBe(`/companies/${demoId(102)}`));
+    expect(pathname()).toBe("/actions");
+    await waitFor(() => expect(peek()).toBeTruthy());
+    expect(
+      await within(peek() as HTMLElement).findByRole("heading", {
+        name: "Cedar Systems",
+      }),
+    ).toBeTruthy();
   });
   test("slash focuses the view search, and opens the palette on a view without one", async () => {
     binding("search");
@@ -1299,7 +1309,7 @@ describe("record editing keys", () => {
       (within(dialog).getByLabelText(t.stage) as HTMLSelectElement).value,
     ).toBe(demoId(823));
   });
-  test("C creates a company that opens on its record, and C and E create and edit meetings", async () => {
+  test("C creates a company that opens in the inspector, and C and E create and edit meetings", async () => {
     await mountCrm(harness, "/companies");
     await press("c");
     const company = screen.getByRole("dialog", { name: t.newCompany });
@@ -1307,7 +1317,8 @@ describe("record editing keys", () => {
       .setup()
       .type(within(company).getByLabelText(t.name), "Fictional Keyboard Co");
     await press("{Meta>}{Enter}{/Meta}");
-    await waitFor(() => expect(pathname()).toMatch(/^\/companies\/.+/));
+    expect(pathname()).toBe("/companies");
+    await waitFor(() => expect(peek()).toBeTruthy());
     expect(
       await screen.findByRole("heading", { name: "Fictional Keyboard Co" }),
     ).toBeTruthy();

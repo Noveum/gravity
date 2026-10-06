@@ -17,7 +17,7 @@ test("persistent native uploads, nested navigation, transfers and every preview"
   page.on("pageerror", (error) => errors.push(error.message));
   const post = async (operation: string, input: object) => {
     const response = await request.post("/api/files", {
-      headers: { Origin: "http://127.0.0.1:3024" },
+      headers: { Origin: String(test.info().project.use.baseURL) },
       data: { ...scope, operation, ...input },
     });
     expect(response.ok(), await response.text()).toBe(true);
@@ -53,7 +53,7 @@ test("persistent native uploads, nested navigation, transfers and every preview"
       .getByRole("treeitem")
       .getByRole("button", { name: sample.name, exact: true })
       .click();
-    const dialog = page.getByRole("dialog");
+    const dialog = page.locator("#record-inspector");
     await expect(
       dialog.getByRole("heading", { name: sample.name, exact: true }),
     ).toBeVisible();
@@ -137,7 +137,9 @@ test("persistent native uploads, nested navigation, transfers and every preview"
         Buffer.from(sample.base64, "base64"),
       );
     }
-    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await dialog
+      .getByRole("button", { name: "Close inspector", exact: true })
+      .click();
   }
   await page.reload();
   await expect(page.getByRole("treeitem")).toHaveCount(12);
@@ -213,7 +215,7 @@ test("large workbooks page in a worker, jump to distant cells, and keep oversize
   const bytes = await workbook.xlsx.writeBuffer();
   const upload = async (name: string, buffer: Buffer) => {
     const reservation = await request.post("/api/files", {
-      headers: { Origin: "http://127.0.0.1:3024" },
+      headers: { Origin: String(test.info().project.use.baseURL) },
       data: {
         ...scope,
         operation: "reserve",
@@ -227,11 +229,14 @@ test("large workbooks page in a worker, jump to distant cells, and keep oversize
     const pending = await reservation.json();
     const put = await request.put(
       `${pending.url}&${new URLSearchParams(scope)}`,
-      { headers: { Origin: "http://127.0.0.1:3024" }, data: buffer },
+      {
+        headers: { Origin: String(test.info().project.use.baseURL) },
+        data: buffer,
+      },
     );
     expect(put.ok()).toBe(true);
     const completed = await request.post("/api/files", {
-      headers: { Origin: "http://127.0.0.1:3024" },
+      headers: { Origin: String(test.info().project.use.baseURL) },
       data: { ...scope, operation: "complete", uploadId: pending.uploadId },
     });
     expect(completed.ok()).toBe(true);
@@ -246,7 +251,7 @@ test("large workbooks page in a worker, jump to distant cells, and keep oversize
     .getByRole("treeitem")
     .getByRole("button", { name: file.name, exact: true })
     .click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.locator("#record-inspector");
   await expect(dialog.getByRole("table")).toBeVisible();
   const jumpInput = await dialog
     .getByLabel("Go to cell", { exact: true })
@@ -301,7 +306,9 @@ test("large workbooks page in a worker, jump to distant cells, and keep oversize
   await expect(
     dialog.getByRole("cell", { name: "Second worksheet", exact: true }),
   ).toBeVisible();
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await dialog
+    .getByRole("button", { name: "Close inspector", exact: true })
+    .click();
   const zip = await JSZip.loadAsync(bytes);
   zip.file(
     "xl/worksheets/sheet1.xml",
@@ -319,12 +326,12 @@ test("large workbooks page in a worker, jump to distant cells, and keep oversize
     .click();
   await expect(
     page
-      .getByRole("dialog")
+      .locator("#record-inspector")
       .getByText("This workbook exceeds the preview limits", { exact: false }),
   ).toBeVisible();
   const download = page.waitForEvent("download");
   await page
-    .getByRole("dialog")
+    .locator("#record-inspector")
     .getByRole("link", { name: `Download ${huge.name}` })
     .click();
   const path = await (await download).path();
@@ -339,7 +346,7 @@ test("native drops move into folders and public ancestor revocation hides open p
 }) => {
   const post = async (operation: string, input: object) => {
     const result = await request.post(`/api/files?operation=${operation}`, {
-      headers: { Origin: "http://127.0.0.1:3024" },
+      headers: { Origin: String(test.info().project.use.baseURL) },
       data: { ...scope, ...input },
     });
     expect(result.ok(), await result.text()).toBe(true);
@@ -460,7 +467,7 @@ test("native directory chooser preserves nested paths and keyboard transfer sele
       "Native folder bytes",
     );
     const response = await request.post("/api/files?operation=create", {
-      headers: { Origin: "http://127.0.0.1:3024" },
+      headers: { Origin: String(test.info().project.use.baseURL) },
       data: {
         ...scope,
         name: `Directory check ${crypto.randomUUID()}`,
@@ -509,7 +516,7 @@ test("large folders render a window in every view and select offscreen files", a
 }) => {
   const post = async (input: object) => {
     const response = await request.post("/api/files?operation=create", {
-      headers: { Origin: "http://127.0.0.1:3024" },
+      headers: { Origin: String(test.info().project.use.baseURL) },
       data: { ...scope, ...input },
     });
     expect(response.ok(), await response.text()).toBe(true);

@@ -223,6 +223,7 @@ export function CompanyPeople({
   context: ClientCompanyContext;
   onPerson: (relationshipId: string) => void;
 }) {
+  const crm = useWorkspaceData();
   const page = useListPage(context.people, context.company.id);
   const relationships = new Map<
     string,
@@ -241,7 +242,11 @@ export function CompanyPeople({
           <button
             type="button"
             className="text-button"
-            onClick={() => onPerson(relationships.get(p.id)?.[0]?.id || "")}
+            onClick={() => {
+              const relationship = relationships.get(p.id)?.[0];
+              if (relationship) onPerson(relationship.id);
+              else crm.openPersonRecord(p.id);
+            }}
           >
             {p.name}
           </button>

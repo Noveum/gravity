@@ -662,3 +662,30 @@
 .library-column-item {
   height: 34px;
 }
+
+.library-inspector-heading {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+.library-inspector-heading .button {
+  justify-self: start;
+}
+.inspector .library-markdown-editor {
+  grid-template-columns: minmax(0, 1fr);
+}
+.library-rows {
+  container-type: inline-size;
+}
+@container (max-width: 560px) {
+  .library-row {
+    grid-template-columns: 20px minmax(0, 1fr) 28px;
+  }
+  .library-row > .library-access,
+  .library-row > span:nth-last-child(2),
+  .library-column-header > span:nth-child(3),
+  .library-column-header > span:nth-child(4) {
+    display: none;
+  }
+}

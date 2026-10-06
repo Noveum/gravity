@@ -506,7 +506,12 @@ export class CrmService {
         inArray(table.productId, ids),
       );
     const [organization] = await this.db
-      .select({ timezone: s.organizations.timezone })
+      .select({
+        id: s.organizations.id,
+        name: s.organizations.name,
+        slug: s.organizations.slug,
+        timezone: s.organizations.timezone,
+      })
       .from(s.organizations)
       .where(eq(s.organizations.id, scope.organizationId));
     const messageDay = sql<string>`to_char(${s.messages.occurredAt} AT TIME ZONE ${organization.timezone}, 'YYYY-MM-DD')`;
@@ -577,7 +582,12 @@ export class CrmService {
       this.db.select().from(s.meetings).where(scoped(s.meetings)),
       this.db.select().from(s.opportunities).where(scoped(s.opportunities)),
       this.db
-        .select({ id: s.user.id, name: s.user.name, role: s.memberships.role })
+        .select({
+          id: s.user.id,
+          name: s.user.name,
+          email: s.user.email,
+          role: s.memberships.role,
+        })
         .from(s.memberships)
         .innerJoin(s.user, eq(s.user.id, s.memberships.userId))
         .where(
@@ -803,6 +813,7 @@ export class CrmService {
       })),
       connections,
       grants,
+      organization,
       asOf: new Date().toISOString(),
     };
   }

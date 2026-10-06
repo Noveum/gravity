@@ -94,6 +94,28 @@ export const productMemberships = pgTable(
     }),
   ],
 ).enableRLS();
+export const invitations = pgTable(
+  "invitations",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    email: text("email").notNull(),
+    role: text("role", { enum: ["admin", "member"] }).notNull(),
+    productIds: jsonb("product_ids").$type<string[]>().notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    inviterId: text("inviter_id")
+      .notNull()
+      .references(() => user.id),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    index("invitations_organization_idx").on(t.organizationId),
+  ],
+).enableRLS();
 export const companies = pgTable(
   "companies",
   {

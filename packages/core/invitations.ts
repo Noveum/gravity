@@ -406,7 +406,6 @@ export class InvitationService {
       .where(eq(s.invitations.tokenHash, hashToken(token)));
     const [invitation] = lock ? await query.for("update") : await query;
     if (!invitation) throw new DomainError("NOT_FOUND", 404);
-    assertUsable(invitation);
     const [account] = await db
       .select()
       .from(s.user)
@@ -416,6 +415,7 @@ export class InvitationService {
       throw new DomainError("INVITATION_EMAIL_MISMATCH", 403);
     if (!account.emailVerified)
       throw new DomainError("EMAIL_NOT_VERIFIED", 403);
+    assertUsable(invitation);
     const organization = await workspace(db, invitation.organizationId);
     assertDomain(invitation.email, organization);
     return { invitation, organization };

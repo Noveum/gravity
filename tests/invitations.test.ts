@@ -431,3 +431,25 @@ test("a read-only admin can list invitations but cannot change them", async () =
     }),
   ).rejects.toMatchObject({ code: "FORBIDDEN" });
 });
+
+test("someone else's expired or used invitation reveals only the email mismatch", async () => {
+  const created = await invite();
+  const stranger: Principal = { userId: "demo-teammate", source: "session" };
+  await local.db
+    .update(s.invitations)
+    .set({ expiresAt: new Date(Date.now() - 1000) })
+    .where(eq(s.invitations.id, created.invitation.id));
+  await expect(accept(tokenOf(created), stranger)).rejects.toMatchObject({
+    code: "INVITATION_EMAIL_MISMATCH",
+  });
+  await local.db
+    .update(s.invitations)
+    .set({ revokedAt: new Date() })
+    .where(eq(s.invitations.id, created.invitation.id));
+  await expect(accept(tokenOf(created), stranger)).rejects.toMatchObject({
+    code: "INVITATION_EMAIL_MISMATCH",
+  });
+  await expect(accept(tokenOf(created))).rejects.toMatchObject({
+    code: "INVITATION_REVOKED",
+  });
+});

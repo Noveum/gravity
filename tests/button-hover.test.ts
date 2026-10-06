@@ -2,7 +2,8 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
-const stylesheet = readFileSync("src/app/globals.css", "utf8");
+const source = readFileSync("src/app/globals.css", "utf8");
+const stylesheet = source.replaceAll("@media (hover: hover)", "@media all");
 
 function resolve(value: string, element: Element, depth = 0): string {
   const match = value.trim().match(/^var\((--[\w-]+)(?:,\s*(.+))?\)$/);

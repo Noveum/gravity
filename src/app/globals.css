@@ -238,8 +238,10 @@
   text-decoration: none;
   transition: var(--transition-colors);
 }
-:where(button:not(:disabled):hover, a:hover) {
-  --button-current: var(--button-hover);
+@media (hover: hover) {
+  :where(button:not(:disabled):hover, a:hover) {
+    --button-current: var(--button-hover);
+  }
 }
 :where(button:disabled) {
   opacity: 0.5;
@@ -409,8 +411,10 @@
   padding: 0;
   font-weight: 500;
 }
-.text-button:not(:disabled):hover {
-  --button-ink: var(--gravity-accent);
+@media (hover: hover) {
+  .text-button:not(:disabled):hover {
+    --button-ink: var(--gravity-accent);
+  }
 }
 .chip {
   --button-fill: var(--gravity-accent-soft);
@@ -543,8 +547,10 @@
   text-transform: uppercase;
   justify-content: space-between;
 }
-.sidebar-section-toggle:not(:disabled):hover {
-  --button-ink: var(--gravity-text);
+@media (hover: hover) {
+  .sidebar-section-toggle:not(:disabled):hover {
+    --button-ink: var(--gravity-text);
+  }
 }
 .section-chevron {
   transform: rotate(90deg);
@@ -574,8 +580,10 @@
   font-weight: 500;
   transition: var(--transition-row);
 }
-.nav-item:not(:disabled):hover {
-  --button-ink: var(--gravity-text);
+@media (hover: hover) {
+  .nav-item:not(:disabled):hover {
+    --button-ink: var(--gravity-text);
+  }
 }
 .nav-item[aria-current="page"],
 .nav-item[aria-current="true"],
@@ -813,8 +821,10 @@
   text-decoration: none;
   transition: var(--transition-colors);
 }
-.view-title a:hover {
-  color: var(--gravity-text);
+@media (hover: hover) {
+  .view-title a:hover {
+    color: var(--gravity-text);
+  }
 }
 .topbar-actions {
   display: flex;
@@ -1113,8 +1123,10 @@ td {
 tbody tr {
   transition: var(--transition-row);
 }
-tbody tr:hover {
-  background-color: var(--gravity-hover);
+@media (hover: hover) {
+  tbody tr:hover {
+    background-color: var(--gravity-hover);
+  }
 }
 td small {
   display: inline;
@@ -1408,8 +1420,10 @@ td small {
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
 }
-.tabs button:not(:disabled):hover {
-  --button-ink: var(--gravity-text);
+@media (hover: hover) {
+  .tabs button:not(:disabled):hover {
+    --button-ink: var(--gravity-text);
+  }
 }
 .tabs button[aria-pressed="true"] {
   --button-ink: var(--gravity-text);
@@ -1585,10 +1599,14 @@ td small {
   background: transparent;
   transition: background-color var(--duration-instant) var(--ease-standard);
 }
-.resize-handle:hover::after,
 .resize-handle:focus-visible::after,
 .resize-handle[data-dragging]::after {
   background: var(--gravity-accent);
+}
+@media (hover: hover) {
+  .resize-handle:hover::after {
+    background: var(--gravity-accent);
+  }
 }
 body:has(.resize-handle[data-dragging]) {
   cursor: col-resize;
@@ -1795,9 +1813,13 @@ ul.timeline {
   opacity: 0;
   transition: opacity 120ms ease;
 }
-.deal-card:hover .deal-card-edit,
 .deal-card:focus-within .deal-card-edit {
   opacity: 1;
+}
+@media (hover: hover) {
+  .deal-card:hover .deal-card-edit {
+    opacity: 1;
+  }
 }
 @media (hover: none) {
   .deal-card-edit {
@@ -2443,17 +2465,21 @@ ul.timeline {
   position: absolute;
   left: 15px;
 }
-.auth-card .auth-provider:hover {
-  background: var(--hover);
-  border-color: var(--gravity-border-strong);
+@media (hover: hover) {
+  .auth-card .auth-provider:hover {
+    background: var(--hover);
+    border-color: var(--gravity-border-strong);
+  }
 }
 .auth-card .auth-submit {
   background: var(--accent);
   color: var(--gravity-accent-contrast);
   border-color: var(--accent);
 }
-.auth-card .auth-submit:hover:not(:disabled) {
-  background: var(--gravity-accent-hover);
+@media (hover: hover) {
+  .auth-card .auth-submit:hover:not(:disabled) {
+    background: var(--gravity-accent-hover);
+  }
 }
 .auth-card .auth-divider {
   display: flex;
@@ -2987,27 +3013,29 @@ td .badge + .badge {
     min-height: 40px;
   }
   .toolbar {
-    overflow-x: auto;
+    flex-wrap: wrap;
+    row-gap: 6px;
     padding: 6px 12px;
-    scrollbar-width: none;
   }
   .toolbar > * {
     flex-shrink: 0;
   }
   .toolbar .search {
-    min-width: 170px;
+    order: 1;
+    flex: 1 1 100%;
+    min-width: 0;
   }
   .toolbar select {
     max-width: 130px;
   }
   .toolbar .selection-status {
-    order: -1;
-    position: sticky;
-    left: -12px;
-    z-index: 1;
-    margin-left: -12px;
-    padding-left: 12px;
-    background: var(--gravity-surface);
+    order: 2;
+  }
+  .toolbar .selection-status:empty {
+    display: none;
+  }
+  .toolbar .toolbar-primary {
+    margin-left: auto;
   }
   .page-content {
     padding: 16px;
@@ -3443,8 +3471,10 @@ tbody tr[data-selected] td:first-child::before {
   margin-bottom: -1px;
   transition: var(--transition-colors);
 }
-.outreach-tab:hover {
-  color: var(--gravity-text);
+@media (hover: hover) {
+  .outreach-tab:hover {
+    color: var(--gravity-text);
+  }
 }
 .outreach-tab[aria-current="page"] {
   color: var(--gravity-text);
@@ -3487,9 +3517,11 @@ tbody tr[data-selected] td:first-child::before {
   pointer-events: none;
   transition: opacity var(--duration-fast) var(--ease-standard);
 }
-.touch-row:hover .touch-actions {
-  opacity: 1;
-  pointer-events: auto;
+@media (hover: hover) {
+  .touch-row:hover .touch-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 .touch-actions.visible {
   position: static;
@@ -3905,11 +3937,13 @@ tbody tr[data-selected] td:first-child::before {
   margin-top: 14px;
   overflow-wrap: anywhere;
 }
-.metric-card:hover,
-.stage-summary:hover,
-.pipeline-summary :where(button):hover {
-  border-color: var(--accent);
-  background: var(--hover);
+@media (hover: hover) {
+  .metric-card:hover,
+  .stage-summary:hover,
+  .pipeline-summary :where(button):hover {
+    border-color: var(--accent);
+    background: var(--hover);
+  }
 }
 .overview-grid {
   display: grid;
@@ -3988,8 +4022,10 @@ tbody tr[data-selected] td:first-child::before {
   background: transparent;
   border-radius: 2px 2px 0 0;
 }
-.chart-day:hover {
-  background: var(--hover);
+@media (hover: hover) {
+  .chart-day:hover {
+    background: var(--hover);
+  }
 }
 .bar-stack {
   width: 100%;
@@ -4527,4 +4563,11 @@ tbody tr[data-selected] td:first-child::before {
   border: 1px solid var(--gravity-border-subtle);
   border-radius: var(--gravity-radius);
   background: var(--gravity-surface-2);
+}
+@media (pointer: coarse) {
+  .shortcut-hint,
+  :root[data-sidebar="collapsed"] .sidebar .nav-shortcut,
+  .search-pill kbd {
+    display: none;
+  }
 }

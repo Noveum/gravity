@@ -15,6 +15,12 @@ Open `/overview`, or press **G V**. Product selection updates reports immediatel
 
 Date boundaries use the organization's time zone. Channel filtering applies to message activity and outreach workload; pipeline and relationship-action reports retain their product/owner scope. The source is the same live snapshot used by the app, with existing SSE revision delivery and reconciliation. No analytics subscription or external chart service is required.
 
+## Entering and reviewing revenue
+
+Open a person or company record and use **New deal**, or click an existing opportunity to edit it without leaving the record. Creating from a person preselects the current product relationship. The editor shows expected revenue as the deal amount and probability change. Won and lost stages use 100% and 0%. Unsupported currencies and values outside the supported precision produce an input error.
+
+Expected revenue is visible on the overview, opportunity board, and related opportunities. Forecast coverage counts only open opportunities with both amount and probability. Contact, company, and product relationship estimates are displayed separately and never added to pipeline revenue. Empty estimate sections are collapsed; expanding them exposes their values, tags, and editor. The amounts retain the currency's minor-unit precision throughout the interface. Switching the toolbar product clears incompatible pipeline and stage filters while retaining the opportunities view.
+
 ## Deal fields and pipelines
 
 Deals record name, product, person relationship, pipeline/stage, owner, amount, currency, probability, expected close date, open/won/lost outcome, context and loss reason. Stored monetary amounts use ISO currency minor-unit precision, including zero-decimal and three-decimal currencies. Closing sets a close time and canonical probability (won 100%, lost 0%); reopening clears the close time. Editing an already closed deal preserves its close time. Updates require the current version and keep product/person identity fixed.

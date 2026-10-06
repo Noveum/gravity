@@ -456,3 +456,71 @@ describe("member settings", () => {
     expect(within(panel("members")).getByText(t.adminOnly)).toBeTruthy();
   });
 });
+
+describe("outreach settings", () => {
+  const region = () => panel("outreach");
+
+  test("an admin saves contact rules through update_contact_rules and anyone with access manages do not contact", async () => {
+    await mountSettings(harness, "/settings/outreach");
+    const cooldown = (await within(region()).findByLabelText(
+      t.cooldownDays,
+    )) as HTMLInputElement;
+    fireEvent.change(cooldown, { target: { value: "5" } });
+    fireEvent.change(within(region()).getByLabelText(t.dailyCap), {
+      target: { value: "40" },
+    });
+    fireEvent.change(within(region()).getByLabelText(t.quietHoursStart), {
+      target: { value: "21" },
+    });
+    fireEvent.change(within(region()).getByLabelText(t.quietHoursEnd), {
+      target: { value: "7" },
+    });
+    fireEvent.click(within(region()).getByRole("button", { name: t.save }));
+    await waitFor(() =>
+      expect(lastCall(harness, "update_contact_rules")?.body).toMatchObject({
+        version: 0,
+        cooldownDays: 5,
+        dailyCapPerSender: 40,
+        quietHoursStart: 21,
+        quietHoursEnd: 7,
+      }),
+    );
+    fireEvent.change(within(region()).getByLabelText(t.choosePerson), {
+      target: { value: demoId(200) },
+    });
+    fireEvent.click(
+      within(region()).getByRole("button", { name: t.markDoNotContact }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "set_contact_preferences")?.body).toMatchObject({
+        personId: demoId(200),
+        doNotContact: true,
+      }),
+    );
+    const listed = await within(region()).findByRole("listitem", {
+      name: "Mira Chen",
+    });
+    fireEvent.click(
+      within(listed).getByRole("button", { name: t.allowContact }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "set_contact_preferences")?.body).toMatchObject({
+        personId: demoId(200),
+        doNotContact: false,
+      }),
+    );
+  });
+
+  test("a member reads the contact rules but cannot change them", async () => {
+    await mountSettings(harness, "/settings/outreach", member);
+    const cooldown = (await within(region()).findByLabelText(
+      t.cooldownDays,
+    )) as HTMLInputElement;
+    expect(cooldown.disabled).toBe(true);
+    expect(within(region()).queryByRole("button", { name: t.save })).toBeNull();
+    expect(within(region()).getByText(t.adminOnly)).toBeTruthy();
+    expect(
+      within(region()).getByRole("button", { name: t.markDoNotContact }),
+    ).toBeTruthy();
+  });
+});

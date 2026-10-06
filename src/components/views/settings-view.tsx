@@ -9,6 +9,7 @@ import {
 import { AssistantSettings } from "../settings/assistant-settings";
 import { ConnectionSettings } from "../settings/connection-settings";
 import { MemberSettings } from "../settings/member-settings";
+import { OutreachSettings } from "../settings/outreach-settings";
 import { PipelineSettings } from "../settings/pipeline-settings";
 import { PreferenceSettings } from "../settings/preference-settings";
 import { ProductSettings } from "../settings/product-settings";
@@ -20,6 +21,7 @@ const panels: Partial<Record<SettingsSection, ComponentType>> = {
   brands: ProductSettings,
   pipelines: PipelineSettings,
   members: MemberSettings,
+  outreach: OutreachSettings,
   connections: ConnectionSettings,
   assistants: AssistantSettings,
   preferences: PreferenceSettings,

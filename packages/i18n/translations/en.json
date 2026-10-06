@@ -1614,5 +1614,19 @@
   "resendInvitation": "Resend",
   "revokeInvitation": "Revoke",
   "revokeInvitationConfirm": "Revoke invitation",
-  "noInvitations": "No open invitations."
+  "noInvitations": "No open invitations.",
+  "contactRules": "Contact rules",
+  "cooldownDays": "Days between touches to one person",
+  "dailyCap": "Messages per sender each day",
+  "quietHoursStart": "Quiet hours start",
+  "quietHoursEnd": "Quiet hours end",
+  "quietHoursHint": "Nothing is sent during quiet hours. Every sender and every assistant follows these rules.",
+  "contactRulesSaved": "Contact rules saved",
+  "doNotContact": "Do not contact",
+  "doNotContactDetail": "These people are never sent a message from any product, and their running sequences pause.",
+  "doNotContactEmpty": "Nobody is marked do not contact.",
+  "allowContact": "Allow contact",
+  "markDoNotContact": "Mark do not contact",
+  "markedDoNotContact": "Marked do not contact",
+  "contactAllowed": "Contact allowed again"
 }

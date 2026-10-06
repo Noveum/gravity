@@ -402,6 +402,19 @@ describe("archiving products", () => {
     ]);
   });
 
+  test("read-only assistants cannot change products", async () => {
+    const reader: Principal = { ...agent, readOnly: true };
+    for (const [name, input] of [
+      ["update_product", { productId: demoId(11), name: "Read-only rename" }],
+      ["archive_product", { productId: demoId(11) }],
+      ["restore_product", { productId: demoId(11) }],
+    ] as const)
+      await expect(run(name, reader, input), name).rejects.toMatchObject({
+        status: 403,
+      });
+    expect((await product(demoId(11))).name).toBe("API Marketplace");
+  });
+
   test("the last active product cannot be archived", async () => {
     await expect(
       run("archive_product", admin, { productId: demoId(13) }, demoId(2)),

@@ -89,6 +89,24 @@ describe("update_workspace", () => {
     expect((await organization()).slug).toBe("northstar-studio");
   });
 
+  test("a slug taken between the check and the write is reported as taken", async () => {
+    await local.client.exec(`
+      create function take_slug_first() returns trigger language plpgsql as $$
+      begin
+        if old.id = '${org}' and new.slug is distinct from old.slug then
+          update organizations set slug = new.slug where id = '${demoId(2)}';
+        end if;
+        return new;
+      end $$;
+      create trigger take_slug_first before update on organizations
+        for each row execute function take_slug_first();
+    `);
+    await expect(
+      run("update_workspace", admin, { slug: "raced-slug" }),
+    ).rejects.toMatchObject({ code: "SLUG_TAKEN", status: 409 });
+    expect((await organization()).slug).toBe("northstar");
+  });
+
   test("normalizes the workspace email domain allowlist", async () => {
     const updated = await run<{ allowedEmailDomains: string[] }>(
       "update_workspace",

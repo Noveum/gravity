@@ -461,6 +461,45 @@ test("archived stages are refused when a deal is created or moved", async () => 
   expect((await deal(demoId(1101))).stageId).not.toBe(proposal);
 });
 
+test("read-only assistants cannot change stages or pipelines", async () => {
+  const reader: Principal = { ...agent, readOnly: true };
+  const attempts: [string, Record<string, unknown>][] = [
+    [
+      "create_stage",
+      {
+        productId: platform,
+        pipeline: "deal",
+        pipelineId: salesPipeline,
+        name: "Read-only stage",
+      },
+    ],
+    ["update_stage", { stageId: proposal, name: "Read-only rename" }],
+    [
+      "reorder_stages",
+      {
+        productId: platform,
+        pipeline: "deal",
+        pipelineId: salesPipeline,
+        stageIds: [lost, won, proposal, evaluation, discovery],
+      },
+    ],
+    ["archive_stage", { stageId: proposal, moveToStageId: discovery }],
+    ["update_pipeline", { pipelineId: salesPipeline, name: "Read-only" }],
+  ];
+  for (const [name, input] of attempts)
+    await expect(run(name, reader, input), name).rejects.toMatchObject({
+      status: 403,
+    });
+  expect((await stage(proposal)).name).toBe("Proposal");
+  expect((await dealStages()).map((row) => row.id)).toEqual([
+    discovery,
+    evaluation,
+    proposal,
+    won,
+    lost,
+  ]);
+});
+
 describe("update_pipeline", () => {
   test("renames a deal pipeline and refuses a duplicate name", async () => {
     await run("create_pipeline", admin, {

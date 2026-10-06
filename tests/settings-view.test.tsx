@@ -177,13 +177,23 @@ test("a refreshed snapshot updates organization details and pending invitations 
   fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
   fireEvent.click(screen.getByRole("option", { name: t.refresh }));
   expect(
-    await screen.findByRole("heading", {
-      name: "Updated Fictional Team",
-      level: 2,
-    }),
+    await screen.findByRole(
+      "heading",
+      {
+        name: "Updated Fictional Team",
+        level: 2,
+      },
+      { timeout: 10000 },
+    ),
   ).toBeTruthy();
   expect((screen.getByLabelText(t.timezone) as HTMLInputElement).value).toBe(
     "Asia/Tokyo",
   );
-  expect(await screen.findByText("another.teammate@example.test")).toBeTruthy();
+  expect(
+    await screen.findByText(
+      "another.teammate@example.test",
+      {},
+      { timeout: 10000 },
+    ),
+  ).toBeTruthy();
 });

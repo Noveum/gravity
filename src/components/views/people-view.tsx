@@ -75,7 +75,7 @@ export function PeopleView() {
                 key={person.id}
                 data-selected={selected.has(person.id) || undefined}
                 className="peekable-row"
-                onClick={peekRow(() => crm.openPerson(first))}
+                onClick={peekRow(() => crm.openPersonRecord(person.id))}
               >
                 <td>
                   <Link
@@ -84,11 +84,11 @@ export function PeopleView() {
                     data-nav-record={person.id}
                     aria-label={person.name}
                     prefetch={false}
-                    onClick={peekLink(() => crm.openPerson(first))}
+                    onClick={peekLink(() => crm.openPersonRecord(person.id))}
                     aria-keyshortcuts="Space Enter X"
                     onFocus={() => warmContext(first)}
                     onKeyDown={rowKeys({
-                      peek: () => crm.openPerson(first),
+                      peek: () => crm.openPersonRecord(person.id),
                       open: () => crm.go(personPath(person.id)),
                     })}
                   >

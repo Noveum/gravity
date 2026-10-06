@@ -30,6 +30,9 @@ const samples = [
   "#abcdef",
   "#fff",
   "#f80",
+  "#808080",
+  "#f0f4f8",
+  "#1a1d22",
   "red",
   "",
   "#12345g",
@@ -79,6 +82,13 @@ test("a database at 0017 gains product colour keys mapped like the application a
         color: row.color,
         key: nearestProductColorKey(row.color),
       });
+    }
+    for (const neutral of ["#000000", "#ffffff", "#808080", "#fff"]) {
+      expect(nearestProductColorKey(neutral), neutral).toBe("gray");
+      expect(
+        rows.rows.find((row) => row.color === neutral)?.color_key,
+        neutral,
+      ).toBe("gray");
     }
     expect(rows.rows.find((row) => row.color === "red")?.color_key).toBe(
       defaultProductColorKey,

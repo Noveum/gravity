@@ -33,9 +33,18 @@ function channels(hex: string) {
     Number.parseInt(full.slice(start, start + 2), 16),
   );
 }
+const neutralSpread = 24;
+const spread = (rgb: number[]) => Math.max(...rgb) - Math.min(...rgb);
+const mostNeutralProductColorKey = productColorKeys.reduce((best, key) =>
+  spread(channels(productColorReferences[key]) ?? []) <
+  spread(channels(productColorReferences[best]) ?? [])
+    ? key
+    : best,
+);
 export function nearestProductColorKey(hex: string): ProductColorKey {
   const target = channels(hex);
   if (!target) return defaultProductColorKey;
+  if (spread(target) < neutralSpread) return mostNeutralProductColorKey;
   let nearest: ProductColorKey = defaultProductColorKey;
   let best = Number.POSITIVE_INFINITY;
   for (const key of productColorKeys) {

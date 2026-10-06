@@ -21,6 +21,7 @@
     "sharp"
   ],
   "scripts": {
+    "storage:setup": "bun run --filter '@gravity/core' storage:setup",
     "dev": "bun run --filter '*' dev",
     "build": "bun run --filter '*' build",
     "typecheck": "tsc -p scripts/tsconfig.json --noEmit && bun run --filter '*' typecheck",

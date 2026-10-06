@@ -20,6 +20,7 @@ describe('navigation', () => {
       'companies',
       'deals',
       'sequences',
+      'files',
       'settings',
     ]);
   });

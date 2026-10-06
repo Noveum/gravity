@@ -3,6 +3,7 @@ import {
   Building2,
   CalendarCheck,
   CalendarClock,
+  FolderOpen,
   Handshake,
   Inbox,
   ListOrdered,
@@ -21,5 +22,6 @@ export const NAV_ICONS: Readonly<Record<NavSection, LucideIcon>> = {
   companies: Building2,
   deals: Handshake,
   sequences: ListOrdered,
+  files: FolderOpen,
   settings: Settings,
 };

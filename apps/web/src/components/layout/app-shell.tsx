@@ -6,6 +6,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { CommandPalette } from '@/components/command-palette.tsx';
 import { ShortcutsOverlay } from '@/components/shortcuts-overlay.tsx';
 import { overlayClassName } from '@/components/ui/dialog.tsx';
+import { FileDeltaHandlers } from '@/features/files/file-deltas.tsx';
 import { leadViewsFor } from '@/features/filters/list-query.ts';
 import { LeadUndoHotkeys } from '@/features/leads/lead-undo.ts';
 import { QuickCreate } from '@/features/quick-create/quick-create-dialog.tsx';
@@ -153,6 +154,7 @@ export function AppShell({
           <CopyForAgentProvider>
             <div data-app-shell className="relative flex h-dvh w-full overflow-hidden bg-bg">
               <CrmDeltaHandlers />
+              <FileDeltaHandlers organizationId={workspace.id} userId={user.id} />
               <LeadUndoHotkeys workspaceId={workspace.id} />
               <QuickCreate />
               {NAV_ITEMS.map((item) => (
@@ -184,11 +186,13 @@ export function AppShell({
               </DialogPrimitive.Root>
 
               <div className="flex min-w-0 flex-1 flex-col">
-                <TopBar
-                  breadcrumbs={breadcrumbs}
-                  onOpenDrawer={() => setDrawerOpen(true)}
-                  onOpenSearch={() => setPaletteOpen(true)}
-                />
+                <div className={pathname === '/files' ? 'lg:hidden' : undefined}>
+                  <TopBar
+                    breadcrumbs={breadcrumbs}
+                    onOpenDrawer={() => setDrawerOpen(true)}
+                    onOpenSearch={() => setPaletteOpen(true)}
+                  />
+                </div>
                 <main className="min-h-0 w-full flex-1 overflow-y-auto">{children}</main>
               </div>
 

@@ -67,8 +67,8 @@ describe('motion tokens', () => {
     const blocks = keyframeBlocks();
     for (const name of ['dialog-in', 'dialog-out'] as const) {
       const body = blocks.get(name) ?? '';
-      expect(body).toContain('translate(-50%, -50%)');
-      expect(body.match(/translate\(-50%, -50%\)/g)).toHaveLength(2);
+      expect(body).not.toContain('translate(');
+      expect(body.match(/scale\(/g)).toHaveLength(2);
     }
   });
 

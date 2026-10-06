@@ -42,6 +42,7 @@ services:
     environment:
       MINIO_ROOT_USER: gravityminio
       MINIO_ROOT_PASSWORD: gravityminio
+      MINIO_API_CORS_ALLOW_ORIGIN: "${NEXT_PUBLIC_APP_URL:-http://localhost:3300}"
     ports:
       - "${MINIO_PORT:-9030}:9000"
       - "${MINIO_CONSOLE_PORT:-9031}:9031"

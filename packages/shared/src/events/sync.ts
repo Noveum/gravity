@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { actorSchema } from './actor.ts';
 
 export const SYNC_MODELS = [
+  'file_entry',
   'organization',
   'member',
   'invitation',

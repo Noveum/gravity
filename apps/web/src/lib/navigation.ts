@@ -7,6 +7,7 @@ export const NAV_SECTIONS = [
   'companies',
   'deals',
   'sequences',
+  'files',
   'settings',
 ] as const;
 
@@ -29,6 +30,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'companies', label: 'Companies', href: '/companies', chord: 'g c', group: 'records' },
   { id: 'deals', label: 'Deals', href: '/deals', chord: 'g d', group: 'records' },
   { id: 'sequences', label: 'Sequences', href: '/sequences', chord: 'g s', group: 'records' },
+  { id: 'files', label: 'Files', href: '/files', chord: 'g f', group: 'records' },
   { id: 'settings', label: 'Settings', href: '/settings/members', chord: 'g ,', group: 'settings' },
 ];
 

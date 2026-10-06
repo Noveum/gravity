@@ -2,6 +2,7 @@ export * from './activity.ts';
 export * from './auth.ts';
 export * from './configuration.ts';
 export * from './email.ts';
+export * from './files.ts';
 export * from './imports.ts';
 export * from './leads.ts';
 export * from './oauth.ts';

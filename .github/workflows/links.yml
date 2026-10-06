@@ -1,0 +1,41 @@
+name: Check links
+on:
+  pull_request:
+    paths: ['**/*.md', '.github/workflows/links.yml']
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
+permissions:
+  contents: read
+jobs:
+  links:
+    name: Check Markdown links
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check relative links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: --offline "**/*.md" --exclude-path "(^|/)node_modules/"
+      - name: Check external links (report only)
+        id: external
+        if: ${{ !cancelled() }}
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            "**/*.md" --exclude-path "(^|/)node_modules/" --exclude-all-private
+            --exclude 'github\.com/[^/]+/[^/]+/(stargazers|security/advisories/new|discussions/new)'
+            --exclude 'vercel\.com/new/clone'
+          fail: false
+      - name: Fail only if lychee itself broke
+        if: ${{ !cancelled() }}
+        env:
+          CODE: ${{ steps.external.outputs.exit_code }}
+        run: |
+          if [ "$CODE" != "0" ] && [ "$CODE" != "2" ]; then
+            echo "lychee exited $CODE, a configuration failure rather than link rot"
+            exit 1
+          fi

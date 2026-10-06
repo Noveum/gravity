@@ -1,0 +1,36 @@
+name: Greet first-time contributors
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+permissions: {}
+jobs:
+  greet:
+    name: Say hello
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/first-interaction@1c4688942c71f71d4f5502a26ea67c331730fa4d # v3.1.0
+        with:
+          issue_message: |
+            Thanks for opening your first issue on Gravity.
+
+            A maintainer will triage it. For a bug, the quickest way to move it along is
+            exact steps starting from the local demo (`bun run dev`, then the Northstar
+            Collective workspace), since that is what we reproduce against. Please keep
+            real contacts, message bodies and credentials out of the thread.
+
+            If you would like to fix it yourself, [CONTRIBUTING.md](https://github.com/Noveum/gravity/blob/main/CONTRIBUTING.md)
+            gets you running in two commands. You need Node 22 and Bun, nothing else.
+          pr_message: |
+            Thanks for your first pull request to Gravity.
+
+            `bun run verify` runs the same checks as CI, so running it before you push
+            saves a review round. If you touched business logic, the
+            reviewer will look for a test that covers another organization, a restricted
+            product member or a private conversation owner.
+
+            A maintainer will review this soon. Ask anything on the thread.

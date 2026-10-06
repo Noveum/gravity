@@ -1,0 +1,44 @@
+name: Stale issues and pull requests
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  stale:
+    name: Mark and close stale threads
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          days-before-issue-stale: 60
+          days-before-issue-close: 14
+          days-before-pr-stale: 30
+          days-before-pr-close: 14
+          stale-issue-label: stale
+          stale-pr-label: stale
+          exempt-issue-labels: roadmap,pinned,security,good first issue,help wanted
+          exempt-pr-labels: pinned,security,work in progress
+          exempt-all-milestones: true
+          stale-issue-message: |
+            This issue has had no activity for 60 days, so it is being marked stale.
+
+            If it still matters, say so and it stays open; what you have learned since
+            filing it helps more than a bump. Otherwise it closes in 14 days. Closing is
+            not a judgement, and reopening is always fine.
+          close-issue-message: |
+            Closing after 60 days without activity and 14 days marked stale. Comment if
+            you still hit this and we will reopen it.
+          stale-pr-message: |
+            This pull request has had no activity for 30 days, so it is being marked stale.
+
+            If you are still working on it, say so and it stays open. If you are stuck,
+            say that too and we will help or pick it up. It closes in 14 days otherwise.
+          close-pr-message: |
+            Closing after 30 days without activity. The branch and commits are still
+            there, so reopening loses nothing. Thanks for the work you put in.
+          operations-per-run: 100
+          ascending: true

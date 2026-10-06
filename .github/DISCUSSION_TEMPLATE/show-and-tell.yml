@@ -1,0 +1,18 @@
+title: "[show]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Built something on Gravity, deployed it somewhere interesting, or wired an
+        assistant to its MCP server? Show us. Screenshots must use fictional data.
+  - type: textarea
+    id: what
+    attributes:
+      label: What you made
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: Link
+      description: Repository, deployment or write-up, if public.

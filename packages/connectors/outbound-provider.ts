@@ -7,6 +7,7 @@ import {
   unipileJson,
 } from "./providers";
 import type { ProviderCredentials } from "./types";
+import { unipileV1Json } from "./unipile-v1";
 
 export const gmailSendScope = "https://www.googleapis.com/auth/gmail.send";
 export interface OutboundMessage {
@@ -133,6 +134,31 @@ export async function resolveLinkedInRecipient(
   )
     throw new DomainError("LINKEDIN_PROFILE_REQUIRED", 422);
   const identifier = decodeURIComponent(url.pathname.split("/")[2]);
+  if (credentials.apiVersion === "v1") {
+    const query = new URLSearchParams({
+      account_id: accountId,
+      linkedin_api: "classic",
+    });
+    const user = z
+      .object({
+        provider_id: z.string().min(1),
+        public_identifier: z.string().optional(),
+      })
+      .parse(
+        await unipileV1Json(
+          credentials,
+          `/users/${encodeURIComponent(identifier)}?${query}`,
+          {},
+          transport,
+        ),
+      );
+    if (
+      user.public_identifier &&
+      user.public_identifier.toLowerCase() !== identifier.toLowerCase()
+    )
+      throw new DomainError("RECIPIENT_MISMATCH", 422);
+    return user.provider_id;
+  }
   const user = z
     .object({ id: z.string().min(1), public_identifier: z.string().optional() })
     .parse(
@@ -178,6 +204,57 @@ export async function dispatchMessage(
     return { externalMessageId: result.id, externalThreadId: result.threadId };
   }
   const base = `/${encodeURIComponent(message.accountId)}`;
+  if (credentials.apiVersion === "v1") {
+    if (message.threadId) {
+      try {
+        const chat = z
+          .object({ id: z.string(), account_id: z.string() })
+          .parse(
+            await unipileV1Json(
+              credentials,
+              `/chats/${encodeURIComponent(message.threadId)}`,
+              {},
+              transport,
+            ),
+          );
+        if (
+          chat.id !== message.threadId ||
+          chat.account_id !== message.accountId
+        )
+          throw new DomainError("RECIPIENT_MISMATCH", 422);
+      } catch (error) {
+        throw Object.assign(
+          error instanceof DomainError
+            ? error
+            : new DomainError("PROVIDER_RESPONSE_INVALID", 502),
+          { dispatchNotAttempted: true },
+        );
+      }
+    }
+    const body = new FormData();
+    body.set("text", message.body);
+    body.set("account_id", message.accountId);
+    if (!message.threadId) body.append("attendees_ids", message.recipient);
+    const result = z
+      .object({
+        message_id: z.string().min(1),
+        chat_id: z.string().min(1).optional(),
+      })
+      .parse(
+        await unipileV1Json(
+          credentials,
+          message.threadId
+            ? `/chats/${encodeURIComponent(message.threadId)}/messages`
+            : "/chats",
+          { method: "POST", body },
+          transport,
+        ),
+      );
+    const externalThreadId = message.threadId ?? result.chat_id;
+    if (!externalThreadId)
+      throw new DomainError("PROVIDER_RESPONSE_INVALID", 502);
+    return { externalMessageId: result.message_id, externalThreadId };
+  }
   const result = z
     .object({
       message_id: z.string().min(1),

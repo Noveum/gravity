@@ -548,6 +548,11 @@ export function IntegrationCards({
           organizationId={organizationId}
           configuration={overview?.unipileConfiguration ?? null}
           onClose={() => setSettingsOpen(false)}
+          onContinue={() => {
+            setSettingsOpen(false);
+            setExisting(undefined);
+            setModal("linkedin");
+          }}
           onChanged={async () => {
             await currentLoad.current();
             await onChanged();
@@ -564,6 +569,7 @@ export function IntegrationCards({
               ?.productId ?? productId
           }
           connectionId={existing}
+          unipileVersion={overview?.unipileConfiguration?.apiVersion}
           onClose={() => {
             setModal(null);
             void load();
@@ -583,6 +589,7 @@ function ConnectDialog({
   organizationId,
   productId,
   connectionId,
+  unipileVersion,
   onClose,
   onConnected,
 }: {
@@ -591,6 +598,7 @@ function ConnectDialog({
   organizationId: string;
   productId: string;
   connectionId?: string;
+  unipileVersion?: "v1" | "v2";
   onClose: () => void;
   onConnected: () => Promise<void>;
 }) {
@@ -601,6 +609,15 @@ function ConnectDialog({
   const [error, setError] = useState("");
   const [key, setKey] = useState("");
   const [allowSending, setAllowSending] = useState(true);
+  const [completedConnectionId, setCompletedConnectionId] = useState<string>();
+  const [completedProductId, setCompletedProductId] = useState<string>();
+  const v1 = provider === "linkedin" && unipileVersion === "v1";
+  const [accounts, setAccounts] = useState<
+    { id: string; name: string; status: string }[]
+  >([]);
+  const [accountCursor, setAccountCursor] = useState<string | null>(null);
+  const [loadingAccounts, setLoadingAccounts] = useState(v1);
+  const [accountAttempt, setAccountAttempt] = useState(0);
   const [webhook, setWebhook] = useState<{
     webhookUrl: string;
     signingSecret: string;
@@ -608,6 +625,36 @@ function ConnectDialog({
   const [copied, setCopied] = useState("");
   useModalLifecycle(ref);
   useReadyFocus(ref, false);
+  useEffect(() => {
+    if (!v1 || connectionId) return;
+    let cancelled = false;
+    setLoadingAccounts(true);
+    if (accountAttempt > 0) setError("");
+    const query = new URLSearchParams({
+      operation: "unipile-accounts",
+      organizationId,
+    });
+    void requestJson<{
+      accounts: { id: string; name: string; status: string }[];
+      nextCursor: string | null;
+    }>(`/api/integrations?${query}`)
+      .then((result) => {
+        if (!cancelled) {
+          setAccounts(result.accounts);
+          setAccountCursor(result.nextCursor);
+          setError("");
+        }
+      })
+      .catch((cause) => {
+        if (!cancelled) setError(errorText(cause));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAccounts(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [v1, connectionId, organizationId, accountAttempt]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -676,14 +723,17 @@ function ConnectDialog({
             pending.current = true;
             setBusy(true);
             setError("");
-            const selected = connectionId
-              ? productId
-              : new FormData(event.currentTarget).get("productId");
+            const selected =
+              completedProductId ??
+              (connectionId
+                ? productId
+                : new FormData(event.currentTarget).get("productId"));
             try {
               const result = await requestJson<{
                 url?: string;
                 webhookUrl?: string;
                 signingSecret?: string;
+                connectionId?: string;
               }>("/api/integrations", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -692,13 +742,34 @@ function ConnectDialog({
                   organizationId,
                   productId: selected,
                   provider,
-                  connectionId,
+                  connectionId: completedConnectionId ?? connectionId,
                   ...(provider === "gmail" ? { allowSending } : {}),
                   ...(provider === "fireflies" ? { apiKey: key } : {}),
+                  ...(v1 && !connectionId && !completedConnectionId
+                    ? {
+                        accountId: new FormData(event.currentTarget).get(
+                          "accountId",
+                        ),
+                      }
+                    : {}),
                 }),
               });
               if (!alive.current) return;
               setKey("");
+              if (v1 && result.connectionId) {
+                setCompletedConnectionId(result.connectionId);
+                if (typeof selected === "string")
+                  setCompletedProductId(selected);
+                await requestJson("/api/integrations", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    operation: "register-unipile-webhooks",
+                    organizationId,
+                    connectionId: result.connectionId,
+                  }),
+                });
+              }
               if (result.url) {
                 const target = new URL(result.url);
                 if (
@@ -730,16 +801,93 @@ function ConnectDialog({
             {provider === "fireflies"
               ? t.firefliesConnectNote
               : provider === "linkedin"
-                ? t.linkedinConnectNote
+                ? v1
+                  ? t.unipileV1ConnectNote
+                  : t.linkedinConnectNote
                 : t.googleConnectNote}
           </p>
+          {v1 && !connectionId && (
+            <>
+              {loadingAccounts ? (
+                <p role="status">{t.unipileLoadingAccounts}</p>
+              ) : (
+                <label>
+                  {t.unipileAccount}
+                  <select
+                    name="accountId"
+                    required
+                    disabled={busy || !!completedConnectionId}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>
+                      {t.unipileAccountPlaceholder}
+                    </option>
+                    {accounts.map((account) => (
+                      <option
+                        key={account.id}
+                        value={account.id}
+                        disabled={account.status !== "OK"}
+                      >
+                        {account.name} ({account.status})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {!loadingAccounts && error && !completedConnectionId && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setAccountAttempt((value) => value + 1)}
+                >
+                  {t.unipileRetryAccounts}
+                </button>
+              )}
+              {accountCursor && !completedConnectionId && (
+                <button
+                  type="button"
+                  disabled={busy || loadingAccounts}
+                  onClick={async () => {
+                    setLoadingAccounts(true);
+                    try {
+                      const query = new URLSearchParams({
+                        operation: "unipile-accounts",
+                        organizationId,
+                        cursor: accountCursor,
+                      });
+                      const result = await requestJson<{
+                        accounts: typeof accounts;
+                        nextCursor: string | null;
+                      }>(`/api/integrations?${query}`);
+                      if (!alive.current) return;
+                      setAccounts((current) => [
+                        ...new Map(
+                          [...current, ...result.accounts].map((account) => [
+                            account.id,
+                            account,
+                          ]),
+                        ).values(),
+                      ]);
+                      setAccountCursor(result.nextCursor);
+                    } catch (cause) {
+                      if (alive.current) setError(errorText(cause));
+                    } finally {
+                      if (alive.current) setLoadingAccounts(false);
+                    }
+                  }}
+                >
+                  {t.unipileLoadMoreAccounts}
+                </button>
+              )}
+            </>
+          )}
           <label>
             {t.defaultProduct}
             <select
               name="productId"
               required
               defaultValue={productId || data.products[0]?.id || ""}
-              disabled={busy || !!connectionId}
+              disabled={busy || !!connectionId || !!completedConnectionId}
               data-primary-field
             >
               {data.products.map((p) => (
@@ -785,16 +933,31 @@ function ConnectDialog({
               <X size={14} aria-hidden="true" />
               {t.cancel}
             </button>
-            <button type="submit" className="primary" disabled={busy}>
+            <button
+              type="submit"
+              className="primary"
+              disabled={
+                busy ||
+                (v1 &&
+                  !connectionId &&
+                  !completedConnectionId &&
+                  (loadingAccounts ||
+                    !accounts.some((account) => account.status === "OK")))
+              }
+            >
               <ArrowRight size={15} aria-hidden="true" />
               {busy
                 ? t.connecting
-                : provider === "fireflies"
-                  ? t.verifyConnect
-                  : t.continueProvider.replace(
-                      "{provider}",
-                      provider === "linkedin" ? t.unipile : t.google,
-                    )}
+                : v1
+                  ? completedConnectionId
+                    ? t.unipileRetryWebhooks
+                    : t.connectProvider.replace("{provider}", t.linkedin)
+                  : provider === "fireflies"
+                    ? t.verifyConnect
+                    : t.continueProvider.replace(
+                        "{provider}",
+                        provider === "linkedin" ? t.unipile : t.google,
+                      )}
             </button>
           </div>
         </form>

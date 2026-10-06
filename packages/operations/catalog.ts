@@ -852,6 +852,20 @@ export const operations: Operation[] = [
   }),
   operation({
     api: "integrations",
+    method: "GET",
+    operation: "unipile-accounts",
+    name: "list_unipile_accounts",
+    description:
+      "List selectable LinkedIn accounts from the acting user's private Unipile V1 setup. Requires all-products MCP access. Only account IDs, names and messaging statuses are returned.",
+    schema: integrationScope.extend({
+      cursor: z.string().min(1).max(2000).optional(),
+    }),
+    publish: false,
+    run: (c, input) =>
+      settings(c).accounts(c.principal, input.organizationId, input.cursor),
+  }),
+  operation({
+    api: "integrations",
     method: "POST",
     operation: "connect",
     name: "connect_integration",
@@ -930,11 +944,27 @@ export const operations: Operation[] = [
     operation: "configure-unipile",
     name: "configure_unipile",
     description:
-      "Store the acting user's encrypted Unipile API key/webhook secret. Existing setup requires its configurationId. MCP requires all-products access. Keys are never returned.",
+      "Store the acting user's encrypted Unipile credentials. V1 requires apiVersion=v1 and a DSN; V2 uses the fixed API origin. Existing setup requires its configurationId. MCP requires all-products access. Keys are never returned.",
     schema: z.object(unipileSettingsInput.shape),
     publish: false,
     run: (c, input) =>
       settings(c).configure(c.principal, unipileSettingsInput.parse(input)),
+  }),
+  operation({
+    api: "integrations",
+    method: "POST",
+    operation: "register-unipile-webhooks",
+    name: "register_unipile_webhooks",
+    description:
+      "Register private, account-scoped Unipile V1 messaging and status webhooks using the acting owner's saved API key. Generates an encrypted webhook token and reuses matching registrations on retry. Requires an owned connected account and all-products MCP access. Never sends LinkedIn messages.",
+    schema: integrationScope.extend({ connectionId: z.uuid() }),
+    publish: false,
+    run: (c, input) =>
+      settings(c).registerWebhooks(
+        c.principal,
+        input.organizationId,
+        input.connectionId,
+      ),
   }),
   operation({
     api: "integrations",
@@ -1090,8 +1120,12 @@ const allProductOperations = new Set([
   "update_contact_rules",
   "configure_unipile",
   "remove_unipile",
+  "list_unipile_accounts",
+  "register_unipile_webhooks",
 ]);
 const ownerOperations = new Set([
+  "list_unipile_accounts",
+  "register_unipile_webhooks",
   "set_conversation_visibility",
   "get_integrations",
   "connect_integration",

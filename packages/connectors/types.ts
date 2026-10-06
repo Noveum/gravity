@@ -30,4 +30,6 @@ export interface ProviderCredentials {
   refreshToken?: string;
   expiresAt?: number;
   apiKey?: string;
+  apiVersion?: "v1" | "v2";
+  dsn?: string;
 }

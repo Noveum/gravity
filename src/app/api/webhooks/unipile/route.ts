@@ -7,6 +7,10 @@ import {
   verifyUnipileSignature,
 } from "@crm/connectors/replies";
 import { IntegrationService } from "@crm/connectors/service";
+import {
+  unipileV1Envelope,
+  verifyUnipileV1Authorization,
+} from "@crm/connectors/unipile-v1";
 import { publishChange } from "@crm/core/changes";
 import { errorResponse, limitedBody } from "@crm/core/http";
 import { DomainError } from "@crm/core/policy";
@@ -30,23 +34,35 @@ export async function POST(request: Request) {
         and(
           eq(providerConfigurations.id, configurationId.data),
           eq(providerConfigurations.active, true),
-          eq(providerConfigurations.webhookReady, true),
         ),
       );
     if (!configuration) throw new DomainError("UNAUTHORIZED", 401);
-    const secret = unipileCredentials(configuration).signingSecret;
-    if (!secret) throw new DomainError("UNAUTHORIZED", 401);
+    const credentials = unipileCredentials(configuration);
+    const secret = credentials.signingSecret;
+    if (
+      !secret ||
+      (credentials.apiVersion !== "v1" && !configuration.webhookReady)
+    )
+      throw new DomainError("UNAUTHORIZED", 401);
     const raw = await limitedBody(request, 200000);
     if (
-      !verifyUnipileSignature(
-        raw,
-        request.headers.get("unipile-signature"),
-        secret,
-      )
+      !(credentials.apiVersion === "v1"
+        ? verifyUnipileV1Authorization(
+            request.headers.get("authorization"),
+            secret,
+          )
+        : verifyUnipileSignature(
+            raw,
+            request.headers.get("unipile-signature"),
+            secret,
+          ))
     )
       throw new DomainError("UNAUTHORIZED", 401);
     const payload = JSON.parse(new TextDecoder().decode(raw));
-    const event = unipileEnvelope.parse(payload);
+    const event =
+      credentials.apiVersion === "v1"
+        ? unipileV1Envelope(payload)
+        : unipileEnvelope.parse(payload);
     const service = new IntegrationService(db);
     if (["account.add", "account.reconnect"].includes(event.type)) {
       const value = z
@@ -71,6 +87,30 @@ export async function POST(request: Request) {
         ),
       );
     if (!connection) throw new DomainError("CONNECTION_UNAVAILABLE", 422);
+    if (
+      credentials.apiVersion === "v1" &&
+      ["account.status.errored", "account.status.permission"].includes(
+        event.type,
+      ) &&
+      connection.encryptedCredentials
+    ) {
+      await db
+        .update(connections)
+        .set({
+          errorCode:
+            event.type === "account.status.permission"
+              ? "PROVIDER_PERMISSION"
+              : "PROVIDER_UNAVAILABLE",
+        })
+        .where(
+          and(
+            eq(connections.id, connection.id),
+            isNotNull(connections.encryptedCredentials),
+          ),
+        );
+      publishChange(connection.organizationId);
+      return Response.json({ received: true });
+    }
     if (
       connection.encryptedCredentials &&
       [
@@ -119,7 +159,7 @@ export async function POST(request: Request) {
       );
       return Response.json({ received: true });
     }
-    const normalized = normalizeUnipileV2(payload, connection);
+    const normalized = normalizeUnipileV2(event, connection);
     if (!normalized) return Response.json({ ignored: true });
     const result = await ingestReply(db, {
       ...normalized,

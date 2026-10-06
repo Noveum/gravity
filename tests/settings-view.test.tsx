@@ -460,7 +460,7 @@ describe("member settings", () => {
     const link = (await within(invitations).findByLabelText(
       t.invitationLink,
     )) as HTMLInputElement;
-    expect(link.value).toContain("/invite/");
+    expect(link.value).toContain("/invite#");
     const row = await within(invitations).findByRole("listitem", {
       name: "new.person@example.test",
     });

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   gte,
@@ -21,6 +22,7 @@ import { overview as calculateOverview } from "./analytics";
 import { draftHash, draftSubject } from "./drafts";
 import { serialize } from "./dto";
 import { authorize, DomainError, type Principal } from "./policy";
+import { defaultProductColorKey, productColorKeys } from "./product-colors";
 import { assertProductActive } from "./products";
 import {
   activeCompany,
@@ -212,9 +214,16 @@ async function insertProduct(
   name: string,
   userId: string,
 ) {
+  const [existing] = await tx
+    .select({ count: count() })
+    .from(s.products)
+    .where(eq(s.products.organizationId, organizationId));
+  const colorKey =
+    productColorKeys[(existing?.count ?? 0) % productColorKeys.length] ??
+    defaultProductColorKey;
   const [product] = await tx
     .insert(s.products)
-    .values({ organizationId, name })
+    .values({ organizationId, name, colorKey })
     .onConflictDoNothing({
       target: [s.products.organizationId, s.products.name],
     })

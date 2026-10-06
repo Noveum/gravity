@@ -556,3 +556,23 @@ describe("archiving products", () => {
     }
   });
 });
+
+test("new products cycle through the palette instead of all starting violet", async () => {
+  const crm = new CrmService(local.db);
+  const existing = await local.db
+    .select({ id: s.products.id })
+    .from(s.products)
+    .where(eq(s.products.organizationId, org));
+  const keys: string[] = [];
+  for (const index of productColorKeys.keys()) {
+    const created = await crm.createProduct(admin, org, `Palette ${index}`);
+    keys.push((await product(created.id)).colorKey);
+  }
+  expect(keys).toEqual(
+    productColorKeys.map(
+      (_, index) =>
+        productColorKeys[(existing.length + index) % productColorKeys.length],
+    ),
+  );
+  expect(new Set(keys).size).toBe(productColorKeys.length);
+});

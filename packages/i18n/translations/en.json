@@ -1540,5 +1540,12 @@
     "preferences": "Appearance and row density for this browser."
   },
   "adminOnly": "Only workspace admins can change this. Ask an admin.",
-  "settingsLoadError": "This section could not be loaded."
+  "settingsLoadError": "This section could not be loaded.",
+  "workspaceName": "Workspace name",
+  "workspaceSlug": "Address",
+  "workspaceSlugHint": "Lowercase letters, digits and single hyphens. Links that use the old address stop choosing this workspace.",
+  "allowedDomains": "Allowed email domains",
+  "allowedDomainsHint": "One domain per line. Invitations and new members must use one of them. Leave it empty to allow any domain.",
+  "workspaceSaved": "Workspace saved",
+  "createAnotherWorkspace": "Create another workspace"
 }

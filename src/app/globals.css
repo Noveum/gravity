@@ -4436,3 +4436,7 @@ tbody tr[data-selected] td:first-child::before {
     color: var(--gravity-text);
   }
 }
+.settings-link {
+  align-self: flex-start;
+  font-size: var(--text-xs);
+}

@@ -346,6 +346,7 @@ function useCrmState({
     body: object,
     announce: boolean | string = true,
     toastErrors = true,
+    endpoint = "/api/crm",
   ): Promise<{ ok: boolean; result?: unknown; error?: string }> {
     if (mutating.current) {
       if (toastErrors) notify(t.stillSaving, "neutral");
@@ -355,7 +356,7 @@ function useCrmState({
     const submittedOrganization = organizationId;
     setBusy(true);
     try {
-      const result = await requestJson<unknown>("/api/crm", {
+      const result = await requestJson<unknown>(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

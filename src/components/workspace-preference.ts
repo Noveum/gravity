@@ -48,6 +48,12 @@ export function rememberWorkspace(slug: string) {
   remember(brandCookie, "");
 }
 
+export function reopenWorkspace(organizationId: string, next: string) {
+  window.location.assign(
+    `/api/workspace?${new URLSearchParams({ organizationId, next })}`,
+  );
+}
+
 export function rememberBrand(productId: string) {
   remember(brandCookie, productId);
 }

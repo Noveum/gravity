@@ -164,3 +164,26 @@ test("an unusable invitation explains why and offers no accept button", async ()
   expect(screen.getByText(t.errors.INVITATION_EMAIL_MISMATCH)).toBeTruthy();
   expect(screen.queryByText("Northstar Collective")).toBeNull();
 });
+
+test("an invitee who is already an active member is pointed to the workspace instead", async () => {
+  const { token } = await invitation();
+  await local.db.insert(s.memberships).values({
+    organizationId: demoId(1),
+    userId: invitee.userId,
+    role: "member",
+  });
+  principal.mockResolvedValue(invitee);
+  await show(token);
+  expect(
+    screen.getByText(
+      t.inviteAlreadyMemberTitle.replace("{workspace}", "Northstar Collective"),
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: t.inviteAccept })).toBeNull();
+  const open = screen.getByRole("link", {
+    name: t.inviteOpenWorkspace.replace("{workspace}", "Northstar Collective"),
+  });
+  expect(open.getAttribute("href")).toBe(
+    `/api/workspace?organizationId=${demoId(1)}&next=%2Factions`,
+  );
+});

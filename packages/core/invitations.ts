@@ -415,8 +415,22 @@ export class InvitationService {
       throw new DomainError("INVITATION_EMAIL_MISMATCH", 403);
     if (!account.emailVerified)
       throw new DomainError("EMAIL_NOT_VERIFIED", 403);
-    assertUsable(invitation);
     const organization = await workspace(db, invitation.organizationId);
+    const [member] = await db
+      .select({ active: s.memberships.active })
+      .from(s.memberships)
+      .where(
+        and(
+          eq(s.memberships.organizationId, invitation.organizationId),
+          eq(s.memberships.userId, principal.userId),
+        ),
+      );
+    if (member?.active)
+      throw new DomainError("ALREADY_MEMBER", 409, {
+        organizationId: organization.id,
+        organizationName: organization.name,
+      });
+    assertUsable(invitation);
     assertDomain(invitation.email, organization);
     return { invitation, organization };
   }

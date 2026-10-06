@@ -6,7 +6,10 @@ import t from "@crm/i18n/translations/en.json";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { AuthLayout } from "@/components/auth-forms";
-import { InviteAcceptance } from "@/components/invite-acceptance";
+import {
+  InviteAcceptance,
+  workspaceEntryPath,
+} from "@/components/invite-acceptance";
 import { invitePath, requestPathHeader, signInPath } from "@/components/routes";
 
 export const dynamic = "force-dynamic";
@@ -71,6 +74,26 @@ export default async function Page({
     );
   } catch (error) {
     if (!(error instanceof DomainError)) throw error;
+    const joinedId = error.details?.organizationId;
+    const joinedName = error.details?.organizationName;
+    if (
+      error.code === "ALREADY_MEMBER" &&
+      typeof joinedId === "string" &&
+      typeof joinedName === "string"
+    )
+      return (
+        <AuthLayout
+          title={t.inviteAlreadyMemberTitle.replace("{workspace}", joinedName)}
+          description={t.inviteAlreadyMemberDescription}
+        >
+          <a
+            className="auth-link auth-submit"
+            href={workspaceEntryPath(joinedId)}
+          >
+            {t.inviteOpenWorkspace.replace("{workspace}", joinedName)}
+          </a>
+        </AuthLayout>
+      );
     return (
       <AuthLayout
         title={t.inviteUnavailableTitle}

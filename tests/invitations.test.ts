@@ -247,6 +247,14 @@ describe("accepting invitations", () => {
     const created = await invite();
     await accept(tokenOf(created));
     await expect(accept(tokenOf(created))).rejects.toMatchObject({
+      code: "ALREADY_MEMBER",
+      status: 409,
+    });
+    await run("deactivate_member", admin, {
+      organizationId: org,
+      userId: invitee.userId,
+    });
+    await expect(accept(tokenOf(created))).rejects.toMatchObject({
       code: "INVITATION_USED",
       status: 409,
     });
@@ -452,4 +460,32 @@ test("someone else's expired or used invitation reveals only the email mismatch"
   await expect(accept(tokenOf(created))).rejects.toMatchObject({
     code: "INVITATION_REVOKED",
   });
+});
+
+test("an already active member cannot accept again and keeps their role and products", async () => {
+  const created = await invite({ role: "admin" });
+  await local.db.insert(s.memberships).values({
+    organizationId: org,
+    userId: invitee.userId,
+    role: "member",
+  });
+  await local.db.insert(s.productMemberships).values({
+    organizationId: org,
+    productId: demoId(12),
+    userId: invitee.userId,
+  });
+  await expect(accept(tokenOf(created))).rejects.toMatchObject({
+    code: "ALREADY_MEMBER",
+    status: 409,
+  });
+  const permission = await authorize(local.db, invitee, org);
+  expect(permission.membership.role).toBe("member");
+  expect(permission.products.map((product) => product.id)).toEqual([
+    demoId(12),
+  ]);
+  const [row] = await local.db
+    .select()
+    .from(s.invitations)
+    .where(eq(s.invitations.id, created.invitation.id));
+  expect(row?.acceptedAt).toBeNull();
 });

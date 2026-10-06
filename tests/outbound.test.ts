@@ -1230,3 +1230,50 @@ test("resolve_delivery waits out the live sending window and records a confirmed
     f.service.send(principal, { ...f.input, idempotencyKey: randomUUID() }),
   ).rejects.toMatchObject({ code: "CONFLICT" });
 });
+async function sequenceOf(touchId: string) {
+  const [row] = await local.db
+    .select({ sequenceId: s.enrollments.sequenceId })
+    .from(s.touches)
+    .innerJoin(s.enrollments, eq(s.enrollments.id, s.touches.enrollmentId))
+    .where(eq(s.touches.id, touchId));
+  if (!row) throw new Error("sequence fixture");
+  return row.sequenceId;
+}
+function dispatches(transport: ReturnType<typeof vi.fn>) {
+  return transport.mock.calls.filter(
+    ([url]) => !String(url).includes("/users/"),
+  ).length;
+}
+test("send_touch refuses a touch whose sequence was archived", async () => {
+  const f = await fixture();
+  if (!("touchId" in f.source)) throw new Error("fixture");
+  await local.db
+    .update(s.sequences)
+    .set({ archivedAt: new Date(now) })
+    .where(eq(s.sequences.id, await sequenceOf(f.source.touchId)));
+  expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+    "SEQUENCE_ARCHIVED",
+  );
+  await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
+    code: "SEQUENCE_ARCHIVED",
+    status: 409,
+  });
+  expect(dispatches(f.transport)).toBe(0);
+});
+test("send_touch and send_action refuse work in an archived product", async () => {
+  for (const actionSource of [false, true]) {
+    const f = await fixture("gmail", actionSource);
+    await local.db
+      .update(s.products)
+      .set({ archivedAt: new Date(now) })
+      .where(eq(s.products.id, f.productId));
+    expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+      "PRODUCT_ARCHIVED",
+    );
+    await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
+      code: "PRODUCT_ARCHIVED",
+      status: 409,
+    });
+    expect(dispatches(f.transport)).toBe(0);
+  }
+});

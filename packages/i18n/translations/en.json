@@ -283,7 +283,7 @@
     "EMAIL_NOT_VERIFIED": "Verify your email address before accepting this invitation.",
     "EMAIL_DOMAIN_NOT_ALLOWED": "Email addresses on this domain cannot join this workspace.",
     "SLUG_TAKEN": "Another workspace already uses this address. Choose a different one.",
-    "PRODUCT_ARCHIVED": "This product is archived. Restore it before adding new records.",
+    "PRODUCT_ARCHIVED": "This product is archived. Restore it before adding records or sending.",
     "PRODUCT_ACTIVE": "This product is not archived.",
     "LAST_ACTIVE_PRODUCT": "The workspace needs at least one active product. Create or restore another product first.",
     "STAGE_EXISTS": "A stage with this name already exists in this pipeline.",
@@ -291,7 +291,7 @@
     "LAST_OPEN_STAGE": "Every pipeline needs at least one open stage. Add or reopen another stage first.",
     "STAGE_ORDER_INVALID": "List every active stage of this pipeline exactly once.",
     "STAGE_TARGET_INVALID": "Choose another active stage in the same pipeline to move records to.",
-    "SEQUENCE_ARCHIVED": "This sequence is archived. Restore it before enrolling or resuming anyone.",
+    "SEQUENCE_ARCHIVED": "This sequence is archived. Restore it before enrolling, resuming, reopening or sending.",
     "SEQUENCE_ACTIVE": "This sequence is not archived.",
     "FOLDER_NOT_EMPTY": "This folder still holds files or other folders. Empty it before deleting it.",
     "DELIVERY_NOT_RESOLVABLE": "This delivery is already settled."

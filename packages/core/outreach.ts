@@ -6,6 +6,7 @@ import {
   gt,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lt,
   max,
@@ -374,6 +375,22 @@ export async function advance(
     )
     .orderBy(asc(s.enrollments.id));
   if (!running.length) return result;
+  const archivedProducts = new Set(
+    (
+      await db
+        .select({ id: s.products.id })
+        .from(s.products)
+        .where(
+          and(
+            eq(s.products.organizationId, organizationId),
+            inArray(s.products.id, [
+              ...new Set(running.map((row) => row.productId)),
+            ]),
+            isNotNull(s.products.archivedAt),
+          ),
+        )
+    ).map((row) => row.id),
+  );
   const [sequences, touches, relationships, rules, zone] = await Promise.all([
     db
       .select()
@@ -384,6 +401,7 @@ export async function advance(
           inArray(s.sequences.id, [
             ...new Set(running.map((row) => row.sequenceId)),
           ]),
+          isNull(s.sequences.archivedAt),
         ),
       ),
     db
@@ -436,7 +454,14 @@ export async function advance(
       (row) => row.id === enrollment.relationshipId,
     );
     const person = relationship && people.get(relationship.personId);
-    if (!sequence || !relationship || !person || person.archivedAt) continue;
+    if (
+      !sequence ||
+      !relationship ||
+      !person ||
+      person.archivedAt ||
+      archivedProducts.has(enrollment.productId)
+    )
+      continue;
     const decision = planEnrollment({
       now,
       enrollment: {
@@ -1602,6 +1627,26 @@ export class OutreachService {
           throw new DomainError("CONFLICT", 409);
         if (enrollment.status === "stopped")
           throw new DomainError("ENROLLMENT_CLOSED", 409);
+        if (enrollment.status === "completed") {
+          const [sequence] = await tx
+            .select({ archivedAt: s.sequences.archivedAt })
+            .from(s.sequences)
+            .where(
+              and(
+                eq(s.sequences.id, enrollment.sequenceId),
+                eq(s.sequences.organizationId, touch.organizationId),
+              ),
+            )
+            .for("share");
+          if (!sequence) throw new DomainError("NOT_FOUND", 404);
+          if (sequence.archivedAt)
+            throw new DomainError("SEQUENCE_ARCHIVED", 409);
+          await assertProductActive(
+            tx,
+            touch.organizationId,
+            enrollment.productId,
+          );
+        }
         const later = await tx
           .select()
           .from(s.touches)

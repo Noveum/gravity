@@ -205,6 +205,42 @@ export class OutboundService {
         found.productId,
         true,
       );
+    const productQuery = db
+      .select({ archivedAt: s.products.archivedAt })
+      .from(s.products)
+      .where(
+        and(
+          eq(s.products.id, found.productId),
+          eq(s.products.organizationId, input.organizationId),
+        ),
+      );
+    const [product] = await (lock ? productQuery.for("share") : productQuery);
+    if (!product) throw new DomainError("NOT_FOUND", 404);
+    const sequenceQuery = touch
+      ? db
+          .select({ archivedAt: s.sequences.archivedAt })
+          .from(s.sequences)
+          .innerJoin(
+            s.enrollments,
+            eq(s.enrollments.sequenceId, s.sequences.id),
+          )
+          .where(
+            and(
+              eq(s.enrollments.id, touch.enrollmentId),
+              eq(s.sequences.organizationId, input.organizationId),
+            ),
+          )
+      : null;
+    const [sequence] = sequenceQuery
+      ? await (lock
+          ? sequenceQuery.for("share", { of: s.sequences })
+          : sequenceQuery)
+      : [];
+    const archived = product.archivedAt
+      ? "PRODUCT_ARCHIVED"
+      : sequence?.archivedAt
+        ? "SEQUENCE_ARCHIVED"
+        : null;
     const enrollmentQuery = touch
       ? db
           .select()
@@ -307,6 +343,7 @@ export class OutboundService {
       hash,
       gate,
       enrollment,
+      archived,
     };
   }
   private assertReady(
@@ -317,6 +354,7 @@ export class OutboundService {
       source;
     if (record.version !== input.version)
       throw new DomainError("CONFLICT", 409);
+    if (source.archived) throw new DomainError(source.archived, 409);
     if (person.doNotContact) throw new DomainError("DO_NOT_CONTACT", 409);
     if (
       touch

@@ -1,6 +1,9 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { CrmService } from "../packages/core/crm";
+import { OutreachService } from "../packages/core/outreach";
 import type { Principal } from "../packages/core/policy";
+import { ProductService } from "../packages/core/products";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
@@ -207,5 +210,186 @@ describe("restore_sequence", () => {
     expect(
       snapshot.sequences.find((row) => row.id === demoId(400))?.archivedAt,
     ).toBeTruthy();
+  });
+});
+
+describe("archived work stays closed", () => {
+  const day = 86400000;
+  let clock = Date.parse("2026-10-05T06:00:00Z");
+  async function completedEnrollment() {
+    const crm = new CrmService(local.db);
+    const outreach = new OutreachService(local.db, () => clock);
+    const product = await crm.createProduct(owner, org, "Closed work");
+    const person = await crm.createPerson(owner, {
+      organizationId: org,
+      productId: product.id,
+      name: "Closed work person",
+      email: "closed-work@example.test",
+      title: "",
+      purpose: "buyer",
+      context: "",
+      review: false,
+      channel: "gmail",
+    });
+    const created = await outreach.createSequence(owner, {
+      organizationId: org,
+      productId: product.id,
+      name: "One step",
+      steps: [
+        {
+          number: 1,
+          name: "Intro",
+          delayDays: 0,
+          channel: "gmail",
+          template: "Hello",
+          followUp: 0,
+        },
+      ],
+    });
+    await outreach.enroll(owner, {
+      organizationId: org,
+      sequenceId: created.id,
+      relationshipIds: [person.relationshipId],
+      dryRun: false,
+    });
+    const [touch] = await local.db
+      .select()
+      .from(s.touches)
+      .where(eq(s.touches.relationshipId, person.relationshipId));
+    if (!touch) throw new Error("touch fixture");
+    const skipped = await outreach.skip(owner, {
+      organizationId: org,
+      touchId: touch.id,
+      version: touch.version,
+      reason: "Met in person",
+    });
+    clock += day;
+    await outreach.advanceEnrollments(owner, { organizationId: org });
+    const [closed] = await local.db
+      .select()
+      .from(s.enrollments)
+      .where(eq(s.enrollments.relationshipId, person.relationshipId));
+    if (!closed) throw new Error("enrollment fixture");
+    expect(closed.status).toBe("completed");
+    return {
+      outreach,
+      product,
+      person,
+      sequence: await sequence(created.id),
+      touch: skipped,
+      enrollment: closed,
+    };
+  }
+
+  test("reopening a touch never revives a completed enrollment in an archived sequence", async () => {
+    const f = await completedEnrollment();
+    await run("archive_sequence", owner, {
+      sequenceId: f.sequence.id,
+      version: f.sequence.version,
+    });
+    await expect(
+      f.outreach.reopen(owner, {
+        organizationId: org,
+        touchId: f.touch.id,
+        version: f.touch.version,
+      }),
+    ).rejects.toMatchObject({ code: "SEQUENCE_ARCHIVED", status: 409 });
+    expect(await enrollment(f.enrollment.id)).toMatchObject({
+      status: "completed",
+    });
+  });
+
+  test("reopening a touch never revives a completed enrollment in an archived product", async () => {
+    const f = await completedEnrollment();
+    await new ProductService(local.db).archive(owner, {
+      organizationId: org,
+      productId: f.product.id,
+    });
+    await expect(
+      f.outreach.reopen(owner, {
+        organizationId: org,
+        touchId: f.touch.id,
+        version: f.touch.version,
+      }),
+    ).rejects.toMatchObject({ code: "PRODUCT_ARCHIVED", status: 409 });
+    expect(await enrollment(f.enrollment.id)).toMatchObject({
+      status: "completed",
+    });
+  });
+
+  test("advancing skips running enrollments in an archived sequence or product", async () => {
+    const crm = new CrmService(local.db);
+    const outreach = new OutreachService(local.db, () => clock);
+    const product = await crm.createProduct(owner, org, "Advance guard");
+    const person = await crm.createPerson(owner, {
+      organizationId: org,
+      productId: product.id,
+      name: "Advance guard person",
+      email: "advance-guard@example.test",
+      title: "",
+      purpose: "buyer",
+      context: "",
+      review: false,
+      channel: "gmail",
+    });
+    const created = await outreach.createSequence(owner, {
+      organizationId: org,
+      productId: product.id,
+      name: "Two steps",
+      steps: [0, 3].map((delayDays, index) => ({
+        number: index + 1,
+        name: `Step ${index + 1}`,
+        delayDays,
+        channel: "gmail" as const,
+        template: "Hello",
+        followUp: index,
+      })),
+    });
+    await outreach.enroll(owner, {
+      organizationId: org,
+      sequenceId: created.id,
+      relationshipIds: [person.relationshipId],
+      dryRun: false,
+    });
+    const touchesFor = async () =>
+      local.db
+        .select({ stepNumber: s.touches.stepNumber })
+        .from(s.touches)
+        .where(eq(s.touches.relationshipId, person.relationshipId));
+    const [first] = await local.db
+      .select()
+      .from(s.touches)
+      .where(eq(s.touches.relationshipId, person.relationshipId));
+    if (!first) throw new Error("touch fixture");
+    await outreach.skip(owner, {
+      organizationId: org,
+      touchId: first.id,
+      version: first.version,
+      reason: "Not yet",
+    });
+    expect(await touchesFor()).toHaveLength(1);
+    clock += 10 * day;
+    await local.db
+      .update(s.sequences)
+      .set({ archivedAt: new Date(clock) })
+      .where(eq(s.sequences.id, created.id));
+    await outreach.advanceEnrollments(owner, { organizationId: org });
+    expect(await touchesFor()).toHaveLength(1);
+    await local.db
+      .update(s.sequences)
+      .set({ archivedAt: null })
+      .where(eq(s.sequences.id, created.id));
+    await local.db
+      .update(s.products)
+      .set({ archivedAt: new Date(clock) })
+      .where(eq(s.products.id, product.id));
+    await outreach.advanceEnrollments(owner, { organizationId: org });
+    expect(await touchesFor()).toHaveLength(1);
+    await local.db
+      .update(s.products)
+      .set({ archivedAt: null })
+      .where(eq(s.products.id, product.id));
+    await outreach.advanceEnrollments(owner, { organizationId: org });
+    expect(await touchesFor()).toHaveLength(2);
   });
 });

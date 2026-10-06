@@ -327,3 +327,132 @@ describe("pipeline settings", () => {
     expect(within(panel("pipelines")).getByText(t.adminOnly)).toBeTruthy();
   });
 });
+
+describe("member settings", () => {
+  const memberRow = (name: string) =>
+    within(group(t.members)).getByRole("listitem", { name });
+  const group = (name: string) =>
+    within(panel("members")).getByRole("group", { name });
+
+  test("an admin changes roles and product access, deactivates and reactivates members through the member operations", async () => {
+    await mountSettings(harness, "/settings/members");
+    const sam = await waitFor(() => memberRow("Sam Rivera"));
+    expect(within(sam).getByText("sam@example.test")).toBeTruthy();
+    fireEvent.change(
+      within(sam).getByLabelText(
+        t.memberRoleFor.replace("{name}", "Sam Rivera"),
+      ),
+      { target: { value: "admin" } },
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "change_member_role")?.body).toMatchObject({
+        userId: member,
+        role: "admin",
+      }),
+    );
+    const restricted = memberRow("Restricted member");
+    fireEvent.click(
+      within(restricted).getByText(t.productCount.replace("{count}", "1")),
+    );
+    fireEvent.click(within(restricted).getByLabelText("AI Platform"));
+    fireEvent.click(
+      within(restricted).getByRole("button", { name: t.saveAccess }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "set_member_products")?.body).toMatchObject({
+        userId: "demo-restricted",
+        productIds: expect.arrayContaining([demoId(10), demoId(11)]),
+      }),
+    );
+    const again = await waitFor(() => memberRow("Restricted member"));
+    fireEvent.click(within(again).getByRole("button", { name: t.deactivate }));
+    expect(
+      (
+        within(again).getByLabelText(
+          t.reassignWorkFrom.replace("{name}", "Restricted member"),
+        ) as HTMLSelectElement
+      ).value,
+    ).toBe("demo-you");
+    fireEvent.click(
+      within(again).getByRole("button", { name: t.deactivateConfirm }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "deactivate_member")?.body).toMatchObject({
+        userId: "demo-restricted",
+        reassignToUserId: "demo-you",
+      }),
+    );
+    fireEvent.click(
+      await waitFor(() =>
+        within(memberRow("Restricted member")).getByRole("button", {
+          name: t.reactivate,
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "reactivate_member")?.body).toMatchObject({
+        userId: "demo-restricted",
+      }),
+    );
+  });
+
+  test("an admin invites, resends and revokes through the invitation operations and gets a link to share", async () => {
+    await mountSettings(harness, "/settings/members");
+    const invitations = await waitFor(() => group(t.invitations));
+    fireEvent.change(within(invitations).getByLabelText(t.inviteEmail), {
+      target: { value: "New.Person@example.test" },
+    });
+    fireEvent.click(within(invitations).getByLabelText("Services"));
+    fireEvent.click(
+      within(invitations).getByRole("button", { name: t.invite }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "create_invitation")?.body).toMatchObject({
+        email: "New.Person@example.test",
+        role: "member",
+        productIds: [demoId(12)],
+      }),
+    );
+    const link = (await within(invitations).findByLabelText(
+      t.invitationLink,
+    )) as HTMLInputElement;
+    expect(link.value).toContain("/invite/");
+    const row = await within(invitations).findByRole("listitem", {
+      name: "new.person@example.test",
+    });
+    fireEvent.click(
+      within(row).getByRole("button", { name: t.resendInvitation }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "resend_invitation")).toBeTruthy(),
+    );
+    fireEvent.click(
+      within(
+        await within(invitations).findByRole("listitem", {
+          name: "new.person@example.test",
+        }),
+      ).getByRole("button", { name: t.revokeInvitation }),
+    );
+    fireEvent.click(
+      within(
+        within(invitations).getByRole("listitem", {
+          name: "new.person@example.test",
+        }),
+      ).getByRole("button", { name: t.revokeInvitationConfirm }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "revoke_invitation")).toBeTruthy(),
+    );
+  });
+
+  test("a member sees teammates but cannot change them or see invitations", async () => {
+    await mountSettings(harness, "/settings/members", member);
+    expect(await waitFor(() => memberRow("Alex Morgan"))).toBeTruthy();
+    expect(within(panel("members")).queryByRole("combobox")).toBeNull();
+    expect(within(panel("members")).queryByRole("button")).toBeNull();
+    expect(
+      within(panel("members")).queryByRole("group", { name: t.invitations }),
+    ).toBeNull();
+    expect(within(panel("members")).getByText(t.adminOnly)).toBeTruthy();
+  });
+});

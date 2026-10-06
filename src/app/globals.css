@@ -4299,7 +4299,7 @@ tbody tr[data-selected] td:first-child::before {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
+  flex: 1 1 200px;
   min-width: 0;
 }
 .settings-row-main > :where(span, strong) {
@@ -4311,13 +4311,20 @@ tbody tr[data-selected] td:first-child::before {
   color: var(--gravity-faint);
   font-size: var(--text-xs);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 .settings-row-actions {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-wrap: wrap;
+  flex-shrink: 0;
   justify-content: flex-end;
+}
+.settings-row-main > strong {
+  flex-shrink: 0;
+  max-width: 60%;
 }
 .settings-row :where(input:not([type="checkbox"]), select) {
   min-height: 24px;
@@ -4368,6 +4375,7 @@ tbody tr[data-selected] td:first-child::before {
 }
 .settings-check {
   display: inline-flex;
+  flex-direction: row;
   align-items: center;
   gap: 6px;
   min-height: var(--gravity-list-row);
@@ -4445,4 +4453,48 @@ tbody tr[data-selected] td:first-child::before {
 .settings-link {
   align-self: flex-start;
   font-size: var(--text-xs);
+}
+.settings-disclosure {
+  position: relative;
+}
+.settings-disclosure > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--gravity-control);
+  padding: 0 8px;
+  border: 1px solid var(--gravity-border);
+  border-radius: var(--gravity-radius);
+}
+.settings-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 220px;
+  padding: 10px 12px;
+  background: var(--gravity-popover);
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: var(--gravity-radius-lg);
+  box-shadow: var(--gravity-shadow-pop);
+}
+.settings-popover .settings-checks {
+  flex-direction: column;
+}
+.settings-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-issued {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: var(--gravity-radius);
+  background: var(--gravity-surface-2);
 }

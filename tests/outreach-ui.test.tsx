@@ -14,7 +14,11 @@ import { describe, expect, test, vi } from "vitest";
 import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
-import { dateLabel, requestJson } from "../src/components/client-api";
+import {
+  dateLabel,
+  RequestError,
+  requestJson,
+} from "../src/components/client-api";
 import { outreachTabs } from "../src/components/routes";
 import { Shortcuts } from "../src/components/shortcuts";
 import {
@@ -384,6 +388,133 @@ describe("enrolling from People", () => {
 });
 
 describe("the sequences tab", () => {
+  test("creates a product sequence from the all-products view without enrolling or sending", async () => {
+    await mountCrm(harness, "/outreach/sequences");
+    const beforeTouches = await harness.local.db.select().from(s.touches);
+    const beforeEnrollments = await harness.local.db
+      .select()
+      .from(s.enrollments);
+    fireEvent.click(await screen.findByRole("button", { name: t.newSequence }));
+    const dialog = await screen.findByRole("dialog", { name: t.newSequence });
+    const save = within(dialog).getByRole("button", {
+      name: t.createSequence,
+    }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText(t.product), {
+      target: { value: demoId(12) },
+    });
+    fireEvent.change(within(dialog).getByLabelText(t.sequenceName), {
+      target: { value: "Services pilot follow-up" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: t.addStep }));
+    const second = within(dialog).getByRole("group", {
+      name: t.stepLabel.replace("{number}", "2"),
+    });
+    fireEvent.change(within(second).getByLabelText(t.channel), {
+      target: { value: "linkedin" },
+    });
+    fireEvent.change(within(second).getByLabelText(t.stepDelay), {
+      target: { value: "5" },
+    });
+    fireEvent.change(within(second).getByLabelText(t.stepTemplate), {
+      target: { value: "Following up on our pilot scope." },
+    });
+    fireEvent.click(save);
+    await screen.findByText(
+      t.sequenceCreated.replace("{name}", "Services pilot follow-up"),
+    );
+    expect(screen.queryByRole("dialog", { name: t.newSequence })).toBeNull();
+    const [created] = await harness.local.db
+      .select()
+      .from(s.sequences)
+      .where(eq(s.sequences.name, "Services pilot follow-up"));
+    expect(created?.productId).toBe(demoId(12));
+    expect(
+      created?.steps.map((step) => [step.number, step.channel, step.delayDays]),
+    ).toEqual([
+      [1, "gmail", 0],
+      [2, "linkedin", 5],
+    ]);
+    expect(await harness.local.db.select().from(s.touches)).toEqual(
+      beforeTouches,
+    );
+    expect(await harness.local.db.select().from(s.enrollments)).toEqual(
+      beforeEnrollments,
+    );
+    expect(
+      harness.posts.filter((post) => post.operation === "create-sequence"),
+    ).toHaveLength(1);
+  });
+
+  test("C opens sequence creation and Escape cancels it without a mutation", async () => {
+    await mountCrm(harness, "/outreach/sequences");
+    await screen.findByRole("button", { name: t.newSequence });
+    fireEvent.keyDown(document.body, { key: "c" });
+    const dialog = await screen.findByRole("dialog", { name: t.newSequence });
+    fireEvent.change(within(dialog).getByLabelText(t.sequenceName), {
+      target: { value: "Unsaved sequence" },
+    });
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: t.newSequence })).toBeNull(),
+    );
+    expect(
+      harness.posts.some((post) => post.operation === "create-sequence"),
+    ).toBe(false);
+  });
+
+  test("pending creation blocks duplicate submissions and closing, and a failure preserves the draft", async () => {
+    await mountCrm(harness, "/outreach/sequences");
+    fireEvent.click(await screen.findByRole("button", { name: t.newSequence }));
+    const dialog = await screen.findByRole("dialog", { name: t.newSequence });
+    fireEvent.change(within(dialog).getByLabelText(t.sequenceName), {
+      target: { value: "Keep this draft" },
+    });
+    const original = vi.mocked(requestJson).getMockImplementation();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let attempts = 0;
+    vi.mocked(requestJson).mockImplementation(async (url, init) => {
+      if (
+        init?.method === "POST" &&
+        JSON.parse(String(init.body)).operation === "create-sequence"
+      ) {
+        attempts += 1;
+        await gate;
+        throw new RequestError("INTERNAL_ERROR");
+      }
+      return original?.(url, init);
+    });
+    const form = within(dialog).getByRole("form", { name: t.newSequence });
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(attempts).toBe(1);
+    expect(
+      (
+        within(dialog).getByRole("button", {
+          name: t.cancel,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    const cancel = new Event("cancel", { cancelable: true });
+    fireEvent(dialog, cancel);
+    expect(cancel.defaultPrevented).toBe(true);
+    await act(async () => release());
+    await within(form).findByRole("alert");
+    expect(
+      (within(dialog).getByLabelText(t.sequenceName) as HTMLInputElement).value,
+    ).toBe("Keep this draft");
+    expect(
+      (
+        within(dialog).getByRole("button", {
+          name: t.createSequence,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  });
+
   test("the editor adds, reorders and removes steps, saves them and says how many planned touches changed", async () => {
     await mountCrm(harness, "/outreach/sequences");
     fireEvent.click(

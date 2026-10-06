@@ -316,6 +316,20 @@ test("MCP preserves imported context while recording estimates separately from a
   expect(refreshed.relationship.contextSource).toBe(source);
   expect(refreshed.person.tags).toEqual(["reviewed"]);
   expect(refreshed.messages).toHaveLength(0);
+  const compact = await call("get_workspace", {
+    productId: product.id,
+    compact: "true",
+  });
+  expect(compact.compact).toBe(true);
+  expect(compact.relationships[0].context).toBe("");
+  expect(compact.relationships[0]).not.toHaveProperty("contextSource");
+  expect(compact.relationships[0]).not.toHaveProperty("contextDetails");
+  expect(compact.people[0].tags).toEqual(["reviewed"]);
+  expect(compact.opportunities[0]).toMatchObject({
+    amountMinor: 123456,
+    probability: 40,
+    version: deal.version,
+  });
 });
 
 test("MCP writes create records, notify listeners, audit changes and reject stale approval versions", async () => {

@@ -8,6 +8,8 @@ The live MCP read path was checked through identity, capabilities, permissions, 
 
 Imported prose and JSON are historical evidence. Review each identity, product and conversation before using `link_import`. That operation links all unmatched messages in the selected thread, not just one displayed item. Keep private conversation content out of shared notes unless its owner authorizes that use. Missing linked history does not establish that a person has never been contacted.
 
+Large imports make full workspace responses unsuitable as an agent's default read. Browse with paginated `list_records`, or request `get_workspace` with `compact: "true"` for an index of identities, product relationships, stages, monetary fields and current versions. Compact mode deliberately omits long prose, context details/source and action drafts. Read specific full context before editing or outreach; blank compact fields do not establish missing history. Full workspace mode remains available explicitly and preserves its existing default for client compatibility.
+
 The current hosted capabilities do not yet include every operation on the reviewed main branch. Automatic Git deployment is disabled. A merge does not publish the application or apply migrations. Before publishing current source, check the restricted production database against every declared table and column, review any unapplied migrations against the target and backup policy, then qualify MCP discovery on the published release. The new health and database checks reject missing columns even when the tables themselves exist.
 
 ## Agent workflow

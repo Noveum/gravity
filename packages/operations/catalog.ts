@@ -407,7 +407,7 @@ export const operations: Operation[] = [
     operation: "snapshot",
     name: "get_workspace",
     description:
-      "Read permitted people, companies, products, relationships, sequences, meetings, materials and versions.",
+      'Read permitted workspace records, products, stages, sequences and versions. For large workspaces use compact="true" (a string) to omit long notes, context/source details and action draft bodies, then fetch get_person_context/get_company_context for the specific record. Use list_records for paginated browsing. compact="false" returns full prose and can be very large; omitted/empty compact fields are not evidence of absent history.',
     schema: scopeSchema.extend({
       compact: z.enum(["true", "false"]).default("false"),
     }),

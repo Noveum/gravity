@@ -218,7 +218,12 @@ export function IntegrationCards({
                 <div>
                   <strong>{row.displayName}</strong>
                   <small className="connection-meta">
-                    {data.products.find((p) => p.id === row.productId)?.name} ·{" "}
+                    {
+                      [...data.products, ...(data.archivedProducts ?? [])].find(
+                        (p) => p.id === row.productId,
+                      )?.name
+                    }{" "}
+                    ·{" "}
                     {row.status === "connected"
                       ? t.connected
                       : row.status === "disconnected"

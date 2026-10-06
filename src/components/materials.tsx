@@ -35,7 +35,10 @@ export function Materials({
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const [error, setError] = useState("");
-  const product = (id: string) => data.products.find((p) => p.id === id);
+  const product = (id: string) =>
+    [...data.products, ...(data.archivedProducts ?? [])].find(
+      (p) => p.id === id,
+    );
   const assets = data.assets.filter(
     (asset) =>
       (!folderId || asset.folderId === folderId) &&

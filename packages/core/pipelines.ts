@@ -267,19 +267,29 @@ export class PipelineService {
         input.productId,
       );
       assertCategory(input.pipeline, input.category);
-      if (input.pipelineId) {
-        const [pipeline] = await tx
-          .select({ id: s.pipelines.id })
-          .from(s.pipelines)
-          .where(
-            and(
-              eq(s.pipelines.id, input.pipelineId),
-              eq(s.pipelines.organizationId, input.organizationId),
-              eq(s.pipelines.productId, input.productId),
-            ),
-          );
-        if (!pipeline) throw new DomainError("NOT_FOUND", 404);
-      }
+      const [parent] = input.pipelineId
+        ? await tx
+            .select({ id: s.pipelines.id })
+            .from(s.pipelines)
+            .where(
+              and(
+                eq(s.pipelines.id, input.pipelineId),
+                eq(s.pipelines.organizationId, input.organizationId),
+                eq(s.pipelines.productId, input.productId),
+              ),
+            )
+            .for("update")
+        : await tx
+            .select({ id: s.products.id })
+            .from(s.products)
+            .where(
+              and(
+                eq(s.products.id, input.productId),
+                eq(s.products.organizationId, input.organizationId),
+              ),
+            )
+            .for("update");
+      if (!parent) throw new DomainError("NOT_FOUND", 404);
       const group = await lockGroup(tx, {
         organizationId: input.organizationId,
         productId: input.productId,

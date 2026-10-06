@@ -68,6 +68,13 @@ import {
   touchSnoozeSchema,
 } from "../core/outreach";
 import { authorize, DomainError, type Principal } from "../core/policy";
+import { productColorKeys } from "../core/product-colors";
+import {
+  archiveProductSchema,
+  ProductService,
+  restoreProductSchema,
+  updateProductSchema,
+} from "../core/products";
 import {
   companyArchiveSchema,
   companySchema,
@@ -147,6 +154,7 @@ const settings = ({ db }: OperationContext) =>
 const members = ({ db }: OperationContext) => new MemberService(db);
 const invitations = ({ db }: OperationContext) => new InvitationService(db);
 const workspace = ({ db }: OperationContext) => new WorkspaceService(db);
+const products = ({ db }: OperationContext) => new ProductService(db);
 const nameSchema = z.string().trim().min(1).max(100);
 const overviewSchema = scopeSchema.extend({
   days: z.coerce
@@ -463,6 +471,35 @@ export const operations: Operation[] = [
       "Change the workspace name, IANA time zone, URL slug (unique, lowercase letters, digits and single hyphens) or email domain allowlist (lowercased and deduplicated; empty means no workspace restriction). Requires admin membership and an all-products grant.",
     schema: updateWorkspaceSchema,
     run: (c, input) => workspace(c).update(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "product-update",
+    name: "update_product",
+    description: `Rename or recolour a product. colorKey is one of ${productColorKeys.join(", ")}. Requires admin membership and access to the product.`,
+    schema: updateProductSchema,
+    run: (c, input) => products(c).update(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "product-archive",
+    name: "archive_product",
+    description:
+      "Archive a product: it leaves switchers, filters and new-record forms, its running sequence enrollments pause with reason manual, and its records are kept. The last active product cannot be archived. Requires admin membership and an all-products grant.",
+    schema: archiveProductSchema,
+    run: (c, input) => products(c).archive(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "product-restore",
+    name: "restore_product",
+    description:
+      "Restore an archived product. Paused enrollments stay paused until resumed. Requires admin membership and an all-products grant.",
+    schema: restoreProductSchema,
+    run: (c, input) => products(c).restore(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -1111,7 +1148,12 @@ const memberAdministration = [
   "resend_invitation",
   "revoke_invitation",
 ];
-const workspaceAdministration = ["update_workspace"];
+const productAdministration = ["update_product"];
+const workspaceAdministration = [
+  "update_workspace",
+  "archive_product",
+  "restore_product",
+];
 const adminOperations = new Set([
   "create_workspace",
   "create_organization",
@@ -1119,6 +1161,7 @@ const adminOperations = new Set([
   "create_pipeline",
   "update_contact_rules",
   ...memberAdministration,
+  ...productAdministration,
   ...workspaceAdministration,
 ]);
 const allProductOperations = new Set([

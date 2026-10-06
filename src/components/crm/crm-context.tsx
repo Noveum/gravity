@@ -445,7 +445,10 @@ function useCrmState({
     return next;
   }
   const product = (id: string) =>
-    sourceData?.products.find((item) => item.id === id);
+    [
+      ...(sourceData?.products ?? []),
+      ...(sourceData?.archivedProducts ?? []),
+    ].find((item) => item.id === id);
   const member = (id: string) =>
     sourceData?.members.find((item) => item.id === id)?.name ?? t.unknown;
   const personFor = (relationshipId: string) =>

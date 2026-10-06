@@ -29,6 +29,7 @@ import {
   sendWindow,
 } from "./outreach-rules";
 import { authorize, DomainError, type Principal } from "./policy";
+import { assertProductActive } from "./products";
 import {
   assertActiveRelationships,
   clearApprovals,
@@ -781,6 +782,7 @@ export class OutreachService {
       );
       if (input.productId && input.productId !== sequence.productId)
         throw new DomainError("FORBIDDEN", 403);
+      await assertProductActive(tx, input.organizationId, sequence.productId);
       const readable = new Set(
         permission.products.map((product) => product.id),
       );
@@ -1729,6 +1731,7 @@ export class OutreachService {
         if (enrollment.status !== "paused")
           throw new DomainError("CONFLICT", 409);
         if (person.doNotContact) throw new DomainError("DO_NOT_CONTACT", 409);
+        await assertProductActive(tx, input.organizationId, found.productId);
       }
       const now = this.clock();
       const [updated] = await tx
@@ -1904,6 +1907,7 @@ export class OutreachService {
         values.productId,
         true,
       );
+      await assertProductActive(tx, values.organizationId, values.productId);
       const [sequence] = await tx
         .insert(s.sequences)
         .values({

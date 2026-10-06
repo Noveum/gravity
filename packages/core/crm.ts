@@ -21,6 +21,7 @@ import { overview as calculateOverview } from "./analytics";
 import { draftHash, draftSubject } from "./drafts";
 import { serialize } from "./dto";
 import { authorize, DomainError, type Principal } from "./policy";
+import { assertProductActive } from "./products";
 import {
   activeCompany,
   assertActiveRelationships,
@@ -337,6 +338,7 @@ export class CrmService {
         input.productId,
         true,
       );
+      await assertProductActive(tx, input.organizationId, input.productId);
       // Serialize creation within this tenant; explicit linking never silently merges identities.
       await tx
         .select({ id: s.organizations.id })
@@ -745,7 +747,10 @@ export class CrmService {
       );
     };
     return {
-      products: permission.products,
+      products: permission.products.filter((product) => !product.archivedAt),
+      archivedProducts: permission.products.filter(
+        (product) => product.archivedAt,
+      ),
       people,
       companies: allCompanies.filter((company) => !company.archivedAt),
       archived: {
@@ -963,10 +968,14 @@ export class CrmService {
     companyId: string,
   ) {
     const snapshot = await this.snapshot(principal, scope);
+    const readableProducts = [
+      ...snapshot.products,
+      ...snapshot.archivedProducts,
+    ];
     const company =
       snapshot.companies.find((company) => company.id === companyId) ??
       (await this.archivedCompany(
-        snapshot.products.map((product) => product.id),
+        readableProducts.map((product) => product.id),
         scope.organizationId,
         companyId,
       ));
@@ -990,7 +999,7 @@ export class CrmService {
       company,
       people,
       relationships,
-      products: snapshot.products.filter((product) =>
+      products: readableProducts.filter((product) =>
         relationships.some(
           (relationship) => relationship.productId === product.id,
         ),
@@ -1296,6 +1305,7 @@ export class CrmService {
       input.productId,
       true,
     );
+    await assertProductActive(this.db, input.organizationId, input.productId);
     if (input.parentId) {
       const [parent] = await this.db
         .select()
@@ -1550,6 +1560,8 @@ export class CrmService {
         input.productId,
         true,
       );
+      if (!input.id)
+        await assertProductActive(tx, input.organizationId, input.productId);
       const [relationship] = await tx
         .select()
         .from(s.relationships)
@@ -1659,6 +1671,7 @@ export class CrmService {
       true,
     );
     if (membership.role !== "admin") throw new DomainError("FORBIDDEN", 403);
+    await assertProductActive(this.db, input.organizationId, input.productId);
     return this.db.transaction(async (tx) => {
       const [pipeline] = await tx
         .insert(s.pipelines)

@@ -1894,8 +1894,9 @@ ul.timeline {
 }
 .integration-card {
   border: 1px solid var(--gravity-border-subtle);
-  padding: 18px;
+  padding: 16px;
   border-radius: var(--gravity-radius-lg);
+  background: var(--gravity-surface);
 }
 .integration-card p {
   color: var(--gravity-muted);
@@ -3154,7 +3155,7 @@ tbody tr[data-selected] td:first-child::before {
 }
 .integration-intro {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .integration-card h2 {
   display: flex;
@@ -3166,11 +3167,11 @@ tbody tr[data-selected] td:first-child::before {
   display: inline-flex;
   gap: 6px;
   align-items: center;
-  min-height: 36px;
+  min-height: var(--gravity-control);
 }
 .connection-account {
   border-top: 1px solid var(--line);
-  padding: 16px 0;
+  padding: 8px 0;
   display: flex;
   gap: 16px;
   justify-content: space-between;
@@ -3178,9 +3179,9 @@ tbody tr[data-selected] td:first-child::before {
 }
 .connection-meta {
   display: block;
-  margin-top: 6px;
+  margin-top: 2px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 .connection-buttons {
   display: flex;
@@ -3194,7 +3195,7 @@ tbody tr[data-selected] td:first-child::before {
   gap: 12px;
   align-items: center;
   border-top: 1px solid var(--line);
-  padding: 18px 0;
+  padding: 8px 0;
 }
 .import-review-toolbar,
 .import-pagination {
@@ -3203,7 +3204,7 @@ tbody tr[data-selected] td:first-child::before {
   align-items: center;
   gap: 12px;
   justify-content: space-between;
-  margin-top: 18px;
+  margin-top: 12px;
 }
 .import-search {
   display: flex;
@@ -3218,7 +3219,7 @@ tbody tr[data-selected] td:first-child::before {
   min-width: 0;
 }
 .import-page-status {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--muted);
 }
 .import-row .import-match {
@@ -3226,9 +3227,9 @@ tbody tr[data-selected] td:first-child::before {
   min-width: 0;
 }
 .import-row details {
-  margin-top: 10px;
+  margin-top: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .import-preview {
   white-space: pre-wrap;
@@ -3260,7 +3261,7 @@ tbody tr[data-selected] td:first-child::before {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 12px;
 }
 .integration-card-actions button,
 .provider-settings button,
@@ -3269,9 +3270,17 @@ tbody tr[data-selected] td:first-child::before {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  min-height: 36px;
-  border-radius: 7px;
+  gap: 6px;
+  min-height: var(--gravity-control);
+  border-radius: var(--gravity-radius);
+}
+@media (pointer: coarse) {
+  .integration-card-actions button,
+  .provider-settings button,
+  .connection-buttons button,
+  .dialog-actions button {
+    min-height: 36px;
+  }
 }
 .integration-card-actions svg,
 .provider-settings svg,
@@ -3292,11 +3301,11 @@ tbody tr[data-selected] td:first-child::before {
 }
 .provider-settings-heading h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--text-lg);
 }
 .provider-settings-heading :where(p) {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .provider-settings-heading > .icon-button {
   margin-left: auto;

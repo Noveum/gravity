@@ -6,6 +6,7 @@ import { gmailSendScope } from "../packages/connectors/outbound-provider";
 import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { settingsSections } from "../src/components/routes";
 import { reopenWorkspace } from "../src/components/workspace-preference";
 import {
   installSettingsHarness,
@@ -31,6 +32,34 @@ afterEach(() => vi.mocked(reopenWorkspace).mockClear());
 const member = "demo-teammate";
 const panel = (section: keyof typeof t.settingsSections) =>
   screen.getByRole("region", { name: t.settingsSections[section] });
+
+describe("settings shell", () => {
+  test("every section is one link away and Connections no longer repeats the assistant card", async () => {
+    await mountSettings(harness, "/settings/connections");
+    const nav = screen.getByRole("navigation", { name: t.settingsNavigation });
+    expect(
+      within(nav)
+        .getAllByRole("link")
+        .map((link) => [link.textContent, link.getAttribute("href")]),
+    ).toEqual(
+      settingsSections.map((section) => [
+        t.settingsSections[section],
+        `/settings/${section}`,
+      ]),
+    );
+    expect(
+      within(nav)
+        .getByRole("link", { name: t.settingsSections.connections })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
+      await within(panel("connections")).findByRole("heading", {
+        name: t.gmail,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText(t.mcpEndpoint)).toBeNull();
+  });
+});
 
 describe("workspace settings", () => {
   test("an admin saves the name, time zone, address and domains through update_workspace and the workspace is reselected", async () => {

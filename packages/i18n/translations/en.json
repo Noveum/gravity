@@ -281,7 +281,8 @@
     "INVITATION_USED": "This invitation has already been accepted.",
     "INVITATION_EMAIL_MISMATCH": "This invitation was sent to a different email address. Sign in with the invited address.",
     "EMAIL_NOT_VERIFIED": "Verify your email address before accepting this invitation.",
-    "EMAIL_DOMAIN_NOT_ALLOWED": "Email addresses on this domain cannot join this workspace."
+    "EMAIL_DOMAIN_NOT_ALLOWED": "Email addresses on this domain cannot join this workspace.",
+    "SLUG_TAKEN": "Another workspace already uses this address. Choose a different one."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
   "addPerson": "Add person",

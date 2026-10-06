@@ -27,6 +27,7 @@ import {
   meetingChangeSchema,
   messageActivitySchema,
   opportunitySchema,
+  organizationSchema,
   personSchema,
   pipelineSchema,
   scheduleActionSchema,
@@ -77,6 +78,7 @@ import {
   personUpdateSchema,
   RecordService,
 } from "../core/records";
+import { updateWorkspaceSchema, WorkspaceService } from "../core/workspace";
 import type { Database } from "../database/client";
 import { mcpGrants } from "../database/schema";
 import { downloadAsset, maxFileSize, uploadAsset } from "../storage/files";
@@ -144,6 +146,7 @@ const settings = ({ db }: OperationContext) =>
   new ProviderConfigurationService(db);
 const members = ({ db }: OperationContext) => new MemberService(db);
 const invitations = ({ db }: OperationContext) => new InvitationService(db);
+const workspace = ({ db }: OperationContext) => new WorkspaceService(db);
 const nameSchema = z.string().trim().min(1).max(100);
 const overviewSchema = scopeSchema.extend({
   days: z.coerce
@@ -316,7 +319,7 @@ export const operations: Operation[] = [
     operation: "organizations",
     name: "list_organizations",
     description:
-      "List accessible organizations. MCP is limited to the organization selected during consent.",
+      "List accessible organizations with name, slug, time zone and email domain allowlist. MCP is limited to the organization selected during consent.",
     schema: z.object({}),
     run: (c) => crm(c).organizations(c.principal),
   }),
@@ -433,10 +436,11 @@ export const operations: Operation[] = [
     operation: "organization",
     name: "create_organization",
     description:
-      "Create an organization owned by the acting user. MCP requires admin/all-products access; this never widens the current grant.",
-    schema: z.object({ name: nameSchema }),
+      "Create an organization owned by the acting user, with an IANA time zone (default UTC). MCP requires admin/all-products access; this never widens the current grant.",
+    schema: organizationSchema,
     destructive: false,
-    run: (c, input) => crm(c).createOrganization(c.principal, input.name),
+    run: (c, input) =>
+      crm(c).createOrganization(c.principal, input.name, input.timezone),
   }),
   operation({
     api: "crm",
@@ -449,6 +453,16 @@ export const operations: Operation[] = [
     destructive: false,
     run: (c, input) =>
       crm(c).createProduct(c.principal, input.organizationId, input.name),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "workspace-settings",
+    name: "update_workspace",
+    description:
+      "Change the workspace name, IANA time zone, URL slug (unique, lowercase letters, digits and single hyphens) or email domain allowlist (lowercased and deduplicated; empty means no workspace restriction). Requires admin membership and an all-products grant.",
+    schema: updateWorkspaceSchema,
+    run: (c, input) => workspace(c).update(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -1097,6 +1111,7 @@ const memberAdministration = [
   "resend_invitation",
   "revoke_invitation",
 ];
+const workspaceAdministration = ["update_workspace"];
 const adminOperations = new Set([
   "create_workspace",
   "create_organization",
@@ -1104,12 +1119,14 @@ const adminOperations = new Set([
   "create_pipeline",
   "update_contact_rules",
   ...memberAdministration,
+  ...workspaceAdministration,
 ]);
 const allProductOperations = new Set([
   "create_workspace",
   "create_organization",
   "create_product",
   "update_contact_rules",
+  ...workspaceAdministration,
   "configure_unipile",
   "remove_unipile",
   ...memberAdministration,

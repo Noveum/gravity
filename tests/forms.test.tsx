@@ -181,3 +181,48 @@ test("a dialog shows the shared loading state while its scope loads", async () =
   await act(async () => loaded(snapshot));
   expect(screen.queryByRole("status")).toBeNull();
 });
+
+test("the organization form sends a time zone that defaults to the browser's zone", async () => {
+  const resolved = Intl.DateTimeFormat.prototype.resolvedOptions;
+  const zone = vi
+    .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+    .mockImplementation(function (this: Intl.DateTimeFormat) {
+      return { ...resolved.call(this), timeZone: "Asia/Kolkata" };
+    });
+  try {
+    const mutate = vi.fn(async () => true);
+    render(
+      <SettingsForm
+        organizationId="org"
+        mutate={mutate}
+        onOrganizations={async () => {}}
+      />,
+    );
+    const select = (await screen.findByLabelText(
+      t.organizationTimezone,
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("Asia/Kolkata"));
+    fireEvent.change(screen.getByLabelText(t.organizationName), {
+      target: { value: "Fictional Org" },
+    });
+    fireEvent.submit(select.closest("form") as HTMLFormElement);
+    await waitFor(() => expect(mutate).toHaveBeenCalledOnce());
+    expect(mutate).toHaveBeenCalledWith({
+      operation: "organization",
+      organizationId: "org",
+      name: "Fictional Org",
+      timezone: "Asia/Kolkata",
+    });
+    fireEvent.change(select, { target: { value: "Europe/London" } });
+    fireEvent.change(screen.getByLabelText(t.organizationName), {
+      target: { value: "Second Org" },
+    });
+    fireEvent.submit(select.closest("form") as HTMLFormElement);
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
+    expect(mutate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ timezone: "Europe/London" }),
+    );
+  } finally {
+    zone.mockRestore();
+  }
+});

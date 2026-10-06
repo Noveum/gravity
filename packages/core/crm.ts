@@ -28,6 +28,7 @@ import {
   emailTaken,
   personVisible,
 } from "./visibility";
+import { ianaTimeZoneSchema } from "./workspace";
 
 export const scopeSchema = z.object({
   organizationId: z.uuid(),
@@ -157,18 +158,11 @@ export const messageActivitySchema = scopeSchema
 export const workspaceSchema = z.object({
   name: z.string().trim().min(1).max(100),
   productName: z.string().trim().min(1).max(100),
-  timezone: z
-    .string()
-    .max(100)
-    .default("UTC")
-    .refine((value) => {
-      try {
-        new Intl.DateTimeFormat("en", { timeZone: value });
-        return true;
-      } catch {
-        return false;
-      }
-    }),
+  timezone: ianaTimeZoneSchema.default("UTC"),
+});
+export const organizationSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  timezone: ianaTimeZoneSchema.default("UTC"),
 });
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 export function defaultStages(organizationId: string, productId: string) {
@@ -453,6 +447,7 @@ export class CrmService {
         name: s.organizations.name,
         slug: s.organizations.slug,
         timezone: s.organizations.timezone,
+        allowedEmailDomains: s.organizations.allowedEmailDomains,
       })
       .from(s.organizations)
       .innerJoin(
@@ -1493,13 +1488,18 @@ export class CrmService {
       return { organizationId: organization.id, productId: product.id };
     });
   }
-  async createOrganization(principal: Principal, name: string) {
+  async createOrganization(
+    principal: Principal,
+    name: string,
+    timezone = "UTC",
+  ) {
     await this.authorizeOrganizationCreation(principal);
     return this.db.transaction(async (tx) => {
       const [organization] = await tx
         .insert(s.organizations)
         .values({
           name,
+          timezone,
           slug: `${name
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, "-")

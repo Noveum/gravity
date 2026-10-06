@@ -99,3 +99,9 @@ export async function authorizeAdministrator(
     throw new DomainError("FORBIDDEN", 403);
   return permission;
 }
+export function uniqueViolation(error: unknown) {
+  const cause = (error as { cause?: { code?: string } }).cause;
+  return (
+    (error as { code?: string }).code === "23505" || cause?.code === "23505"
+  );
+}

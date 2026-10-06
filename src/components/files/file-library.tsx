@@ -88,12 +88,28 @@ function Icon({ entry }: { entry: FileEntry }) {
 }
 export function FileLibrary() {
   const crm = useWorkspaceData();
+  const params = useSearchParams();
+  const linkedFileId = params.get("open") ?? "";
+  const linkedProductId = params.get("productId") ?? "";
+  const openedLink = useRef("");
   const [selectedProduct, setSelectedProduct] = useState("");
   const productId =
     crm.productId ||
     (crm.data.products.some((p) => p.id === selectedProduct)
       ? selectedProduct
       : (crm.data.products[0]?.id ?? ""));
+  const fileProductId = linkedProductId || productId;
+  useEffect(() => {
+    if (!linkedFileId) {
+      openedLink.current = "";
+      return;
+    }
+    if (!fileProductId) return;
+    const key = `${crm.organizationId}/${fileProductId}/${linkedFileId}`;
+    if (openedLink.current === key) return;
+    openedLink.current = key;
+    crm.openFile(linkedFileId, fileProductId);
+  }, [linkedFileId, fileProductId, crm.organizationId, crm.openFile]);
   const productControl = !crm.productId ? (
     <label className="library-product">
       {t.product}

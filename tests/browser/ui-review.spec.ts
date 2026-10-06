@@ -207,5 +207,8 @@ test("company, meeting, board and legacy folder editors remain on their originat
     .fill("Fictional folder draft");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await screenshot(page, "legacy-folder-inline");
-  await folder.getByRole("button", { name: t.cancel, exact: true }).last().click();
+  await folder
+    .getByRole("button", { name: t.cancel, exact: true })
+    .last()
+    .click();
 });

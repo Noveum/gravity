@@ -505,7 +505,7 @@ export const operations: Operation[] = [
     operation: "record-metadata",
     name: "update_record_metadata",
     description:
-      "Set custom tags and deal size on a permitted person, company, relationship or opportunity, requiring its current version.",
+      "Set custom tags and amountMinor/currency on a permitted person, company, relationship or opportunity using its current version. amountMinor uses ISO minor units (USD cents, JPY whole yen, KWD thousandths); null is unknown, zero is recorded. Person/company/relationship amounts are estimates excluded from revenue forecasts. Use save_deal for opportunity probability, close date and other deal fields.",
     schema: recordMetadataSchema,
     run: (c, input) => new RecordMetadataService(c.db).save(c.principal, input),
   }),
@@ -515,7 +515,7 @@ export const operations: Operation[] = [
     operation: "conversation-sharing",
     name: "set_conversation_visibility",
     description:
-      "Explicitly share one of your imported threads with authorized members of its product, or make it private again. Sharing includes past and future messages in that thread; it never shares credentials, unrelated threads or sending access. Get conversationId and expectedVisibility from get_relationship_context, explain the scope to the user and apply their sharing preference. Only the conversation owner can change visibility, including when an administrator makes the request.",
+      "Explicitly share one of your imported threads with authorized members of its product, or make it private again. Sharing includes past and future messages in that thread; it never shares credentials, unrelated threads or sending access. Get conversationId and expectedVisibility from get_person_context, explain the scope to the user and apply their sharing preference. Only the conversation owner can change visibility, including when an administrator makes the request.",
     schema: conversationSharingSchema,
     run: (c, input) => crm(c).shareConversation(c.principal, input),
   }),
@@ -579,7 +579,7 @@ export const operations: Operation[] = [
     permission: "crm:send",
     idempotent: true,
     description:
-      "Actually send an owned, approved follow-up/reply using your connected Gmail or LinkedIn account. Requires crm:send and current version; supply the same idempotencyKey on retry. Source conversation ownership, opt-outs (including anyone sharing the person's email or LinkedIn profile) and contact policies apply; an archived product refuses with PRODUCT_ARCHIVED. Gmail draft format: Subject: title, blank line, body.",
+      "Actually send an owned, approved reply, approval or commitment action owed by us through your connected Gmail or LinkedIn account. Review/research tasks and actions owed by them/unknown cannot send. Schedule a separate reply action after reviewing the history. Requires crm:send and current version; supply the same idempotencyKey on retry. Source conversation ownership, opt-outs (including anyone sharing the person's email or LinkedIn profile) and contact policies apply; an archived product refuses with PRODUCT_ARCHIVED. Gmail draft format: Subject: title, blank line, body.",
     schema: sendActionSchema,
     run: (c, input) => new OutboundService(c.db).send(c.principal, input),
   }),
@@ -685,7 +685,7 @@ export const operations: Operation[] = [
     operation: "snapshot",
     name: "get_workspace",
     description:
-      "Read permitted people, companies, products, relationships, sequences, meetings, materials and versions.",
+      'Read permitted workspace records, products, stages, sequences and versions. For large workspaces use compact="true" (a string) to omit long notes, context/source details and action draft bodies, then fetch get_person_context/get_company_context for the specific record. Use list_records for paginated browsing. compact="false" returns full prose and can be very large; omitted/empty compact fields are not evidence of absent history.',
     schema: scopeSchema.extend({
       compact: z.enum(["true", "false"]).default("false"),
     }),
@@ -763,7 +763,7 @@ export const operations: Operation[] = [
     operation: "deal",
     name: "save_deal",
     description:
-      "Create or update a deal: value, currency, owner, probability, close date, stage, outcome and context. Updates require its current ID/version.",
+      "Create or update a deal: amountMinor, currency, owner, probability, expectedCloseDate, stage, outcome and context. amountMinor uses ISO minor units (USD cents, JPY whole yen, KWD thousandths). Unknown amount/probability is null; zero is valid. Probability is an integer percentage 0-100. Open deals with both fields contribute amount times probability to forecasts, separately by currency. Do not infer amounts from contact estimates or company revenue. Updates require its current ID/version.",
     schema: opportunitySchema,
     run: (c, input) => crm(c).saveOpportunity(c.principal, input),
   }),

@@ -324,6 +324,147 @@ test("each assistant scope combination lists only its tools and refuses the rest
   );
 });
 
+test("MCP rejects approved review tasks before creating a delivery", async () => {
+  const person = await call("create_person", {
+    productId: demoId(10),
+    name: "Fictional review task contact",
+    review: false,
+  });
+  const action = await call("schedule_next_action", {
+    relationshipId: person.relationshipId,
+    ownerId: demoUser,
+    kind: "review",
+    channel: "gmail",
+    owedBy: "us",
+    title: "Review the existing history",
+    dueAt: new Date().toISOString(),
+  });
+  const approved = await call("change_action", {
+    actionId: action.actionId,
+    version: 1,
+    command: "approve",
+    draft: "Subject: Fictional review\n\nUnsent fixture.",
+  });
+  const [connection] = await local.db
+    .insert(s.connections)
+    .values({
+      organizationId: demoId(1),
+      productId: demoId(10),
+      ownerId: demoUser,
+      provider: "gmail",
+      externalAccountId: "mcp-review-fixture",
+      status: "connected",
+    })
+    .returning();
+  if (!connection) throw new Error("missing connection fixture");
+  const input = {
+    actionId: action.actionId,
+    connectionId: connection.id,
+    version: approved.version,
+  };
+  const sender = { ...writable, canSend: true };
+  expect(await call("get_send_readiness", input, sender)).toMatchObject({
+    ready: false,
+    approved: true,
+    blockedBy: "SOURCE_NOT_SENDABLE",
+  });
+  expect(
+    (
+      await call(
+        "send_action",
+        { ...input, idempotencyKey: "mcp-review-no-dispatch" },
+        sender,
+      )
+    ).error,
+  ).toContain("SOURCE_NOT_SENDABLE");
+  expect(
+    await local.db
+      .select()
+      .from(s.deliveries)
+      .where(eq(s.deliveries.actionId, action.actionId)),
+  ).toHaveLength(0);
+});
+
+test("MCP preserves imported context while recording estimates separately from actual deal revenue", async () => {
+  const product = await call("create_product", {
+    name: "Fictional revenue review product",
+  });
+  const source = JSON.stringify({
+    history: "Fictional legacy review",
+    send_permission: false,
+  });
+  const person = await call("create_person", {
+    productId: product.id,
+    name: "Fictional revenue review contact",
+    context: source,
+    review: false,
+  });
+  const context = await call("get_person_context", {
+    relationshipId: person.relationshipId,
+  });
+  const estimated = await call("update_record_metadata", {
+    entity: "person",
+    recordId: person.personId,
+    version: context.person.version,
+    tags: ["reviewed"],
+    amountMinor: 9000000,
+    currency: "USD",
+  });
+  expect(estimated).toMatchObject({
+    entity: "person",
+    record: { amountMinor: 9000000 },
+  });
+  const edited = await call("change_relationship", {
+    relationshipId: person.relationshipId,
+    version: context.relationship.version,
+    context: "Readable fictional summary",
+    contextDetails: { budget: "Budget remains unverified." },
+  });
+  expect(edited).toMatchObject({ contextSource: source });
+  const workspace = await call("get_workspace", { productId: product.id });
+  const stage = workspace.stages.find(
+    (item: { category: string }) => item.category === "open",
+  );
+  if (!stage) throw new Error("missing sales stage fixture");
+  const deal = await call("save_deal", {
+    productId: product.id,
+    relationshipId: person.relationshipId,
+    stageId: stage.id,
+    name: "Fictional quoted deal",
+    ownerId: demoUser,
+    amountMinor: 123456,
+    currency: "USD",
+    probability: 40,
+    expectedCloseDate: "2030-02-03",
+    description: "Reviewed fictional quote",
+  });
+  expect(deal).toMatchObject({ amountMinor: 123456, probability: 40 });
+  const report = await call("get_overview", { productId: product.id });
+  expect(report.weightedValue).toEqual([
+    { currency: "USD", amountMinor: 49382, count: 1 },
+  ]);
+  const refreshed = await call("get_person_context", {
+    relationshipId: person.relationshipId,
+  });
+  expect(refreshed.relationship.contextSource).toBe(source);
+  expect(refreshed.person.tags).toEqual(["reviewed"]);
+  expect(refreshed.messages).toHaveLength(0);
+  const compact = await call("get_workspace", {
+    productId: product.id,
+    compact: "true",
+  });
+  expect(compact.compact).toBe(true);
+  expect(compact.relationships[0].context).toBe("");
+  expect(compact.relationships[0]).not.toHaveProperty("contextSource");
+  expect(compact.relationships[0]).not.toHaveProperty("contextDetails");
+  expect(compact.people[0].tags).toEqual(["reviewed"]);
+  expect(compact.opportunities[0]).toMatchObject({
+    amountMinor: 123456,
+    probability: 40,
+    version: deal.version,
+  });
+});
+
 test("MCP writes create records, notify listeners, audit changes and reject stale approval versions", async () => {
   const hint = vi.fn();
   const unsubscribe = subscribeChanges(demoId(1), hint);

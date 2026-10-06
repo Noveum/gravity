@@ -7,7 +7,7 @@ export function rowKeys(handlers: { peek?: () => void; open?: () => void }) {
     const id = shortcutFor(keyInput(event), ["row"]);
     const handler =
       id === "peek" || id === "open"
-        ? (handlers.peek ?? handlers.open)
+        ? (handlers[id] ?? handlers.peek ?? handlers.open)
         : undefined;
     if (!handler) return;
     event.preventDefault();
@@ -22,6 +22,7 @@ export function peekLink(peek: () => void) {
   return (event: MouseEvent<HTMLAnchorElement>) => {
     event.stopPropagation();
     if (
+      event.defaultPrevented ||
       event.button !== 0 ||
       event.metaKey ||
       event.ctrlKey ||

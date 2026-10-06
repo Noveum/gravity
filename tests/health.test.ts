@@ -51,6 +51,33 @@ test("readiness exercises migrated CRM and auth tables without returning records
   });
 });
 
+test.each([
+  ["relationships", "context_source"],
+  ["relationships", "context_details"],
+  ["people", "tags"],
+  ["companies", "amount_minor"],
+  ["relationships", "currency"],
+  ["opportunities", "tags"],
+  ["invitations", "token_hash"],
+  ["file_entry", "visibility"],
+])(
+  "readiness rejects an incomplete upgrade missing %s.%s",
+  async (table, column) => {
+    configure();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await local.client.exec(
+      `BEGIN; ALTER TABLE "${table}" DROP COLUMN "${column}" CASCADE;`,
+    );
+    try {
+      const response = await GET();
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ status: "unavailable" });
+    } finally {
+      await local.client.exec("ROLLBACK;");
+    }
+  },
+);
+
 test("database access without a configured login is unavailable, while email-only login is ready", async () => {
   configure();
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -61,6 +88,36 @@ test("database access without a configured login is unavailable, while email-onl
   expect((await GET()).status).toBe(503);
   vi.stubEnv("EMAIL_FROM", "Gravity <login@example.test>");
   expect((await GET()).status).toBe(200);
+});
+
+test("readiness rejects visible columns without application read permission", async () => {
+  configure();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "info").mockImplementation(() => {});
+  await local.client.exec(`
+    BEGIN;
+    CREATE ROLE health_column_reader;
+    GRANT USAGE ON SCHEMA public TO health_column_reader;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO health_column_reader;
+    REVOKE SELECT ON companies FROM health_column_reader;
+    GRANT UPDATE ON companies TO health_column_reader;
+    SET LOCAL ROLE health_column_reader;
+  `);
+  try {
+    const columns = await local.client.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'companies'",
+    );
+    expect(columns.rows.length).toBeGreaterThan(0);
+    expect((await GET()).status).toBe(503);
+    await local.client.exec(`
+      RESET ROLE;
+      GRANT SELECT ON companies TO health_column_reader;
+      SET LOCAL ROLE health_column_reader;
+    `);
+    expect((await GET()).status).toBe(200);
+  } finally {
+    await local.client.exec("ROLLBACK;");
+  }
 });
 
 test("demo identities and missing auth configuration are never production-ready", async () => {

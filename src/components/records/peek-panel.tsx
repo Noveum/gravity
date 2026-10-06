@@ -20,10 +20,16 @@ import { useArchive } from "../crm/use-archive";
 import { useDraft } from "../crm/use-draft";
 import { FileInspector } from "../files/file-library";
 import { PersonDialog } from "../person-dialog";
-import { CompanyDetails, PersonDetails } from "../record-details";
+import {
+  CompanyPeople,
+  CompanyProfile,
+  PersonDetails,
+  RelatedOpportunities,
+} from "../record-details";
 import { companyPath, personPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
-import { PersonFields } from "./contact-fields";
+import { CompanyActivity } from "./company-activity";
+import { CompanyFields, PersonFields } from "./contact-fields";
 import { ContactWorkspace } from "./contact-workspace";
 import { ConversationHistory } from "./conversation-history";
 import { MetadataSection } from "./metadata-section";
@@ -193,13 +199,16 @@ function CompanyPeek() {
         />
       )}
       <MetadataSection entity="company" record={context.company} />
-      <CompanyDetails
-        context={context}
-        onPerson={crm.openPerson}
-        onAction={crm.openPerson}
+      <CompanyProfile company={context.company} />
+      <CompanyFields company={context.company} />
+      <CompanyPeople context={context} onPerson={crm.openPerson} />
+      <RelatedOpportunities
+        className="record-section"
+        opportunities={context.opportunities}
+        allowOpportunityCreation={!context.company.archivedAt}
         onReveal={crm.reveal}
-        timeZone={crm.timeZone}
       />
+      <CompanyActivity context={context} className="record-section" />
     </>
   );
 }

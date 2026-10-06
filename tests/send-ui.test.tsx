@@ -254,9 +254,49 @@ test("a refusal because the chat is linked elsewhere points to the person's exis
   expect(link.getAttribute("href")).toBe(
     personPath(demoId(204), { relationshipId: demoId(304) }),
   );
+  fireEvent.click(link);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await within(
+    screen.getByRole("complementary", { name: t.recordDetails }),
+  ).findByRole("heading", { name: "Amara Stone" });
+  expect(window.location.pathname).toBe("/outreach/approved");
 });
 
 describe("sending an approved follow-up", () => {
+  test.each([
+    { kind: "review" as const, owedBy: "us" as const },
+    { kind: "research" as const, owedBy: "us" as const },
+    { kind: "reply" as const, owedBy: "them" as const },
+    { kind: "commitment" as const, owedBy: "unknown" as const },
+  ])(
+    "an approved $kind task owed by $owedBy offers no send",
+    async (fields) => {
+      await harness.local.db
+        .update(s.actions)
+        .set({
+          ...fields,
+          draft: "Subject: Fictional review\n\nUnsent fixture.",
+          draftHash: "fixture",
+          approvedHash: "fixture",
+        })
+        .where(eq(s.actions.id, demoId(602)));
+      await mountCrm(
+        harness,
+        `/people/${demoId(202)}?relationship=${demoId(302)}&action=${demoId(602)}`,
+        { demo: false },
+      );
+      fireEvent.click(await screen.findByRole("button", { name: t.draft }));
+      expect(
+        await screen.findByText(t.errors.SOURCE_NOT_SENDABLE),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole("button", { name: t.touchVerbs.send }),
+      ).toBeNull();
+      expect(readinessCalls).toHaveLength(0);
+      expect(sends).toHaveLength(0);
+    },
+  );
+
   test("the draft panel sends an approved action through send_action", async () => {
     await harness.local.db
       .update(s.actions)

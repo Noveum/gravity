@@ -743,6 +743,7 @@ function CrmShell({ children }: { children: ReactNode }) {
               className="content"
               aria-label={label(section)}
               onClickCapture={(event) => {
+                if (event.defaultPrevented) return;
                 const target =
                   event.target instanceof Element
                     ? event.target.closest<HTMLElement>("button, a[href]")

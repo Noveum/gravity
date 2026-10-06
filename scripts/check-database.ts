@@ -2,6 +2,7 @@ import { getTableName, is } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import postgres from "postgres";
 import { databaseOptions } from "../packages/database/config";
+import { databaseSchemaComplete } from "../packages/database/readiness";
 import * as schema from "../packages/database/schema";
 import { loadScriptEnvironment } from "./environment";
 
@@ -53,6 +54,12 @@ try {
     !role.server_group
   )
     throw new Error("DATABASE_RUNTIME_PERMISSIONS_UNSAFE");
+  const columns = await client<{ tableName: string; columnName: string }[]>`
+    SELECT table_name AS "tableName", column_name AS "columnName"
+    FROM information_schema.columns WHERE table_schema = 'public'
+  `;
+  if (!databaseSchemaComplete(columns))
+    throw new Error("DATABASE_SCHEMA_INCOMPLETE");
   // Exercise actual SQL and RLS using the restricted runtime role.
   await client`SELECT id FROM public.organizations LIMIT 1`;
   await client`SELECT id FROM public.session LIMIT 1`;

@@ -455,13 +455,13 @@
   "copy": "Copy",
   "copied": "Copied",
   "copyFailed": "Could not copy. Select the endpoint and copy it manually.",
-  "mcpQualification": "Connect using OAuth to authorize CRM read, write and approved sending access. Existing connections must reconnect to approve the new send permission.",
+  "mcpQualification": "Connect using OAuth. At consent you choose the access level: Read, Read and write, or Read, write and send. Existing connections must reconnect to approve the send permission.",
   "integrationGuide": "Integration setup guide",
   "assistantGrants": "Authorized assistants",
   "mcpSteps": [
     "Add this URL as a remote HTTP MCP server in your assistant.",
     "Sign into Gravity, then choose one organization and the products to share.",
-    "Approve CRM read, write and approved sending access. You can revoke the connection here at any time."
+    "Choose Read to let the assistant look only, Read and write to let it edit records and approve drafts, or Read, write and send to also send approved messages from your connected accounts. You can revoke the connection here at any time."
   ],
   "connectionSteps": {
     "gmail": [
@@ -1718,8 +1718,13 @@
   "reassignWorkFrom": "Move work from {name} to",
   "reactivate": "Reactivate",
   "memberDeactivated": "Deactivated",
-  "memberMoved": "Member deactivated. Moved {relationships} relationships, {actions} actions and {touches} touches.",
-  "ownedWork": "{relationships} relationships · {actions} actions · {touches} touches",
+  "memberMoved": "Member deactivated. Moved {relationships}, {actions} and {touches}.",
+  "ownedWork": "{relationships} · {actions} · {touches}",
+  "workCounts": {
+    "relationships": { "one": "{count} relationship", "other": "{count} relationships" },
+    "actions": { "one": "{count} action", "other": "{count} actions" },
+    "touches": { "one": "{count} touch", "other": "{count} touches" }
+  },
   "invitations": "Invitations",
   "invitationsDetail": "An invitation link works once, for the invited email address, until it expires.",
   "inviteEmail": "Email address",

@@ -67,6 +67,27 @@ function ProductChecks({
     </div>
   );
 }
+type WorkCounts = Record<keyof typeof t.workCounts, number>;
+const pluralRules = new Intl.PluralRules("en");
+function workCount(kind: keyof typeof t.workCounts, count: number) {
+  const forms = t.workCounts[kind];
+  return (
+    pluralRules.select(count) === "one" ? forms.one : forms.other
+  ).replace("{count}", String(count));
+}
+function fillWork(template: string, counts: WorkCounts) {
+  return template
+    .replace(
+      "{relationships}",
+      workCount("relationships", counts.relationships),
+    )
+    .replace("{actions}", workCount("actions", counts.actions))
+    .replace("{touches}", workCount("touches", counts.touches));
+}
+export const ownedWorkText = (counts: WorkCounts) =>
+  fillWork(t.ownedWork, counts);
+export const movedWorkText = (counts: WorkCounts) =>
+  fillWork(t.memberMoved, counts);
 const toggled = (ids: string[], id: string) =>
   ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id];
 
@@ -96,10 +117,7 @@ function MemberRow({
       others[0]?.userId ??
       "",
   );
-  const owned = t.ownedWork
-    .replace("{relationships}", String(member.owned.relationships))
-    .replace("{actions}", String(member.owned.actions))
-    .replace("{touches}", String(member.owned.touches));
+  const owned = ownedWorkText(member.owned);
   const scope = { userId: member.userId };
   const self = member.userId === viewer;
   return (
@@ -175,13 +193,7 @@ function MemberRow({
                 );
                 const moved = (result as { reassigned?: Member["owned"] })
                   ?.reassigned;
-                if (ok && moved)
-                  notify(
-                    t.memberMoved
-                      .replace("{relationships}", String(moved.relationships))
-                      .replace("{actions}", String(moved.actions))
-                      .replace("{touches}", String(moved.touches)),
-                  );
+                if (ok && moved) notify(movedWorkText(moved));
               }}
             >
               <select

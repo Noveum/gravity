@@ -4,7 +4,7 @@ import { validatedOfficeZip } from './office-archive.ts';
 import { COLUMN_PAGE_SIZE, cellPosition, ROW_PAGE_SIZE } from './spreadsheet-model.ts';
 
 const PREVIEW_LIMIT_MESSAGE =
-  'This workbook exceeds the preview limits (200,000 populated cells or 2 million sheet positions). The original file is saved and available to download.';
+  'This workbook exceeds the preview limits for cells, sheet size, or formatting complexity. The original file is saved and available to download.';
 
 interface SpreadsheetBudget {
   cells: number;
@@ -12,10 +12,20 @@ interface SpreadsheetBudget {
   positions: number;
   strings: number;
   characters: number;
+  elements: number;
+  styles: number;
 }
 interface SheetBounds {
   row: number;
   column: number;
+}
+
+function trackText(value: string, budget: SpreadsheetBudget): void {
+  budget.characters += value.length;
+  if (budget.characters > 10_000_000)
+    throw new Error(
+      'This workbook contains too much text to preview. The original file is available to download.',
+    );
 }
 
 function attributeOf(tag: SaxesTagNS, name: string): string | undefined {
@@ -62,29 +72,41 @@ function inspectSheetTag(tag: SaxesTagNS, budget: SpreadsheetBudget, bounds: She
 
 export async function readSpreadsheet(data: ArrayBuffer): Promise<Workbook> {
   const zip = await validatedOfficeZip(data, 64 * 1024 * 1024);
-  const budget: SpreadsheetBudget = { cells: 0, positions: 0, strings: 0, characters: 0, rows: 0 };
+  const budget: SpreadsheetBudget = {
+    cells: 0,
+    positions: 0,
+    strings: 0,
+    characters: 0,
+    rows: 0,
+    elements: 0,
+    styles: 0,
+  };
   let sheets = 0;
   for (const entry of Object.values(zip.files)) {
     const isSheet = /xl\/worksheets\/sheet\d+[.]xml/.test(entry.name);
-    if (!isSheet && entry.name !== 'xl/sharedStrings.xml') continue;
+    const isStrings = entry.name === 'xl/sharedStrings.xml';
+    const isStyles = entry.name === 'xl/styles.xml';
+    if (entry.dir || !/[.](?:xml|rels|vml)$/i.test(entry.name)) continue;
     if (isSheet && ++sheets > 100) throw new Error(PREVIEW_LIMIT_MESSAGE);
     const bounds: SheetBounds = { row: 0, column: 0 };
     const parser = new SaxesParser({ xmlns: true });
+    let depth = 0;
     parser.on('doctype', () => {
       throw new Error('This workbook contains unsupported XML declarations.');
     });
     parser.on('opentag', (tag) => {
+      if (++budget.elements > 1_000_000 || ++depth > 64 || (isStyles && ++budget.styles > 100_000))
+        throw new Error(PREVIEW_LIMIT_MESSAGE);
+      for (const attribute of Object.values(tag.attributes)) trackText(attribute.value, budget);
       if (isSheet) inspectSheetTag(tag, budget, bounds);
-      else if (tag.local === 'si' && ++budget.strings > 200_000)
+      else if (isStrings && tag.local === 'si' && ++budget.strings > 200_000)
         throw new Error(PREVIEW_LIMIT_MESSAGE);
     });
-    parser.on('text', (value) => {
-      budget.characters += value.length;
-      if (budget.characters > 10_000_000)
-        throw new Error(
-          'This workbook contains too much text to preview. The original file is available to download.',
-        );
+    parser.on('closetag', () => {
+      depth -= 1;
     });
+    parser.on('text', (value) => trackText(value, budget));
+    parser.on('cdata', (value) => trackText(value, budget));
     const xml = await entry.async('string');
     for (let offset = 0; offset < xml.length; offset += 65_536)
       parser.write(xml.slice(offset, offset + 65_536));

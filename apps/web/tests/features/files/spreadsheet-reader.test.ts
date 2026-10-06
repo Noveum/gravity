@@ -75,6 +75,62 @@ describe('spreadsheet preview bounds', () => {
     );
   });
 
+  it('rejects excessive style records before ExcelJS allocates the style model', async () => {
+    const source = new ExcelJS.Workbook();
+    source.addWorksheet('Styled').getCell('A1').value = 'Saved';
+    const zip = await JSZip.loadAsync(await source.xlsx.writeBuffer());
+    const styles = await zip.file('xl/styles.xml')?.async('string');
+    if (styles === undefined) throw new Error('Missing styles');
+    zip.file(
+      'xl/styles.xml',
+      styles.replace(
+        /<cellXfs[^>]*>.*?<\/cellXfs>/s,
+        `<cellXfs count="100001">${'<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'.repeat(100_001)}</cellXfs>`,
+      ),
+    );
+    await expect(readSpreadsheet(await zip.generateAsync({ type: 'arraybuffer' }))).rejects.toThrow(
+      'preview limits',
+    );
+  });
+
+  it('bounds metadata XML nesting and rejects declarations in formatting files', async () => {
+    const zip = new JSZip();
+    zip.file('xl/styles.xml', `${'<style>'.repeat(65)}${'</style>'.repeat(65)}`);
+    await expect(readSpreadsheet(await zip.generateAsync({ type: 'arraybuffer' }))).rejects.toThrow(
+      'preview limits',
+    );
+    zip.file('xl/styles.xml', '<!DOCTYPE styleSheet><styleSheet/>');
+    await expect(readSpreadsheet(await zip.generateAsync({ type: 'arraybuffer' }))).rejects.toThrow(
+      'unsupported XML',
+    );
+  });
+
+  it('bounds XML records outside populated cells across workbook metadata', async () => {
+    const zip = new JSZip();
+    for (const name of ['first', 'second'])
+      zip.file(`xl/${name}.xml`, `<metadata>${'<record/>'.repeat(500_000)}</metadata>`);
+    await expect(readSpreadsheet(await zip.generateAsync({ type: 'arraybuffer' }))).rejects.toThrow(
+      'preview limits',
+    );
+  });
+
+  it.each(['CDATA', 'attribute'])(
+    'includes %s content in the workbook text budget',
+    async (mode) => {
+      const zip = new JSZip();
+      const value = 'x'.repeat(10_000_001);
+      zip.file(
+        'xl/styles.xml',
+        mode === 'CDATA'
+          ? `<styleSheet><![CDATA[${value}]]></styleSheet>`
+          : `<styleSheet><numFmt formatCode="${value}"/></styleSheet>`,
+      );
+      await expect(
+        readSpreadsheet(await zip.generateAsync({ type: 'arraybuffer' })),
+      ).rejects.toThrow('too much text');
+    },
+  );
+
   it('ignores merge ranges that would otherwise allocate millions of empty cells', async () => {
     const source = new ExcelJS.Workbook();
     source.addWorksheet('Merged').getCell('A1').value = 'Saved';

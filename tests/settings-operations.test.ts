@@ -110,6 +110,28 @@ describe("update_connection", () => {
     });
   });
 
+  test("the response never carries stored credentials or the webhook secret", async () => {
+    const row = await connection(demoUser, demoId(10));
+    await local.db
+      .update(s.connections)
+      .set({
+        encryptedCredentials: "sealed-credential-fixture",
+        webhookSecret: "webhook-secret-fixture",
+      })
+      .where(eq(s.connections.id, row.id));
+    for (const productId of [demoId(11), demoId(11)]) {
+      const updated = await run("update_connection", owner, {
+        connectionId: row.id,
+        productId,
+      });
+      expect(updated).not.toHaveProperty("encryptedCredentials");
+      expect(updated).not.toHaveProperty("webhookSecret");
+      expect(JSON.stringify(updated)).not.toMatch(
+        /sealed-credential-fixture|webhook-secret-fixture/,
+      );
+    }
+  });
+
   test("only the owner may change it, into an active product they can write", async () => {
     const row = await connection(demoUser, demoId(10));
     await expect(

@@ -291,6 +291,15 @@ export function mcpHandler(
             providerConsentRequired: true,
             organizationBound: true,
             sharedApiRegistry: true,
+            structuredRelationshipContext: true,
+            relationshipSignals: true,
+            typedRelationshipFields: [
+              "text",
+              "number",
+              "date",
+              "url",
+              "boolean",
+            ],
             operations: operations.map((operation) => ({
               name: operation.name,
               api: `/api/${operation.api}`,

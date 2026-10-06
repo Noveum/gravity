@@ -87,3 +87,5 @@ Primary implementation references: [Better Auth MCP](https://better-auth.com/doc
 [Client qualification and current Codex/Claude commands](mcp-client-qualification.md) distinguish official SDK protocol tests from live client sign-in. OAuth remains the first supported path; API keys are not implemented.
 
 The MCP initialization response provides agent instructions. Four prompts (`daily-triage`, `manage-sequence`, `configure-connections`, `send-approved-message`) and resources `gravity://agent-guide` and `gravity://permissions` explain workflows and effective permissions. Existing tokens are not elevated; reconnect to accept the full scope set. [Execution and permission audit](mcp-permissions-2026-10-06.md) explains send-format, idempotency, provider consent and limitations.
+
+Relationship notes, sourced signals and typed custom fields are editable through the UI and `change_relationship` using the same current version and product access rules. See [Relationship context](relationship-context.md) for fields, patch semantics and legacy import handling.

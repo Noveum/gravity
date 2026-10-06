@@ -4482,3 +4482,206 @@ tbody tr[data-selected] td:first-child::before {
     text-align: left;
   }
 }
+
+.relationship-context {
+  min-width: 0;
+}
+.context-heading,
+.context-signals h4,
+.signal-meta,
+.signal-meta :where(span) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.context-heading {
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+.context-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+}
+.context-note {
+  margin: 14px 0;
+}
+.context-note h4,
+.context-signals h4 {
+  color: var(--gravity-muted);
+  font-size: var(--text-xs);
+  margin-bottom: 6px;
+}
+.context-note :where(p),
+.context-signal :where(p),
+.source-text,
+.imported-fields dd {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+  font-size: var(--text-xs);
+}
+.context-fields {
+  display: grid;
+  gap: 8px;
+  font-size: var(--text-xs);
+}
+.context-fields > div {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+.context-fields dt,
+.imported-fields dt {
+  color: var(--gravity-muted);
+}
+.context-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.context-signal {
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+.signal-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+}
+.context-signal :where(p) {
+  margin: 8px 0;
+}
+.signal-meta {
+  color: var(--gravity-muted);
+  flex-wrap: wrap;
+  font-size: var(--text-xs);
+}
+.imported-context {
+  margin: 14px 0 0;
+  font-size: var(--text-xs);
+}
+.imported-context > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.imported-context summary {
+  cursor: pointer;
+  color: var(--gravity-muted);
+  overflow-wrap: anywhere;
+}
+.imported-context summary:hover {
+  color: var(--gravity-text);
+}
+.imported-fields {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0;
+  min-width: 0;
+}
+.imported-fields > div {
+  padding-left: 10px;
+  border-left: 1px solid var(--gravity-border-subtle);
+  min-width: 0;
+}
+.imported-fields dt {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.imported-fields dd {
+  margin: 3px 0 0;
+}
+.context-editor-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+.context-editor-card legend {
+  color: var(--gravity-muted);
+  padding: 0 4px;
+}
+.context-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 480px) {
+  .context-form-row {
+    grid-template-columns: 1fr;
+  }
+}
+.relationship-context {
+  container-type: inline-size;
+}
+.context-note-grid {
+  display: grid;
+  gap: 12px;
+}
+.context-note-grid .context-note {
+  margin: 0;
+}
+.context-note-grid .context-note h4 {
+  margin-top: 0;
+}
+.context-note-grid .context-note p {
+  margin: 0;
+}
+@container (min-width: 600px) {
+  .context-note-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 18px 24px;
+  }
+  .context-note-grid .context-note:first-child {
+    grid-column: 1 / -1;
+  }
+}
+.record-timeline .relationship-context {
+  border-top: 0;
+  padding-top: 0;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--gravity-border-subtle);
+}
+.source-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.context-edit-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  width: 720px;
+  height: min(90dvh, 900px);
+  overflow: hidden;
+}
+.context-edit-dialog form {
+  flex: 1;
+  min-height: 0;
+}
+.context-edit-dialog .dialog-fields {
+  display: grid;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 0;
+  padding: 0 4px 0 0;
+  margin: 0;
+}
+.context-edit-dialog form > .dialog-actions {
+  flex-shrink: 0;
+  margin-top: 0;
+  border-top: 1px solid var(--gravity-border-subtle);
+  padding-top: 12px;
+}

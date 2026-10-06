@@ -21,6 +21,7 @@ import {
   RelationshipProperties,
 } from "./person-panels";
 import { ArchivedNotice, RecordActions } from "./record-actions";
+import { RelationshipContext } from "./relationship-context";
 
 export function PersonRecord({ personId }: { personId: string }) {
   const crm = useWorkspaceData();
@@ -125,7 +126,11 @@ export function PersonRecord({ personId }: { personId: string }) {
               onCompany={toCompany}
               onPerson={(id) => focus(id)}
             />
-            <RelationshipProperties context={context} action={action} />
+            <RelationshipProperties
+              context={context}
+              action={action}
+              includeContext={false}
+            />
             {action && (
               <ActionSummary action={action} version={draft.version} />
             )}
@@ -146,7 +151,13 @@ export function PersonRecord({ personId }: { personId: string }) {
       </div>
       <section className="record-timeline" aria-label={t.activity}>
         {context ? (
-          <PersonActivity context={context} action={action} draft={draft} />
+          <>
+            <RelationshipContext
+              key={context.relationship.id}
+              relationship={context.relationship}
+            />
+            <PersonActivity context={context} action={action} draft={draft} />
+          </>
         ) : missing ? (
           unavailable
         ) : (

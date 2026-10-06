@@ -15,6 +15,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { RelationshipDetails } from "../core/relationship-context";
 import { serverAccessPolicy } from "./access-policy";
 
 export * from "./auth-schema";
@@ -169,6 +170,21 @@ export const relationships = pgTable(
     purpose: text("purpose").notNull().default("buyer"),
     qualification: text("qualification").notNull().default("unverified"),
     context: text("context").notNull().default(""),
+    contextDetails: jsonb("context_details")
+      .$type<RelationshipDetails>()
+      .notNull()
+      .default({
+        background: "",
+        needs: "",
+        timing: "",
+        budget: "",
+        decisionProcess: "",
+        risks: "",
+        history: "",
+        signals: [],
+        fields: [],
+      }),
+    contextSource: text("context_source"),
     stageId: uuid("stage_id"),
     stagePipeline: text("stage_pipeline", { enum: ["outreach"] })
       .notNull()

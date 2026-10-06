@@ -27,13 +27,33 @@ function declarations(source: string, selector: string) {
   return found;
 }
 
+const narrowBlocks = () =>
+  [...css.matchAll(/@container \(max-width: 720px\)\s*\{/g)].map((match) => ({
+    start: match.index,
+    body: block(css.slice(match.index), "@container (max-width: 720px)"),
+  }));
+
 test("the product access popover stays inside a narrow settings column", () => {
-  const narrow = block(css, "@container (max-width: 720px)");
+  const narrow = narrowBlocks()
+    .map((item) => item.body)
+    .join("\n");
   expect(declarations(narrow, ".settings-popover")).toMatchObject({
     left: "0",
     right: "auto",
+    "min-width": "min(220px, calc(100cqi - 32px))",
     "max-width": "calc(100cqi - 32px)",
   });
+});
+
+test("the narrow popover override comes after the base rule so it wins the cascade", () => {
+  const base = css.search(/(^|\n)\.settings-popover\s*\{/);
+  const overrides = narrowBlocks().filter((item) =>
+    /\.settings-popover\s*\{/.test(item.body),
+  );
+  expect(base).toBeGreaterThanOrEqual(0);
+  expect(overrides.length).toBeGreaterThan(0);
+  for (const override of overrides)
+    expect(override.start).toBeGreaterThan(base);
 });
 
 test("settings rows hold 28px on fine pointers and grow controls to 36px on touch", () => {

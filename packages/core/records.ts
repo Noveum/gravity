@@ -4,14 +4,17 @@ import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { scopeSchema } from "./crm";
 import { authorize, DomainError, type Principal } from "./policy";
+import { assertProductActive } from "./products";
 import {
   activeCompany,
   assertActiveRelationships,
   clearApprovals,
   companyVisible,
   emailTaken,
+  linkedinTaken,
   lockOrganization,
   personVisible,
+  shareLockStage,
 } from "./visibility";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -180,8 +183,10 @@ async function stageFor(
         eq(s.stages.organizationId, organizationId),
         eq(s.stages.productId, productId),
         eq(s.stages.pipeline, "deal"),
+        isNull(s.stages.archivedAt),
       ),
-    );
+    )
+    .for("share");
   if (!stage) throw new DomainError("NOT_FOUND", 404);
   return stage;
 }
@@ -238,6 +243,16 @@ export class RecordService {
         )
       )
         throw new DomainError("PERSON_EXISTS", 409);
+      if (
+        input.linkedinUrl !== person.linkedinUrl &&
+        (await linkedinTaken(
+          tx,
+          input.organizationId,
+          input.linkedinUrl,
+          person.id,
+        ))
+      )
+        throw new DomainError("PERSON_EXISTS", 409);
       if (input.companyId && input.companyId !== person.companyId)
         await activeCompany(
           tx,
@@ -248,6 +263,13 @@ export class RecordService {
       const otherEmails = [...new Set(input.otherEmails)].filter(
         (email) => email !== input.email,
       );
+      const reachChanged =
+        (input.email ?? null) !== (person.email ?? null) ||
+        input.linkedinUrl !== person.linkedinUrl ||
+        [...otherEmails].sort().join(" ") !==
+          [...person.otherEmails].sort().join(" ");
+      if (principal.source === "mcp" && person.doNotContact && reachChanged)
+        throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
       const [updated] = await tx
         .update(s.people)
         .set({
@@ -605,6 +627,11 @@ export class RecordService {
           input.relationshipId ?? "",
           input.productId,
         );
+        await assertProductActive(
+          tx,
+          input.organizationId,
+          relationship.productId,
+        );
         const [meeting] = await tx
           .insert(s.meetings)
           .values({
@@ -683,6 +710,11 @@ export class RecordService {
         input.relationshipId,
         input.productId,
       );
+      await assertProductActive(
+        tx,
+        input.organizationId,
+        relationship.productId,
+      );
       const stage = await stageFor(
         tx,
         input.organizationId,
@@ -737,6 +769,8 @@ export class RecordService {
   ) {
     requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
+      if (input.stageId)
+        await shareLockStage(tx, input.organizationId, input.stageId);
       const [opportunity] = await tx
         .select()
         .from(s.opportunities)
@@ -800,11 +834,13 @@ export class RecordService {
                 closedAt:
                   moved.category === "won" || moved.category === "lost"
                     ? opportunity.status === moved.category
-                      ? opportunity.closedAt
+                      ? (opportunity.closedAt ?? new Date())
                       : new Date()
                     : null,
               }
-            : {}),
+            : opportunity.status !== "open" && !opportunity.closedAt
+              ? { closedAt: new Date() }
+              : {}),
           updatedAt: new Date(),
           ...(input.amountMinor !== undefined
             ? { amountMinor: input.amountMinor }

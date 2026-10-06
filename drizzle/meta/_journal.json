@@ -127,6 +127,13 @@
       "when": 1791288895166,
       "tag": "0017_invitation_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791288895988,
+      "tag": "0018_product_settings",
+      "breakpoints": true
     }
   ]
 }

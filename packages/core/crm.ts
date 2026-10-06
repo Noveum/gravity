@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   getTableColumns,
@@ -22,6 +23,8 @@ import { overview as calculateOverview } from "./analytics";
 import { draftHash, draftSubject } from "./drafts";
 import { serialize } from "./dto";
 import { authorize, DomainError, type Principal } from "./policy";
+import { defaultProductColorKey, productColorKeys } from "./product-colors";
+import { assertProductActive } from "./products";
 import { tagsSchema } from "./record-tags";
 import {
   emptyRelationshipDetails,
@@ -36,6 +39,7 @@ import {
   emailTaken,
   personVisible,
 } from "./visibility";
+import { ianaTimeZoneSchema } from "./workspace";
 
 export const scopeSchema = z.object({
   organizationId: z.uuid(),
@@ -174,18 +178,11 @@ export const messageActivitySchema = scopeSchema
 export const workspaceSchema = z.object({
   name: z.string().trim().min(1).max(100),
   productName: z.string().trim().min(1).max(100),
-  timezone: z
-    .string()
-    .max(100)
-    .default("UTC")
-    .refine((value) => {
-      try {
-        new Intl.DateTimeFormat("en", { timeZone: value });
-        return true;
-      } catch {
-        return false;
-      }
-    }),
+  timezone: ianaTimeZoneSchema.default("UTC"),
+});
+export const organizationSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  timezone: ianaTimeZoneSchema.default("UTC"),
 });
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 export function defaultStages(organizationId: string, productId: string) {
@@ -228,9 +225,16 @@ async function insertProduct(
   name: string,
   userId: string,
 ) {
+  const [existing] = await tx
+    .select({ count: count() })
+    .from(s.products)
+    .where(eq(s.products.organizationId, organizationId));
+  const colorKey =
+    productColorKeys[(existing?.count ?? 0) % productColorKeys.length] ??
+    defaultProductColorKey;
   const [product] = await tx
     .insert(s.products)
-    .values({ organizationId, name })
+    .values({ organizationId, name, colorKey })
     .onConflictDoNothing({
       target: [s.products.organizationId, s.products.name],
     })
@@ -292,6 +296,11 @@ export class CrmService {
       await assertActiveRelationships(tx, input.organizationId, [
         relationship.id,
       ]);
+      await assertProductActive(
+        tx,
+        input.organizationId,
+        relationship.productId,
+      );
       // Assignees must currently be able to see the task's product, even if the creator is an admin.
       try {
         await authorize(
@@ -360,6 +369,7 @@ export class CrmService {
         input.productId,
         true,
       );
+      await assertProductActive(tx, input.organizationId, input.productId);
       // Serialize creation within this tenant; explicit linking never silently merges identities.
       await tx
         .select({ id: s.organizations.id })
@@ -417,6 +427,7 @@ export class CrmService {
             eq(s.stages.organizationId, input.organizationId),
             eq(s.stages.productId, input.productId),
             eq(s.stages.pipeline, "outreach"),
+            eq(s.stages.category, "open"),
             isNull(s.stages.archivedAt),
           ),
         )
@@ -474,6 +485,7 @@ export class CrmService {
         name: s.organizations.name,
         slug: s.organizations.slug,
         timezone: s.organizations.timezone,
+        allowedEmailDomains: s.organizations.allowedEmailDomains,
       })
       .from(s.organizations)
       .innerJoin(
@@ -536,6 +548,7 @@ export class CrmService {
         name: s.organizations.name,
         slug: s.organizations.slug,
         timezone: s.organizations.timezone,
+        allowedEmailDomains: s.organizations.allowedEmailDomains,
       })
       .from(s.organizations)
       .where(eq(s.organizations.id, scope.organizationId));
@@ -827,7 +840,10 @@ export class CrmService {
       );
     return {
       compact,
-      products: permission.products,
+      products: permission.products.filter((product) => !product.archivedAt),
+      archivedProducts: permission.products.filter(
+        (product) => product.archivedAt,
+      ),
       people: compact
         ? people.map((person) => ({ ...person, summary: "" }))
         : people,
@@ -1110,10 +1126,14 @@ export class CrmService {
     companyId: string,
   ) {
     const snapshot = await this.snapshot(principal, scope);
+    const readableProducts = [
+      ...snapshot.products,
+      ...snapshot.archivedProducts,
+    ];
     const company =
       snapshot.companies.find((company) => company.id === companyId) ??
       (await this.archivedCompany(
-        snapshot.products.map((product) => product.id),
+        readableProducts.map((product) => product.id),
         scope.organizationId,
         companyId,
       ));
@@ -1137,7 +1157,7 @@ export class CrmService {
       company,
       people,
       relationships,
-      products: snapshot.products.filter((product) =>
+      products: readableProducts.filter((product) =>
         relationships.some(
           (relationship) => relationship.productId === product.id,
         ),
@@ -1443,20 +1463,21 @@ export class CrmService {
       input.productId,
       true,
     );
-    if (input.parentId) {
-      const [parent] = await this.db
-        .select()
-        .from(s.folders)
-        .where(
-          and(
-            eq(s.folders.id, input.parentId),
-            eq(s.folders.organizationId, input.organizationId),
-            eq(s.folders.productId, input.productId),
-          ),
-        );
-      if (!parent) throw new DomainError("NOT_FOUND", 404);
-    }
     return this.db.transaction(async (tx) => {
+      await assertProductActive(tx, input.organizationId, input.productId);
+      if (input.parentId) {
+        const [parent] = await tx
+          .select()
+          .from(s.folders)
+          .where(
+            and(
+              eq(s.folders.id, input.parentId),
+              eq(s.folders.organizationId, input.organizationId),
+              eq(s.folders.productId, input.productId),
+            ),
+          );
+        if (!parent) throw new DomainError("NOT_FOUND", 404);
+      }
       const [folder] = await tx
         .insert(s.folders)
         .values({ ...input, parentId: input.parentId ?? null })
@@ -1505,6 +1526,7 @@ export class CrmService {
         return { actionId: meeting.commitmentActionId };
       if (meeting.status !== "held" || !meeting.proposedCommitment)
         throw new DomainError("NO_COMMITMENT", 409);
+      await assertProductActive(tx, input.organizationId, meeting.productId);
       try {
         await authorize(
           tx,
@@ -1635,13 +1657,18 @@ export class CrmService {
       return { organizationId: organization.id, productId: product.id };
     });
   }
-  async createOrganization(principal: Principal, name: string) {
+  async createOrganization(
+    principal: Principal,
+    name: string,
+    timezone = "UTC",
+  ) {
     await this.authorizeOrganizationCreation(principal);
     return this.db.transaction(async (tx) => {
       const [organization] = await tx
         .insert(s.organizations)
         .values({
           name,
+          timezone,
           slug: `${name
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, "-")
@@ -1692,6 +1719,8 @@ export class CrmService {
         input.productId,
         true,
       );
+      if (!input.id)
+        await assertProductActive(tx, input.organizationId, input.productId);
       const [relationship] = await tx
         .select()
         .from(s.relationships)
@@ -1713,7 +1742,8 @@ export class CrmService {
             eq(s.stages.organizationId, input.organizationId),
             eq(s.stages.productId, input.productId),
           ),
-        );
+        )
+        .for("share");
       if (!relationship || !stage) throw new DomainError("FORBIDDEN", 403);
       await assertActiveRelationships(tx, input.organizationId, [
         relationship.id,
@@ -1765,7 +1795,7 @@ export class CrmService {
           input.status === "open"
             ? null
             : existing?.status === input.status
-              ? existing.closedAt
+              ? (existing.closedAt ?? now)
               : now,
         updatedAt: now,
       };
@@ -1802,6 +1832,7 @@ export class CrmService {
     );
     if (membership.role !== "admin") throw new DomainError("FORBIDDEN", 403);
     return this.db.transaction(async (tx) => {
+      await assertProductActive(tx, input.organizationId, input.productId);
       const [pipeline] = await tx
         .insert(s.pipelines)
         .values(input)

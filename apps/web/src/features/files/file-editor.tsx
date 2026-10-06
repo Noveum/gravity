@@ -2,12 +2,20 @@
 
 import { type FileEntry, fileDetailSchema } from '@gravity/shared/validators';
 import { useQuery } from '@tanstack/react-query';
+import { Download, X } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog.tsx';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog.tsx';
 import { apiFetch, messageOf } from '@/lib/api/client.ts';
 import { fileKey } from './file-cache.ts';
 import { FilePreview } from './file-preview.tsx';
+import { fileSize } from './file-row.tsx';
 import { MarkdownPreview } from './markdown-preview.tsx';
 import type { FileCommand } from './use-files.ts';
 
@@ -109,7 +117,7 @@ export function FileEditor({
   const current = query.data?.entry ?? entry;
   let description = current.canEdit ? 'You can edit this document.' : 'You have view access.';
   if (current.kind === 'file')
-    description = 'Document preview. Download a copy with its original formatting.';
+    description = `${current.name.split('.').at(-1)?.toUpperCase() ?? 'File'} · ${fileSize(current.size)} · Preview`;
   return (
     <Dialog
       open
@@ -117,33 +125,49 @@ export function FileEditor({
         if (!open) close();
       }}
     >
-      <DialogContent className="max-w-5xl">
-        <DialogTitle className="pr-8 font-medium text-lg">{current.name}</DialogTitle>
-        <DialogDescription className="mt-1 text-muted text-xs">{description}</DialogDescription>
-        {query.data !== undefined && query.error === null && current.kind === 'markdown' ? (
-          <Button asChild className="mt-4">
-            <a href={`/api/files/${current.id}/download`}>Download {current.name}</a>
-          </Button>
-        ) : null}
-        {query.isPending && current.kind === 'markdown' ? (
-          <p className="py-8 text-muted">Loading document…</p>
-        ) : null}
-        {query.error === null ? null : (
-          <p role="alert" className="py-8 text-danger">
-            {messageOf(query.error)}
-          </p>
-        )}
-        {query.data !== undefined && query.error === null && current.kind === 'markdown' ? (
-          <MarkdownEditor
-            entry={current}
-            body={query.data.body ?? ''}
-            run={run}
-            pending={pending}
-          />
-        ) : null}
-        {query.error === null && current.kind === 'file' ? (
-          <FilePreview entry={current} downloadPath={`/api/files/${current.id}/download`} />
-        ) : null}
+      <DialogContent showClose={false} className="flex max-w-5xl flex-col overflow-hidden p-0">
+        <header className="flex shrink-0 items-center gap-3 border-border border-b px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="truncate font-medium text-base" title={current.name}>
+              {current.name}
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-muted text-xs">{description}</DialogDescription>
+          </div>
+          {query.error === null ? (
+            <Button asChild size="sm">
+              <a href={`/api/files/${current.id}/download`} aria-label={`Download ${current.name}`}>
+                <Download className="size-4" />
+                <span className="hidden sm:inline">Download</span>
+              </a>
+            </Button>
+          ) : null}
+          <DialogClose asChild>
+            <Button size="sm" variant="ghost" aria-label="Close">
+              <X className="size-4" />
+            </Button>
+          </DialogClose>
+        </header>
+        <div className="min-h-0 overflow-y-auto overscroll-contain p-4">
+          {query.isPending && current.kind === 'markdown' ? (
+            <p className="py-8 text-muted">Loading document…</p>
+          ) : null}
+          {query.error === null ? null : (
+            <p role="alert" className="py-8 text-danger">
+              {messageOf(query.error)}
+            </p>
+          )}
+          {query.data !== undefined && query.error === null && current.kind === 'markdown' ? (
+            <MarkdownEditor
+              entry={current}
+              body={query.data.body ?? ''}
+              run={run}
+              pending={pending}
+            />
+          ) : null}
+          {query.error === null && current.kind === 'file' ? (
+            <FilePreview entry={current} downloadPath={`/api/files/${current.id}/download`} />
+          ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );

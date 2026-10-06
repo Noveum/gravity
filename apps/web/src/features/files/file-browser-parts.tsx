@@ -8,10 +8,12 @@ import {
   FolderPlus,
   LayoutGrid,
   List,
+  Menu,
   Plus,
   Search,
   Upload,
 } from 'lucide-react';
+import { useShellActions } from '@/components/layout/shell-actions.tsx';
 import { ThemeToggle } from '@/components/theme-toggle.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -30,6 +32,7 @@ import { FileColumns, FileGrid } from './file-views.tsx';
 import type { FileBrowser } from './use-file-browser.ts';
 
 export function FilesToolbar({ browser }: { readonly browser: FileBrowser }) {
+  const shell = useShellActions();
   const { writable, busy, setCreating, uploading, uploadInput, folderUploadInput } = browser;
   return (
     <header
@@ -38,6 +41,17 @@ export function FilesToolbar({ browser }: { readonly browser: FileBrowser }) {
       className="flex min-h-12 flex-wrap items-center gap-2 border-border border-b px-3 py-2"
     >
       <h1 className="sr-only">Files</h1>
+      {shell === null ? null : (
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label="Open navigation"
+          onClick={shell.openNavigation}
+          className="shrink-0 lg:hidden"
+        >
+          <Menu className="size-4" />
+        </Button>
+      )}
       <Button
         size="sm"
         variant="ghost"
@@ -126,8 +140,8 @@ export function FilesToolbar({ browser }: { readonly browser: FileBrowser }) {
           event.target.value = '';
         }}
       />
-      <span className="hidden lg:inline-flex">
-        <ThemeToggle />
+      <span className="inline-flex">
+        <ThemeToggle compact />
       </span>
       <input
         ref={folderUploadInput}

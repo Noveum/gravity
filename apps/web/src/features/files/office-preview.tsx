@@ -1,6 +1,6 @@
 'use client';
 
-import type { PptxViewer } from '@aiden0z/pptx-renderer';
+import type { PptxViewer, SlideHandle } from '@aiden0z/pptx-renderer';
 import type { FileEntry } from '@gravity/shared/validators';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
@@ -53,6 +53,10 @@ function SlidesPreview({ data, name }: { readonly data: ArrayBuffer; readonly na
   const [page, setPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const viewer = useRef<PptxViewer | null>(null);
+  const slide = useRef<SlideHandle | null>(null);
+  const [slideSize, setSlideSize] = useState<{ width: number; height: number } | undefined>();
+  const [navigating, setNavigating] = useState(false);
+  const rendering = useRef(false);
   const container = useRef<HTMLElement | null>(null);
   const preview = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -78,7 +82,21 @@ function SlidesPreview({ data, name }: { readonly data: ArrayBuffer; readonly na
         return;
       }
       viewer.current = instance;
+      if (
+        !(Number.isFinite(instance.slideWidth) && Number.isFinite(instance.slideHeight)) ||
+        instance.slideWidth <= 0 ||
+        instance.slideHeight <= 0 ||
+        instance.slideWidth > 100_000 ||
+        instance.slideHeight > 100_000
+      )
+        throw new Error('This presentation has unsupported slide dimensions.');
       setCount(instance.slideCount);
+      setSlideSize({ width: instance.slideWidth, height: instance.slideHeight });
+      host.replaceChildren();
+      const handle = instance.renderSlideToContainer(0, host, 1);
+      slide.current = handle;
+      await handle?.ready;
+      if (cancelled) return;
       setHtml(host.innerHTML);
     }
     load().catch((failure: unknown) => {
@@ -86,17 +104,33 @@ function SlidesPreview({ data, name }: { readonly data: ArrayBuffer; readonly na
     });
     return () => {
       cancelled = true;
+      slide.current?.dispose();
+      slide.current = null;
       viewer.current?.destroy();
       viewer.current = null;
     };
   }, [data]);
   async function navigate(next: number) {
+    const instance = viewer.current;
+    const host = container.current;
+    if (instance === null || host === null || rendering.current || next < 0 || next >= count)
+      return;
+    rendering.current = true;
+    setNavigating(true);
     try {
-      await viewer.current?.renderSlide(next);
+      slide.current?.dispose();
+      host.replaceChildren();
+      const handle = instance.renderSlideToContainer(next, host, 1);
+      slide.current = handle;
+      await handle?.ready;
+      if (viewer.current !== instance) return;
       setPage(next);
-      setHtml(container.current?.innerHTML ?? '');
+      setHtml(host.innerHTML);
     } catch (failure: unknown) {
       setError(messageOf(failure));
+    } finally {
+      rendering.current = false;
+      setNavigating(false);
     }
   }
   return (
@@ -111,17 +145,25 @@ function SlidesPreview({ data, name }: { readonly data: ArrayBuffer; readonly na
           Rendering slides…
         </p>
       ) : (
-        <DocumentFrame name={name} html={html} />
+        <DocumentFrame
+          name={name}
+          html={html}
+          {...(slideSize === undefined ? {} : { slideSize })}
+        />
       )}
       {count === 0 ? null : (
         <div className="flex items-center justify-between">
-          <Button disabled={page === 0} onClick={() => navigate(page - 1)}>
+          <Button size="sm" disabled={page === 0 || navigating} onClick={() => navigate(page - 1)}>
             Previous slide
           </Button>
           <p className="text-muted text-sm" aria-live="polite">
             Slide {page + 1} of {count}
           </p>
-          <Button disabled={page >= count - 1} onClick={() => navigate(page + 1)}>
+          <Button
+            size="sm"
+            disabled={page >= count - 1 || navigating}
+            onClick={() => navigate(page + 1)}
+          >
             Next slide
           </Button>
         </div>
@@ -151,8 +193,8 @@ export function OfficePreview({
       </p>
     );
   return entry.name.toLowerCase().endsWith('.pptx') ? (
-    <SlidesPreview data={query.data} name={entry.name} />
+    <SlidesPreview key={`${entry.id}:${entry.syncId}`} data={query.data} name={entry.name} />
   ) : (
-    <WordPreview data={query.data} name={entry.name} />
+    <WordPreview key={`${entry.id}:${entry.syncId}`} data={query.data} name={entry.name} />
   );
 }

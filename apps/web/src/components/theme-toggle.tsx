@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { Tooltip } from '@/components/ui/tooltip.tsx';
 
-export function ThemeToggle() {
+export function ThemeToggle({ compact = false }: { readonly compact?: boolean }) {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -23,7 +23,7 @@ export function ThemeToggle() {
         size="sm"
         aria-label="Toggle theme"
         onClick={() => setTheme(isDark ? 'light' : 'dark')}
-        className="size-11 px-0 lg:size-7"
+        className={compact ? 'size-8 px-0' : 'size-11 px-0 lg:size-7'}
       >
         {mounted && isDark ? (
           <Sun className="size-4" aria-hidden="true" />

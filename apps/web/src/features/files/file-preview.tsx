@@ -4,7 +4,6 @@ import { type FileEntry, previewMimeForFile } from '@gravity/shared/validators';
 import { useQuery } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { Button } from '@/components/ui/button.tsx';
 import { messageOf } from '@/lib/api/client.ts';
 
 const PdfPreview = dynamic(() => import('./pdf-preview.tsx').then((module) => module.PdfPreview), {
@@ -96,11 +95,8 @@ export function FilePreview({
   readonly downloadPath: string;
 }) {
   return (
-    <div className="mt-5 flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <PreviewContent entry={entry} downloadPath={downloadPath} />
-      <Button asChild>
-        <a href={downloadPath}>Download {entry.name}</a>
-      </Button>
     </div>
   );
 }

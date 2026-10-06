@@ -29,6 +29,7 @@ import { CrmDeltaHandlers } from '@/lib/realtime/crm-deltas.tsx';
 import { WorkspaceRealtime } from '@/lib/realtime/provider.tsx';
 import { DESKTOP_QUERY, useMediaQuery, WIDE_QUERY } from '@/lib/use-media-query.ts';
 import { ContextPanel } from './context-panel.tsx';
+import { ShellActionsContext } from './shell-actions.tsx';
 import { Sidebar } from './sidebar.tsx';
 import { TopBar } from './top-bar.tsx';
 
@@ -186,14 +187,18 @@ export function AppShell({
               </DialogPrimitive.Root>
 
               <div className="flex min-w-0 flex-1 flex-col">
-                <div className={pathname === '/files' ? 'lg:hidden' : undefined}>
+                <div className={pathname === '/files' ? 'hidden' : undefined}>
                   <TopBar
                     breadcrumbs={breadcrumbs}
                     onOpenDrawer={() => setDrawerOpen(true)}
                     onOpenSearch={() => setPaletteOpen(true)}
                   />
                 </div>
-                <main className="min-h-0 w-full flex-1 overflow-y-auto">{children}</main>
+                <main className="min-h-0 w-full flex-1 overflow-y-auto">
+                  <ShellActionsContext value={{ openNavigation: () => setDrawerOpen(true) }}>
+                    {children}
+                  </ShellActionsContext>
+                </main>
               </div>
 
               <ContextPanel />

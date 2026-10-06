@@ -164,6 +164,34 @@ export function ViewToolbar({
           <ShortcutHint id="create" />
         </button>
       )}
+      {section === "companies" && (
+        <button
+          type="button"
+          className="primary toolbar-primary"
+          aria-label={t.newCompany}
+          aria-keyshortcuts="C"
+          disabled={!crm.data?.products.length}
+          onClick={() => crm.openRecordDialog({ kind: "company" })}
+        >
+          <Plus size={14} aria-hidden />
+          {t.newCompany}
+          <ShortcutHint id="create" />
+        </button>
+      )}
+      {section === "meetings" && (
+        <button
+          type="button"
+          className="primary toolbar-primary"
+          aria-label={t.newMeeting}
+          aria-keyshortcuts="C"
+          disabled={!crm.data?.relationships.length}
+          onClick={() => crm.openRecordDialog({ kind: "meeting" })}
+        >
+          <Plus size={14} aria-hidden />
+          {t.newMeeting}
+          <ShortcutHint id="create" />
+        </button>
+      )}
     </div>
   );
 }

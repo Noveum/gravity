@@ -1,11 +1,21 @@
 "use client";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { Download, FileText, Folder, Plus, Upload, X } from "lucide-react";
+import {
+  Download,
+  FileText,
+  Folder,
+  Pencil,
+  Plus,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { dateLabel, errorText, requestJson } from "./client-api";
 import { submitOnSaveKey, useModalLifecycle } from "./modal-lifecycle";
 import { Pagination, useListPage } from "./records/list-browser";
+import { RecordDialog, text } from "./records/record-dialog";
 import { EmptyState } from "./ui/states";
 
 export function Materials({
@@ -14,6 +24,7 @@ export function Materials({
   productId,
   refresh,
   onNotice,
+  onError,
   timeZone,
   registerCreate,
 }: {
@@ -22,12 +33,16 @@ export function Materials({
   productId: string;
   refresh: () => Promise<void>;
   onNotice: (text: string) => void;
+  onError?: (text: string) => void;
   timeZone: string;
   registerCreate?: (run: () => boolean) => () => void;
 }) {
   const [folderId, setFolderId] = useState("");
   const [stageId, setStageId] = useState("");
   const [dialog, setDialog] = useState<"folder" | "upload" | null>(null);
+  const [folderDialog, setFolderDialog] = useState<"rename" | "delete" | null>(
+    null,
+  );
   const modal = useRef<HTMLDialogElement>(null);
   useModalLifecycle(modal, !!dialog);
   const [formProduct, setFormProduct] = useState(
@@ -36,7 +51,10 @@ export function Materials({
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const [error, setError] = useState("");
-  const product = (id: string) => data.products.find((p) => p.id === id);
+  const product = (id: string) =>
+    [...data.products, ...(data.archivedProducts ?? [])].find(
+      (p) => p.id === id,
+    );
   const assets = data.assets.filter(
     (asset) =>
       (!folderId || asset.folderId === folderId) &&
@@ -102,6 +120,74 @@ export function Materials({
       setBusy(false);
     }
   }
+  async function crmPost(body: object) {
+    await requestJson("/api/crm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId, ...body }),
+    });
+    await refresh();
+  }
+  const selectedFolder = data.folders.find((f) => f.id === folderId);
+  const selectedFolderEmpty =
+    !!selectedFolder &&
+    !data.assets.some((asset) => asset.folderId === selectedFolder.id) &&
+    !data.folders.some((f) => f.parentId === selectedFolder.id);
+  async function renameFolder(fields: FormData) {
+    if (!selectedFolder) return null;
+    const name = text(fields, "name");
+    try {
+      await crmPost({
+        operation: "folder-rename",
+        folderId: selectedFolder.id,
+        name,
+      });
+    } catch (cause) {
+      return errorText(cause, timeZone);
+    }
+    onNotice(t.folderRenamed.replace("{name}", name));
+    return null;
+  }
+  async function deleteFolder() {
+    if (!selectedFolder) return null;
+    try {
+      await crmPost({
+        operation: "folder-delete",
+        folderId: selectedFolder.id,
+      });
+    } catch (cause) {
+      return errorText(cause, timeZone);
+    }
+    setFolderId("");
+    onNotice(t.folderDeleted.replace("{name}", selectedFolder.name));
+    return null;
+  }
+  const statusLabel = (status: string) =>
+    status === "approved"
+      ? t.approvedAsset
+      : status === "archived"
+        ? t.archivedAsset
+        : t.draftAsset;
+  async function setStatus(
+    asset: ClientSnapshot["assets"][number],
+    status: string,
+  ) {
+    try {
+      await crmPost({
+        operation: "material-status",
+        assetId: asset.id,
+        version: asset.version,
+        status,
+      });
+      onNotice(
+        t.materialStatusSaved
+          .replace("{name}", asset.name)
+          .replace("{status}", statusLabel(status)),
+      );
+    } catch (cause) {
+      onError?.(errorText(cause, timeZone));
+    }
+  }
   function folderPath(id: string): string {
     const folder = data.folders.find((f) => f.id === id);
     if (!folder) return "";
@@ -125,6 +211,28 @@ export function Materials({
           ))}
         </select>
         <div className="button-row">
+          {selectedFolder && (
+            <>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => setFolderDialog("rename")}
+              >
+                <Pencil size={14} aria-hidden />
+                {t.renameFolder}
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                disabled={!selectedFolderEmpty}
+                title={selectedFolderEmpty ? undefined : t.folderNotEmptyHint}
+                onClick={() => setFolderDialog("delete")}
+              >
+                <Trash2 size={14} aria-hidden />
+                {t.deleteFolder}
+              </button>
+            </>
+          )}
           <button type="button" onClick={() => open("folder")}>
             <Plus size={14} />
             {t.newFolder}
@@ -224,13 +332,23 @@ export function Materials({
                           ))}
                       </td>
                       <td>
-                        <span className="badge">
-                          {asset.status === "approved"
-                            ? t.approvedAsset
-                            : asset.status === "archived"
-                              ? t.archivedAsset
-                              : t.draftAsset}
-                        </span>
+                        <select
+                          className="asset-status"
+                          aria-label={t.materialStatusFor.replace(
+                            "{name}",
+                            asset.name,
+                          )}
+                          value={asset.status}
+                          onChange={(event) =>
+                            void setStatus(asset, event.target.value)
+                          }
+                        >
+                          {["draft", "approved", "archived"].map((status) => (
+                            <option key={status} value={status}>
+                              {statusLabel(status)}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td>{Math.ceil(asset.size / 1024)} KB</td>
                       <td>
@@ -269,6 +387,37 @@ export function Materials({
           <p className="library-note">{t.materialNote}</p>
         </div>
       </div>
+      {folderDialog === "rename" && selectedFolder && (
+        <RecordDialog
+          title={t.renameFolder}
+          submitLabel={t.save}
+          onClose={() => setFolderDialog(null)}
+          onSubmit={renameFolder}
+        >
+          <label>
+            {t.folderName}
+            <input
+              name="name"
+              required
+              maxLength={100}
+              defaultValue={selectedFolder.name}
+              data-primary-field
+            />
+          </label>
+        </RecordDialog>
+      )}
+      {folderDialog === "delete" && selectedFolder && (
+        <RecordDialog
+          title={t.deleteFolder}
+          submitLabel={t.delete}
+          onClose={() => setFolderDialog(null)}
+          onSubmit={deleteFolder}
+        >
+          <p className="muted">
+            {t.deleteFolderDetail.replace("{name}", selectedFolder.name)}
+          </p>
+        </RecordDialog>
+      )}
       {dialog && (
         <dialog
           ref={modal}

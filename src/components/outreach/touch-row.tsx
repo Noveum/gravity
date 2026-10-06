@@ -1,5 +1,6 @@
 "use client";
 import { overdueDay } from "@crm/core/calendar";
+import { productColorToken } from "@crm/core/product-colors";
 import t from "@crm/i18n/translations/en.json";
 import type { ReactNode } from "react";
 import { dateLabel, label } from "../client-api";
@@ -78,7 +79,7 @@ export function TouchRow({
             <span className="row-product">
               <span
                 className="product-dot"
-                style={{ background: product.color }}
+                style={{ background: productColorToken(product.colorKey) }}
               />
               {product.name}
             </span>

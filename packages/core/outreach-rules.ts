@@ -46,6 +46,26 @@ export function quietHoursEnd(
   );
 }
 
+function quietHourSet(rules: ContactRules) {
+  const hours = new Set<number>();
+  for (
+    let hour = rules.quietHoursStart;
+    hour !== rules.quietHoursEnd;
+    hour = (hour + 1) % 24
+  )
+    hours.add(hour);
+  return hours;
+}
+
+export function loosensContactRules(current: ContactRules, next: ContactRules) {
+  const nextQuiet = quietHourSet(next);
+  return (
+    next.dailyCapPerSender > current.dailyCapPerSender ||
+    next.cooldownDays < current.cooldownDays ||
+    [...quietHourSet(current)].some((hour) => !nextQuiet.has(hour))
+  );
+}
+
 export function cooldownEnd(lastContactAt: number | null, rules: ContactRules) {
   return lastContactAt === null
     ? null

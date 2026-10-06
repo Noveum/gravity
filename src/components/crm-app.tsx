@@ -1,4 +1,5 @@
 "use client";
+import { productColorToken } from "@crm/core/product-colors";
 import { bindingLabel, type ShortcutId, shortcut } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import { Plus } from "lucide-react";
@@ -31,6 +32,7 @@ import {
   outreachTabFor,
   type Section,
   sectionPath,
+  settingsSectionFor,
 } from "./routes";
 import {
   breadcrumbsFor,
@@ -101,6 +103,24 @@ function CrmShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [pageUnavailable, setPageUnavailable] = useState<ShortcutId[]>([]);
+  function openHelp() {
+    const listed = section !== "outreach" && navigableRecords().length > 0;
+    const tabs = new Set(
+      [...document.querySelectorAll<HTMLElement>("[data-inspector-tab]")].map(
+        (tab) => tab.dataset.inspectorTab,
+      ),
+    );
+    setPageUnavailable([
+      ...(listed
+        ? []
+        : (["select", "extend-next", "extend-previous"] as const)),
+      ...(["timeline", "evidence", "draft"] as const).filter(
+        (tab) => !tabs.has(tab),
+      ),
+    ]);
+    setHelpOpen(true);
+  }
   const [enrolling, setEnrolling] = useState<readonly string[] | null>(null);
   const paletteFocus = useRef("");
   function openPalette() {
@@ -197,7 +217,7 @@ function CrmShell({ children }: { children: ReactNode }) {
     closeDrawer,
     openDrawer: () => setDrawerOpen(true),
     openPalette,
-    openGuide: () => setHelpOpen(true),
+    openGuide: openHelp,
     toggleSidebar,
     goToSection,
     showPeek,
@@ -230,6 +250,14 @@ function CrmShell({ children }: { children: ReactNode }) {
   const openCount =
     data?.actions.filter((action) => action.status !== "completed").length ?? 0;
   const outreachTab = section === "outreach" ? outreachTabFor(pathname) : null;
+  const settingsSection =
+    section === "settings" ? settingsSectionFor(pathname) : null;
+  const settingsOwner: Section =
+    settingsSection === "connections"
+      ? "integrations"
+      : settingsSection === "assistants"
+        ? "assistants"
+        : "settings";
   const pageItem = (id: Section): SidebarItem => {
     const href = sectionPath(id);
     return {
@@ -243,7 +271,9 @@ function CrmShell({ children }: { children: ReactNode }) {
           ? section === "sequences" || outreachTab === "sequences"
           : id === "outreach"
             ? section === "outreach" && outreachTab !== "sequences"
-            : section === id,
+            : section === "settings"
+              ? settingsOwner === id
+              : section === id,
       onSelect: () => leaveDrawer(href),
     };
   };
@@ -278,7 +308,7 @@ function CrmShell({ children }: { children: ReactNode }) {
               ...products.map((product) => ({
                 id: `product-${product.id}`,
                 label: product.name,
-                dot: product.color,
+                dot: productColorToken(product.colorKey),
                 kind: "filter" as const,
                 active: crm.productId === product.id,
                 onSelect: () => {
@@ -341,14 +371,18 @@ function CrmShell({ children }: { children: ReactNode }) {
     : undefined;
   const crumbs = breadcrumbsFor({
     view: label(section),
-    ...(recordId || outreachTab ? { viewHref: sectionPath(section) } : {}),
+    ...(recordId || outreachTab || settingsSection
+      ? { viewHref: sectionPath(section) }
+      : {}),
     ...(crm.currentOrg ? { workspace: crm.currentOrg.name } : {}),
     ...(productName ? { product: productName } : {}),
     ...(recordName
       ? { record: recordName }
       : outreachTab
         ? { record: t.outreachTabs[outreachTab] }
-        : {}),
+        : settingsSection
+          ? { record: t.settingsSections[settingsSection] }
+          : {}),
   });
   return (
     <div
@@ -392,7 +426,7 @@ function CrmShell({ children }: { children: ReactNode }) {
               demo={crm.demo}
               onShortcuts={() => {
                 setDrawerOpen(false);
-                setHelpOpen(true);
+                openHelp();
               }}
               onNavigate={() => leaveDrawer(sectionPath("settings"))}
               onError={(message) => crm.notify(message, "danger")}
@@ -442,7 +476,7 @@ function CrmShell({ children }: { children: ReactNode }) {
         <TopBar
           crumbs={crumbs}
           onSearch={openPalette}
-          onHelp={() => setHelpOpen(true)}
+          onHelp={openHelp}
           onOpenNavigation={() => setDrawerOpen(true)}
         />
         {data && !recordId && toolbarSections.has(section) && (
@@ -472,19 +506,20 @@ function CrmShell({ children }: { children: ReactNode }) {
               pathname: crm.pathname,
             })}
             labelOverrides={
-              section === "settings" ? { create: t.inviteMember } : {}
+              settingsSection === "members" ? { create: t.inviteMember } : {}
             }
             onClose={() => setHelpOpen(false)}
             unavailable={[
               ...(canCreateProduct ? [] : (["create-product"] as const)),
               ...(section === "settings"
-                ? crm.isAdmin
+                ? crm.isAdmin && settingsSection === "members"
                   ? []
                   : (["create"] as const)
                 : data?.products.length
                   ? []
                   : (["create"] as const)),
               ...(data?.relationships.length ? [] : (["schedule"] as const)),
+              ...pageUnavailable,
             ]}
           />
         )}
@@ -497,7 +532,7 @@ function CrmShell({ children }: { children: ReactNode }) {
                 id: "help",
                 title: t.keyboardHelp,
                 shortcut: hint("help"),
-                run: () => setHelpOpen(true),
+                run: openHelp,
               },
               {
                 id: "refresh",
@@ -596,7 +631,7 @@ function CrmShell({ children }: { children: ReactNode }) {
                     },
                   ]
                 : []),
-              ...(section === "settings" && crm.isAdmin
+              ...(settingsSection === "members" && crm.isAdmin
                 ? [
                     {
                       id: "invite-member",

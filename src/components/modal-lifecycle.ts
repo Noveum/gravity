@@ -23,14 +23,24 @@ export function useModalLifecycle(
   }, [ref, active]);
 }
 
+const plainKeyControls =
+  "a[href], button, input, select, textarea, summary, [role='button'], [role='link'], [role='checkbox'], [role='radio'], [role='switch'], [role='menuitem'], [role='tab']";
+function plainSaveAllowed(target: EventTarget) {
+  if (!(target instanceof Element)) return true;
+  const control = target.closest(plainKeyControls);
+  return (
+    !control ||
+    (control instanceof HTMLButtonElement && control.type === "submit")
+  );
+}
 export function submitOnSaveKey(event: React.KeyboardEvent<HTMLFormElement>) {
   const editing = isEditable(event.target);
   const id = shortcutFor(keyInput(event), ["dialog"], editing);
   if (id !== "save") return;
+  const modified = event.metaKey || event.ctrlKey;
   if (
-    !event.metaKey &&
-    !event.ctrlKey &&
-    !event.currentTarget.closest("dialog")
+    !modified &&
+    (!event.currentTarget.closest("dialog") || !plainSaveAllowed(event.target))
   )
     return;
   event.preventDefault();

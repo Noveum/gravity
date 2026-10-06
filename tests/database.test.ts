@@ -38,6 +38,7 @@ test("browser roles cannot read CRM, sessions, or signing keys even if table gra
       "session",
       "jwks",
       "provider_configurations",
+      "invitations",
     ]) {
       await local.client.exec(
         `GRANT SELECT, INSERT ON public.${table} TO ${role}`,

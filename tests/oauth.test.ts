@@ -21,7 +21,9 @@ import { errorResponse } from "../packages/core/http";
 import { createLocalDatabase } from "../packages/database/client";
 import * as schema from "../packages/database/schema";
 import {
+  mcpChallengeScopes,
   mcpHandler,
+  mcpRequiredScopes,
   principalForGrant,
   principalForVerifiedToken,
 } from "../packages/mcp/server";
@@ -66,7 +68,8 @@ const server = createServer(async (incoming, outgoing) => {
         },
         {
           resource: `${origin}/mcp`,
-          requiredScopes: ["crm:read", "crm:write", "crm:send"],
+          requiredScopes: mcpRequiredScopes,
+          challengeScopes: mcpChallengeScopes,
         },
       )(request);
     else
@@ -314,19 +317,20 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
   });
   expect(readTokenResponse.status).toBe(200);
   const readToken = await readTokenResponse.json();
-  const insufficient = await fetch(`${origin}/mcp`, {
+  const readOnlyList = await fetch(`${origin}/mcp`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${readToken.access_token}`,
       "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
     },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
   });
-  expect(insufficient.status).toBe(403);
-  expect(insufficient.headers.get("www-authenticate")).toContain(
-    "insufficient_scope",
-  );
-  expect(insufficient.headers.get("www-authenticate")).toContain("crm:write");
+  expect(readOnlyList.status).toBe(200);
+  const readOnlyTools = await readOnlyList.text();
+  expect(readOnlyTools).toContain('"list_products"');
+  expect(readOnlyTools).not.toContain('"create_person"');
+  expect(readOnlyTools).not.toContain('"send_touch"');
   const refreshed = await fetch(`${origin}/api/auth/oauth2/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -385,6 +389,86 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
   });
   expect(revoked.status).toBe(403);
 });
+test("an MCP token without crm:read is refused with insufficient_scope", async () => {
+  const service = new CrmService(local.db);
+  const organization = await service.createOrganization(
+    { userId, source: "session" },
+    "OAuth Scope Org",
+  );
+  const registration = await call(
+    "/oauth2/register",
+    {
+      application_type: "native",
+      client_name: "Scope test assistant",
+      redirect_uris: [`${origin}/callback`],
+      token_endpoint_auth_method: "none",
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      scope: "openid offline_access crm:read",
+    },
+    false,
+  );
+  expect(registration.response.status).toBe(201);
+  const clientId = String(registration.payload.client_id);
+  const verifier = randomBytes(32).toString("base64url");
+  const start = await call(
+    `/oauth2/authorize?${new URLSearchParams({
+      client_id: clientId,
+      response_type: "code",
+      redirect_uri: `${origin}/callback`,
+      scope: "openid offline_access crm:read",
+      resource: `${origin}/mcp`,
+      state: "scope-flow",
+      code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+      code_challenge_method: "S256",
+    })}`,
+  );
+  const signed = new URL(start.url, origin).search.slice(1);
+  const [grant] = await local.db
+    .insert(schema.mcpGrants)
+    .values({ organizationId: organization.id, userId, productIds: ["*"] })
+    .returning();
+  await local.db
+    .insert(schema.oauthSelections)
+    .values({ sessionId, flowKey: flowKey(signed), grantId: grant.id });
+  const proceed = await call("/oauth2/continue", {
+    postLogin: true,
+    oauth_query: signed,
+  });
+  const consent = await call("/oauth2/consent", {
+    accept: true,
+    scope: "openid offline_access",
+    oauth_query: new URL(proceed.url, origin).search.slice(1),
+  });
+  const tokenResponse = await fetch(`${origin}/api/auth/oauth2/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: clientId,
+      code: new URL(consent.url).searchParams.get("code") ?? "",
+      redirect_uri: `${origin}/callback`,
+      code_verifier: verifier,
+      resource: `${origin}/mcp`,
+    }),
+  });
+  expect(tokenResponse.status).toBe(200);
+  const token = await tokenResponse.json();
+  expect(String(token.scope ?? "")).not.toContain("crm:read");
+  const response = await fetch(`${origin}/mcp`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token.access_token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+  });
+  expect(response.status).toBe(403);
+  expect(response.headers.get("www-authenticate")).toContain(
+    "insufficient_scope",
+  );
+});
 test("MCP requests without credentials receive OAuth discovery instead of data", async () => {
   const response = await fetch(`${origin}/mcp`, {
     method: "POST",
@@ -396,6 +480,7 @@ test("MCP requests without credentials receive OAuth discovery instead of data",
     "resource_metadata",
   );
   const header = response.headers.get("www-authenticate") ?? "";
+  expect(header).toContain('scope="crm:read crm:write crm:send"');
   const url = header.match(/resource_metadata="([^"]+)"/)?.[1];
   expect(url).toBeTruthy();
   const metadataResponse = await fetch(url ?? "");

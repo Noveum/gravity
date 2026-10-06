@@ -87,3 +87,35 @@ test("database failures do not put secrets or SQL in the response or logs", asyn
   expect(message).not.toContain("private_key");
   expect(message).not.toContain("postgresql");
 });
+
+test("readiness fails when a column or index from 0014 to 0021 is missing", async () => {
+  configure();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "info").mockImplementation(() => {});
+  const removals = [
+    "ALTER TABLE relationships DROP COLUMN context_details CASCADE",
+    "ALTER TABLE relationships DROP COLUMN context_source CASCADE",
+    "ALTER TABLE invitations DROP COLUMN token_hash CASCADE",
+    "ALTER TABLE invitations DROP COLUMN inviter_id CASCADE",
+    "DROP INDEX invitations_pending_email",
+    "ALTER TABLE companies DROP COLUMN tags CASCADE",
+    "ALTER TABLE people DROP COLUMN amount_minor CASCADE",
+    "ALTER TABLE relationships DROP COLUMN currency CASCADE",
+    "ALTER TABLE opportunities DROP COLUMN tags CASCADE",
+    "ALTER TABLE invitations DROP COLUMN revoked_at CASCADE",
+    "ALTER TABLE products DROP COLUMN color_key CASCADE",
+    "ALTER TABLE products DROP COLUMN archived_at CASCADE",
+    "ALTER TABLE sequences DROP COLUMN archived_at CASCADE",
+    "ALTER TABLE organizations DROP COLUMN allowed_email_domains CASCADE",
+    "DROP INDEX people_organization_linkedin_url",
+  ];
+  for (const removal of removals) {
+    await local.client.exec(`BEGIN; ${removal};`);
+    try {
+      expect((await GET()).status, removal).toBe(503);
+    } finally {
+      await local.client.exec("ROLLBACK;");
+    }
+  }
+  expect((await GET()).status).toBe(200);
+});

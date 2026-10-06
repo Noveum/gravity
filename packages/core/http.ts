@@ -1,5 +1,15 @@
 import { ZodError } from "zod";
 import { DomainError } from "./policy";
+
+const retryableCodes = new Set(["40P01", "40001"]);
+function transactionConflict(error: unknown, depth = 0): boolean {
+  if (!(error instanceof Error) || depth > 4) return false;
+  const code = (error as Error & { code?: unknown }).code;
+  return (
+    (typeof code === "string" && retryableCodes.has(code)) ||
+    transactionConflict(error.cause, depth + 1)
+  );
+}
 export function errorResponse(error: unknown) {
   if (error instanceof DomainError)
     return Response.json(
@@ -8,6 +18,11 @@ export function errorResponse(error: unknown) {
         ...(error.details ? { details: error.details } : {}),
       },
       { status: error.status },
+    );
+  if (transactionConflict(error))
+    return Response.json(
+      { error: "CONFLICT", retryable: true },
+      { status: 409 },
     );
   if (error instanceof ZodError || error instanceof SyntaxError)
     return Response.json({ error: "INVALID_INPUT" }, { status: 400 });

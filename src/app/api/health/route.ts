@@ -23,6 +23,35 @@ export async function GET() {
     await db.execute(
       sql`SELECT owner_id, probability, expected_close_date, closed_at FROM public.opportunities LIMIT 0`,
     );
+    await db.execute(
+      sql`SELECT context_details, context_source FROM public.relationships LIMIT 0`,
+    );
+    await db.execute(
+      sql`SELECT id, organization_id, email, role, product_ids, token_hash, inviter_id, expires_at, accepted_at, revoked_at, created_at FROM public.invitations LIMIT 0`,
+    );
+    await db.execute(
+      sql`SELECT tags, amount_minor, currency FROM public.companies LIMIT 0`,
+    );
+    await db.execute(
+      sql`SELECT tags, amount_minor, currency FROM public.people LIMIT 0`,
+    );
+    await db.execute(
+      sql`SELECT tags, amount_minor, currency FROM public.relationships LIMIT 0`,
+    );
+    await db.execute(sql`SELECT tags FROM public.opportunities LIMIT 0`);
+    await db.execute(
+      sql`SELECT 1 / (to_regclass('public.invitations_pending_email') IS NOT NULL)::int`,
+    );
+    await db.execute(
+      sql`SELECT color_key, archived_at FROM public.products LIMIT 0`,
+    );
+    await db.execute(sql`SELECT archived_at FROM public.sequences LIMIT 0`);
+    await db.execute(
+      sql`SELECT allowed_email_domains FROM public.organizations LIMIT 0`,
+    );
+    await db.execute(
+      sql`SELECT 1 / (to_regclass('public.people_organization_linkedin_url') IS NOT NULL)::int`,
+    );
     isReady = true;
   } catch {
     // Errors can contain SQL, URLs or credentials. Log only bounded status.

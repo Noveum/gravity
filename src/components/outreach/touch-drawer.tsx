@@ -193,6 +193,16 @@ export function TouchDrawer({
           >
             {t.touchVerbs.approve}
           </button>
+          {verbs.canSend(touch) && (
+            <button
+              type="button"
+              className="primary"
+              disabled={changed}
+              onClick={() => verbs.askSend(touch)}
+            >
+              {t.touchVerbs.send}
+            </button>
+          )}
           <button type="button" onClick={() => verbs.askSent(touch)}>
             {t.touchVerbs.sent}
           </button>

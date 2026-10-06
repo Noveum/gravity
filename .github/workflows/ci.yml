@@ -12,7 +12,7 @@ concurrency:
 jobs:
   foundation:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       NEXT_TELEMETRY_DISABLED: '1'
       CRM_DEMO_MODE: 'false'

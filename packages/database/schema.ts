@@ -15,6 +15,10 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import {
+  defaultProductColorKey,
+  productColorKeys,
+} from "../core/product-colors";
 import type { RelationshipDetails } from "../core/relationship-context";
 import { serverAccessPolicy } from "./access-policy";
 
@@ -44,6 +48,10 @@ export const organizations = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull().unique(),
     timezone: text("timezone").notNull().default("UTC"),
+    allowedEmailDomains: jsonb("allowed_email_domains")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     createdAt: createdAt(),
   },
   () => [serverAccessPolicy()],
@@ -70,12 +78,20 @@ export const products = pgTable(
     organizationId: organizationId(),
     name: text("name").notNull(),
     color: text("color").notNull().default("#7565cf"),
+    colorKey: text("color_key", { enum: productColorKeys })
+      .notNull()
+      .default(defaultProductColorKey),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
     serverAccessPolicy(),
     unique().on(t.organizationId, t.id),
     unique().on(t.organizationId, t.name),
+    check(
+      "product_color_key",
+      sql`${t.colorKey} IN (${sql.raw(productColorKeys.map((key) => `'${key}'`).join(", "))})`,
+    ),
   ],
 ).enableRLS();
 export const productMemberships = pgTable(
@@ -120,6 +136,14 @@ export const invitations = pgTable(
   (t) => [
     serverAccessPolicy(),
     index("invitations_organization_idx").on(t.organizationId),
+    uniqueIndex("invitations_pending_email")
+      .on(t.organizationId, t.email)
+      .where(sql`${t.acceptedAt} IS NULL AND ${t.revokedAt} IS NULL`),
+    check("invitation_email_lowercase", sql`${t.email} = lower(${t.email})`),
+    check(
+      "invitation_single_outcome",
+      sql`${t.acceptedAt} IS NULL OR ${t.revokedAt} IS NULL`,
+    ),
   ],
 ).enableRLS();
 export const companies = pgTable(
@@ -184,6 +208,9 @@ export const people = pgTable(
       columns: [t.organizationId, t.companyId],
       foreignColumns: [companies.organizationId, companies.id],
     }),
+    uniqueIndex("people_organization_linkedin_url")
+      .on(t.organizationId, sql`lower(${t.linkedinUrl})`)
+      .where(sql`${t.linkedinUrl} <> ''`),
   ],
 ).enableRLS();
 export const relationships = pgTable(
@@ -287,6 +314,7 @@ export const sequences = pgTable(
         }[]
       >()
       .notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => [
     serverAccessPolicy(),

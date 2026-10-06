@@ -1067,21 +1067,48 @@ describe("contact rules", () => {
     expect(due).toEqual([now, now + 3 * day]);
   });
 
-  test("time zones must be real zones", async () => {
+  test("person time zones use the workspace IANA schema and still accept legacy aliases", async () => {
     const f = await fixture();
     const person = await personRow(f.personId);
     const { contactPreferencesSchema } = await import(
       "../packages/core/outreach"
     );
-    expect(
+    const accepts = (timeZone: string | null) =>
       contactPreferencesSchema.safeParse({
         organizationId: org,
         personId: person.id,
         version: person.version,
         doNotContact: false,
-        timeZone: "Mars/Olympus",
-      }).success,
-    ).toBe(false);
+        timeZone,
+      }).success;
+    for (const zone of ["Mars/Olympus", "+05:30", "-0800", ""])
+      expect(accepts(zone), zone).toBe(false);
+    for (const zone of [
+      "Asia/Kolkata",
+      "Asia/Calcutta",
+      "US/Pacific",
+      "UTC",
+      null,
+    ])
+      expect(accepts(zone), String(zone)).toBe(true);
+  });
+
+  test("a do not contact change without a time zone keeps the stored one", async () => {
+    const f = await fixture();
+    await local.db
+      .update(s.people)
+      .set({ timeZone: "+05:30" })
+      .where(eq(s.people.id, f.personId));
+    const person = await personRow(f.personId);
+    await outreach.setContactPreferences(admin, {
+      organizationId: org,
+      personId: person.id,
+      version: person.version,
+      doNotContact: true,
+    });
+    const updated = await personRow(f.personId);
+    expect(updated.doNotContact).toBe(true);
+    expect(updated.timeZone).toBe("+05:30");
   });
 
   test("only admins change the rules, with a version check", async () => {

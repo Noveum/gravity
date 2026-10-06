@@ -1017,9 +1017,12 @@ const allProductOperations = new Set([
   "update_contact_rules",
   "configure_unipile",
   "remove_unipile",
+  "list_unipile_accounts",
+  "register_unipile_webhooks",
 ]);
 const ownerOperations = new Set([
   "list_unipile_accounts",
+  "register_unipile_webhooks",
   "set_conversation_visibility",
   "get_integrations",
   "connect_integration",

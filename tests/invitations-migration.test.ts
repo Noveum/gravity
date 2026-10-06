@@ -9,7 +9,7 @@ import { demoId } from "../packages/database/seed";
 
 const org = demoId(1);
 
-test("invitations from 0016 are deduplicated and lowercased before 0017 adds email domains and pending uniqueness", async () => {
+test("invitations from 0016 are deduplicated and lowercased, and grants of inactive members revoked, before 0017 adds email domains and pending uniqueness", async () => {
   const folder = await mkdtemp(join(tmpdir(), "gravity-invitations-"));
   const client = new PGlite();
   try {
@@ -46,6 +46,14 @@ test("invitations from 0016 are deduplicated and lowercased before 0017 adds ema
       INSERT INTO organizations (id, name, slug) VALUES ('${org}', 'Fixture', 'fixture');
       INSERT INTO organizations (id, name, slug) VALUES ('${demoId(2)}', 'Other', 'other');
       INSERT INTO memberships (organization_id, user_id, role) VALUES ('${org}', 'fixture-user', 'admin');
+      INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
+        VALUES ('fixture-gone', 'Gone', 'gone@example.test', true, now(), now());
+      INSERT INTO memberships (organization_id, user_id, role, active) VALUES ('${org}', 'fixture-gone', 'member', false);
+      INSERT INTO memberships (organization_id, user_id, role) VALUES ('${demoId(2)}', 'fixture-gone', 'member');
+      INSERT INTO mcp_grants (id, organization_id, user_id, product_ids) VALUES
+        ('${demoId(710)}', '${org}', 'fixture-user', '[]'),
+        ('${demoId(711)}', '${org}', 'fixture-gone', '[]'),
+        ('${demoId(712)}', '${demoId(2)}', 'fixture-gone', '[]');
       ${legacy(700, "person@example.test", "a".repeat(64), "2026-10-01T00:00:00Z")}
       ${legacy(701, "Person@Example.test", "b".repeat(64), "2026-10-02T00:00:00Z")}
       ${legacy(702, "solo@example.test", "c".repeat(64), "2026-10-01T00:00:00Z")}
@@ -90,6 +98,14 @@ test("invitations from 0016 are deduplicated and lowercased before 0017 adds ema
         revoked: false,
         accepted: true,
       },
+    ]);
+    const grants = await client.query<{ id: string; active: boolean }>(
+      "SELECT id, active FROM mcp_grants ORDER BY id",
+    );
+    expect(grants.rows).toEqual([
+      { id: demoId(710), active: true },
+      { id: demoId(711), active: false },
+      { id: demoId(712), active: true },
     ]);
     const insert = (id: number, organizationId: string, hash: string) =>
       client.exec(`

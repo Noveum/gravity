@@ -13,6 +13,12 @@ WITH "ranked" AS (
 UPDATE "invitations" SET "revoked_at" = now()
 FROM "ranked"
 WHERE "ranked"."id" = "invitations"."id" AND "ranked"."position" > 1;--> statement-breakpoint
+UPDATE "mcp_grants" SET "active" = false
+FROM "memberships"
+WHERE "memberships"."organization_id" = "mcp_grants"."organization_id"
+  AND "memberships"."user_id" = "mcp_grants"."user_id"
+  AND "memberships"."active" = false
+  AND "mcp_grants"."active" = true;--> statement-breakpoint
 ALTER TABLE "organizations" ADD COLUMN "allowed_email_domains" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "invitations_pending_email" ON "invitations" USING btree ("organization_id","email") WHERE "invitations"."accepted_at" IS NULL AND "invitations"."revoked_at" IS NULL;--> statement-breakpoint
 ALTER TABLE "invitations" ADD CONSTRAINT "invitation_email_lowercase" CHECK ("invitations"."email" = lower("invitations"."email"));--> statement-breakpoint

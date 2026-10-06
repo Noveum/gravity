@@ -816,11 +816,13 @@ export class RecordService {
                 closedAt:
                   moved.category === "won" || moved.category === "lost"
                     ? opportunity.status === moved.category
-                      ? opportunity.closedAt
+                      ? (opportunity.closedAt ?? new Date())
                       : new Date()
                     : null,
               }
-            : {}),
+            : opportunity.status !== "open" && !opportunity.closedAt
+              ? { closedAt: new Date() }
+              : {}),
           updatedAt: new Date(),
           ...(input.amountMinor !== undefined
             ? { amountMinor: input.amountMinor }

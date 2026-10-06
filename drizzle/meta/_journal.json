@@ -113,6 +113,13 @@
       "when": 1791268958908,
       "tag": "0015_product_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791276834799,
+      "tag": "0016_backfill_deal_closed_at",
+      "breakpoints": true
     }
   ]
 }

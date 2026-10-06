@@ -179,7 +179,7 @@ async function moveDeals(
           status === "open"
             ? null
             : deal.status === status
-              ? deal.closedAt
+              ? (deal.closedAt ?? now)
               : now,
         updatedAt: now,
         version: deal.version + 1,

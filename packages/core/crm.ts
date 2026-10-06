@@ -1643,7 +1643,7 @@ export class CrmService {
           input.status === "open"
             ? null
             : existing?.status === input.status
-              ? existing.closedAt
+              ? (existing.closedAt ?? now)
               : now,
         updatedAt: now,
       };

@@ -1374,6 +1374,7 @@ export class CrmService {
         return { actionId: meeting.commitmentActionId };
       if (meeting.status !== "held" || !meeting.proposedCommitment)
         throw new DomainError("NO_COMMITMENT", 409);
+      await assertProductActive(tx, input.organizationId, meeting.productId);
       try {
         await authorize(
           tx,

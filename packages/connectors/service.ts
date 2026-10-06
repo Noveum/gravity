@@ -821,10 +821,16 @@ export class IntegrationService {
       const { threadId, direction } = record;
       if (!threadId || !direction) throw new DomainError("INVALID_INPUT", 400);
       await this.db.transaction(async (tx) => {
-        if (linkedByMember)
+        if (linkedByMember) {
           await assertActiveRelationships(tx, connection.organizationId, [
             relationshipId,
           ]);
+          await assertProductActive(
+            tx,
+            connection.organizationId,
+            relationship.productId,
+          );
+        }
         const [conversation] = await tx
           .insert(s.conversations)
           .values({
@@ -906,6 +912,12 @@ export class IntegrationService {
           .from(s.integrationItems)
           .where(eq(s.integrationItems.id, item.id))
           .for("update");
+        if (linkedByMember && !locked.entityId)
+          await assertProductActive(
+            tx,
+            connection.organizationId,
+            relationship.productId,
+          );
         const values = {
           organizationId: connection.organizationId,
           productId: relationship.productId,

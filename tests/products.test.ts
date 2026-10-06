@@ -350,6 +350,74 @@ describe("archiving products", () => {
         code: "PRODUCT_ARCHIVED",
         status: 409,
       });
+    await local.db
+      .update(s.meetings)
+      .set({ status: "held", proposedCommitment: "Send the fixture recap." })
+      .where(eq(s.meetings.id, demoId(1001)));
+    await expect(
+      run("accept_meeting_commitment", admin, {
+        meetingId: demoId(1001),
+        version: 1,
+        ownerId: demoUser,
+        dueAt: "2026-11-01T09:00:00.000Z",
+      }),
+      "accept_meeting_commitment",
+    ).rejects.toMatchObject({ code: "PRODUCT_ARCHIVED", status: 409 });
+    expect(
+      await local.db
+        .select()
+        .from(s.actions)
+        .where(eq(s.actions.title, "Send the fixture recap.")),
+    ).toEqual([]);
+    const session: Principal = { userId: demoUser, source: "session" };
+    const [connection] = await local.db
+      .insert(s.connections)
+      .values({
+        organizationId: org,
+        productId: demoId(11),
+        ownerId: demoUser,
+        provider: "gmail",
+        externalAccountId: "archived-link-fixture",
+        status: "connected",
+        selfEmail: "owner@example.test",
+        encryptedCredentials: "sealed-fixture",
+        scopes: [],
+      })
+      .returning();
+    const imported = (kind: "message" | "meeting", externalId: string) => ({
+      externalId,
+      kind,
+      title: "Archived link fixture",
+      body: "Fixture body",
+      occurredAt: "2026-10-01T12:00:00.000Z",
+      participants: ["contact@example.test"],
+      ...(kind === "message"
+        ? { threadId: `${externalId}-thread`, direction: "inbound" as const }
+        : {}),
+    });
+    const items = await local.db
+      .insert(s.integrationItems)
+      .values(
+        (["message", "meeting"] as const).map((kind) => ({
+          organizationId: org,
+          productId: demoId(11),
+          connectionId: connection.id,
+          externalId: `archived-${kind}`,
+          record: imported(kind, `archived-${kind}`),
+        })),
+      )
+      .returning();
+    for (const item of items)
+      await expect(
+        run("link_import", session, { itemId: item.id, relationshipId }),
+        `link_import ${item.record.kind}`,
+      ).rejects.toMatchObject({ code: "PRODUCT_ARCHIVED", status: 409 });
+    expect(
+      await local.db
+        .select()
+        .from(s.conversations)
+        .where(eq(s.conversations.connectionId, connection.id)),
+    ).toEqual([]);
     await run("plan_actions", admin, {
       items: [
         {

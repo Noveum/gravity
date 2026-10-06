@@ -93,30 +93,31 @@ export function FileLibrary() {
     (crm.data.products.some((p) => p.id === selectedProduct)
       ? selectedProduct
       : (crm.data.products[0]?.id ?? ""));
+  const productControl = !crm.productId ? (
+    <label className="library-product">
+      {t.product}
+      <select
+        value={productId}
+        onChange={(event) => {
+          setSelectedProduct(event.target.value);
+          window.history.replaceState(null, "", "/files");
+        }}
+      >
+        {crm.data.products.map((product) => (
+          <option key={product.id} value={product.id}>
+            {product.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  ) : null;
   return (
     <div className="file-library-page">
-      {!crm.productId && (
-        <label className="library-product">
-          {t.product}
-          <select
-            value={productId}
-            onChange={(event) => {
-              setSelectedProduct(event.target.value);
-              window.history.replaceState(null, "", "/files");
-            }}
-          >
-            {crm.data.products.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
       {productId ? (
         <ScopedLibrary
           key={`${crm.organizationId}/${productId}`}
           scope={{ organizationId: crm.organizationId, productId }}
+          productControl={productControl}
         />
       ) : (
         <p>{labels.chooseProduct}</p>
@@ -124,7 +125,13 @@ export function FileLibrary() {
     </div>
   );
 }
-function ScopedLibrary({ scope }: { scope: FileScope }) {
+function ScopedLibrary({
+  scope,
+  productControl,
+}: {
+  scope: FileScope;
+  productControl: ReactNode;
+}) {
   const [client] = useState(
     () =>
       new QueryClient({
@@ -136,11 +143,17 @@ function ScopedLibrary({ scope }: { scope: FileScope }) {
   useEffect(() => () => client.clear(), [client]);
   return (
     <QueryClientProvider client={client}>
-      <Browser scope={scope} />
+      <Browser scope={scope} productControl={productControl} />
     </QueryClientProvider>
   );
 }
-function Browser({ scope }: { scope: FileScope }) {
+function Browser({
+  scope,
+  productControl,
+}: {
+  scope: FileScope;
+  productControl: ReactNode;
+}) {
   const crm = useWorkspaceData();
   const params = useSearchParams();
   const parentId = params.get("folder");
@@ -180,14 +193,18 @@ function Browser({ scope }: { scope: FileScope }) {
   useEffect(() => {
     if (revision.current === crm.sourceData.asOf) return;
     revision.current = crm.sourceData.asOf;
-    void client.cancelQueries();
-    client.removeQueries({ queryKey: ["file", cacheScope] });
-    client.removeQueries({ queryKey: ["file-preview"] });
-    client.removeQueries({ queryKey: ["file-text-preview"] });
-    for (const [key] of client.getQueriesData({
-      queryKey: filesKey(cacheScope),
-    }))
-      void client.resetQueries({ queryKey: key, exact: true }).catch(() => {});
+    void client
+      .cancelQueries()
+      .then(async () => {
+        const details = client.resetQueries({ queryKey: ["file", cacheScope] });
+        client.removeQueries({ queryKey: ["file-preview"] });
+        client.removeQueries({ queryKey: ["file-text-preview"] });
+        await Promise.all([
+          details,
+          client.invalidateQueries({ queryKey: filesKey(cacheScope) }),
+        ]);
+      })
+      .catch(() => {});
   }, [crm.sourceData.asOf, client, cacheScope]);
   useEffect(() => {
     try {
@@ -331,11 +348,7 @@ function Browser({ scope }: { scope: FileScope }) {
           name = path.at(-1);
         if (parent === undefined || name === undefined)
           throw new Error(labels.badPath);
-        const contents = await client.fetchQuery({
-          queryKey: folderKey(cacheScope, parent),
-          queryFn: ({ signal }) => listFiles(scope, parent, signal),
-          staleTime: 0,
-        });
+        const contents = await listFiles(scope, parent);
         const existing =
           parent === null
             ? undefined
@@ -575,6 +588,7 @@ function Browser({ scope }: { scope: FileScope }) {
             </span>
           ))}
         </nav>
+        {productControl}
         <label className="library-search">
           <Search size={14} />
           <input

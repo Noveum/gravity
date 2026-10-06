@@ -1,5 +1,6 @@
 "use client";
 
+import t from "@crm/i18n/translations/en.json";
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -69,7 +70,7 @@ export function DocumentFrame({
     >
       <iframe
         ref={frame}
-        title={`Preview of ${name}`}
+        title={t.files.previewOf.replace("{name}", name)}
         sandbox=""
         srcDoc={source}
         style={

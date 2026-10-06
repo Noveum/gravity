@@ -405,3 +405,63 @@ test("native drops move into folders and public ancestor revocation hides open p
   );
   expect(denied.status()).toBe(404);
 });
+
+test("native directory chooser preserves nested paths and keyboard transfer selection", async ({
+  page,
+  request,
+}) => {
+  const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const directory = await mkdtemp(join(tmpdir(), "gravity-folder-upload-"));
+  const parentName = directory.split("/").at(-1);
+  if (!parentName) throw new Error("Directory name missing");
+  try {
+    await mkdir(join(directory, "Child"));
+    await writeFile(
+      join(directory, "Child", "Nested.txt"),
+      "Native folder bytes",
+    );
+    const response = await request.post("/api/files?operation=create", {
+      headers: { Origin: "http://127.0.0.1:3024" },
+      data: {
+        ...scope,
+        name: `Directory check ${crypto.randomUUID()}`,
+        kind: "folder",
+        visibility: "private",
+      },
+    });
+    expect(response.ok()).toBe(true);
+    const root = (await response.json()).entries[0];
+    await page.goto(`/files?folder=${root.id}`);
+    await page.locator("input[webkitdirectory]").setInputFiles(directory);
+    await page
+      .getByRole("treeitem")
+      .getByRole("button", { name: parentName, exact: true })
+      .click();
+    await page
+      .getByRole("treeitem")
+      .getByRole("button", { name: "Child", exact: true })
+      .click();
+    const file = page.getByRole("treeitem").filter({
+      has: page.getByRole("button", { name: "Nested.txt", exact: true }),
+    });
+    await expect(file).toBeVisible();
+    await file.focus();
+    await page.keyboard.press("Control+a");
+    await expect(
+      page.getByRole("checkbox", { name: "Select Nested.txt" }),
+    ).toBeChecked();
+    await page.keyboard.press("Control+c");
+    await page.getByRole("button", { name: "Go to parent folder" }).click();
+    await page.locator(".file-library").focus();
+    await page.keyboard.press("Control+v");
+    await expect(
+      page
+        .getByRole("treeitem")
+        .getByRole("button", { name: "Nested.txt", exact: true }),
+    ).toBeVisible();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

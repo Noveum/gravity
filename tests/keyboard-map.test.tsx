@@ -1100,7 +1100,9 @@ describe("dialogs and safety", () => {
     expect(harness.posts).toHaveLength(0);
     within(first.dialog).getByRole("button", { name: t.cancel }).focus();
     await press("e");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
     expect(harness.posts).toHaveLength(0);
+    expect(screen.getByRole("dialog", { name: t.scheduleAction })).toBeTruthy();
     first.dialog
       .querySelector<HTMLButtonElement>("button[type='submit']")
       ?.focus();

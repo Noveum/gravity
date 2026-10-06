@@ -150,6 +150,34 @@ export async function resolveLinkedInRecipient(
     throw new DomainError("RECIPIENT_MISMATCH", 422);
   return user.id;
 }
+export async function findLinkedInChat(
+  accountId: string,
+  userId: string,
+  credentials: ProviderCredentials,
+  transport: ProviderFetch,
+) {
+  const lookup = z
+    .object({
+      data: z.array(
+        z.object({
+          chat_id: z.string().min(1),
+          inbox_id: z.string().optional(),
+        }),
+      ),
+    })
+    .parse(
+      await unipileJson(
+        credentials.apiKey ?? "",
+        `/${encodeURIComponent(accountId)}/users/${encodeURIComponent(userId)}/chat`,
+        {},
+        transport,
+      ),
+    );
+  const classic = lookup.data.find(
+    (chat) => !chat.inbox_id || chat.inbox_id === "CLASSIC",
+  );
+  return classic?.chat_id ?? null;
+}
 export async function dispatchMessage(
   message: OutboundMessage,
   credentials: ProviderCredentials,

@@ -13,6 +13,7 @@ import { unipileCredentials } from "./configuration";
 import {
   dispatchMessage,
   emailDraft,
+  findLinkedInChat,
   gmailSendScope,
   type OutboundMessage,
   prepareReply,
@@ -527,6 +528,15 @@ export class OutboundService {
               credentials,
               this.transport,
             );
+    const existingChatId =
+      source.record.channel === "linkedin" && !source.conversation
+        ? await findLinkedInChat(
+            source.connection.externalAccountId,
+            recipient,
+            credentials,
+            this.transport,
+          )
+        : null;
     const message: OutboundMessage = await prepareReply(
       {
         channel: source.record.channel as "gmail" | "linkedin",
@@ -574,6 +584,23 @@ export class OutboundService {
           ),
         );
       if (pending) throw new DomainError("DELIVERY_IN_PROGRESS", 409);
+      if (existingChatId) {
+        const [linked] = await tx
+          .select()
+          .from(s.conversations)
+          .where(
+            and(
+              eq(s.conversations.connectionId, current.connection.id),
+              eq(s.conversations.externalThreadId, existingChatId),
+            ),
+          );
+        if (
+          linked &&
+          (linked.relationshipId !== current.relationship.id ||
+            linked.ownerId !== principal.userId)
+        )
+          throw new DomainError("THREAD_ALREADY_LINKED", 409);
+      }
       const [alreadySent] = await tx
         .select({ id: s.deliveries.id })
         .from(s.deliveries)
@@ -786,25 +813,26 @@ export class OutboundService {
                 eq(s.conversations.externalThreadId, current.externalThreadId),
               ),
             );
-      if (
-        !conversation ||
-        conversation.relationshipId !== current.relationshipId ||
-        conversation.ownerId !== current.ownerId
-      )
-        throw new DomainError("THREAD_ALREADY_LINKED", 409);
-      await tx
-        .insert(s.messages)
-        .values({
-          organizationId: current.organizationId,
-          productId: current.productId,
-          conversationId: conversation.id,
-          connectionId: current.connectionId,
-          providerMessageId: messageId,
-          direction: "outbound",
-          body: current.draft,
-          occurredAt: now,
-        })
-        .onConflictDoNothing();
+      const ownConversation =
+        conversation &&
+        conversation.relationshipId === current.relationshipId &&
+        conversation.ownerId === current.ownerId
+          ? conversation
+          : null;
+      if (ownConversation)
+        await tx
+          .insert(s.messages)
+          .values({
+            organizationId: current.organizationId,
+            productId: current.productId,
+            conversationId: ownConversation.id,
+            connectionId: current.connectionId,
+            providerMessageId: messageId,
+            direction: "outbound",
+            body: current.draft,
+            occurredAt: now,
+          })
+          .onConflictDoNothing();
       await tx
         .update(s.relationships)
         .set({
@@ -817,7 +845,11 @@ export class OutboundService {
         .update(s.deliveries)
         .set({
           status: "sent",
-          errorCode: conflicted ? "SOURCE_CHANGED_DURING_DISPATCH" : null,
+          errorCode: !ownConversation
+            ? "THREAD_ALREADY_LINKED"
+            : conflicted
+              ? "SOURCE_CHANGED_DURING_DISPATCH"
+              : null,
         })
         .where(eq(s.deliveries.id, current.id));
       await tx.insert(s.changeEvents).values({

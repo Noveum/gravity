@@ -12,7 +12,7 @@ import { invitePath, requestPathHeader, signInPath } from "@/components/routes";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const metadata: Metadata = {
-  title: t.inviteSignInTitle,
+  title: `${t.invitePageTitle} · ${t.brand}`,
   robots: { index: false, follow: false },
 };
 const signedOutCodes = ["UNAUTHORIZED", "AUTH_UNAVAILABLE"];

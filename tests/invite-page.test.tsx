@@ -40,7 +40,7 @@ vi.mock("../src/components/client-api", async (original) => ({
 }));
 const request = vi.mocked(requestJson);
 
-import Page from "../src/app/invite/[token]/page";
+import Page, { metadata } from "../src/app/invite/[token]/page";
 
 const admin: Principal = { userId: demoUser, source: "demo" };
 const invitee: Principal = { userId: "fixture-invitee", source: "session" };
@@ -98,6 +98,10 @@ test("the proxy forwards invitation paths so sign-in can return to them", async 
     "/invite/abc123",
   );
   expect(config.matcher).toContain("/invite/:path*");
+  expect(metadata).toMatchObject({
+    title: `${t.invitePageTitle} · ${t.brand}`,
+    robots: { index: false, follow: false },
+  });
 });
 
 test("a signed-out visitor is asked to sign in and brought back to the invitation", async () => {

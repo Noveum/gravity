@@ -1666,5 +1666,14 @@
   "stop": "Stop",
   "stopEnrollmentTitle": "Stop the sequence for {name}?",
   "stopEnrollmentDetail": "{name} leaves {sequence}. Open drafts expire and this cannot be undone.",
-  "enrollmentStopped": "Stopped {name}'s sequence"
+  "enrollmentStopped": "Stopped {name}'s sequence",
+  "delete": "Delete",
+  "renameFolder": "Rename folder",
+  "deleteFolder": "Delete folder",
+  "folderRenamed": "Renamed folder to {name}",
+  "folderDeleted": "Deleted {name}",
+  "deleteFolderDetail": "{name} is empty and will be removed.",
+  "folderNotEmptyHint": "Move or delete its files and folders first.",
+  "materialStatusFor": "Status for {name}",
+  "materialStatusSaved": "{name} is now {status}"
 }

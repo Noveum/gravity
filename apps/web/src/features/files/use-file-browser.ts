@@ -14,7 +14,7 @@ import { type DragEvent, type KeyboardEvent, useEffect, useRef, useState } from 
 import { z } from 'zod';
 import { apiFetch, messageOf } from '@/lib/api/client.ts';
 import { useBootstrap } from '@/lib/query/use-bootstrap.ts';
-import { fileKey, folderKey } from './file-cache.ts';
+import { cachedFiles, fileKey, folderKey } from './file-cache.ts';
 import type { RowAction } from './file-row.tsx';
 import { type FileShortcut, fileShortcut, isFileInput } from './file-shortcuts.ts';
 import { nativeFileDrop } from './native-file-drop.ts';
@@ -85,7 +85,9 @@ export function useFileBrowser() {
     mayWrite && (currentFolder?.canEdit ?? parentId === null) && files.listing.data !== undefined;
   const busy = files.mutation.isPending;
   const uploading = files.uploads.some((upload) => upload.progress < 100 && upload.error === null);
-  const selected = entries.filter((entry) => selection.has(entry.id));
+  const selected = cachedFiles(client, files.organizationId).filter((entry) =>
+    selection.has(entry.id),
+  );
   const mayMove =
     selected.length > 0 &&
     selected.every((entry) => entry.canEdit && entry.ownerId === files.userId);
@@ -157,13 +159,18 @@ export function useFileBrowser() {
       pastingRef.current = false;
     }
   }
-  function choose(entry: FileEntry, shift: boolean, toggle: boolean) {
+  function choose(
+    entry: FileEntry,
+    shift: boolean,
+    toggle: boolean,
+    range: readonly FileEntry[] = visible,
+  ) {
     if (shift && anchor !== null) {
-      const from = visible.findIndex((item) => item.id === anchor);
-      const to = visible.findIndex((item) => item.id === entry.id);
+      const from = range.findIndex((item) => item.id === anchor);
+      const to = range.findIndex((item) => item.id === entry.id);
       setSelection(
         new Set(
-          visible
+          range
             .slice(Math.max(0, Math.min(from, to)), Math.max(from, to) + 1)
             .map((item) => item.id),
         ),
@@ -179,7 +186,7 @@ export function useFileBrowser() {
     if (!shift) setAnchor(entry.id);
   }
   function act(entry: FileEntry, action: RowAction) {
-    const targets = selection.has(entry.id) ? selected : [entry];
+    const targets = selection.has(entry.id) && selected.length > 0 ? selected : [entry];
     if (action === 'open') {
       if (entry.kind === 'folder') navigate(entry.id);
       else setOpened(entry);

@@ -16,11 +16,11 @@ import {
   fileCreateSchema,
   fileEntrySchema,
   fileListSchema,
-  filePreviewMimeSchema,
   fileTransferSchema,
   fileUpdateSchema,
   fileUploadSchema,
   MAX_MARKDOWN_LENGTH,
+  previewMimeForFile,
   publicFileTokenSchema,
 } from '@gravity/shared/validators';
 import { type SyncBatch, withBatch } from '../crm/sync-batch.ts';
@@ -537,7 +537,7 @@ export async function fileDownload(
   if (file.kind === 'folder') throw validationFailed('Open the folder to download its files.');
   if (file.kind === 'markdown') return { body: file.body ?? '', name: file.name, url: null };
   if (file.storageKey === null) throw notFound('That file has no uploaded content.');
-  const previewMime = filePreviewMimeSchema.safeParse(file.mimeType).data;
+  const previewMime = previewMimeForFile(file.name, file.mimeType);
   const url = await (storage ?? objectStorage()).downloadUrl(
     file.storageKey,
     file.name,

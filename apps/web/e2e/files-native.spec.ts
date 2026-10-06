@@ -7,6 +7,54 @@ import { BASE } from './base-url.ts';
 import { readFixture } from './fixture.ts';
 import { signIn } from './sign-in.ts';
 
+test('files selected in earlier columns support range selection and copy into the current folder', async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const page = await signIn(context, readFixture().ownerEmail);
+  try {
+    const folderResponse = await page.request.post(`${BASE}/api/files`, {
+      data: { name: 'Column copy target', kind: 'folder' },
+    });
+    const folder = fileMutationSchema.parse(await folderResponse.json()).entries[0];
+    if (folder === undefined) throw new Error('Missing column destination');
+    for (const name of ['Column source A.md', 'Column source B.md']) {
+      const response = await page.request.post(`${BASE}/api/files`, {
+        data: { name, kind: 'markdown', body: `# ${name}` },
+      });
+      expect(response.ok()).toBe(true);
+    }
+    await page.goto(`${BASE}/files?folder=${folder.id}`);
+    await page.getByRole('button', { name: 'Columns view', exact: true }).click();
+    const root = page.getByRole('region', { name: 'Column Files', exact: true });
+    await root.getByLabel('Select Column source A.md', { exact: true }).check();
+    await expect(page.getByText('1 selected', { exact: true })).toBeVisible();
+    await root
+      .getByRole('button', { name: 'Column source B.md', exact: true })
+      .click({ modifiers: ['Shift'] });
+    await expect(page.getByText('2 selected', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Copy', exact: true }).click();
+    await page.getByRole('button', { name: 'Paste 2 items', exact: true }).click();
+    const destination = page.getByRole('region', {
+      name: 'Column Column copy target',
+      exact: true,
+    });
+    await expect(
+      destination.getByRole('button', { name: 'Column source A.md', exact: true }),
+    ).toBeVisible();
+    await expect(
+      destination.getByRole('button', { name: 'Column source B.md', exact: true }),
+    ).toBeVisible();
+    const listing = fileListingSchema.parse(
+      await (await page.request.get(`${BASE}/api/files?parentId=${folder.id}`)).json(),
+    );
+    expect(listing.entries.map((entry) => entry.parentId)).toEqual([folder.id, folder.id]);
+    expect(listing.entries.every((entry) => entry.visibility === 'private')).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
 test('native folder uploads preserve hierarchy across tree, grid and column views', async ({
   browser,
 }) => {

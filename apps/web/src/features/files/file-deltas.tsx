@@ -15,7 +15,7 @@ export function fileDeltaHandler(client: QueryClient, organizationId: string) {
     if ((versions.get(action.modelId) ?? -1) >= action.syncId) return;
     versions.set(action.modelId, action.syncId);
     if (action.action === 'delete') {
-      patchFiles(client, organizationId, [], [action.modelId]);
+      patchFiles(client, organizationId, [], [action.modelId], action.syncId);
       return;
     }
     const detailKey = fileKey(organizationId, action.modelId);
@@ -24,13 +24,13 @@ export function fileDeltaHandler(client: QueryClient, organizationId: string) {
     apiFetch(path, fileDetailSchema)
       .then((detail) => {
         if (versions.get(action.modelId) !== action.syncId) return;
-        patchFiles(client, organizationId, [detail.entry]);
-        if (fetchBody) client.setQueryData(detailKey, detail);
+        const accepted = patchFiles(client, organizationId, [detail.entry]);
+        if (fetchBody && accepted.length > 0) client.setQueryData(detailKey, detail);
       })
       .catch((error: unknown) => {
         if (versions.get(action.modelId) !== action.syncId) return;
         if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
-          patchFiles(client, organizationId, [], [action.modelId]);
+          patchFiles(client, organizationId, [], [action.modelId], action.syncId);
           return;
         }
         client

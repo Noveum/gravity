@@ -13,6 +13,24 @@ export const filePreviewMimeSchema = z.enum([
   'text/plain',
   'text/csv',
 ]);
+const previewExtensions: Readonly<Record<string, z.infer<typeof filePreviewMimeSchema>>> = {
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  txt: 'text/plain',
+  csv: 'text/csv',
+};
+
+export function previewMimeForFile(name: string, mimeType: string | null) {
+  const known = filePreviewMimeSchema.safeParse(mimeType).data;
+  if (known !== undefined) return known;
+  if (mimeType !== null && mimeType !== 'application/octet-stream') return undefined;
+  return previewExtensions[name.split('.').at(-1)?.toLowerCase() ?? ''];
+}
+
 export const fileNameSchema = z
   .string()
   .trim()
@@ -49,12 +67,12 @@ export const fileUpdateSchema = z.object({
   expectedSyncId: z.number().int().nonnegative(),
 });
 export const fileTransferSchema = z.object({
-  ids: z.array(fileIdSchema).min(1).max(100),
+  ids: z.array(fileIdSchema).min(1).max(1000),
   parentId: fileIdSchema.nullable(),
   operation: z.enum(['move', 'copy', 'delete']),
 });
 export const fileDragSchema = z.object({
-  ids: z.array(fileIdSchema).min(1).max(100),
+  ids: z.array(fileIdSchema).min(1).max(1000),
   organizationId: z.string().min(1).max(128),
 });
 export const fileUploadSchema = z.object({

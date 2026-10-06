@@ -13,7 +13,15 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tansta
 import { useRef, useState } from 'react';
 import { apiFetch, messageOf } from '@/lib/api/client.ts';
 import { useBootstrap } from '@/lib/query/use-bootstrap.ts';
-import { fileKey, filesKey, folderKey, patchFiles } from './file-cache.ts';
+import {
+  cachedFiles,
+  fileKey,
+  fileRevision,
+  filesKey,
+  folderKey,
+  patchFiles,
+  restoreFileChanges,
+} from './file-cache.ts';
 import { availableUploadName, selectedUpload, type UploadBatch } from './native-file-drop.ts';
 
 export type FileCommand =
@@ -210,16 +218,24 @@ export function useFiles(parentId: string | null) {
     onMutate: async (command) => {
       await client.cancelQueries({ queryKey: filesKey(organizationId) });
       const snapshots = client.getQueriesData<FileListing>({ queryKey: filesKey(organizationId) });
+      const before = cachedFiles(client, organizationId);
       const optimistic = optimisticEntries(
         command,
         snapshots.map(([, data]) => data),
         userId,
       );
       patchFiles(client, organizationId, optimistic.entries, optimistic.removed);
-      return { snapshots, optimistic };
+      const changed = new Map(
+        [...optimistic.entries.map((entry) => entry.id), ...optimistic.removed].map((id) => [
+          id,
+          fileRevision(client, organizationId, id),
+        ]),
+      );
+      return { before, changed, optimistic };
     },
     onError: (_error, _command, context) => {
-      for (const [key, value] of context?.snapshots ?? []) client.setQueryData(key, value);
+      if (context !== undefined)
+        restoreFileChanges(client, organizationId, context.before, context.changed);
     },
     onSuccess: (result, command, context) => {
       let removed: string[] = [];
@@ -227,8 +243,8 @@ export function useFiles(parentId: string | null) {
         removed = context?.optimistic.entries.map((entry) => entry.id) ?? [];
       if (command.type === 'transfer' && command.body.operation === 'delete')
         removed = command.body.ids;
-      patchFiles(client, organizationId, result.entries, removed);
-      for (const entry of result.entries) {
+      const accepted = patchFiles(client, organizationId, result.entries, removed);
+      for (const entry of accepted) {
         client.setQueryData<FileDetail>(fileKey(organizationId, entry.id), (current) => {
           if (current === undefined) return undefined;
           const body =

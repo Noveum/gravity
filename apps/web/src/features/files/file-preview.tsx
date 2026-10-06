@@ -1,6 +1,6 @@
 'use client';
 
-import { type FileEntry, filePreviewMimeSchema } from '@gravity/shared/validators';
+import { type FileEntry, previewMimeForFile } from '@gravity/shared/validators';
 import { useQuery } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
@@ -59,7 +59,7 @@ function PreviewContent({
   readonly entry: FileEntry;
   readonly downloadPath: string;
 }) {
-  const mimeType = filePreviewMimeSchema.safeParse(entry.mimeType).data;
+  const mimeType = previewMimeForFile(entry.name, entry.mimeType);
   const extension = entry.name.toLowerCase().split('.').at(-1);
   if (extension === 'docx' || extension === 'pptx')
     return <OfficePreview entry={entry} downloadPath={downloadPath} />;

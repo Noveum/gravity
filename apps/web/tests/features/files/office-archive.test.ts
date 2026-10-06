@@ -4,6 +4,29 @@ import JSZip from 'jszip';
 import { localOfficeArchive, validateArchive } from '@/features/files/office-archive.ts';
 
 describe('Office preview archives', () => {
+  it('rejects hidden entries when an archive underreports its entry count', async () => {
+    const zip = new JSZip();
+    zip.file('document.xml', '<document>Saved</document>');
+    const data = await zip.generateAsync({ type: 'arraybuffer' });
+    const view = new DataView(data);
+    const end = data.byteLength - 22;
+    view.setUint16(end + 8, 0, true);
+    view.setUint16(end + 10, 0, true);
+    expect(() => validateArchive(data)).toThrow('damaged');
+    await expect(localOfficeArchive(data)).rejects.toThrow('damaged');
+  });
+
+  it('bounds actual expansion even when a compressed entry lies about its size', async () => {
+    const zip = new JSZip();
+    zip.file('oversized.bin', new Uint8Array(65 * 1024 * 1024));
+    const data = await zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
+    const view = new DataView(data);
+    const central = view.getUint32(data.byteLength - 22 + 16, true);
+    view.setUint32(central + 24, 1, true);
+    expect(() => validateArchive(data)).not.toThrow();
+    await expect(localOfficeArchive(data)).rejects.toThrow('too large');
+  });
+
   it('rejects damaged archives and declared decompression bombs before loading them', async () => {
     expect(() => validateArchive(new ArrayBuffer(0))).toThrow('valid document');
     const zip = new JSZip();

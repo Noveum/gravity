@@ -104,7 +104,11 @@ test('real binary uploads survive reload and download with identical bytes', asy
     const uploads = z
       .array(z.object({ name: z.string(), mimeType: z.string(), base64: z.string() }))
       .parse(fileSamples)
-      .map(({ base64, ...file }) => ({ ...file, buffer: Buffer.from(base64, 'base64') }));
+      .map(({ base64, ...file }) => ({
+        ...file,
+        mimeType: file.name === 'Report.pdf' ? 'application/octet-stream' : file.mimeType,
+        buffer: Buffer.from(base64, 'base64'),
+      }));
     const screenshots = path.resolve('test-results/file-visuals');
     await mkdir(screenshots, { recursive: true });
     await page.getByLabel('Upload files', { exact: true }).setInputFiles(uploads);
@@ -316,7 +320,7 @@ test('large folders render a bounded window and search across every item', async
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
     await page.goto(`${BASE}/files?folder=${folder.id}`);
-    await expect(page.getByText('140 items', { exact: true })).toBeVisible();
+    await expect(page.locator('footer').getByText('140 items', { exact: true })).toBeVisible();
     expect(await page.getByRole('table').locator('tbody tr').count()).toBeLessThan(60);
     await page
       .getByRole('region', { name: 'Folder contents', exact: true })
@@ -328,6 +332,27 @@ test('large folders render a bounded window and search across every item', async
     await page.getByLabel('Search this folder').fill('');
     await page.getByLabel('Select all files', { exact: true }).check();
     await expect(page.getByText('140 selected', { exact: true })).toBeVisible();
+    const targetResponse = await page.request.post(`${BASE}/api/files`, {
+      data: { name: 'Bulk move target', kind: 'folder' },
+    });
+    const target = fileMutationSchema.parse(await targetResponse.json()).entries[0];
+    if (target === undefined) throw new Error('Missing bulk destination');
+    await page.getByRole('button', { name: 'Cut', exact: true }).click();
+    await page.getByRole('button', { name: 'All files', exact: true }).click();
+    await page.getByRole('button', { name: 'Bulk move target', exact: true }).click();
+    await page.getByRole('button', { name: 'Paste 140 items', exact: true }).click();
+    await expect(page.locator('footer').getByText('140 items', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.locator('footer').getByText('140 items', { exact: true })).toBeVisible();
+    const source = fileListingSchema.parse(
+      await (await page.request.get(`${BASE}/api/files?parentId=${folder.id}`)).json(),
+    );
+    const moved = fileListingSchema.parse(
+      await (await page.request.get(`${BASE}/api/files?parentId=${target.id}`)).json(),
+    );
+    expect(source.entries).toEqual([]);
+    expect(moved.entries).toHaveLength(140);
+    expect(moved.entries.every((entry) => entry.parentId === target.id)).toBe(true);
   } finally {
     await context.close();
   }

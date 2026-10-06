@@ -21,10 +21,12 @@ function FileTile({
   entry,
   browser,
   compact = false,
+  siblings,
 }: {
   readonly entry: FileEntry;
   readonly browser: FileBrowser;
   readonly compact?: boolean;
+  readonly siblings?: readonly FileEntry[];
 }) {
   const Icon = { folder: Folder, markdown: FileText, file: File }[entry.kind];
   const selected = browser.selection.has(entry.id);
@@ -54,7 +56,7 @@ function FileTile({
         type="checkbox"
         aria-label={`Select ${entry.name}`}
         checked={selected}
-        onChange={() => browser.choose(entry, false, true)}
+        onChange={() => browser.choose(entry, false, true, siblings)}
         className={compact ? 'mr-2' : 'absolute top-2 left-2'}
       />
       <button
@@ -71,7 +73,7 @@ function FileTile({
         onFocus={() => browser.prefetch(entry)}
         onClick={(event) => {
           if (event.shiftKey || event.metaKey || event.ctrlKey)
-            browser.choose(entry, event.shiftKey, event.metaKey || event.ctrlKey);
+            browser.choose(entry, event.shiftKey, event.metaKey || event.ctrlKey, siblings);
           else browser.act(entry, 'open');
         }}
         className={cn(
@@ -214,12 +216,18 @@ function FolderColumn({
                     className="absolute top-0 left-0 w-full"
                     style={{ transform: `translateY(${row.start}px)` }}
                   >
-                    <FileTile entry={entry} browser={browser} compact />
+                    <FileTile entry={entry} browser={browser} compact siblings={entries} />
                   </div>
                 );
               })
             : entries.map((entry) => (
-                <FileTile key={entry.id} entry={entry} browser={browser} compact />
+                <FileTile
+                  key={entry.id}
+                  entry={entry}
+                  browser={browser}
+                  compact
+                  siblings={entries}
+                />
               ))}
         </div>
         {files.listing.isPending ? <p className="p-2 text-muted text-xs">Loading…</p> : null}

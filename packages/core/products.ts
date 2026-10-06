@@ -28,11 +28,11 @@ export const archiveProductSchema = productScope;
 export const restoreProductSchema = productScope;
 
 export async function assertProductActive(
-  db: Reader,
+  tx: Transaction,
   organizationId: string,
   productId: string,
 ) {
-  const [product] = await db
+  const [product] = await tx
     .select({ archivedAt: s.products.archivedAt })
     .from(s.products)
     .where(
@@ -40,7 +40,8 @@ export async function assertProductActive(
         eq(s.products.organizationId, organizationId),
         eq(s.products.id, productId),
       ),
-    );
+    )
+    .for("share");
   if (!product) throw new DomainError("NOT_FOUND", 404);
   if (product.archivedAt) throw new DomainError("PRODUCT_ARCHIVED", 409);
 }

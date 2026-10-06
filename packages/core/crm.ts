@@ -270,6 +270,11 @@ export class CrmService {
       await assertActiveRelationships(tx, input.organizationId, [
         relationship.id,
       ]);
+      await assertProductActive(
+        tx,
+        input.organizationId,
+        relationship.productId,
+      );
       // Assignees must currently be able to see the task's product, even if the creator is an admin.
       try {
         await authorize(
@@ -1306,21 +1311,21 @@ export class CrmService {
       input.productId,
       true,
     );
-    await assertProductActive(this.db, input.organizationId, input.productId);
-    if (input.parentId) {
-      const [parent] = await this.db
-        .select()
-        .from(s.folders)
-        .where(
-          and(
-            eq(s.folders.id, input.parentId),
-            eq(s.folders.organizationId, input.organizationId),
-            eq(s.folders.productId, input.productId),
-          ),
-        );
-      if (!parent) throw new DomainError("NOT_FOUND", 404);
-    }
     return this.db.transaction(async (tx) => {
+      await assertProductActive(tx, input.organizationId, input.productId);
+      if (input.parentId) {
+        const [parent] = await tx
+          .select()
+          .from(s.folders)
+          .where(
+            and(
+              eq(s.folders.id, input.parentId),
+              eq(s.folders.organizationId, input.organizationId),
+              eq(s.folders.productId, input.productId),
+            ),
+          );
+        if (!parent) throw new DomainError("NOT_FOUND", 404);
+      }
       const [folder] = await tx
         .insert(s.folders)
         .values({ ...input, parentId: input.parentId ?? null })
@@ -1584,7 +1589,8 @@ export class CrmService {
             eq(s.stages.organizationId, input.organizationId),
             eq(s.stages.productId, input.productId),
           ),
-        );
+        )
+        .for("share");
       if (!relationship || !stage) throw new DomainError("FORBIDDEN", 403);
       await assertActiveRelationships(tx, input.organizationId, [
         relationship.id,
@@ -1672,8 +1678,8 @@ export class CrmService {
       true,
     );
     if (membership.role !== "admin") throw new DomainError("FORBIDDEN", 403);
-    await assertProductActive(this.db, input.organizationId, input.productId);
     return this.db.transaction(async (tx) => {
+      await assertProductActive(tx, input.organizationId, input.productId);
       const [pipeline] = await tx
         .insert(s.pipelines)
         .values(input)

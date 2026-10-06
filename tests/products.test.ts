@@ -283,6 +283,88 @@ describe("archiving products", () => {
     ).rejects.toMatchObject({ code: "PRODUCT_ARCHIVED" });
   });
 
+  test("every create path refuses an archived product while edits to existing records stay allowed", async () => {
+    await run("archive_product", admin, { productId: demoId(10) });
+    const relationshipId = demoId(300);
+    const [action] = await local.db
+      .select()
+      .from(s.actions)
+      .where(eq(s.actions.relationshipId, relationshipId))
+      .limit(1);
+    const [existingDeal] = await local.db
+      .select()
+      .from(s.opportunities)
+      .where(eq(s.opportunities.id, demoId(1101)));
+    if (!action || !existingDeal) throw new Error("archived product fixture");
+    const refused: [string, Record<string, unknown>][] = [
+      [
+        "schedule_next_action",
+        {
+          relationshipId,
+          ownerId: demoUser,
+          kind: "review",
+          channel: "research",
+          owedBy: "us",
+          title: "Fixture follow-up",
+          dueAt: "2026-11-01T09:00:00.000Z",
+        },
+      ],
+      [
+        "save_meeting",
+        {
+          relationshipId,
+          title: "Fixture meeting",
+          startsAt: "2026-11-01T09:00:00.000Z",
+          status: "scheduled",
+        },
+      ],
+      [
+        "create_opportunity",
+        { relationshipId, stageId: demoId(800), name: "Fixture deal" },
+      ],
+      [
+        "save_deal",
+        {
+          productId: demoId(10),
+          relationshipId,
+          stageId: demoId(800),
+          name: "Fixture deal",
+          ownerId: demoUser,
+          currency: "USD",
+        },
+      ],
+      [
+        "upload_material",
+        {
+          productId: demoId(10),
+          folderId: demoId(900),
+          name: "fixture.txt",
+          mimeType: "text/plain",
+          dataBase64: Buffer.from("Fixture").toString("base64"),
+        },
+      ],
+    ];
+    for (const [name, input] of refused)
+      await expect(run(name, admin, input), name).rejects.toMatchObject({
+        code: "PRODUCT_ARCHIVED",
+        status: 409,
+      });
+    await run("plan_actions", admin, {
+      items: [
+        {
+          actionId: action.id,
+          version: action.version,
+          dueAt: "2026-11-02T09:00:00.000Z",
+        },
+      ],
+    });
+    await run("change_opportunity", admin, {
+      opportunityId: existingDeal.id,
+      version: existingDeal.version,
+      name: "Renamed fixture deal",
+    });
+  });
+
   test("the last active product cannot be archived", async () => {
     await expect(
       run("archive_product", admin, { productId: demoId(13) }, demoId(2)),

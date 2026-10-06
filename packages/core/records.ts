@@ -4,6 +4,7 @@ import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { scopeSchema } from "./crm";
 import { authorize, DomainError, type Principal } from "./policy";
+import { assertProductActive } from "./products";
 import {
   activeCompany,
   assertActiveRelationships,
@@ -180,8 +181,10 @@ async function stageFor(
         eq(s.stages.organizationId, organizationId),
         eq(s.stages.productId, productId),
         eq(s.stages.pipeline, "deal"),
+        isNull(s.stages.archivedAt),
       ),
-    );
+    )
+    .for("share");
   if (!stage) throw new DomainError("NOT_FOUND", 404);
   return stage;
 }
@@ -605,6 +608,11 @@ export class RecordService {
           input.relationshipId ?? "",
           input.productId,
         );
+        await assertProductActive(
+          tx,
+          input.organizationId,
+          relationship.productId,
+        );
         const [meeting] = await tx
           .insert(s.meetings)
           .values({
@@ -682,6 +690,11 @@ export class RecordService {
         input.organizationId,
         input.relationshipId,
         input.productId,
+      );
+      await assertProductActive(
+        tx,
+        input.organizationId,
+        relationship.productId,
       );
       const stage = await stageFor(
         tx,

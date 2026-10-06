@@ -438,6 +438,29 @@ describe("archive_stage", () => {
   });
 });
 
+test("archived stages are refused when a deal is created or moved", async () => {
+  await run("archive_stage", admin, {
+    stageId: proposal,
+    moveToStageId: discovery,
+  });
+  await expect(
+    run("create_opportunity", admin, {
+      relationshipId: demoId(300),
+      stageId: proposal,
+      name: "Fixture deal",
+    }),
+  ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  const current = await deal(demoId(1101));
+  await expect(
+    run("change_opportunity", admin, {
+      opportunityId: current.id,
+      version: current.version,
+      stageId: proposal,
+    }),
+  ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  expect((await deal(demoId(1101))).stageId).not.toBe(proposal);
+});
+
 describe("update_pipeline", () => {
   test("renames a deal pipeline and refuses a duplicate name", async () => {
     await run("create_pipeline", admin, {

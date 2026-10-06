@@ -75,7 +75,6 @@ export async function uploadAsset(
   },
 ) {
   await authorize(db, principal, input.organizationId, input.productId, true);
-  await assertProductActive(db, input.organizationId, input.productId);
   const [folder] = await db
     .select()
     .from(s.folders)
@@ -122,6 +121,7 @@ export async function uploadAsset(
   await put(key, input.bytes, input.mimeType);
   try {
     return await db.transaction(async (tx) => {
+      await assertProductActive(tx, input.organizationId, input.productId);
       const [asset] = await tx
         .insert(s.assets)
         .values({

@@ -1828,7 +1828,8 @@ export class OutreachService {
               eq(s.stages.pipeline, "outreach"),
               isNull(s.stages.archivedAt),
             ),
-          );
+          )
+          .for("share");
         if (!stage) throw new DomainError("NOT_FOUND", 404);
       }
       const ownerChanged =

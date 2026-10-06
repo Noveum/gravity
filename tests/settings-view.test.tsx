@@ -188,3 +188,142 @@ describe("product settings", () => {
     expect(within(panel("brands")).getByText(t.adminOnly)).toBeTruthy();
   });
 });
+
+describe("pipeline settings", () => {
+  const group = (name: string) =>
+    within(panel("pipelines")).getByRole("group", { name });
+  const stageRow = (groupName: string, name: string) =>
+    within(group(groupName)).getByRole("listitem", { name });
+  const sales = "Sales pipeline";
+
+  test("an admin renames, recategorises, reorders, archives and adds stages and pipelines through the stage operations", async () => {
+    await mountSettings(harness, "/settings/pipelines");
+    fireEvent.change(
+      within(stageRow(sales, "Proposal")).getByLabelText(
+        t.stageNameFor.replace("{name}", "Proposal"),
+      ),
+      { target: { value: "Offer" } },
+    );
+    fireEvent.click(
+      within(stageRow(sales, "Proposal")).getByRole("button", { name: t.save }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "update_stage")?.body).toMatchObject({
+        stageId: demoId(802),
+        name: "Offer",
+      }),
+    );
+    fireEvent.change(
+      within(stageRow(t.outreachPipelineTitle, "Researching")).getByLabelText(
+        t.stageCategoryFor.replace("{name}", "Researching"),
+      ),
+      { target: { value: "hold" } },
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "update_stage")?.body).toMatchObject({
+        stageId: demoId(1201),
+        category: "hold",
+      }),
+    );
+    fireEvent.click(
+      within(await waitFor(() => stageRow(sales, "Evaluation"))).getByRole(
+        "button",
+        { name: t.moveStageUp.replace("{name}", "Evaluation") },
+      ),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "reorder_stages")?.body).toMatchObject({
+        productId: demoId(10),
+        pipeline: "deal",
+        pipelineId: demoId(1210),
+        stageIds: [
+          demoId(801),
+          demoId(800),
+          demoId(802),
+          demoId(803),
+          demoId(804),
+        ],
+      }),
+    );
+    const offer = await waitFor(() => stageRow(sales, "Offer"));
+    fireEvent.click(within(offer).getByRole("button", { name: t.archive }));
+    fireEvent.change(
+      within(offer).getByLabelText(
+        t.archiveStageInto.replace("{name}", "Offer"),
+      ),
+      { target: { value: demoId(800) } },
+    );
+    fireEvent.click(
+      within(offer).getByRole("button", { name: t.archiveStageConfirm }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "archive_stage")?.body).toMatchObject({
+        stageId: demoId(802),
+        moveToStageId: demoId(800),
+      }),
+    );
+    fireEvent.change(
+      within(group(sales)).getByLabelText(
+        t.newStageIn.replace("{name}", sales),
+      ),
+      { target: { value: "Negotiation" } },
+    );
+    fireEvent.click(
+      within(group(sales)).getByRole("button", { name: t.addStage }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "create_stage")?.body).toMatchObject({
+        productId: demoId(10),
+        pipeline: "deal",
+        pipelineId: demoId(1210),
+        name: "Negotiation",
+        category: "open",
+      }),
+    );
+    fireEvent.change(
+      within(group(sales)).getByLabelText(
+        t.pipelineNameFor.replace("{name}", sales),
+      ),
+      { target: { value: "New business" } },
+    );
+    fireEvent.click(
+      within(group(sales)).getByRole("button", { name: t.renamePipeline }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "update_pipeline")?.body).toMatchObject({
+        pipelineId: demoId(1210),
+        name: "New business",
+      }),
+    );
+    fireEvent.change(
+      within(panel("pipelines")).getByLabelText(t.pipelineName),
+      {
+        target: { value: "Partnerships" },
+      },
+    );
+    fireEvent.click(
+      within(panel("pipelines")).getByRole("button", {
+        name: t.createPipeline,
+      }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "create_pipeline")?.body).toMatchObject({
+        productId: demoId(10),
+        name: "Partnerships",
+      }),
+    );
+    expect(
+      await within(panel("pipelines")).findByRole("group", {
+        name: "Partnerships",
+      }),
+    ).toBeTruthy();
+  });
+
+  test("a member reads stages without controls", async () => {
+    await mountSettings(harness, "/settings/pipelines", member);
+    expect(stageRow(sales, "Proposal")).toBeTruthy();
+    expect(within(panel("pipelines")).queryByRole("textbox")).toBeNull();
+    expect(within(panel("pipelines")).queryByRole("button")).toBeNull();
+    expect(within(panel("pipelines")).getByText(t.adminOnly)).toBeTruthy();
+  });
+});

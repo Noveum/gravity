@@ -4257,6 +4257,9 @@ tbody tr[data-selected] td:first-child::before {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 .settings-group-title {
   display: flex;

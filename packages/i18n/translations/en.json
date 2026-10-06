@@ -1568,5 +1568,20 @@
   "archiveProductDetail": "Running sequences pause.",
   "productCreated": "Product added",
   "productArchived": "Product archived",
-  "productRestored": "Product restored"
+  "productRestored": "Product restored",
+  "outreachPipelineTitle": "Outreach stages",
+  "stageNameFor": "Name for {name}",
+  "stageCategoryFor": "Category for {name}",
+  "stageCategoryLabel": "Category",
+  "stageName": "Stage name",
+  "moveStageUp": "Move {name} up",
+  "moveStageDown": "Move {name} down",
+  "archiveStageConfirm": "Archive stage",
+  "archiveStageInto": "Move records in {name} to",
+  "stageArchived": "Stage archived and its records moved",
+  "newStageIn": "New stage in {name}",
+  "addStage": "Add stage",
+  "pipelineName": "Pipeline name",
+  "pipelineNameFor": "Name for {name}",
+  "renamePipeline": "Rename"
 }

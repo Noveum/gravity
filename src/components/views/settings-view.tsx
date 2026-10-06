@@ -8,6 +8,7 @@ import {
 } from "../routes";
 import { AssistantSettings } from "../settings/assistant-settings";
 import { ConnectionSettings } from "../settings/connection-settings";
+import { PipelineSettings } from "../settings/pipeline-settings";
 import { PreferenceSettings } from "../settings/preference-settings";
 import { ProductSettings } from "../settings/product-settings";
 import { SettingsNav } from "../settings/settings-nav";
@@ -16,6 +17,7 @@ import { WorkspaceSettings } from "../settings/workspace-settings";
 const panels: Partial<Record<SettingsSection, ComponentType>> = {
   workspace: WorkspaceSettings,
   brands: ProductSettings,
+  pipelines: PipelineSettings,
   connections: ConnectionSettings,
   assistants: AssistantSettings,
   preferences: PreferenceSettings,

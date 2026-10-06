@@ -4,6 +4,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -47,15 +48,16 @@ export function SettingsGroup({
   actions?: ReactNode;
   children: ReactNode;
 }) {
+  const id = useId();
   return (
-    <div className="settings-group">
+    <fieldset className="settings-group" aria-labelledby={id}>
       <div className="settings-group-title">
-        <h3>{title}</h3>
+        <h3 id={id}>{title}</h3>
         {actions}
       </div>
       {detail && <p className="settings-note">{detail}</p>}
       {children}
-    </div>
+    </fieldset>
   );
 }
 

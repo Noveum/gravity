@@ -1017,7 +1017,7 @@ describe("detail bindings", () => {
 });
 
 describe("dialogs and safety", () => {
-  test("E saves a dialog when focus is outside a text field, and types E inside one; Cmd Enter saves from a field", async () => {
+  test("E saves a dialog from its submit button, never from Cancel, and types E inside a field; Cmd Enter saves from a field", async () => {
     binding("save");
     await mountCrm(harness);
     row(/Leena Rao.*Prepare the pilot proposal/).focus();
@@ -1049,6 +1049,11 @@ describe("dialogs and safety", () => {
     expect(first.title.value).toBe("Send the recap e");
     expect(harness.posts).toHaveLength(0);
     within(first.dialog).getByRole("button", { name: t.cancel }).focus();
+    await press("e");
+    expect(harness.posts).toHaveLength(0);
+    first.dialog
+      .querySelector<HTMLButtonElement>("button[type='submit']")
+      ?.focus();
     await press("e");
     await waitFor(() =>
       expect(

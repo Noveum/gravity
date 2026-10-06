@@ -272,3 +272,40 @@ test("the default summary field saves directly through the authorized outreach o
   expect(stored.context).toBe("Updated directly in the record.");
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+test("context editor protects inline notes and changes made only with field or signal buttons", async () => {
+  await mountCrm(harness, "/people");
+  fireEvent.click(screen.getByRole("link", { name: "Mira Chen" }));
+  await contactTab(t.contactWorkspace.context);
+  const summary = await screen.findByRole("textbox", {
+    name: t.summary,
+  });
+  fireEvent.change(summary, {
+    target: { value: "Unsaved preparation context" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: t.contextFields.edit }));
+  expect(
+    screen.queryByRole("region", { name: t.contextFields.edit }),
+  ).toBeNull();
+  expect((summary as HTMLTextAreaElement).value).toBe(
+    "Unsaved preparation context",
+  );
+  fireEvent.click(
+    within(summary.closest("form") as HTMLFormElement).getByRole("button", {
+      name: t.cancel,
+    }),
+  );
+  for (const label of [t.contextFields.addField, t.contextFields.addSignal]) {
+    fireEvent.click(screen.getByRole("button", { name: t.contextFields.edit }));
+    const editor = screen.getByRole("region", { name: t.contextFields.edit });
+    fireEvent.click(within(editor).getByRole("button", { name: label }));
+    fireEvent.click(screen.getByRole("link", { name: t.companies }));
+    expect(window.location.pathname).toBe("/people");
+    expect(screen.getByRole("region", { name: t.contextFields.edit })).toBe(
+      editor,
+    );
+    fireEvent.click(within(editor).getByRole("button", { name: t.cancel }));
+  }
+  fireEvent.click(screen.getByRole("link", { name: t.companies }));
+  await waitFor(() => expect(window.location.pathname).toBe("/companies"));
+});

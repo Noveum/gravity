@@ -27,6 +27,7 @@ export function RecordDialog({
   loading = false,
   className = "",
   inline = false,
+  dirty = false,
 }: {
   title: string;
   submitLabel: string;
@@ -36,6 +37,7 @@ export function RecordDialog({
   loading?: boolean;
   className?: string;
   inline?: boolean;
+  dirty?: boolean;
 }) {
   const embedded = useContext(RecordEditorMode) || inline;
   const modal = useRef<HTMLDialogElement>(null);
@@ -52,13 +54,13 @@ export function RecordDialog({
         ?.querySelector<HTMLElement>("[data-primary-field]")
         ?.focus();
   }, [embedded, loading]);
-  const [dirty, setDirty] = useState(false);
+  const [changed, setChanged] = useState(false);
   const content = (
     <>
       <h2 id={titleId}>{title}</h2>
       <form
-        data-dirty={dirty || busy || undefined}
-        onChange={() => setDirty(true)}
+        data-dirty={dirty || changed || busy || undefined}
+        onChange={() => setChanged(true)}
         onKeyDown={submitOnSaveKey}
         onSubmit={async (event) => {
           event.preventDefault();

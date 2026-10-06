@@ -285,7 +285,7 @@ describe("sending an approved follow-up", () => {
         `/people/${demoId(202)}?relationship=${demoId(302)}&action=${demoId(602)}`,
         { demo: false },
       );
-      fireEvent.click(await screen.findByRole("button", { name: t.draft }));
+      fireEvent.click(await screen.findByRole("tab", { name: t.draft }));
       expect(
         await screen.findByText(t.errors.SOURCE_NOT_SENDABLE),
       ).toBeTruthy();

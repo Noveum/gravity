@@ -427,7 +427,6 @@ function CrmShell({ children }: { children: ReactNode }) {
         }
         if (crm.openRecord(link.href)) {
           event.preventDefault();
-          event.stopPropagation();
           if (!link.closest("#record-inspector"))
             crm.returnFocus.current = link;
         }

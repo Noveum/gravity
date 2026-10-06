@@ -104,7 +104,7 @@ export function OutreachView() {
     (enrollment) => enrollment.person.name,
   );
   if (!tab) return null;
-  const open = (touch: Touch) => verbs.peek(touch);
+  const open = (touch: Touch) => crm.openPerson(touch.relationshipId);
   const row = (touch: Touch) => (
     <TouchRow
       key={touch.id}

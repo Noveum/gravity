@@ -29,7 +29,7 @@ The user's three screenshots and feedback are the acceptance criteria for this w
 - Person fields and notes, company fields, context and metadata can be edited where they appear.
 - Unsaved field edits survive live refreshes. Saving uses the version captured when editing began. Conflicts keep the draft and explain the error.
 - Archive has an inline confirmation and an undo action after success.
-- Shared record-dialog forms dismiss on backdrop click only when there are no unsaved changes or pending submissions.
+- Retained dialogs dismiss on backdrop click only when there are no unsaved changes or pending submissions.
 - Action rows prioritize the action and person and omit absent estimates.
 - Opportunities support list and board layouts, show accurate counts and compact empty states, and never hide a stage behind another stage's page.
 - Folder navigation exposes keyboard controls and direct access.
@@ -78,7 +78,7 @@ The review covers the branch against `main`: shell navigation, inspector lifecyc
 
 | Flow | Placement and reason | Verification |
 | --- | --- | --- |
-| Contact/company fields, notes, context, tags and estimates | Inline fields; the structured context form stays within Context. | Persistence, consecutive saves, conflicts, dirty tab/navigation guards and private history tests. |
+| Contact/company fields, notes, context, tags and estimates | Inline fields; the structured context form stays within Context. | Persistence, consecutive saves, conflicts, dirty tab/navigation guards (including structured-field/signal button changes) and private history tests. |
 | Contact/company/action/meeting/deal creation or editing | Persistent inspector beside the originating list or report. | Mouse, Enter, shortcuts, resizing, related work and same-route browser scenarios. |
 | Overview reports | Bounded, paginated inline results. | Report selection opens the inspector without closing the report. |
 | Files, Markdown, folder creation/rename/delete/sharing | Inline library forms and inspector previews. The native file chooser selects local files. | Upload/drop/transfer/preview/version tests, large virtualized folders, Markdown keyboard saving and draft guards. |
@@ -98,7 +98,7 @@ A clean dialog backdrop now requests cancellation through the dialog's existing 
 | Review dimension | Assessment | Findings addressed |
 | --- | --- | --- |
 | Security | Pass within the existing authorized UI scope | Imported message bodies remain escaped text; grants/private histories/provider consent stay enforced. Unlinked contacts are not exposed by weakening product access. Undo only navigates to the restored record when its organization is still selected. |
-| Correctness | Pass after regressions | Archive no longer discards unsaved notes and uses the latest local version. Outreach edits capture their original version, retain conflicts, and cannot be silently replaced by status actions or another row. Inspector actions must match their relationship. Conversation deduplication includes direction. |
+| Correctness | Pass after regressions | Archive no longer discards unsaved notes and uses the latest local version. Outreach edits capture their original version, retain conflicts, and cannot be silently replaced by status actions or another row. Inspector actions must match their relationship. Conversation deduplication includes direction. Structured context controls protect button-only changes and cannot replace an unsaved summary. Outreach Enter opens the contact in place; existing-thread links close their send dialog while opening that contact. |
 | Accessibility | Pass for reviewed interactions | Inline editors have labels and save/error feedback; contact tabs use tab semantics; outreach controls can receive keyboard focus; remaining dialogs restore focus and dismiss cleanly. |
 | Performance | Rendering bounded; existing data limits remain | Boards paginate each stage, lists/reports paginate, file lists virtualize, and related work previews expand on demand. Collapsing related work returns to the first page. Server index loading and the latest-30 native-message limit remain unchanged. |
 | Maintainability | Pass | Shared record editor and modal lifecycle handle locking/dismissal. Removed setup dialogs reuse the existing authorized forms and operations. Markdown saving uses the same form shortcut path. |

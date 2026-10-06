@@ -53,6 +53,16 @@ export function RelationshipContextDialog({
   return (
     <RecordDialog
       inline
+      dirty={
+        JSON.stringify(signals) !== JSON.stringify(details.signals) ||
+        JSON.stringify(fields) !==
+          JSON.stringify(
+            details.fields.map((field) => ({
+              ...field,
+              value: String(field.value),
+            })),
+          )
+      }
       title={t.contextFields.edit}
       className="context-edit-dialog"
       submitLabel={t.save}

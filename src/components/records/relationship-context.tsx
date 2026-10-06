@@ -21,7 +21,7 @@ export function RelationshipContext({
 }: {
   relationship: ClientContext["relationship"];
 }) {
-  const { timeZone, busy, send, currentRecord } = useCrm();
+  const { timeZone, busy, send, currentRecord, canLeaveEditor } = useCrm();
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState<ClientContext["relationship"] | null>(
     null,
@@ -49,7 +49,9 @@ export function RelationshipContext({
           type="button"
           className="small"
           disabled={busy}
-          onClick={() => setEditing(true)}
+          onClick={() => {
+            if (canLeaveEditor()) setEditing(true);
+          }}
         >
           <Pencil size={13} aria-hidden="true" />
           {t.contextFields.edit}

@@ -1,0 +1,2 @@
+ALTER TABLE "relationships" ADD COLUMN "context_details" jsonb DEFAULT '{"background":"","needs":"","timing":"","budget":"","decisionProcess":"","risks":"","history":"","signals":[],"fields":[]}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "relationships" ADD COLUMN "context_source" text;

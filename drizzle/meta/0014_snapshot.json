@@ -1,5 +1,5 @@
 {
-  "id": "cf62bdd1-a8fb-4933-9eb8-35db2148ebc2",
+  "id": "2aeacda6-63d2-4d27-b3fa-0f9a27ae1bcf",
   "prevId": "617c4910-de5f-43c0-8529-bed60eee3366",
   "version": "7",
   "dialect": "postgresql",
@@ -746,26 +746,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
-        },
-        "tags": {
-          "name": "tags",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "amount_minor": {
-          "name": "amount_minor",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "currency": {
-          "name": "currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'USD'"
         }
       },
       "indexes": {},
@@ -3303,13 +3283,6 @@
           "notNull": true,
           "default": "'USD'"
         },
-        "tags": {
-          "name": "tags",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
         "owner_id": {
           "name": "owner_id",
           "type": "text",
@@ -3641,26 +3614,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
-        },
-        "tags": {
-          "name": "tags",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "amount_minor": {
-          "name": "amount_minor",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "currency": {
-          "name": "currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'USD'"
         }
       },
       "indexes": {},
@@ -4228,6 +4181,19 @@
           "notNull": true,
           "default": "''"
         },
+        "context_details": {
+          "name": "context_details",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"background\":\"\",\"needs\":\"\",\"timing\":\"\",\"budget\":\"\",\"decisionProcess\":\"\",\"risks\":\"\",\"history\":\"\",\"signals\":[],\"fields\":[]}'::jsonb"
+        },
+        "context_source": {
+          "name": "context_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "stage_id": {
           "name": "stage_id",
           "type": "uuid",
@@ -4286,26 +4252,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
-        },
-        "tags": {
-          "name": "tags",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "amount_minor": {
-          "name": "amount_minor",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "currency": {
-          "name": "currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'USD'"
         }
       },
       "indexes": {},

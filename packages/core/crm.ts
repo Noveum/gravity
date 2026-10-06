@@ -24,6 +24,12 @@ import { serialize } from "./dto";
 import { authorize, DomainError, type Principal } from "./policy";
 import { tagsSchema } from "./record-tags";
 import {
+  emptyRelationshipDetails,
+  fitsRelationshipInput,
+  relationshipDetailsPatchSchema,
+  relationshipDetailsSchema,
+} from "./relationship-context";
+import {
   activeCompany,
   assertActiveRelationships,
   companyVisible,
@@ -103,12 +109,14 @@ export const personSchema = scopeSchema
     companyId: z.uuid().optional(),
     purpose: z.enum(["buyer", "partner"]).default("buyer"),
     context: z.string().trim().max(10000).default(""),
+    contextDetails: relationshipDetailsPatchSchema.optional(),
     review: z.boolean().default(true),
     channel: z.enum(["gmail", "linkedin"]).default("gmail"),
   })
   .refine((value) => !!value.personId !== !!value.name, {
     message: "Provide a new name or existing person",
-  });
+  })
+  .refine(fitsRelationshipInput);
 export const opportunitySchema = scopeSchema
   .extend({
     tags: tagsSchema.optional(),
@@ -423,6 +431,10 @@ export class CrmService {
           ownerId: principal.userId,
           purpose: input.purpose,
           context: input.context,
+          contextDetails: relationshipDetailsSchema.parse({
+            ...emptyRelationshipDetails(),
+            ...input.contextDetails,
+          }),
           stageId: firstStage?.id ?? null,
         })
         .onConflictDoNothing()
@@ -491,6 +503,12 @@ export class CrmService {
     const ids = permission.products
       .filter((p) => !scope.productId || p.id === scope.productId)
       .map((p) => p.id);
+    // Rich notes and source archives load on demand through get_person_context.
+    const {
+      contextDetails: _contextDetails,
+      contextSource: _contextSource,
+      ...relationshipColumns
+    } = getTableColumns(s.relationships);
     const readableConversations = await this.db
       .select({ id: s.conversations.id })
       .from(s.conversations)
@@ -538,7 +556,7 @@ export class CrmService {
     ] = await Promise.all([
       this.db
         .select({
-          ...getTableColumns(s.relationships),
+          ...relationshipColumns,
           context: compact ? sql<string>`''` : s.relationships.context,
         })
         .from(s.relationships)

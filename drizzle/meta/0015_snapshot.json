@@ -1,6 +1,6 @@
 {
-  "id": "59dcff2b-c671-42b8-b691-4c1764f43346",
-  "prevId": "cf62bdd1-a8fb-4933-9eb8-35db2148ebc2",
+  "id": "0707b81c-3848-468c-8745-ca789776383c",
+  "prevId": "2aeacda6-63d2-4d27-b3fa-0f9a27ae1bcf",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4328,6 +4328,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": "''"
+        },
+        "context_details": {
+          "name": "context_details",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"background\":\"\",\"needs\":\"\",\"timing\":\"\",\"budget\":\"\",\"decisionProcess\":\"\",\"risks\":\"\",\"history\":\"\",\"signals\":[],\"fields\":[]}'::jsonb"
+        },
+        "context_source": {
+          "name": "context_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "stage_id": {
           "name": "stage_id",

@@ -11,6 +11,7 @@ import { initials } from "../shell/workspace-menu";
 import { ShortcutHint } from "../ui/shortcut-hint";
 import { ConversationSharing } from "./conversation-sharing";
 import { RecordText } from "./record-text";
+import { RelationshipContext } from "./relationship-context";
 
 type Action = ClientSnapshot["actions"][number];
 type DraftState = ReturnType<typeof useDraft>;
@@ -71,7 +72,9 @@ export function PersonProfile({
 export function RelationshipProperties({
   context,
   action,
+  includeContext = true,
 }: {
+  includeContext?: boolean;
   context: ClientContext;
   action: Action | undefined;
 }) {
@@ -94,7 +97,12 @@ export function RelationshipProperties({
           </>
         )}
       </dl>
-      <RecordText value={context.relationship.context} />
+      {includeContext && (
+        <RelationshipContext
+          key={context.relationship.id}
+          relationship={context.relationship}
+        />
+      )}
     </>
   );
 }

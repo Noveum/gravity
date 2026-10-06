@@ -8,6 +8,8 @@ describe('file preview types', () => {
     expect(previewMimeForFile('Data.csv', 'application/octet-stream')).toBe('text/csv');
     expect(previewMimeForFile('Page.html', 'application/octet-stream')).toBeUndefined();
     expect(previewMimeForFile('Vector.svg', 'application/octet-stream')).toBeUndefined();
+    expect(previewMimeForFile('Object.__proto__', null)).toBeUndefined();
+    expect(previewMimeForFile('Object.constructor', null)).toBeUndefined();
   });
 
   test('preserves specific MIME information rather than trusting a conflicting extension', () => {

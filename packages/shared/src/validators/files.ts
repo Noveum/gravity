@@ -28,7 +28,8 @@ export function previewMimeForFile(name: string, mimeType: string | null) {
   const known = filePreviewMimeSchema.safeParse(mimeType).data;
   if (known !== undefined) return known;
   if (mimeType !== null && mimeType !== 'application/octet-stream') return undefined;
-  return previewExtensions[name.split('.').at(-1)?.toLowerCase() ?? ''];
+  const extension = name.split('.').at(-1)?.toLowerCase() ?? '';
+  return Object.hasOwn(previewExtensions, extension) ? previewExtensions[extension] : undefined;
 }
 
 export const fileNameSchema = z

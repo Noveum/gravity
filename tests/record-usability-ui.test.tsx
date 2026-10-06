@@ -203,6 +203,11 @@ describe("browsing records", () => {
     await mountCrm(harness, "/people");
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
     await inspector().findByRole("heading", { name: "Jonah Reed" });
+    const estimate = inspector()
+      .getByText(t.personDealSizeAndTags)
+      .closest("summary");
+    if (!estimate) throw new Error("missing estimate disclosure");
+    fireEvent.click(estimate);
     fireEvent.click(
       inspector().getAllByRole("button", {
         name: t.editDealSizeAndTags,
@@ -289,6 +294,11 @@ describe("browsing records", () => {
     await mountCrm(harness, "/people");
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
     await inspector().findByRole("heading", { name: "Jonah Reed" });
+    const estimate = inspector()
+      .getByText(t.personDealSizeAndTags)
+      .closest("summary");
+    if (!estimate) throw new Error("missing estimate disclosure");
+    fireEvent.click(estimate);
     fireEvent.click(
       inspector().getAllByRole("button", {
         name: t.editDealSizeAndTags,
@@ -330,7 +340,7 @@ describe("browsing records", () => {
     const table = within(screen.getByRole("table"));
     expect(table.getAllByRole("row")).toHaveLength(2);
     expect(table.getByRole("link", { name: "Jonah Reed" })).toBeTruthy();
-    expect(table.getByText("$25,000")).toBeTruthy();
+    expect(table.getByText("$25,000.00")).toBeTruthy();
     fireEvent.change(screen.getByLabelText(t.currency), {
       target: { value: "USD" },
     });

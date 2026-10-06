@@ -146,6 +146,7 @@ export function PersonRecord({ personId }: { personId: string }) {
               actions={context.actions}
               meetings={context.meetings}
               opportunities={context.opportunities}
+              relationshipId={context.relationship.id}
               timeZone={crm.timeZone}
               onAction={focus}
               onReveal={crm.reveal}

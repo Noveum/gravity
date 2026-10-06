@@ -1291,7 +1291,7 @@ test("a company record stacks its people and opportunities as sibling sections w
   );
   expect(
     sections.map((section) => section.querySelector("h3")?.textContent),
-  ).toEqual([t.dealSizeAndTags, t.allPeople, t.opportunities]);
+  ).toEqual([t.companyDealSizeAndTags, t.allPeople, t.opportunities]);
 });
 
 test("product creation is reachable from sidebar, toolbar, keyboard and commands in the active organization", async () => {

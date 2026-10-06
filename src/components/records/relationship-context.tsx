@@ -93,6 +93,8 @@ export function RelationshipContext({
                     >
                       {field.value}
                     </a>
+                  ) : field.type === "text" && field.value ? (
+                    <RecordText value={String(field.value)} />
                   ) : (
                     String(field.value) || t.contextFields.notProvided
                   )}

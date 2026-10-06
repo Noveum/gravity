@@ -89,6 +89,7 @@ function PersonPeek() {
         actions={context.actions}
         meetings={context.meetings}
         opportunities={context.opportunities}
+        relationshipId={context.relationship.id}
         timeZone={crm.timeZone}
         onAction={crm.openPerson}
         onReveal={crm.reveal}

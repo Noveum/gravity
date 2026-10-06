@@ -1067,6 +1067,59 @@ test("a LinkedIn send refuses before claiming when the account's chat with the p
     .where(eq(s.deliveries.connectionId, f.connectionId));
   expect(deliveries).toHaveLength(0);
 });
+function lookupFails(
+  f: Awaited<ReturnType<typeof fixture>>,
+  lookup: () => Response,
+) {
+  return vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith("/chat")) return lookup();
+    if (init?.method === "POST")
+      return json({
+        message_id: `sent-${f.connectionId}`,
+        chat_id: `thread-${f.connectionId}`,
+      });
+    return json({
+      id: `user_fixture_${counter}`,
+      public_identifier: `fixture-${counter}`,
+    });
+  });
+}
+test("a failed LinkedIn chat lookup never blocks the send", async () => {
+  const failures: (() => Response)[] = [
+    () => json({ error: "not found" }, 404),
+    () => json({ error: "server" }, 500),
+    () => json({ error: "bad request" }, 400),
+    () => json({ object: "ChatLookup", data: { chat_id: "unexpected" } }),
+  ];
+  for (const failure of failures) {
+    const f = await fixture("linkedin");
+    const transport = lookupFails(f, failure);
+    const sent = await new OutboundService(local.db, transport, clock).send(
+      principal,
+      f.input,
+    );
+    expect(sent.status).toBe("sent");
+    expect(sent.errorCode).toBeNull();
+    expect(
+      transport.mock.calls.some(([url]) =>
+        String(url).endsWith(
+          `/acc_fixture_${counter}/inboxes/CLASSIC/chats/send`,
+        ),
+      ),
+    ).toBe(true);
+  }
+});
+test("a failed lookup followed by a receipt on a chat linked elsewhere still ends sent", async () => {
+  const f = await fixture("linkedin");
+  await linkElsewhere(f, `thread-${f.connectionId}`);
+  const transport = lookupFails(f, () => json({ error: "not found" }, 404));
+  const sent = await new OutboundService(local.db, transport, clock).send(
+    principal,
+    f.input,
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.errorCode).toBe("THREAD_ALREADY_LINKED");
+});
 const resolveOperation = () => {
   const found = operations.find((item) => item.name === "resolve_delivery");
   if (!found) throw new Error("resolve_delivery missing");

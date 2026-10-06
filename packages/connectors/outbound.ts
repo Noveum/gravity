@@ -602,7 +602,7 @@ export class OutboundService {
             recipient,
             credentials,
             this.transport,
-          )
+          ).catch(() => null)
         : null;
     const message: OutboundMessage = await prepareReply(
       {

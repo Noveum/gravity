@@ -398,3 +398,18 @@ describe("agents and invitations", () => {
     );
   });
 });
+
+test("accepting skips products archived after the invitation was sent", async () => {
+  const created = await invite();
+  await run("archive_product", admin, {
+    organizationId: org,
+    productId: demoId(10),
+  });
+  const accepted = await accept(tokenOf(created));
+  expect(accepted).toMatchObject({ productIds: [demoId(11)] });
+  const grants = await local.db
+    .select({ productId: s.productMemberships.productId })
+    .from(s.productMemberships)
+    .where(eq(s.productMemberships.userId, invitee.userId));
+  expect(grants.map((row) => row.productId)).toEqual([demoId(11)]);
+});

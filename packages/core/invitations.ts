@@ -331,8 +331,10 @@ export class InvitationService {
               and(
                 eq(s.products.organizationId, invitation.organizationId),
                 inArray(s.products.id, invitation.productIds),
+                isNull(s.products.archivedAt),
               ),
             )
+            .for("share")
         : [];
       await tx
         .delete(s.productMemberships)

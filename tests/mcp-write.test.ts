@@ -156,6 +156,19 @@ test("MCP publishes instructions, workflow prompts and an effective operation pe
       (item: { name: string }) => item.name === "configure_unipile",
     ).available,
   ).toBe(false);
+  for (const name of ["list_unipile_accounts", "register_unipile_webhooks"]) {
+    expect(
+      restricted.operations.find(
+        (item: { name: string }) => item.name === name,
+      ),
+    ).toMatchObject({
+      available: false,
+      requirements: {
+        allProducts: true,
+        currentAccountOrSourceOwner: true,
+      },
+    });
+  }
   expect(
     restricted.operations.find(
       (item: { name: string }) => item.name === "send_action",

@@ -23,11 +23,13 @@ export function UnipileSettings({
   organizationId,
   configuration,
   onClose,
+  onContinue,
   onChanged,
 }: {
   organizationId: string;
   configuration: ConnectionOverview["unipileConfiguration"];
   onClose: () => void;
+  onContinue?: () => void;
   onChanged: () => Promise<void>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -35,6 +37,8 @@ export function UnipileSettings({
   const alive = useRef(true);
   const [saved, setSaved] = useState(configuration);
   const [apiKey, setApiKey] = useState("");
+  const [apiVersion, setApiVersion] = useState<"v1" | "v2">("v2");
+  const [dsn, setDsn] = useState("");
   const [signingSecret, setSigningSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -63,7 +67,9 @@ export function UnipileSettings({
     setError("");
     try {
       const result = await requestJson<
-        NonNullable<ConnectionOverview["unipileConfiguration"]>
+        NonNullable<ConnectionOverview["unipileConfiguration"]> & {
+          webhookCleanupPending?: boolean;
+        }
       >("/api/integrations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -71,7 +77,11 @@ export function UnipileSettings({
           operation: remove ? "remove-unipile" : "configure-unipile",
           organizationId,
           configurationId: saved?.id,
-          ...(!remove ? (saved ? { signingSecret } : { apiKey }) : {}),
+          ...(!remove
+            ? saved
+              ? { signingSecret }
+              : { apiKey, ...(apiVersion === "v1" ? { apiVersion, dsn } : {}) }
+            : {}),
         }),
       });
       if (!alive.current) return;
@@ -79,7 +89,11 @@ export function UnipileSettings({
       setSigningSecret("");
       setSaved(remove ? null : result);
       await onChanged();
-      if (remove && alive.current) onClose();
+      if (remove && alive.current) {
+        if (result.webhookCleanupPending)
+          setError(t.unipileWebhookCleanupPending);
+        else onClose();
+      }
     } catch (cause) {
       if (alive.current) setError(errorText(cause));
     } finally {
@@ -165,8 +179,22 @@ export function UnipileSettings({
       {saved?.webhookReady ? (
         <p className="provider-ready" role="status">
           <ShieldCheck size={18} aria-hidden="true" />
-          {t.unipileReady}
+          {saved.apiVersion === "v1" ? t.unipileV1Ready : t.unipileReady}
         </p>
+      ) : saved?.apiVersion === "v1" ? (
+        <div>
+          <p>{t.unipileV1WebhookInstructions}</p>
+          <div className="dialog-actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={busy}
+              onClick={onContinue ?? onClose}
+            >
+              {t.unipileContinuePolling}
+            </button>
+          </div>
+        </div>
       ) : (
         <form
           onKeyDown={submitOnSaveKey}
@@ -197,7 +225,38 @@ export function UnipileSettings({
             </>
           ) : (
             <>
-              <p>{t.unipileKeyInstructions}</p>
+              <label>
+                {t.unipileApiVersion}
+                <select
+                  value={apiVersion}
+                  disabled={busy}
+                  onChange={(event) =>
+                    setApiVersion(event.target.value === "v1" ? "v1" : "v2")
+                  }
+                >
+                  <option value="v2">{t.unipileV2Option}</option>
+                  <option value="v1">{t.unipileV1Option}</option>
+                </select>
+              </label>
+              <p>
+                {apiVersion === "v1"
+                  ? t.unipileV1KeyInstructions
+                  : t.unipileKeyInstructions}
+              </p>
+              {apiVersion === "v1" && (
+                <label>
+                  {t.unipileDsn}
+                  <input
+                    required
+                    maxLength={200}
+                    autoComplete="off"
+                    placeholder="api123.unipile.com:12345"
+                    value={dsn}
+                    disabled={busy}
+                    onChange={(event) => setDsn(event.target.value)}
+                  />
+                </label>
+              )}
               <label>
                 {t.unipileApiKey}
                 <input
@@ -207,21 +266,33 @@ export function UnipileSettings({
                   required
                   minLength={10}
                   maxLength={2000}
-                  placeholder={t.unipileKeyPlaceholder}
+                  placeholder={
+                    apiVersion === "v1"
+                      ? t.unipileV1KeyPlaceholder
+                      : t.unipileKeyPlaceholder
+                  }
                   value={apiKey}
                   disabled={busy}
                   onChange={(event) => setApiKey(event.target.value)}
                 />
               </label>
-              <p className="muted">{t.unipileScopedKeyNote}</p>
+              <p className="muted">
+                {apiVersion === "v1"
+                  ? t.unipileV1AccountNote
+                  : t.unipileScopedKeyNote}
+              </p>
             </>
           )}
           <a
             className="provider-docs-link"
             href={
-              saved
-                ? "https://developer.unipile.com/v2.0/docs/configure-a-webhook"
-                : "https://developer.unipile.com/v2.0/docs/scopes"
+              (saved?.apiVersion ?? apiVersion) === "v1"
+                ? saved
+                  ? "https://developer.unipile.com/docs/new-messages-webhook"
+                  : "https://developer.unipile.com/docs/api-usage"
+                : saved
+                  ? "https://developer.unipile.com/v2.0/docs/configure-a-webhook"
+                  : "https://developer.unipile.com/v2.0/docs/scopes"
             }
             target="_blank"
             rel="noreferrer"

@@ -44,6 +44,7 @@ import {
   integrationProvider,
   type ProviderCredentials,
 } from "./types";
+import { unipileV1Account, unipileV1Json, unipileV1Status } from "./unipile-v1";
 
 export const integrationScope = z.object({
   organizationId: z.uuid(),
@@ -61,6 +62,7 @@ export const connectInput = integrationScope.extend({
   provider: integrationProvider,
   apiKey: z.string().min(10).max(2000).optional(),
   connectionId: z.uuid().optional(),
+  accountId: z.string().min(1).max(500).optional(),
   allowSending: z.boolean().default(true),
 });
 const accountActor = (principal: Principal) => {
@@ -249,7 +251,11 @@ export class IntegrationService {
     return {
       configured: {
         ...integrationAvailability(),
-        linkedin: encryptionConfigured() && !!configuration?.webhookReady,
+        linkedin:
+          encryptionConfigured() &&
+          !!configuration &&
+          (configuration.webhookReady ||
+            unipileCredentials(configuration).apiVersion === "v1"),
       },
       unipileConfiguration: configuration
         ? publicUnipileConfiguration(configuration)
@@ -344,7 +350,15 @@ export class IntegrationService {
             input.organizationId,
           )
         : null;
-    if (input.provider === "linkedin" && !configuration?.webhookReady)
+    const configurationCredentials = configuration
+      ? unipileCredentials(configuration)
+      : undefined;
+    if (
+      input.provider === "linkedin" &&
+      (!configuration ||
+        (!configuration.webhookReady &&
+          configurationCredentials?.apiVersion !== "v1"))
+    )
       throw new DomainError("UNIPILE_SETUP_REQUIRED", 422);
     if (
       existing &&
@@ -352,6 +366,63 @@ export class IntegrationService {
       existing.providerConfigurationId !== configuration?.id
     )
       throw new DomainError("STALE_CONFIGURATION", 409);
+    if (
+      input.provider === "linkedin" &&
+      configuration &&
+      configurationCredentials?.apiVersion === "v1"
+    ) {
+      const accountId = existing?.externalAccountId ?? input.accountId;
+      if (
+        !accountId ||
+        (existing && input.accountId && input.accountId !== accountId)
+      )
+        throw new DomainError("UNIPILE_ACCOUNT_REQUIRED", 422);
+      const account = unipileV1Account.parse(
+        await unipileV1Json(
+          configurationCredentials,
+          `/accounts/${encodeURIComponent(accountId)}`,
+          {},
+          this.transport,
+        ),
+      );
+      if (account.id !== accountId)
+        throw new DomainError("PROVIDER_RESPONSE_INVALID", 502);
+      const status = unipileV1Status(account);
+      if (status !== "OK")
+        throw new DomainError(
+          status === "CREDENTIALS"
+            ? "RECONNECT_REQUIRED"
+            : status === "PERMISSIONS"
+              ? "PROVIDER_PERMISSION"
+              : "PROVIDER_UNAVAILABLE",
+          422,
+        );
+      const connection = await this.db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(s.providerConfigurations)
+          .where(eq(s.providerConfigurations.id, configuration.id))
+          .for("update");
+        if (!current?.active || current.version !== configuration.version)
+          throw new DomainError("STALE_CONFIGURATION", 409);
+        return this.saveConnected(
+          principal,
+          input.organizationId,
+          input.productId,
+          "linkedin",
+          account.id,
+          account.name,
+          configurationCredentials,
+          [],
+          existing?.id,
+          tx,
+          configuration.id,
+        );
+      });
+      publishChange(input.organizationId);
+      return { connectionId: connection.id };
+    }
+    if (input.accountId) throw new DomainError("INVALID_INPUT", 400);
     const state = randomBytes(32).toString("base64url"),
       verifier = randomBytes(32).toString("base64url"),
       id = randomUUID();
@@ -1075,6 +1146,28 @@ export class IntegrationService {
       );
       if (["gmail", "calendar"].includes(leased.provider))
         credentials = await refreshGoogle(credentials, this.transport);
+      if (leased.provider === "unipile" && credentials.apiVersion === "v1") {
+        const account = unipileV1Account.parse(
+          await unipileV1Json(
+            credentials,
+            `/accounts/${encodeURIComponent(leased.externalAccountId)}`,
+            {},
+            this.transport,
+          ),
+        );
+        if (account.id !== leased.externalAccountId)
+          throw new DomainError("PROVIDER_RESPONSE_INVALID", 502);
+        const status = unipileV1Status(account);
+        if (status === "CREDENTIALS")
+          throw new DomainError("RECONNECT_REQUIRED", 422);
+        if (status !== "OK")
+          throw new DomainError(
+            status === "PERMISSIONS"
+              ? "PROVIDER_PERMISSION"
+              : "PROVIDER_UNAVAILABLE",
+            502,
+          );
+      }
       const page = await readProviderPage(
         uiProvider(leased.provider),
         credentials,

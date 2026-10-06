@@ -166,7 +166,7 @@ test("provider rejection does not persist a key or return its error payload", as
   const service = new ProviderConfigurationService(local.db, denied);
   await expect(
     service.configure(admin, { organizationId: demoId(2), apiKey: key }),
-  ).rejects.toMatchObject({ code: "RECONNECT_REQUIRED" });
+  ).rejects.toMatchObject({ code: "UNIPILE_KEY_INVALID" });
   expect(await service.own(admin, demoId(2))).toBeNull();
 });
 

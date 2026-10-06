@@ -28,6 +28,7 @@ import {
 } from "./providers";
 import { seal, unseal } from "./security";
 import type { ProviderCredentials } from "./types";
+import { normalizeLinkedInV1, unipileV1Json } from "./unipile-v1";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Reader = Database | Transaction;
@@ -642,7 +643,11 @@ export class OutboundService {
           ? (error as DomainError & { providerStatus?: number }).providerStatus
           : undefined;
       const definite =
-        status !== undefined && [400, 401, 403, 404, 422, 429].includes(status);
+        (error instanceof DomainError &&
+          (error as DomainError & { dispatchNotAttempted?: boolean })
+            .dispatchNotAttempted === true) ||
+        (status !== undefined &&
+          [400, 401, 403, 404, 422, 429].includes(status));
       const errorCode =
         error instanceof DomainError ? error.code : "PROVIDER_RESPONSE_INVALID";
       await this.db.transaction(async (tx) => {
@@ -962,13 +967,24 @@ export class OutboundService {
         (input.externalThreadId && input.externalThreadId !== threadId)
       )
         throw new DomainError("DELIVERY_OUTCOME_UNKNOWN", 409);
-      const raw = await unipileJson(
-        credentials.apiKey ?? "",
-        `/${encodeURIComponent(connection.externalAccountId)}/chats/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(input.externalMessageId)}`,
-        {},
-        this.transport,
-      );
-      const record = normalizeLinkedIn(raw);
+      const raw =
+        credentials.apiVersion === "v1"
+          ? await unipileV1Json(
+              credentials,
+              `/messages/${encodeURIComponent(input.externalMessageId)}`,
+              {},
+              this.transport,
+            )
+          : await unipileJson(
+              credentials.apiKey ?? "",
+              `/${encodeURIComponent(connection.externalAccountId)}/chats/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(input.externalMessageId)}`,
+              {},
+              this.transport,
+            );
+      const record =
+        credentials.apiVersion === "v1"
+          ? normalizeLinkedInV1(raw, connection.externalAccountId, threadId)
+          : normalizeLinkedIn(raw);
       if (
         record?.direction !== "outbound" ||
         record.threadId !== threadId ||

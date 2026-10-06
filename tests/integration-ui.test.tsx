@@ -37,6 +37,53 @@ const props = {
   initialNotice: "",
   onChanged: vi.fn(async () => {}),
 };
+test("V1 setup asks for a DSN and continues without a manual webhook secret", async () => {
+  const { UnipileSettings } = await import(
+    "../src/components/unipile-settings"
+  );
+  request.mockResolvedValueOnce({
+    id: "setup-v1",
+    apiVersion: "v1",
+    dsn: "api99.unipile.com:12345",
+    webhookReady: false,
+    webhookUrl:
+      "https://crm.example.test/api/webhooks/unipile?configurationId=setup-v1",
+  });
+  const onClose = vi.fn();
+  render(
+    <UnipileSettings
+      organizationId="org"
+      configuration={null}
+      onChanged={async () => {}}
+      onClose={onClose}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("Unipile API version"), {
+    target: { value: "v1" },
+  });
+  const dsn = screen.getByLabelText("Unipile DSN");
+  fireEvent.change(dsn, { target: { value: "api99.unipile.com:12345" } });
+  fireEvent.change(screen.getByLabelText(t.unipileApiKey), {
+    target: { value: "fictional-v1-token" },
+  });
+  const form = dsn.closest("form");
+  if (!form) throw new Error("FORM_MISSING");
+  fireEvent.submit(form);
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: t.unipileContinuePolling }),
+    ).toBeTruthy(),
+  );
+  expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({
+    apiVersion: "v1",
+    dsn: "api99.unipile.com:12345",
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: t.unipileContinuePolling }),
+  );
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(screen.queryByLabelText(t.signingSecret)).toBeNull();
+});
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute("open", "");
@@ -75,6 +122,122 @@ test("configured providers have working connect buttons and unavailable LinkedIn
   expect(allowSending.checked).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: t.cancel }));
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+test("V1 connection selects only a running account and submits its verified identifier", async () => {
+  const connected = {
+    ...overview,
+    configured: { ...overview.configured, linkedin: true },
+    unipileConfiguration: {
+      id: "v1-setup",
+      apiVersion: "v1",
+      webhookReady: false,
+      dsn: "api99.unipile.com:12345",
+      webhookUrl: "https://crm.example.test/hook",
+    },
+  };
+  request.mockImplementation(async (url, init) => {
+    if (init?.method === "POST") return { connectionId: "connection-a" };
+    if (url.includes("unipile-accounts"))
+      return {
+        accounts: [
+          { id: "account-a", name: "Fictional owner", status: "OK" },
+          { id: "account-b", name: "Expired account", status: "CREDENTIALS" },
+        ],
+        nextCursor: null,
+      };
+    return connected;
+  });
+  render(<IntegrationCards {...props} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Connect LinkedIn" }),
+  );
+  const select = await screen.findByLabelText(t.unipileAccount);
+  expect(
+    (
+      screen.getByRole("option", {
+        name: "Expired account (CREDENTIALS)",
+      }) as HTMLOptionElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.change(select, { target: { value: "account-a" } });
+  const form = select.closest("form");
+  if (!form) throw new Error("FORM_MISSING");
+  fireEvent.submit(form);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  const call = request.mock.calls.find((value) => value[1]?.method === "POST");
+  expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+    operation: "connect",
+    provider: "linkedin",
+    accountId: "account-a",
+    productId: "p",
+  });
+  const registration = request.mock.calls
+    .filter((value) => value[1]?.method === "POST")
+    .at(1);
+  expect(JSON.parse(String(registration?.[1]?.body))).toMatchObject({
+    operation: "register-unipile-webhooks",
+    connectionId: "connection-a",
+  });
+});
+test("failed V1 webhook setup retries the same account connection and product", async () => {
+  const connected = {
+    ...overview,
+    configured: { ...overview.configured, linkedin: true },
+    unipileConfiguration: {
+      id: "v1-setup",
+      apiVersion: "v1",
+      webhookReady: false,
+      dsn: "api99.unipile.com:12345",
+      webhookUrl: "https://crm.example.test/hook",
+    },
+  };
+  let attempts = 0;
+  request.mockImplementation(async (url, init) => {
+    if (init?.method === "POST") {
+      const input = JSON.parse(String(init.body));
+      if (input.operation === "register-unipile-webhooks" && attempts++ === 0)
+        throw new Error("PROVIDER_PERMISSION");
+      return input.operation === "connect"
+        ? { connectionId: "connection-a" }
+        : connected.unipileConfiguration;
+    }
+    if (url.includes("unipile-accounts"))
+      return {
+        accounts: [{ id: "account-a", name: "Fictional owner", status: "OK" }],
+        nextCursor: null,
+      };
+    return connected;
+  });
+  render(<IntegrationCards {...props} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Connect LinkedIn" }),
+  );
+  const select = await screen.findByLabelText(t.unipileAccount);
+  fireEvent.change(select, { target: { value: "account-a" } });
+  const form = select.closest("form");
+  if (!form) throw new Error("FORM_MISSING");
+  fireEvent.submit(form);
+  const retry = await screen.findByRole("button", {
+    name: t.unipileRetryWebhooks,
+  });
+  expect((select as HTMLSelectElement).disabled).toBe(true);
+  expect(
+    (screen.getByLabelText(t.defaultProduct) as HTMLSelectElement).disabled,
+  ).toBe(true);
+  expect(
+    screen.queryByRole("button", { name: t.unipileRetryAccounts }),
+  ).toBeNull();
+  fireEvent.click(retry);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  const inputs = request.mock.calls
+    .filter((value) => value[1]?.method === "POST")
+    .map((value) => JSON.parse(String(value[1]?.body)));
+  expect(
+    inputs.filter((value) => value.operation === "connect").at(1),
+  ).toMatchObject({ connectionId: "connection-a", productId: "p" });
+  expect(
+    inputs.filter((value) => value.operation === "register-unipile-webhooks"),
+  ).toHaveLength(2);
 });
 test("Fireflies validates its API key, locks pending submission and reveals a signing secret only once", async () => {
   request.mockResolvedValue(overview);
@@ -377,6 +540,7 @@ test("Unipile setup removal requires explicit confirmation and reports provider 
       organizationId="org"
       configuration={{
         id: "owned",
+        apiVersion: "v2",
         webhookReady: true,
         webhookUrl: "https://crm.example.test/hook",
       }}

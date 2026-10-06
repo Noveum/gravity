@@ -28,6 +28,7 @@ import {
 } from "./providers";
 import { seal, unseal } from "./security";
 import type { ProviderCredentials } from "./types";
+import { normalizeLinkedInV1, unipileV1Json } from "./unipile-v1";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Reader = Database | Transaction;
@@ -962,13 +963,24 @@ export class OutboundService {
         (input.externalThreadId && input.externalThreadId !== threadId)
       )
         throw new DomainError("DELIVERY_OUTCOME_UNKNOWN", 409);
-      const raw = await unipileJson(
-        credentials.apiKey ?? "",
-        `/${encodeURIComponent(connection.externalAccountId)}/chats/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(input.externalMessageId)}`,
-        {},
-        this.transport,
-      );
-      const record = normalizeLinkedIn(raw);
+      const raw =
+        credentials.apiVersion === "v1"
+          ? await unipileV1Json(
+              credentials,
+              `/messages/${encodeURIComponent(input.externalMessageId)}`,
+              {},
+              this.transport,
+            )
+          : await unipileJson(
+              credentials.apiKey ?? "",
+              `/${encodeURIComponent(connection.externalAccountId)}/chats/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(input.externalMessageId)}`,
+              {},
+              this.transport,
+            );
+      const record =
+        credentials.apiVersion === "v1"
+          ? normalizeLinkedInV1(raw, connection.externalAccountId, threadId)
+          : normalizeLinkedIn(raw);
       if (
         record?.direction !== "outbound" ||
         record.threadId !== threadId ||

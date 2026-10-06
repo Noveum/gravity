@@ -37,6 +37,52 @@ const props = {
   initialNotice: "",
   onChanged: vi.fn(async () => {}),
 };
+test("V1 setup asks for a DSN and permits polling before webhook configuration", async () => {
+  const { UnipileSettings } = await import(
+    "../src/components/unipile-settings"
+  );
+  request.mockResolvedValueOnce({
+    id: "setup-v1",
+    apiVersion: "v1",
+    dsn: "api99.unipile.com:12345",
+    webhookReady: false,
+    webhookUrl:
+      "https://crm.example.test/api/webhooks/unipile?configurationId=setup-v1",
+  });
+  const onClose = vi.fn();
+  render(
+    <UnipileSettings
+      organizationId="org"
+      configuration={null}
+      onChanged={async () => {}}
+      onClose={onClose}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("Unipile API version"), {
+    target: { value: "v1" },
+  });
+  const dsn = screen.getByLabelText("Unipile DSN");
+  fireEvent.change(dsn, { target: { value: "api99.unipile.com:12345" } });
+  fireEvent.change(screen.getByLabelText(t.unipileApiKey), {
+    target: { value: "fictional-v1-token" },
+  });
+  const form = dsn.closest("form");
+  if (!form) throw new Error("FORM_MISSING");
+  fireEvent.submit(form);
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Continue with polling" }),
+    ).toBeTruthy(),
+  );
+  expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({
+    apiVersion: "v1",
+    dsn: "api99.unipile.com:12345",
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Continue with polling" }),
+  );
+  expect(onClose).toHaveBeenCalledOnce();
+});
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute("open", "");
@@ -75,6 +121,55 @@ test("configured providers have working connect buttons and unavailable LinkedIn
   expect(allowSending.checked).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: t.cancel }));
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+test("V1 connection selects only a running account and submits its verified identifier", async () => {
+  const connected = {
+    ...overview,
+    configured: { ...overview.configured, linkedin: true },
+    unipileConfiguration: {
+      id: "v1-setup",
+      apiVersion: "v1",
+      webhookReady: false,
+      dsn: "api99.unipile.com:12345",
+      webhookUrl: "https://crm.example.test/hook",
+    },
+  };
+  request.mockImplementation(async (url, init) => {
+    if (init?.method === "POST") return { connectionId: "connection-a" };
+    if (url.includes("unipile-accounts"))
+      return {
+        accounts: [
+          { id: "account-a", name: "Fictional owner", status: "OK" },
+          { id: "account-b", name: "Expired account", status: "CREDENTIALS" },
+        ],
+        nextCursor: null,
+      };
+    return connected;
+  });
+  render(<IntegrationCards {...props} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Connect LinkedIn" }),
+  );
+  const select = await screen.findByLabelText(t.unipileAccount);
+  expect(
+    (
+      screen.getByRole("option", {
+        name: "Expired account (CREDENTIALS)",
+      }) as HTMLOptionElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.change(select, { target: { value: "account-a" } });
+  const form = select.closest("form");
+  if (!form) throw new Error("FORM_MISSING");
+  fireEvent.submit(form);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  const call = request.mock.calls.find((value) => value[1]?.method === "POST");
+  expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+    operation: "connect",
+    provider: "linkedin",
+    accountId: "account-a",
+    productId: "p",
+  });
 });
 test("Fireflies validates its API key, locks pending submission and reveals a signing secret only once", async () => {
   request.mockResolvedValue(overview);
@@ -377,6 +472,7 @@ test("Unipile setup removal requires explicit confirmation and reports provider 
       organizationId="org"
       configuration={{
         id: "owned",
+        apiVersion: "v2",
         webhookReady: true,
         webhookUrl: "https://crm.example.test/hook",
       }}

@@ -7,6 +7,7 @@ import type {
   ProviderCredentials,
   ProviderPage,
 } from "./types";
+import { readUnipileV1Page } from "./unipile-v1";
 
 export type ProviderFetch = typeof fetch;
 export async function providerJson(
@@ -631,6 +632,8 @@ export async function readProviderPage(
       more: notes.length === 20,
     };
   }
+  if (credentials.apiVersion === "v1")
+    return readUnipileV1Page(credentials, accountId, cursor, transport);
   // A bounded page per request; subsequent calls resume an unfinished chat history.
   let chats = z.array(z.object({ id: z.string() })).parse(cursor.chats ?? []);
   let nextChatCursor =

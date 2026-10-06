@@ -269,7 +269,11 @@
     "CHANNEL_MISMATCH": "Select your connected account for this message channel.",
     "CONTACT_POLICY_BLOCKED": "Sending is blocked by the workspace contact policy.",
     "IDEMPOTENCY_CONFLICT": "This send key belongs to a different request.",
-    "RECEIPT_MISMATCH": "The provider receipt does not match this send."
+    "RECEIPT_MISMATCH": "The provider receipt does not match this send.",
+    "UNIPILE_KEY_INVALID": "Unipile rejected this API key. Check that the key matches the selected V1 or V2 dashboard and, for V1, the DSN. This is separate from LinkedIn authentication.",
+    "UNIPILE_REQUEST_INVALID": "Unipile rejected the request. Check the selected API version, DSN and API key.",
+    "UNIPILE_DSN_REQUIRED": "Enter the DSN from your Unipile V1 dashboard.",
+    "UNIPILE_ACCOUNT_REQUIRED": "Select a LinkedIn account from your Unipile V1 setup."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
   "addPerson": "Add person",
@@ -1198,7 +1202,7 @@
   "integrationDescriptions": {
     "gmail": "Import Gmail conversations and replies; authorize sending separately for approved outreach.",
     "calendar": "Import events from your primary Google calendar, including changes and cancellations.",
-    "linkedin": "Connect your LinkedIn account through Unipile and receive messages through signed webhooks.",
+    "linkedin": "Connect your LinkedIn account through your own Unipile setup to import conversations and replies.",
     "fireflies": "Connect your Fireflies API key to import meeting summaries and proposed follow-ups."
   },
   "connected": "Connected",
@@ -1603,5 +1607,23 @@
   "unshareThreadDescription": "Remove access to this thread for other product members. Its messages and linked private follow-ups will no longer appear in their CRM views. This cannot remove copies someone already read or exported.",
   "conversationThread": "{channel} thread {number}",
   "conversationPrivacyNote": "New imported threads are private. Share individual customer threads deliberately; account access is always yours.",
-  "latestThreadMessage": "Latest message: {message}"
+  "latestThreadMessage": "Latest message: {message}",
+  "unipileApiVersion": "Unipile API version",
+  "unipileV2Option": "V2: dashboardv2.unipile.com",
+  "unipileV1Option": "V1: dashboard.unipile.com (DSN)",
+  "unipileDsn": "Unipile DSN",
+  "unipileV1KeyInstructions": "Use the DSN and access token from your Unipile V1 dashboard. After verification, select an existing LinkedIn account to connect.",
+  "unipileV1KeyPlaceholder": "Paste your Unipile V1 access token",
+  "unipileV1AccountNote": "Only connect LinkedIn accounts you own. A V1 token can access several accounts; Gravity imports only the account you select.",
+  "unipileV1WebhookInstructions": "Webhooks are optional for V1 polling. Create a random secret below, save it, then add Authorization: Bearer <your secret> as a custom header on both V1 webhooks using this URL. Keep a copy of the secret before saving.",
+  "unipileV1WebhookEvents": "Configure messaging with message_received and account_status with ok, credentials, error, stopped, deleted and reconnected. Use JSON format and restrict account_ids to your selected accounts.",
+  "unipileContinuePolling": "Continue with polling",
+  "unipileAccount": "LinkedIn account",
+  "unipileAccountPlaceholder": "Select your LinkedIn account",
+  "unipileLoadMoreAccounts": "Load more accounts",
+  "unipileV1ConnectNote": "Select your own running LinkedIn account from your Unipile V1 application. To add or reauthenticate an account, use the Unipile dashboard first. History imports in batches every five minutes.",
+  "unipileLoadingAccounts": "Loading LinkedIn accounts...",
+  "unipileRetryAccounts": "Retry loading accounts",
+  "unipileGenerateWebhookToken": "Generate webhook token",
+  "unipileCopyAuthorization": "Copy Authorization value"
 }

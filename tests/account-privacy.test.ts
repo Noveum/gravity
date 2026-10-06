@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { seal } from "../packages/connectors/security";
 import { IntegrationService } from "../packages/connectors/service";
 import { CrmService } from "../packages/core/crm";
 import type { Principal } from "../packages/core/policy";
@@ -136,7 +137,10 @@ test("one owner can connect several LinkedIn accounts without transferring provi
     organizationId: scope.organizationId,
     ownerId: owner.userId,
     provider: "unipile",
-    encryptedCredentials: "fixture",
+    encryptedCredentials: seal(
+      { apiKey: "fictional-v2-token" },
+      `${scope.organizationId}:${owner.userId}:${configurationId}:provider`,
+    ),
   });
   const accounts = await Promise.all(
     ["linkedin-one", "linkedin-two"].map((id) =>

@@ -35,6 +35,8 @@ export function UnipileSettings({
   const alive = useRef(true);
   const [saved, setSaved] = useState(configuration);
   const [apiKey, setApiKey] = useState("");
+  const [apiVersion, setApiVersion] = useState<"v1" | "v2">("v2");
+  const [dsn, setDsn] = useState("");
   const [signingSecret, setSigningSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -71,7 +73,11 @@ export function UnipileSettings({
           operation: remove ? "remove-unipile" : "configure-unipile",
           organizationId,
           configurationId: saved?.id,
-          ...(!remove ? (saved ? { signingSecret } : { apiKey }) : {}),
+          ...(!remove
+            ? saved
+              ? { signingSecret }
+              : { apiKey, ...(apiVersion === "v1" ? { apiVersion, dsn } : {}) }
+            : {}),
         }),
       });
       if (!alive.current) return;
@@ -177,8 +183,16 @@ export function UnipileSettings({
         >
           {saved ? (
             <>
-              <p>{t.unipileWebhookInstructions}</p>
-              <p className="muted">{t.unipileWebhookEvents}</p>
+              <p>
+                {saved.apiVersion === "v1"
+                  ? t.unipileV1WebhookInstructions
+                  : t.unipileWebhookInstructions}
+              </p>
+              <p className="muted">
+                {saved.apiVersion === "v1"
+                  ? t.unipileV1WebhookEvents
+                  : t.unipileWebhookEvents}
+              </p>
               <label>
                 {t.signingSecret}
                 <input
@@ -194,10 +208,75 @@ export function UnipileSettings({
                   onChange={(event) => setSigningSecret(event.target.value)}
                 />
               </label>
+              {saved.apiVersion === "v1" && (
+                <div className="dialog-actions">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      setSigningSecret(
+                        Array.from(
+                          crypto.getRandomValues(new Uint8Array(32)),
+                          (byte) => byte.toString(16).padStart(2, "0"),
+                        ).join(""),
+                      )
+                    }
+                  >
+                    {t.unipileGenerateWebhookToken}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !signingSecret}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(
+                          `Bearer ${signingSecret}`,
+                        );
+                        if (alive.current) setCopied(true);
+                      } catch {
+                        if (alive.current) setError(t.copyFailed);
+                      }
+                    }}
+                  >
+                    {copied ? t.copied : t.unipileCopyAuthorization}
+                  </button>
+                </div>
+              )}
             </>
           ) : (
             <>
-              <p>{t.unipileKeyInstructions}</p>
+              <label>
+                {t.unipileApiVersion}
+                <select
+                  value={apiVersion}
+                  disabled={busy}
+                  onChange={(event) =>
+                    setApiVersion(event.target.value === "v1" ? "v1" : "v2")
+                  }
+                >
+                  <option value="v2">{t.unipileV2Option}</option>
+                  <option value="v1">{t.unipileV1Option}</option>
+                </select>
+              </label>
+              <p>
+                {apiVersion === "v1"
+                  ? t.unipileV1KeyInstructions
+                  : t.unipileKeyInstructions}
+              </p>
+              {apiVersion === "v1" && (
+                <label>
+                  {t.unipileDsn}
+                  <input
+                    required
+                    maxLength={200}
+                    autoComplete="off"
+                    placeholder="api123.unipile.com:12345"
+                    value={dsn}
+                    disabled={busy}
+                    onChange={(event) => setDsn(event.target.value)}
+                  />
+                </label>
+              )}
               <label>
                 {t.unipileApiKey}
                 <input
@@ -207,21 +286,33 @@ export function UnipileSettings({
                   required
                   minLength={10}
                   maxLength={2000}
-                  placeholder={t.unipileKeyPlaceholder}
+                  placeholder={
+                    apiVersion === "v1"
+                      ? t.unipileV1KeyPlaceholder
+                      : t.unipileKeyPlaceholder
+                  }
                   value={apiKey}
                   disabled={busy}
                   onChange={(event) => setApiKey(event.target.value)}
                 />
               </label>
-              <p className="muted">{t.unipileScopedKeyNote}</p>
+              <p className="muted">
+                {apiVersion === "v1"
+                  ? t.unipileV1AccountNote
+                  : t.unipileScopedKeyNote}
+              </p>
             </>
           )}
           <a
             className="provider-docs-link"
             href={
-              saved
-                ? "https://developer.unipile.com/v2.0/docs/configure-a-webhook"
-                : "https://developer.unipile.com/v2.0/docs/scopes"
+              (saved?.apiVersion ?? apiVersion) === "v1"
+                ? saved
+                  ? "https://developer.unipile.com/docs/new-messages-webhook"
+                  : "https://developer.unipile.com/docs/api-usage"
+                : saved
+                  ? "https://developer.unipile.com/v2.0/docs/configure-a-webhook"
+                  : "https://developer.unipile.com/v2.0/docs/scopes"
             }
             target="_blank"
             rel="noreferrer"
@@ -230,6 +321,11 @@ export function UnipileSettings({
             <ExternalLink size={14} aria-hidden="true" />
           </a>
           <div className="dialog-actions">
+            {saved?.apiVersion === "v1" && (
+              <button type="button" disabled={busy} onClick={onClose}>
+                {t.unipileContinuePolling}
+              </button>
+            )}
             <button type="button" disabled={busy} onClick={onClose}>
               <X size={14} aria-hidden="true" />
               {t.cancel}

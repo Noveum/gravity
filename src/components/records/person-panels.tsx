@@ -221,7 +221,11 @@ export function PersonActivity({
 function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
   const { busy, mutate, organizationId, userId, personFor } = useCrm();
   const [sending, setSending] = useState(false);
+  const sendableAction =
+    ["reply", "approval", "commitment"].includes(action.kind) &&
+    action.owedBy === "us";
   const canSend =
+    sendableAction &&
     action.status === "open" &&
     !!action.approvedHash &&
     action.ownerId === userId &&
@@ -242,7 +246,9 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
       {action.status === "blocked" && (
         <p className="callout warning-text">{t.blockedDetail}</p>
       )}
-      {action.kind === "review" && <p className="callout">{t.reviewOnly}</p>}
+      {!sendableAction && (
+        <p className="callout">{t.errors.SOURCE_NOT_SENDABLE}</p>
+      )}
       <label className="sr-only" htmlFor="message-draft">
         {t.draftLabel}
       </label>

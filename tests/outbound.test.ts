@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import {
   afterAll,
   afterEach,
@@ -66,6 +66,10 @@ let counter = 0;
 async function fixture(
   channel: "gmail" | "linkedin" = "gmail",
   actionSource = false,
+  actionFields: {
+    kind?: typeof s.actions.$inferSelect.kind;
+    owedBy?: typeof s.actions.$inferSelect.owedBy;
+  } = {},
 ) {
   counter++;
   const crm = new CrmService(local.db);
@@ -141,12 +145,12 @@ async function fixture(
       organizationId: org,
       relationshipId: person.relationshipId,
       ownerId: demoUser,
-      kind: "reply",
+      kind: actionFields.kind ?? "reply",
       title: "Fictional follow-up",
       reason: "Synthetic test",
       dueAt: new Date(now).toISOString(),
       channel,
-      owedBy: "us",
+      owedBy: actionFields.owedBy ?? "us",
     });
     const approved = await crm.changeAction(principal, {
       organizationId: org,
@@ -225,6 +229,44 @@ async function fixture(
   };
 }
 
+test.each([
+  { kind: "review" as const, owedBy: "us" as const },
+  { kind: "research" as const, owedBy: "us" as const },
+  { kind: "reply" as const, owedBy: "them" as const },
+  { kind: "commitment" as const, owedBy: "unknown" as const },
+])("an approved $kind task owed by $owedBy cannot dispatch", async (fields) => {
+  const f = await fixture("gmail", true, fields);
+  expect(await f.service.readiness(principal, f.input)).toMatchObject({
+    ready: false,
+    approved: true,
+    blockedBy: "SOURCE_NOT_SENDABLE",
+  });
+  await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
+    code: "SOURCE_NOT_SENDABLE",
+  });
+  expect(f.transport).not.toHaveBeenCalled();
+  const deliveries = await local.db
+    .select()
+    .from(s.deliveries)
+    .where(eq(s.deliveries.relationshipId, f.relationshipId));
+  expect(deliveries).toHaveLength(0);
+});
+
+test.each(["approval", "commitment"] as const)(
+  "an approved %s owed by us can still dispatch once",
+  async (kind) => {
+    const f = await fixture("gmail", true, { kind, owedBy: "us" });
+    expect(await f.service.readiness(principal, f.input)).toMatchObject({
+      ready: true,
+      approved: true,
+    });
+    const sent = await f.service.send(principal, f.input);
+    expect(sent.status).toBe("sent");
+    expect(await f.service.send(principal, f.input)).toEqual(sent);
+    expect(f.transport).toHaveBeenCalledTimes(1);
+  },
+);
+
 test("an in-flight send reserves the sender's last daily slot across different products", async () => {
   const first = await fixture();
   const second = await fixture();
@@ -234,16 +276,30 @@ test("an in-flight send reserves the sender's last daily slot across different p
     .where(
       and(
         eq(s.touches.senderId, demoUser),
+        eq(s.touches.organizationId, org),
         eq(s.touches.status, "sent"),
         gte(s.touches.sentAt, new Date("2026-10-06T00:00:00Z")),
         lt(s.touches.sentAt, new Date("2026-10-07T00:00:00Z")),
+      ),
+    );
+  const [actionsSent] = await local.db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(s.deliveries)
+    .where(
+      and(
+        eq(s.deliveries.organizationId, org),
+        eq(s.deliveries.ownerId, demoUser),
+        eq(s.deliveries.status, "sent"),
+        isNull(s.deliveries.touchId),
+        gte(s.deliveries.createdAt, new Date("2026-10-06T00:00:00Z")),
+        lt(s.deliveries.createdAt, new Date("2026-10-07T00:00:00Z")),
       ),
     );
   const rules = await first.outreach.contactRules(principal, org);
   await first.outreach.updateContactRules(human, {
     organizationId: org,
     ...rules,
-    dailyCapPerSender: baseline.count + 1,
+    dailyCapPerSender: baseline.count + actionsSent.count + 1,
   });
   let release!: () => void;
   let started!: () => void;

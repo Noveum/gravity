@@ -42,7 +42,7 @@ const tabLink = (name: string | RegExp) =>
   within(tabs()).getByRole("link", { name });
 const groups = () =>
   screen
-    .getAllByRole("group")
+    .getAllByRole("group", { name: /touch:|Follow-up/ })
     .map((group) => group.getAttribute("aria-label") ?? "");
 
 describe("outreach routes and tabs", () => {

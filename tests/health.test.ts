@@ -87,3 +87,27 @@ test("database failures do not put secrets or SQL in the response or logs", asyn
   expect(message).not.toContain("private_key");
   expect(message).not.toContain("postgresql");
 });
+
+test("readiness fails when a migrated settings column or the LinkedIn index is missing", async () => {
+  configure();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "info").mockImplementation(() => {});
+  const removals = [
+    "ALTER TABLE invitations DROP COLUMN token_hash CASCADE",
+    "ALTER TABLE invitations DROP COLUMN revoked_at CASCADE",
+    "ALTER TABLE products DROP COLUMN color_key CASCADE",
+    "ALTER TABLE products DROP COLUMN archived_at CASCADE",
+    "ALTER TABLE sequences DROP COLUMN archived_at CASCADE",
+    "ALTER TABLE organizations DROP COLUMN allowed_email_domains CASCADE",
+    "DROP INDEX people_organization_linkedin_url",
+  ];
+  for (const removal of removals) {
+    await local.client.exec(`BEGIN; ${removal};`);
+    try {
+      expect((await GET()).status, removal).toBe(503);
+    } finally {
+      await local.client.exec("ROLLBACK;");
+    }
+  }
+  expect((await GET()).status).toBe(200);
+});

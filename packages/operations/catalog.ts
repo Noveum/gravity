@@ -267,7 +267,7 @@ export const operations: Operation[] = [
     permission: "crm:send",
     idempotent: true,
     description:
-      "Actually send the exact approved sequence touch through your Gmail or LinkedIn account. Requires crm:send, current version, due time and contact-policy eligibility. Gmail needs separate gmail.send consent. Reuse the same idempotencyKey for retries; inspect get_delivery after unknown outcomes. Approval/enrollment alone never sends.",
+      "Actually send the exact approved sequence touch through your Gmail or LinkedIn account. Requires crm:send, current version, due time and contact-policy eligibility. Refused with DO_NOT_CONTACT when the person, or anyone in the organization sharing their email or LinkedIn profile, is do-not-contact, and with PRODUCT_ARCHIVED or SEQUENCE_ARCHIVED for archived work. Gmail needs separate gmail.send consent. Reuse the same idempotencyKey for retries; inspect get_delivery after unknown outcomes. Approval/enrollment alone never sends.",
     schema: sendTouchSchema,
     run: (c, input) => new OutboundService(c.db).send(c.principal, input),
   }),
@@ -279,7 +279,7 @@ export const operations: Operation[] = [
     permission: "crm:send",
     idempotent: true,
     description:
-      "Actually send an owned, approved follow-up/reply using your connected Gmail or LinkedIn account. Requires crm:send and current version; supply the same idempotencyKey on retry. Source conversation ownership, opt-outs and contact policies apply. Gmail draft format: Subject: title, blank line, body.",
+      "Actually send an owned, approved follow-up/reply using your connected Gmail or LinkedIn account. Requires crm:send and current version; supply the same idempotencyKey on retry. Source conversation ownership, opt-outs (including anyone sharing the person's email or LinkedIn profile) and contact policies apply; an archived product refuses with PRODUCT_ARCHIVED. Gmail draft format: Subject: title, blank line, body.",
     schema: sendActionSchema,
     run: (c, input) => new OutboundService(c.db).send(c.principal, input),
   }),
@@ -754,7 +754,7 @@ export const operations: Operation[] = [
     operation: "person-update",
     name: "update_person",
     description:
-      "Edit contact fields, company and summary with optimistic version checking. Email/channel edits invalidate affected approvals. Assistants cannot change the email addresses or LinkedIn profile of a do-not-contact person; that returns HUMAN_ACTION_REQUIRED.",
+      "Edit contact fields, company and summary with optimistic version checking. Email/channel edits invalidate affected approvals. Assistants cannot change the email addresses or LinkedIn profile of a do-not-contact person; that returns HUMAN_ACTION_REQUIRED. An email or LinkedIn profile that already belongs to another person in the organization returns PERSON_EXISTS.",
     schema: personUpdateSchema,
     run: (c, input) => records(c).updatePerson(c.principal, input),
   }),

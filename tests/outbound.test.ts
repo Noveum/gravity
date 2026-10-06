@@ -1400,3 +1400,69 @@ test("resolving a provider-accepted delivery as sent persists the receipt like a
     .where(eq(s.relationships.id, f.relationshipId));
   expect(relationship?.touchCount).toBe(1);
 });
+test("a do-not-contact person sharing the recipient's email or LinkedIn profile blocks the send", async () => {
+  const cases = [
+    {
+      channel: "gmail" as const,
+      twin: (recipient: { email: string | null; linkedinUrl: string }) => ({
+        email: recipient.email?.toUpperCase() ?? null,
+        linkedinUrl: "",
+        otherEmails: [],
+      }),
+    },
+    {
+      channel: "gmail" as const,
+      twin: (recipient: { email: string | null; linkedinUrl: string }) => ({
+        email: null,
+        linkedinUrl: "",
+        otherEmails: [recipient.email ?? ""],
+      }),
+    },
+    {
+      channel: "linkedin" as const,
+      twin: (recipient: { email: string | null; linkedinUrl: string }) => ({
+        email: null,
+        linkedinUrl: recipient.linkedinUrl
+          .replace("https://www.", "https://")
+          .replace(/\/$/, "")
+          .toUpperCase()
+          .replace("HTTPS://LINKEDIN.COM", "https://linkedin.com"),
+        otherEmails: [],
+      }),
+    },
+  ];
+  for (const { channel, twin } of cases) {
+    const f = await fixture(channel);
+    const [recipient] = await local.db
+      .select()
+      .from(s.people)
+      .where(eq(s.people.id, f.personId));
+    if (!recipient) throw new Error("person fixture");
+    expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+      null,
+    );
+    const [optedOut] = await local.db
+      .insert(s.people)
+      .values({
+        organizationId: org,
+        name: "Opted-out twin",
+        doNotContact: true,
+        ...twin(recipient),
+      })
+      .returning();
+    expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+      "DO_NOT_CONTACT",
+    );
+    await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
+      code: "DO_NOT_CONTACT",
+    });
+    expect(f.transport).not.toHaveBeenCalled();
+    await local.db
+      .update(s.people)
+      .set({ doNotContact: false })
+      .where(eq(s.people.id, optedOut?.id ?? ""));
+    expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+      null,
+    );
+  }
+});

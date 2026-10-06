@@ -150,6 +150,9 @@ export const people = pgTable(
       columns: [t.organizationId, t.companyId],
       foreignColumns: [companies.organizationId, companies.id],
     }),
+    uniqueIndex("people_organization_linkedin_url")
+      .on(t.organizationId, sql`lower(${t.linkedinUrl})`)
+      .where(sql`${t.linkedinUrl} <> ''`),
   ],
 ).enableRLS();
 export const relationships = pgTable(

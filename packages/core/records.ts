@@ -11,6 +11,7 @@ import {
   clearApprovals,
   companyVisible,
   emailTaken,
+  linkedinTaken,
   lockOrganization,
   personVisible,
   shareLockStage,
@@ -240,6 +241,16 @@ export class RecordService {
           [...(input.email ? [input.email] : []), ...input.otherEmails],
           person.id,
         )
+      )
+        throw new DomainError("PERSON_EXISTS", 409);
+      if (
+        input.linkedinUrl !== person.linkedinUrl &&
+        (await linkedinTaken(
+          tx,
+          input.organizationId,
+          input.linkedinUrl,
+          person.id,
+        ))
       )
         throw new DomainError("PERSON_EXISTS", 409);
       if (input.companyId && input.companyId !== person.companyId)

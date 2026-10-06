@@ -11,7 +11,10 @@ import {
   DomainError,
   type Principal,
 } from "../core/policy";
-import { assertActiveRelationships } from "../core/visibility";
+import {
+  assertActiveRelationships,
+  optedOutIdentity,
+} from "../core/visibility";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { unipileCredentials } from "./configuration";
@@ -335,8 +338,14 @@ export class OutboundService {
       person,
       this.clock(),
     );
+    const identityOptedOut = await optedOutIdentity(
+      db,
+      input.organizationId,
+      person,
+    );
     return {
       touch: !!touch,
+      identityOptedOut,
       record,
       relationship,
       person,
@@ -357,7 +366,8 @@ export class OutboundService {
     if (record.version !== input.version)
       throw new DomainError("CONFLICT", 409);
     if (source.archived) throw new DomainError(source.archived, 409);
-    if (person.doNotContact) throw new DomainError("DO_NOT_CONTACT", 409);
+    if (person.doNotContact || source.identityOptedOut)
+      throw new DomainError("DO_NOT_CONTACT", 409);
     if (
       touch
         ? record.status !== "approved" || enrollment?.status !== "running"

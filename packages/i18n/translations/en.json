@@ -218,7 +218,7 @@
     "CONNECTOR_NOT_CONFIGURED": "This connector has not been configured.",
     "NETWORK_ERROR": "Could not reach the server. Try again.",
     "ARCHIVE_NEEDS_EVERY_BRAND": "Archiving or restoring this person needs write access to every brand they belong to. Brands you cannot change: {count}. Ask an admin to do it.",
-    "PERSON_EXISTS": "This email already exists in this organization. Use Existing person to add a product relationship, or ask a teammate to review the duplicate.",
+    "PERSON_EXISTS": "This email or LinkedIn profile already belongs to someone in this organization. Use Existing person to add a product relationship, or ask a teammate to review the duplicate.",
     "OWNER_NOT_ALLOWED": "Choose an active teammate with access to this product.",
     "ASSIGNEE_PRIVATE_SOURCE": "This action comes from a private conversation. Only its owner can be assigned.",
     "PRODUCT_EXISTS": "A product with this name already exists in this organization.",

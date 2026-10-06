@@ -4175,3 +4175,49 @@ tbody tr[data-selected] td:first-child::before {
 .metric-card.attention :where(strong) {
   color: var(--warn);
 }
+
+.conversation-sharing {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 20px;
+}
+.conversation-sharing :where(h3) {
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+.conversation-sharing :where(p) {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.conversation-sharing-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.conversation-sharing-row :where(small) {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.integration-intro > h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.conversation-sharing-thread {
+  min-width: 0;
+  flex: 1;
+}
+.conversation-sharing-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 8px 0 0;
+}

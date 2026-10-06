@@ -403,3 +403,45 @@ test("Unipile setup removal requires explicit confirmation and reports provider 
     configurationId: "owned",
   });
 });
+
+test("multiple accounts remain visible with a clear add-another-account control", async () => {
+  request.mockResolvedValue({
+    ...overview,
+    connections: ["one", "two"].map((name, index) => ({
+      id: name,
+      provider: "gmail",
+      displayName: `${name}@example.test`,
+      status: "connected",
+      productId: index ? "p2" : "p",
+      lastSyncedAt: null,
+      errorCode: null,
+      more: false,
+      canSend: true,
+    })),
+  });
+  render(
+    <IntegrationCards
+      {...props}
+      data={{
+        ...data,
+        products: [
+          ...data.products,
+          { ...data.products[0], id: "p2", name: "Other product" },
+        ],
+      }}
+    />,
+  );
+  await screen.findByText("one@example.test");
+  expect(screen.getByText("two@example.test")).toBeTruthy();
+  expect(screen.getByText(t.accountPrivacyNote)).toBeTruthy();
+  const card = screen.getByRole("article", { name: t.gmail });
+  expect(card.textContent).toContain(
+    t.connectedAccountCount.replace("{count}", "2"),
+  );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: t.addProviderAccount.replace("{provider}", t.gmail),
+    }),
+  );
+  expect(screen.getByRole("dialog").textContent).toContain(t.googleConnectNote);
+});

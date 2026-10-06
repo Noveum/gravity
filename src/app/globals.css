@@ -3863,6 +3863,16 @@ tbody tr[data-selected] td:first-child::before {
   .sequence-enrollments :where(th, td):nth-child(3) {
     display: none;
   }
+  .sequence-enrollments th:last-child {
+    width: 136px;
+  }
+  .sequence-enrollments td:last-child {
+    overflow: visible;
+    white-space: normal;
+  }
+  .sequence-enrollment-actions {
+    flex-wrap: wrap;
+  }
   .sequence-editor-fields {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }

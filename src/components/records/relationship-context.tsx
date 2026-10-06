@@ -3,7 +3,7 @@ import type { ClientContext } from "@crm/core/dto";
 import {
   contextSectionKeys,
   emptyRelationshipDetails,
-  importedContext,
+  isImportedContext,
   safeContextUrl,
 } from "@crm/core/relationship-context";
 import t from "@crm/i18n/translations/en.json";
@@ -27,9 +27,7 @@ export function RelationshipContext({
   relationship =
     saved && saved.version > relationship.version ? saved : relationship;
   const details = relationship.contextDetails ?? emptyRelationshipDetails();
-  const isImported =
-    !!importedContext(relationship.context) ||
-    /^[\s]*[[{]/.test(relationship.context);
+  const isImported = isImportedContext(relationship.context);
   const hasNotes =
     relationship.context ||
     contextSectionKeys.some((key) => details[key]) ||

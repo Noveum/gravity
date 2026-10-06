@@ -118,3 +118,12 @@ export function importedContext(value: string): object | null {
 export function fitsRelationshipInput(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(value)).length <= 90000;
 }
+
+export function isImportedContext(value: string) {
+  // Bracketed human notes such as "[Review] ..." remain ordinary prose.
+  // JSON-looking malformed/oversized documents still use the bounded source viewer.
+  return (
+    importedContext(value) !== null ||
+    /^\s*(?:\{\s*"|\[\s*(?:\{|"))/.test(value)
+  );
+}

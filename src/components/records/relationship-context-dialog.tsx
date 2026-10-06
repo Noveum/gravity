@@ -5,7 +5,7 @@ import {
   emptyRelationshipDetails,
   fieldKinds,
   fitsRelationshipInput,
-  importedContext,
+  isImportedContext,
   type RelationshipSignal,
   relationshipDetailsSchema,
   signalKinds,
@@ -37,8 +37,7 @@ export function RelationshipContextDialog({
   // Capture the version when editing starts. Live updates never silently rebase unsaved edits.
   const [original] = useState(relationship);
   const details = original.contextDetails ?? emptyRelationshipDetails();
-  const isImported =
-    !!importedContext(original.context) || /^[\s]*[[{]/.test(original.context);
+  const isImported = isImportedContext(original.context);
   const [signals, setSignals] = useState<RelationshipSignal[]>(details.signals);
   const [fields, setFields] = useState<FieldDraft[]>(
     details.fields.map((field) => ({ ...field, value: String(field.value) })),

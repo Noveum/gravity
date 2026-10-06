@@ -8,6 +8,7 @@ import {
 import type { Principal } from "../packages/core/policy";
 import {
   importedContext,
+  isImportedContext,
   relationshipDetailsPatchSchema,
   relationshipFieldSchema,
 } from "../packages/core/relationship-context";
@@ -307,4 +308,14 @@ test("combined context payload is bounded consistently before either transport w
       contextDetails: { fields },
     }).success,
   ).toBe(false);
+});
+
+test("bracketed prose stays readable while JSON-looking malformed imports use the source viewer", () => {
+  expect(isImportedContext("[Review] Check the next conversation.")).toBe(
+    false,
+  );
+  expect(isImportedContext("{Project} Technical notes.")).toBe(false);
+  expect(isImportedContext('{"history":"truncated')).toBe(true);
+  expect(isImportedContext('[{"history":"truncated')).toBe(true);
+  expect(isImportedContext('["first", "second"]')).toBe(true);
 });

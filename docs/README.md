@@ -11,6 +11,8 @@ user guides are at [gravity.noveum.ai/docs](https://gravity.noveum.ai/docs).
 | [Account connections](connectors.md) | Gmail, Calendar, Unipile LinkedIn and Fireflies: what each imports and how review works |
 | [Multiple accounts and privacy](accounts-and-privacy.md) | Who can see which imported conversations, and how sharing works |
 | [Overview and deals](analytics.md) | How every Overview metric is defined |
+| [Record browsing](record-browsing.md) | Tags, deal sizes, filters, paging and inspectors in the record lists |
+| [Relationship context and signals](relationship-context.md) | Structured context per product relationship, and editing it over MCP |
 | [Requirements and keyboard map](requirements.md) | Every feature, its status, and the full shortcut list |
 
 ## Running your own instance
@@ -44,3 +46,4 @@ the state at that date; newer records and the roadmap supersede them.
 - [Provider connections, 5 October 2026](integration-review-2026-10-05.md)
 - [Personal Unipile settings, 5 October 2026](provider-settings-review-2026-10-05.md)
 - [MCP business API parity, 6 October 2026](mcp-api-parity-2026-10-06.md)
+- [Unipile compatibility investigation, 6 October 2026](unipile-debug-2026-10-06.md) and [review](unipile-pr-review-2026-10-06.md)

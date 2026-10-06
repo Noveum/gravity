@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Where to start contributing
+    url: https://github.com/Noveum/gravity/discussions/57
+    about: Good first issues, the bigger pieces we want help with, and how to get going.
   - name: Ask a question
     url: https://github.com/Noveum/gravity/discussions/new?category=q-a
     about: Running Gravity locally, self-hosting, connecting an assistant over MCP, or building on it.

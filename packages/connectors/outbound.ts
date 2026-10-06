@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { publishChange } from "../core/changes";
 import { scopeSchema } from "../core/crm";
@@ -67,6 +67,7 @@ export const sendReadinessSchema = scopeSchema
   })
   .refine((input) => Boolean(input.touchId) !== Boolean(input.actionId));
 export const deliverySchema = scopeSchema.extend({ deliveryId: z.uuid() });
+export const listDeliveriesSchema = scopeSchema;
 export const reconcileDeliverySchema = deliverySchema.extend({
   externalMessageId: z.string().min(1).max(500).optional(),
   externalThreadId: z.string().min(1).max(500).optional(),
@@ -461,6 +462,56 @@ export class OutboundService {
     if (productId && productId !== row.productId)
       throw new DomainError("FORBIDDEN", 403);
     return row;
+  }
+  async list(
+    principal: Principal,
+    input: z.infer<typeof listDeliveriesSchema>,
+  ) {
+    const { membership, products } = await authorize(
+      this.db,
+      principal,
+      input.organizationId,
+      input.productId,
+    );
+    const productIds = products
+      .map((product) => product.id)
+      .filter((id) => !input.productId || id === input.productId);
+    const administrator =
+      membership.role === "admin" && principal.productIds === undefined;
+    const rows = productIds.length
+      ? await this.db
+          .select()
+          .from(s.deliveries)
+          .where(
+            and(
+              eq(s.deliveries.organizationId, input.organizationId),
+              inArray(s.deliveries.productId, productIds),
+              inArray(s.deliveries.status, ["sending", "unknown", "accepted"]),
+              administrator
+                ? undefined
+                : eq(s.deliveries.ownerId, principal.userId),
+            ),
+          )
+          .orderBy(asc(s.deliveries.createdAt), asc(s.deliveries.id))
+      : [];
+    const now = this.clock();
+    return {
+      items: rows.map((row) => {
+        const delivery = publicDelivery(row, now);
+        const settled =
+          row.status === "unknown" ||
+          now - row.createdAt.getTime() >= liveSendingWindow;
+        return {
+          ...delivery,
+          relationshipId: row.relationshipId,
+          ownerId: row.ownerId,
+          channel: row.channel,
+          recipient: row.recipient,
+          canReconcile: row.ownerId === principal.userId && settled,
+          canResolve: administrator && principal.source !== "mcp" && settled,
+        };
+      }),
+    };
   }
   async get(principal: Principal, input: z.infer<typeof deliverySchema>) {
     return publicDelivery(

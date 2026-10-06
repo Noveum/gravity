@@ -5,6 +5,7 @@ import {
 } from "../connectors/configuration";
 import {
   deliverySchema,
+  listDeliveriesSchema,
   OutboundService,
   reconcileDeliverySchema,
   resolveDeliverySchema,
@@ -236,6 +237,16 @@ export const operations: Operation[] = [
       "Read your durable delivery receipt/status. Unknown means the provider may have sent it; do not retry with a different idempotency key.",
     schema: deliverySchema,
     run: (c, input) => new OutboundService(c.db).get(c.principal, input),
+  }),
+  operation({
+    api: "outreach",
+    method: "GET",
+    operation: "deliveries",
+    name: "list_deliveries",
+    description:
+      "List unresolved deliveries (sending, unknown or accepted) in products you can read. You see your own; an admin with an all-products grant sees everyone's. canReconcile marks your own settled deliveries for reconcile_delivery; canResolve marks those a human admin may close with resolve_delivery. Never resend an unknown delivery with a new idempotency key.",
+    schema: listDeliveriesSchema,
+    run: (c, input) => new OutboundService(c.db).list(c.principal, input),
   }),
   operation({
     api: "outreach",

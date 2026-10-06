@@ -104,10 +104,15 @@ export async function readSpreadsheet(data: ArrayBuffer): Promise<Workbook> {
   };
   let sheets = 0;
   for (const entry of Object.values(zip.files)) {
-    const isSheet = /xl\/worksheets\/sheet\d+[.]xml/.test(entry.name);
-    const isStrings = entry.name === "xl/sharedStrings.xml";
-    const isStyles = entry.name === "xl/styles.xml";
-    if (entry.dir || !/[.](?:xml|rels|vml)$/i.test(entry.name)) continue;
+    const name = entry.name.replace(/^\//, "");
+    const isSheet = /xl\/worksheets\/sheet\d+[.]xml/.test(name);
+    const isStrings = name === "xl/sharedStrings.xml";
+    const isStyles = name === "xl/styles.xml";
+    if (
+      entry.dir ||
+      !(isSheet || isStrings || isStyles || /[.](?:xml|rels|vml)$/i.test(name))
+    )
+      continue;
     if (isSheet && ++sheets > 100) throw new Error(PREVIEW_LIMIT_MESSAGE);
     const bounds: SheetBounds = { row: 0, column: 0 };
     const parser = new SaxesParser({ xmlns: true });

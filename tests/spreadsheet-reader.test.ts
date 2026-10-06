@@ -42,6 +42,28 @@ describe("spreadsheet preview bounds", () => {
     ).rejects.toThrow("preview limits");
   });
 
+  it("preflights nonstandard worksheet names accepted by the parser", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "xl/worksheets/sheet1.xml.extra",
+      '<worksheet><sheetData><row r="1048576"><c r="XFD1048576"><v>1</v></c></row></sheetData></worksheet>',
+    );
+    await expect(
+      readSpreadsheet(await zip.generateAsync({ type: "arraybuffer" })),
+    ).rejects.toThrow("preview limits");
+  });
+
+  it("applies style budgets to archive paths with a leading slash", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "/xl/styles.xml",
+      `<styleSheet>${"<xf/>".repeat(100_001)}</styleSheet>`,
+    );
+    await expect(
+      readSpreadsheet(await zip.generateAsync({ type: "arraybuffer" })),
+    ).rejects.toThrow("preview limits");
+  });
+
   it("rejects too many populated cells and invalid row addresses", async () => {
     const zip = new JSZip();
     zip.file(

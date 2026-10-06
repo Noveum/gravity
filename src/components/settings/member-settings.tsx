@@ -232,12 +232,14 @@ function IssuedLink({ issued }: { issued: Issued }) {
 function Invitations({
   products,
   send,
+  notify,
   revision,
   organizationId,
   timeZone,
 }: {
   products: Product[];
   send: Mutate;
+  notify: (message: string) => void;
   revision: unknown;
   organizationId: string;
   timeZone: string;
@@ -250,12 +252,17 @@ function Invitations({
   const parsed = invitationList.safeParse(query.data ?? []);
   const invitations = parsed.success ? parsed.data : [];
   async function resend(invitation: Invitation) {
+    const productIds = invitation.productIds.filter((id) =>
+      products.some((product) => product.id === id),
+    );
+    if (invitation.role === "member" && !productIds.length)
+      return notify(t.resendInvitationArchived);
     const { ok, result } = await send(
       {
         operation: "invitation",
         email: invitation.email,
         role: invitation.role,
-        productIds: invitation.productIds,
+        productIds,
       },
       false,
     );
@@ -391,6 +398,7 @@ export function MemberSettings() {
         <Invitations
           products={products}
           send={send}
+          notify={(message) => crm.notify(message, "danger")}
           revision={queryRevision}
           organizationId={crm.organizationId}
           timeZone={crm.timeZone}

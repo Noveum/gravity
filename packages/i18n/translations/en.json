@@ -1728,6 +1728,7 @@
   "invitationEmailOff": "Email is not set up here. Share the link yourself.",
   "invitationExpires": "Expires {date}",
   "resendInvitation": "Resend",
+  "resendInvitationArchived": "Every product on this invitation is archived. Revoke it and invite again with an active product.",
   "revokeInvitation": "Revoke",
   "revokeInvitationConfirm": "Revoke invitation",
   "contactRules": "Contact rules",

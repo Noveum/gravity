@@ -465,6 +465,46 @@ describe("member settings", () => {
     );
   });
 
+  test("resending an invitation leaves out archived products and refuses when none is left", async () => {
+    await harness.local.db.insert(s.invitations).values(
+      [
+        ["kept@example.test", [demoId(10), demoId(11)], "c1"],
+        ["gone@example.test", [demoId(10)], "c2"],
+      ].map(([email, productIds, hash]) => ({
+        organizationId: demoId(1),
+        email: email as string,
+        role: "member" as const,
+        productIds: productIds as string[],
+        tokenHash: (hash as string).repeat(32),
+        inviterId: demoUser,
+        expiresAt: new Date(Date.now() + 86_400_000),
+      })),
+    );
+    await harness.local.db
+      .update(s.products)
+      .set({ archivedAt: new Date() })
+      .where(eq(s.products.id, demoId(10)));
+    await mountSettings(harness, "/settings/members");
+    const invitations = await waitFor(() => group(t.pendingInvitations));
+    const resend = async (email: string) =>
+      fireEvent.click(
+        within(
+          await within(invitations).findByRole("listitem", { name: email }),
+        ).getByRole("button", { name: `${t.resendInvitation}: ${email}` }),
+      );
+    await resend("kept@example.test");
+    await waitFor(() =>
+      expect(lastCall(harness, "create_invitation")?.body).toMatchObject({
+        email: "kept@example.test",
+        productIds: [demoId(11)],
+      }),
+    );
+    const created = harness.calls.length;
+    await resend("gone@example.test");
+    expect(await screen.findByText(t.resendInvitationArchived)).toBeTruthy();
+    expect(harness.calls.length).toBe(created);
+  });
+
   test("an admin invites from the dialog, resends by inviting again and revokes, sharing a fragment link", async () => {
     await mountSettings(harness, "/settings/members");
     fireEvent.click(

@@ -115,8 +115,30 @@ export function objectStorage(): FileStorage {
       const head = await client.send(
         new HeadObjectCommand({ Bucket, Key: source }),
       );
-      if (head.ContentLength !== size || !head.ETag)
+      if (
+        !head.ETag ||
+        (head.ContentLength !== size &&
+          !(size === 0 && head.ContentLength === undefined))
+      )
         throw new DomainError("FILE_SIZE", 413);
+      if (head.ContentLength === undefined) {
+        const object = await client.send(
+          new GetObjectCommand({ Bucket, Key: source, IfMatch: head.ETag }),
+        );
+        if (!object.Body) throw new DomainError("FILE_SIZE", 413);
+        const reader = object.Body.transformToWebStream().getReader();
+        try {
+          if (object.ETag !== head.ETag)
+            throw new DomainError("FILE_SIZE", 413);
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value.byteLength) throw new DomainError("FILE_SIZE", 413);
+          }
+        } finally {
+          await reader.cancel();
+        }
+      }
       await client.send(
         new CopyObjectCommand({
           Bucket,

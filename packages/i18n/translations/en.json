@@ -292,7 +292,8 @@
     "STAGE_ORDER_INVALID": "List every active stage of this pipeline exactly once.",
     "STAGE_TARGET_INVALID": "Choose another active stage in the same pipeline to move records to.",
     "SEQUENCE_ARCHIVED": "This sequence is archived. Restore it before enrolling or resuming anyone.",
-    "SEQUENCE_ACTIVE": "This sequence is not archived."
+    "SEQUENCE_ACTIVE": "This sequence is not archived.",
+    "FOLDER_NOT_EMPTY": "This folder still holds files or other folders. Empty it before deleting it."
   },
   "consentAccess": "Access",
   "consentLevelRead": "Read",

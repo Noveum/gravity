@@ -50,6 +50,12 @@ import {
   revokeInvitationSchema,
 } from "../core/invitations";
 import {
+  folderDeleteSchema,
+  folderRenameSchema,
+  MaterialService,
+  materialStatusSchema,
+} from "../core/materials";
+import {
   deactivateMemberSchema,
   listMembersSchema,
   MemberService,
@@ -172,6 +178,7 @@ const invitations = ({ db }: OperationContext) => new InvitationService(db);
 const workspace = ({ db }: OperationContext) => new WorkspaceService(db);
 const products = ({ db }: OperationContext) => new ProductService(db);
 const pipelines = ({ db }: OperationContext) => new PipelineService(db);
+const materials = ({ db }: OperationContext) => new MaterialService(db);
 const nameSchema = z.string().trim().min(1).max(100);
 const overviewSchema = scopeSchema.extend({
   days: z.coerce
@@ -830,6 +837,36 @@ export const operations: Operation[] = [
     schema: folderSchema,
     destructive: false,
     run: (c, input) => crm(c).createFolder(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "folder-rename",
+    name: "rename_material_folder",
+    description:
+      "Rename a product material folder. Requires write access to the folder's product.",
+    schema: folderRenameSchema,
+    run: (c, input) => materials(c).renameFolder(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "folder-delete",
+    name: "delete_material_folder",
+    description:
+      "Delete an empty product material folder. A folder that still holds files or other folders returns FOLDER_NOT_EMPTY; move or delete its contents first. Requires write access to the folder's product.",
+    schema: folderDeleteSchema,
+    run: (c, input) => materials(c).deleteFolder(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "material-status",
+    name: "set_material_status",
+    description:
+      "Set an uploaded file's status to draft, approved or archived with its current version. Uploads start as drafts; approve a file once it is ready to share. Requires write access to the file's product.",
+    schema: materialStatusSchema,
+    run: (c, input) => materials(c).setStatus(c.principal, input),
   }),
   operation({
     api: "crm",

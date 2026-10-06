@@ -1,6 +1,6 @@
 # Agent access and outbound execution · 6 October 2026
 
-The shared registry now contains 63 business operations: 19 reads and 44 mutations. Eight identity/context/compatibility helpers bring MCP discovery to 71 tools. Every current CRM, outreach, integration, document and assistant-revocation business HTTP operation executes this registry. Adding a business API automatically adds its MCP tool; discovery tests check every registry entry and schema. OAuth, provider callbacks, signed webhooks, private cron and browser/SSE transports remain protocols; their business effects have connection, sync and grant tools.
+The shared registry now contains 91 business operations: 23 reads and 68 mutations. Two of them, `accept_invitation` and `resolve_delivery`, need a person signed in to Gravity and are never listed to MCP clients. Eight identity/context/compatibility helpers bring discovery for a read, write and send token to 97 tools. Every current CRM, outreach, integration, document and assistant-revocation business HTTP operation executes this registry. Adding a business API automatically adds its MCP tool; discovery tests check every registry entry and schema. OAuth, provider callbacks, signed webhooks, private cron and browser/SSE transports remain protocols; their business effects have connection, sync and grant tools.
 
 ## Effective permissions
 

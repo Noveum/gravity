@@ -99,7 +99,7 @@
   "approved": "Draft approved",
   "draftChanged": "Unsaved changes",
   "reviewOnly": "This is a review date. Choose the next step after checking the conversation.",
-  "sendingUnavailable": "Outbound sending is not enabled in this development release.",
+  "sendingNote": "Approval never sends. Send now first shows the recipient, account and channel for you to confirm.",
   "blockedDetail": "A reply paused this follow-up. Read the conversation, write a relevant reply, then replace this action.",
   "steps": "Steps",
   "enrollments": "Enrollments",
@@ -1303,7 +1303,8 @@
     "sent": "Mark sent",
     "skip": "Skip",
     "snooze": "Snooze",
-    "edit": "Edit draft"
+    "edit": "Edit draft",
+    "send": "Send now"
   },
   "touchApproved": "Approved the draft for {name}",
   "touchMarkedSent": "Recorded the send to {name}",
@@ -1675,5 +1676,17 @@
   "deleteFolderDetail": "{name} is empty and will be removed.",
   "folderNotEmptyHint": "Move or delete its files and folders first.",
   "materialStatusFor": "Status for {name}",
-  "materialStatusSaved": "{name} is now {status}"
+  "materialStatusSaved": "{name} is now {status}",
+  "sendNow": "Send now",
+  "sendTitle": "Send to {name}?",
+  "sendRecipient": "Recipient",
+  "sendAccount": "From account",
+  "sendReady": "Ready. This sends the approved message once, from your own account. It cannot be undone.",
+  "sendNoAccount": "Connect a {channel} account that can send, then try again.",
+  "sendDemoUnavailable": "Sending is off in the demo workspace.",
+  "sendChecking": "Checking whether this can be sent",
+  "messageSent": "Sent to {name}",
+  "sendOutcomeUnknown": "The provider may have sent the message to {name}. Check it under Sent before trying again.",
+  "sendRefused": "The provider refused the message ({code}). Fix the cause, then send again.",
+  "sendingNow": "Sending…"
 }

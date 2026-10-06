@@ -336,7 +336,11 @@ export function installCrmHarness() {
   return harness;
 }
 
-export async function mountCrm(harness: Harness, path = "/actions") {
+export async function mountCrm(
+  harness: Harness,
+  path = "/actions",
+  { demo = true }: { demo?: boolean } = {},
+) {
   visit(path);
   const snapshot: ClientSnapshot = serialize(
     await harness.service.snapshot(principal, { organizationId: demoId(1) }),
@@ -347,7 +351,7 @@ export async function mountCrm(harness: Harness, path = "/actions") {
       organizations={organizations}
       initialOrganizationId={demoId(1)}
       userId={demoUser}
-      demo
+      demo={demo}
     >
       <Routed />
     </CrmApp>,

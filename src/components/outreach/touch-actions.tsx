@@ -1,6 +1,13 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import { AlarmClock, Check, Pencil, Send, SkipForward } from "lucide-react";
+import {
+  AlarmClock,
+  Check,
+  Pencil,
+  Send,
+  SendHorizontal,
+  SkipForward,
+} from "lucide-react";
 import type { Touch } from "./outreach-data";
 import type { useTouchVerbs } from "./use-touch-verbs";
 
@@ -29,6 +36,16 @@ export function TouchActions({
             run: () => verbs.approve(touch),
           },
         ]),
+    ...(verbs.canSend(touch)
+      ? [
+          {
+            id: "send",
+            label: t.touchVerbs.send,
+            icon: SendHorizontal,
+            run: () => verbs.askSend(touch),
+          },
+        ]
+      : []),
     {
       id: "sent",
       label: t.touchVerbs.sent,

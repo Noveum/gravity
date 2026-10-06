@@ -13,6 +13,7 @@ import {
 import { OutreachTabs } from "../outreach/outreach-tabs";
 import { PausedRow } from "../outreach/paused-list";
 import { PipelineBoard } from "../outreach/pipeline-board";
+import { SendDialog } from "../outreach/send-dialog";
 import { SentRow } from "../outreach/sent-list";
 import { TouchActions } from "../outreach/touch-actions";
 import { MarkSentDialog, SkipDialog } from "../outreach/touch-dialogs";
@@ -177,6 +178,23 @@ export function OutreachView() {
               ? verbs.markSent(verbs.dialog.touch, link)
               : Promise.resolve(null)
           }
+        />
+      )}
+      {verbs.dialog?.kind === "send" && (
+        <SendDialog
+          key={verbs.dialog.touch.id}
+          source={{
+            kind: "touch",
+            id: verbs.dialog.touch.id,
+            version: verbs.versionOf(verbs.dialog.touch),
+            channel: verbs.dialog.touch.channel,
+            name: verbs.dialog.touch.person.name,
+          }}
+          onClose={verbs.closeDialog}
+          onSent={() => {
+            verbs.closeDrawer();
+            void outreach.reload();
+          }}
         />
       )}
       {verbs.dialog?.kind === "skip" && (

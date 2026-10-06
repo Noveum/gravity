@@ -3,10 +3,12 @@ import type { ClientContext, ClientSnapshot } from "@crm/core/dto";
 import { shortcutFor } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import { ArrowUpRight } from "lucide-react";
+import { useState } from "react";
 import { dateLabel, label } from "../client-api";
 import { type RecordTab, useCrm } from "../crm/crm-context";
 import type { useDraft } from "../crm/use-draft";
 import { keyInput } from "../keyboard-navigation";
+import { SendDialog } from "../outreach/send-dialog";
 import { initials } from "../shell/workspace-menu";
 import { ShortcutHint } from "../ui/shortcut-hint";
 
@@ -178,7 +180,15 @@ export function PersonActivity({
 }
 
 function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
-  const { busy, mutate, organizationId } = useCrm();
+  const { busy, mutate, organizationId, userId, personFor } = useCrm();
+  const [sending, setSending] = useState(false);
+  const canSend =
+    action.status === "open" &&
+    !!action.approvedHash &&
+    action.ownerId === userId &&
+    (action.channel === "gmail" || action.channel === "linkedin") &&
+    draft.draft === action.draft &&
+    draft.version === action.version;
   const change = (command: string, extra: object = {}) =>
     void mutate({
       operation: "action",
@@ -266,12 +276,35 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
             >
               {t.approveDraft}
             </button>
+            {canSend && (
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={() => setSending(true)}
+              >
+                {t.touchVerbs.send}
+              </button>
+            )}
           </>
         )}
       </div>
       <p className="coverage-note">
-        {t.draftSaveHint} · {t.sendingUnavailable}
+        {t.draftSaveHint} · {t.sendingNote}
       </p>
+      {sending && (
+        <SendDialog
+          source={{
+            kind: "action",
+            id: action.id,
+            version: action.version,
+            channel: action.channel,
+            name: personFor(action.relationshipId)?.name ?? t.unknown,
+          }}
+          onClose={() => setSending(false)}
+          onSent={() => setSending(false)}
+        />
+      )}
     </div>
   );
 }

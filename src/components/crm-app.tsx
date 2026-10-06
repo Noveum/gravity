@@ -194,7 +194,12 @@ function CrmShell({ children }: { children: ReactNode }) {
     setDrawerOpen(false);
     crm.goToSection(next);
   }
-  const showPeek = !!data && (!!peek.relationshipId || !!peek.companyId);
+  const showPeek =
+    !!data &&
+    (!!peek.relationshipId ||
+      !!peek.personId ||
+      !!peek.companyId ||
+      !!peek.fileId);
   const personRelationships =
     section === "people" && recordId
       ? (sourceData?.relationships ?? []).filter(
@@ -388,6 +393,31 @@ function CrmShell({ children }: { children: ReactNode }) {
     <div
       ref={panels.frame}
       className="app-shell"
+      onClickCapture={(event) => {
+        if (
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        )
+          return;
+        const link =
+          event.target instanceof Element
+            ? event.target.closest("a[href]")
+            : null;
+        if (
+          !(link instanceof HTMLAnchorElement) ||
+          link.download ||
+          (link.target && link.target !== "_self")
+        )
+          return;
+        if (crm.openRecord(link.href)) {
+          event.preventDefault();
+          if (!link.closest("#record-inspector"))
+            crm.returnFocus.current = link;
+        }
+      }}
       style={
         {
           "--inspector-width": `${panels.inspector}px`,
@@ -732,6 +762,7 @@ function CrmShell({ children }: { children: ReactNode }) {
               className="content"
               aria-label={label(section)}
               onClickCapture={(event) => {
+                if (event.defaultPrevented) return;
                 const target =
                   event.target instanceof Element
                     ? event.target.closest<HTMLElement>("button, a[href]")

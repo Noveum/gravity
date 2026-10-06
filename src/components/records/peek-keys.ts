@@ -19,6 +19,7 @@ export function peekLink(peek: () => void) {
   return (event: MouseEvent<HTMLAnchorElement>) => {
     event.stopPropagation();
     if (
+      event.defaultPrevented ||
       event.button !== 0 ||
       event.metaKey ||
       event.ctrlKey ||

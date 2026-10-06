@@ -301,7 +301,7 @@ test("the routed Connections view loads the active scope, shows callback results
   expect(screen.getByText(t.unipileOwnership)).toBeTruthy();
 });
 
-test("go-to navigation lands on a title from which J moves, Space peeks and Enter opens the record page", async () => {
+test("go-to navigation lands on a title from which J moves, Space and Enter open the inspector", async () => {
   mount();
   fireEvent.keyDown(document.body, { key: "g" });
   fireEvent.keyDown(document.body, { key: "p" });
@@ -323,15 +323,11 @@ test("go-to navigation lands on a title from which J moves, Space peeks and Ente
   ).toBeNull();
   expect(document.activeElement).toBe(first);
   await userEvent.setup().keyboard("{Enter}");
-  await waitFor(() =>
-    expect(window.location.pathname).toBe(`/people/${demoId(200)}`),
-  );
-  await waitFor(() =>
-    expect(document.activeElement).toBe(heading("Mira Chen", 2)),
-  );
+  expect(window.location.pathname).toBe("/people");
+  expect(document.activeElement).toBe(first);
   expect(
-    screen.queryByRole("complementary", { name: t.recordDetails }),
-  ).toBeNull();
+    await screen.findByRole("complementary", { name: t.recordDetails }),
+  ).toBeTruthy();
 });
 
 test("product switching changes records synchronously without another snapshot read or blank view", async () => {
@@ -799,12 +795,14 @@ test("sidebar links push history so Back and Forward return to the previous view
   expect(heading(t.people)).toBeTruthy();
   fireEvent.click(screen.getByRole("link", { name: "Mira Chen" }));
   expect(window.location.pathname).toBe("/people");
-  fireEvent.click(await screen.findByRole("link", { name: t.openRecord }));
-  expect(window.location.pathname).toBe(`/people/${demoId(200)}`);
-  expect(heading("Mira Chen", 2)).toBeTruthy();
-  act(() => window.history.back());
-  await waitFor(() => expect(window.location.pathname).toBe("/people"));
-  expect(heading(t.people)).toBeTruthy();
+  fireEvent.click(
+    await screen.findByRole("button", { name: t.expandInspector }),
+  );
+  expect(document.querySelector(".inspector-expanded")).toBeTruthy();
+  expect(window.location.pathname).toBe("/people");
+  expect(
+    await screen.findByRole("complementary", { name: t.recordDetails }),
+  ).toBeTruthy();
   act(() => window.history.back());
   await waitFor(() => expect(window.location.pathname).toBe("/actions"));
   expect(heading(t.actions)).toBeTruthy();
@@ -852,7 +850,7 @@ test("a reload on a record page keeps the record, its relationship and the revie
   expect(screen.getByRole("heading", { name: saved?.title })).toBeTruthy();
 });
 
-test("Enter on an action opens its person on the draft and the peek offers the same page", async () => {
+test("Enter on an action opens its person draft in the inspector", async () => {
   mount("/actions");
   const row = await screen.findByRole("button", {
     name: /Mira Chen.*Follow-up 2 paused by a reply/,
@@ -862,24 +860,18 @@ test("Enter on an action opens its person on the draft and the peek offers the s
   const peek = await screen.findByRole("complementary", {
     name: t.recordDetails,
   });
-  expect(
-    within(peek).getByRole("link", { name: t.openRecord }).getAttribute("href"),
-  ).toBe(
-    `/people/${demoId(200)}?relationship=${demoId(300)}&action=${demoId(600)}`,
-  );
+  expect(within(peek).queryByRole("link", { name: t.openRecord })).toBeNull();
   expect(window.location.pathname).toBe("/actions");
   row.focus();
   fireEvent.keyDown(row, { key: "Enter" });
-  expect(window.location.pathname).toBe(`/people/${demoId(200)}`);
-  expect(window.location.search).toBe(
-    `?relationship=${demoId(300)}&action=${demoId(600)}`,
-  );
+  expect(window.location.pathname).toBe("/actions");
+  expect(window.location.search).toBe("");
   expect(
-    await screen.findByRole("textbox", { name: t.draftLabel }),
+    await within(peek).findByRole("textbox", { name: t.draftLabel }),
   ).toBeTruthy();
-  expect(
-    screen.queryByRole("complementary", { name: t.recordDetails }),
-  ).toBeNull();
+  expect(screen.getByRole("complementary", { name: t.recordDetails })).toBe(
+    peek,
+  );
 });
 
 test("saved views are links whose filter lives in the URL", async () => {
@@ -1069,7 +1061,7 @@ function persistWrites() {
   );
 }
 
-test("under a remembered brand a person's company still opens as a full record", async () => {
+test("under a remembered brand a person's company opens in the inspector", async () => {
   mount("/people");
   fireEvent.click(screen.getByRole("button", { name: "Services" }));
   act(() => visit(`/people/${demoId(200)}`));
@@ -1082,14 +1074,17 @@ test("under a remembered brand a person's company still opens as a full record",
   fireEvent.click(
     main.getAllByRole("button", { name: "Northstar Labs" })[0] as HTMLElement,
   );
-  expect(window.location.pathname).toBe(`/companies/${demoId(100)}`);
-  expect(heading("Northstar Labs", 2)).toBeTruthy();
+  expect(window.location.pathname).toBe(`/people/${demoId(200)}`);
+  expect(
+    await within(
+      screen.getByRole("complementary", { name: t.recordDetails }),
+    ).findByRole("heading", { name: "Northstar Labs" }),
+  ).toBeTruthy();
   expect(await screen.findByRole("button", { name: "Mira Chen" })).toBeTruthy();
   expect(
-    within(screen.getByRole("region", { name: t.activity })).getByRole(
-      "button",
-      { name: "Coordinate across products" },
-    ),
+    within(
+      screen.getByRole("complementary", { name: t.recordDetails }),
+    ).getByRole("button", { name: "Coordinate across products" }),
   ).toBeTruthy();
   expect(screen.queryByText(t.errors.NOT_FOUND)).toBeNull();
   expect(screen.queryByText(t.recordUnavailable)).toBeNull();
@@ -1138,6 +1133,54 @@ test("the company timeline puts upcoming work first and past work newest first",
   const past = within(groups[1] as HTMLElement).getAllByRole("listitem");
   const times = past.map((item) => Number(item.dataset.at));
   expect(times).toEqual([...times].sort((a, b) => b - a));
+});
+
+test("company activity pages completed work without losing the underlying list", async () => {
+  const context = serialize(
+    await service.companyContext(
+      principal,
+      { organizationId: demoId(1) },
+      demoId(100),
+    ),
+  );
+  const action = context.actions[0];
+  if (!action) throw new Error("fixture action missing");
+  const harnessed = request.getMockImplementation();
+  request.mockImplementation(async (url, init) => {
+    if (
+      new URL(url, "http://localhost").searchParams.get("operation") ===
+      "company"
+    )
+      return {
+        ...context,
+        meetings: [],
+        actions: Array.from({ length: 55 }, (_, index) => ({
+          ...action,
+          id: demoId(4000 + index),
+          title: `Completed activity ${index + 1}`,
+          status: "completed",
+          dueAt: new Date(Date.now() - (index + 1) * 86400000).toISOString(),
+        })),
+      };
+    if (!harnessed) throw new Error("harness missing");
+    return harnessed(url, init);
+  });
+  mount("/companies");
+  const list = screen.getByRole("table");
+  fireEvent.click(screen.getByRole("link", { name: "Northstar Labs" }));
+  const activity = await screen.findByRole("region", { name: t.activity });
+  await within(activity).findByRole("button", { name: "Completed activity 1" });
+  expect(within(activity).getAllByRole("listitem")).toHaveLength(50);
+  expect(
+    within(activity).queryByRole("button", { name: "Completed activity 55" }),
+  ).toBeNull();
+  fireEvent.click(within(activity).getByRole("button", { name: t.nextPage }));
+  expect(
+    within(activity).getByRole("button", { name: "Completed activity 55" }),
+  ).toBeTruthy();
+  expect(within(activity).getAllByRole("listitem")).toHaveLength(5);
+  expect(screen.getByRole("table")).toBe(list);
+  expect(window.location.pathname).toBe("/companies");
 });
 
 test("switching workspace drops an owner filter that names a member of the old workspace", async () => {

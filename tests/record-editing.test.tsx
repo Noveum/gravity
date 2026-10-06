@@ -76,8 +76,7 @@ describe("people", () => {
   test("archiving leaves the record for the list, hides the person and Undo restores them", async () => {
     await mountCrm(harness, "/people");
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
-    fireEvent.click(await screen.findByRole("link", { name: t.openRecord }));
-    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(201)}`));
+    expect(pathname()).toBe("/people");
     fireEvent.click(await screen.findByRole("button", { name: t.archive }));
     await waitFor(() => expect(pathname()).toBe("/people"));
     await waitFor(() =>
@@ -92,7 +91,7 @@ describe("people", () => {
     ).toBeTruthy();
     expect(screen.getByText(t.archivedRecords)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: t.undo }));
-    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(201)}`));
+    expect(pathname()).toBe("/people");
     expect(await screen.findByRole("button", { name: t.archive })).toBeTruthy();
     const [stored] = await harness.local.db
       .select()
@@ -107,7 +106,7 @@ describe("people", () => {
     await waitFor(() => expect(pathname()).toBe("/people"));
     fireEvent.click(await screen.findByText(t.archivedRecords));
     fireEvent.click(screen.getByRole("link", { name: "Amara Stone" }));
-    await waitFor(() => expect(pathname()).toBe(`/people/${demoId(204)}`));
+    expect(pathname()).toBe("/people");
     expect(await screen.findByText(t.archivedPersonNote)).toBeTruthy();
     expect(screen.queryByRole("button", { name: t.edit })).toBeNull();
     const restore = screen.getByRole("button", { name: t.restore });

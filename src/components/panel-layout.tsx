@@ -30,7 +30,12 @@ export function usePanelLayout(collapsed = false) {
   const actualNavigation = bound(navigation, 176, navigationMax);
   const inspectorMax = Math.max(
     300,
-    Math.min(960, width - (collapsed ? 56 : actualNavigation) - 320),
+    Math.min(
+      960,
+      width <= 900
+        ? width - 16
+        : width - (collapsed ? 56 : actualNavigation) - 320,
+    ),
   );
   function resizeNavigation(value: number) {
     const next = bound(value, 176, navigationMax);

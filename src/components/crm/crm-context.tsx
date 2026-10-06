@@ -32,10 +32,20 @@ import { isAccessError, useLiveSnapshot } from "./use-live-snapshot";
 export type RecordTab = "timeline" | "evidence" | "draft";
 export interface Peek {
   relationshipId: string;
+  personId: string;
   companyId: string;
   actionId: string;
+  fileId: string;
+  fileProductId: string;
 }
-const noPeek: Peek = { relationshipId: "", companyId: "", actionId: "" };
+const noPeek: Peek = {
+  relationshipId: "",
+  personId: "",
+  companyId: "",
+  actionId: "",
+  fileId: "",
+  fileProductId: "",
+};
 type Snapshot = ClientSnapshot;
 type Action = Snapshot["actions"][number];
 export interface ActionPlan {
@@ -104,6 +114,7 @@ function useCrmState({
           )
         : undefined;
     return {
+      ...noPeek,
       path: pathname,
       relationshipId: blocked?.relationshipId ?? "",
       companyId: "",
@@ -160,6 +171,9 @@ function useCrmState({
   const peek: Peek =
     peekState.path === pathname
       ? {
+          personId: peekState.personId,
+          fileId: peekState.fileId,
+          fileProductId: peekState.fileProductId,
           relationshipId: peekState.relationshipId,
           companyId: peekState.companyId,
           actionId: peekState.actionId,
@@ -221,7 +235,38 @@ function useCrmState({
       record,
     };
   }
+  function openRecord(href: string) {
+    let url: URL;
+    try {
+      url = new URL(href, window.location.origin);
+    } catch {
+      return false;
+    }
+    if (url.origin !== window.location.origin) return false;
+    const target = routeFor(url.pathname);
+    if (target?.recordId && target.section === "people") {
+      openPersonRecord(
+        target.recordId,
+        url.searchParams.get("relationship") ?? "",
+        url.searchParams.get("action") ?? "",
+      );
+      return true;
+    }
+    if (target?.recordId && target.section === "companies") {
+      openCompany(target.recordId);
+      return true;
+    }
+    if (url.pathname === "/files" && url.searchParams.get("open")) {
+      openFile(
+        url.searchParams.get("open") ?? "",
+        url.searchParams.get("productId") ?? (peek.fileProductId || productId),
+      );
+      return true;
+    }
+    return false;
+  }
   function go(href: string) {
+    if (openRecord(href)) return;
     rememberOrigin(href);
     titleFocus.current = href.split("?")[0] ?? href;
     router.push(href);
@@ -296,21 +341,19 @@ function useCrmState({
     rememberBrand(id);
   }
   function rememberRecord() {
-    if (peek.relationshipId || peek.companyId)
+    if (peek.relationshipId || peek.personId || peek.companyId || peek.fileId)
       setRecordHistory((history) => [...history.slice(-19), peek]);
   }
   function openPerson(relationshipId: string, actionId = "", path = pathname) {
-    const relationship = sourceData?.relationships.find(
-      (item) => item.id === relationshipId,
-    );
-    if (productId && relationship && relationship.productId !== productId)
-      switchProduct(relationship.productId);
-    else if (
+    if (
       path === pathname &&
-      (relationshipId !== peek.relationshipId || peek.companyId)
+      (relationshipId !== peek.relationshipId ||
+        peek.companyId ||
+        peek.fileId ||
+        peek.personId)
     )
       rememberRecord();
-    showPeek({ relationshipId, companyId: "", actionId }, path);
+    showPeek({ ...noPeek, relationshipId, actionId }, path);
     const kind = sourceData?.actions.find(
       (action) => action.id === actionId,
     )?.kind;
@@ -320,9 +363,53 @@ function useCrmState({
         : "timeline",
     );
   }
+  function openPersonRecord(
+    personId: string,
+    relationshipId = "",
+    actionId = "",
+  ) {
+    const relationships =
+      sourceData?.relationships.filter((item) => item.personId === personId) ??
+      [];
+    const relationship =
+      relationships.find((item) => item.id === relationshipId) ??
+      relationships.find((item) => item.productId === productId) ??
+      relationships[0];
+    if (
+      relationship &&
+      !sourceData?.archived.people.some((person) => person.id === personId)
+    )
+      openPerson(relationship.id, actionId);
+    else {
+      if (
+        peek.personId !== personId ||
+        peek.relationshipId ||
+        peek.companyId ||
+        peek.fileId
+      )
+        rememberRecord();
+      showPeek({ ...noPeek, personId });
+      setTab("timeline");
+    }
+  }
   function openCompany(companyId: string) {
-    rememberRecord();
-    showPeek({ relationshipId: "", companyId, actionId: "" });
+    if (
+      peek.companyId !== companyId ||
+      peek.relationshipId ||
+      peek.personId ||
+      peek.fileId
+    )
+      rememberRecord();
+    showPeek({ ...noPeek, companyId });
+  }
+  function openFile(fileId: string, fileProductId: string) {
+    if (peek.fileId !== fileId || peek.fileProductId !== fileProductId)
+      rememberRecord();
+    showPeek({
+      ...noPeek,
+      fileId,
+      fileProductId: fileProductId || sourceData?.products[0]?.id || "",
+    });
   }
   function previousRecord() {
     const previous = recordHistory.at(-1);
@@ -527,6 +614,9 @@ function useCrmState({
     peek,
     recordHistory,
     openPerson,
+    openPersonRecord,
+    openFile,
+    openRecord,
     openCompany,
     previousRecord,
     closePeek,

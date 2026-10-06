@@ -38,7 +38,11 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
     isDemoMode() ? demoId(1) : "",
   );
   const snapshot = organization
-    ? await service.snapshot(principal, { organizationId: organization.id })
+    ? await service.snapshot(
+        principal,
+        { organizationId: organization.id },
+        true,
+      )
     : null;
   return (
     <CrmApp

@@ -11,6 +11,12 @@ import { pipelineStages, useStageMoves } from "../crm/use-stage-moves";
 import { DealDialog, PipelineDialog } from "../deal-dialog";
 import { focusedRecord } from "../keyboard-navigation";
 import { formatMoney } from "../money";
+import {
+  Pagination,
+  RecordFilters,
+  useRecordBrowser,
+  useRecordIndex,
+} from "../records/list-browser";
 
 const dragType = "application/x-gravity-opportunity";
 
@@ -54,6 +60,38 @@ export function OpportunitiesView() {
   });
   const matches = (...values: (string | undefined)[]) =>
     values.join(" ").toLowerCase().includes(search.toLowerCase());
+  const index = useRecordIndex();
+  const opportunities = data.opportunities.filter((opportunity) => {
+    const stage = data.stages.find((stage) => stage.id === opportunity.stageId);
+    return (
+      (!query.get("pipeline") || stage?.pipelineId === query.get("pipeline")) &&
+      (!query.get("stage") || opportunity.stageId === query.get("stage")) &&
+      (!query.get("owner") ||
+        (opportunity.ownerId ??
+          index.relationships.get(opportunity.relationshipId)?.ownerId) ===
+          query.get("owner")) &&
+      matches(opportunity.name, personFor(opportunity.relationshipId)?.name)
+    );
+  });
+  const browser = useRecordBrowser(
+    opportunities,
+    (opportunity) => ({
+      ...index.facts(opportunity.relationshipId),
+      ...opportunity,
+      tags: [
+        ...new Set([
+          ...(index.facts(opportunity.relationshipId).tags ?? []),
+          ...opportunity.tags,
+        ]),
+      ],
+      ownerId:
+        opportunity.ownerId ??
+        index.relationships.get(opportunity.relationshipId)?.ownerId ??
+        "",
+    }),
+    (opportunity) => opportunity.name,
+    focusedId,
+  );
   const draggedProduct = data.opportunities.find(
     (item) => item.id === dragging,
   )?.productId;
@@ -103,6 +141,7 @@ export function OpportunitiesView() {
           </button>
         )}
       </div>
+      <RecordFilters browser={browser} />
       <div className="page-content deal-board">
         {data.pipelines
           .filter(
@@ -136,7 +175,7 @@ export function OpportunitiesView() {
                   }}
                 >
                   {stages.map((stage) => {
-                    const cards = data.opportunities.filter(
+                    const cards = browser.page.items.filter(
                       (opportunity) =>
                         opportunity.stageId === stage.id &&
                         (!query.get("owner") ||
@@ -177,10 +216,21 @@ export function OpportunitiesView() {
                       >
                         <div className="group-title">
                           {stage.name}
-                          <span>{cards.length}</span>
+                          <span>
+                            {
+                              browser.rows.filter(
+                                (opportunity) =>
+                                  opportunity.stageId === stage.id,
+                              ).length
+                            }
+                          </span>
                         </div>
                         <small className="stage-value">
-                          {totals(cards)
+                          {totals(
+                            browser.rows.filter(
+                              (opportunity) => opportunity.stageId === stage.id,
+                            ),
+                          )
                             .map((r) => money(r.amountMinor, r.currency))
                             .join(" · ") || "—"}
                         </small>
@@ -258,6 +308,13 @@ export function OpportunitiesView() {
                                     "",
                                 )}
                               </small>
+                              <span className="record-tags">
+                                {opportunity.tags.map((tag) => (
+                                  <span className="badge" key={tag}>
+                                    {tag}
+                                  </span>
+                                ))}
+                              </span>
                               <small>
                                 {t.probability}:{" "}
                                 {opportunity.probability === null
@@ -278,6 +335,7 @@ export function OpportunitiesView() {
             );
           })}
       </div>
+      <Pagination page={browser.page} />
       {(dealId === "new" || chosen) && (
         <DealDialog
           key={`${crm.organizationId}:${dealId}`}

@@ -22,6 +22,7 @@ import { overview as calculateOverview } from "./analytics";
 import { draftHash, draftSubject } from "./drafts";
 import { serialize } from "./dto";
 import { authorize, DomainError, type Principal } from "./policy";
+import { tagsSchema } from "./record-tags";
 import {
   emptyRelationshipDetails,
   fitsRelationshipInput,
@@ -118,6 +119,7 @@ export const personSchema = scopeSchema
   .refine(fitsRelationshipInput);
 export const opportunitySchema = scopeSchema
   .extend({
+    tags: tagsSchema.optional(),
     id: z.uuid().optional(),
     version: z.number().int().positive().optional(),
     productId: z.uuid(),
@@ -487,7 +489,11 @@ export class CrmService {
       )
       .orderBy(asc(s.organizations.name));
   }
-  async snapshot(principal: Principal, scope: z.infer<typeof scopeSchema>) {
+  async snapshot(
+    principal: Principal,
+    scope: z.infer<typeof scopeSchema>,
+    compact = false,
+  ) {
     const permission = await authorize(
       this.db,
       principal,
@@ -554,11 +560,18 @@ export class CrmService {
       messageStats,
     ] = await Promise.all([
       this.db
-        .select(relationshipColumns)
+        .select({
+          ...relationshipColumns,
+          context: compact ? sql<string>`''` : s.relationships.context,
+        })
         .from(s.relationships)
-        .where(scoped(s.relationships)),
+        .where(scoped(s.relationships))
+        .orderBy(asc(s.relationships.id)),
       this.db
-        .select()
+        .select({
+          ...getTableColumns(s.actions),
+          reason: compact ? sql<string>`''` : s.actions.reason,
+        })
         .from(s.actions)
         .where(
           and(
@@ -601,8 +614,16 @@ export class CrmService {
           asc(s.stages.position),
           asc(s.stages.id),
         ),
-      this.db.select().from(s.meetings).where(scoped(s.meetings)),
-      this.db.select().from(s.opportunities).where(scoped(s.opportunities)),
+      this.db
+        .select()
+        .from(s.meetings)
+        .where(scoped(s.meetings))
+        .orderBy(desc(s.meetings.startsAt), asc(s.meetings.id)),
+      this.db
+        .select()
+        .from(s.opportunities)
+        .where(scoped(s.opportunities))
+        .orderBy(asc(s.opportunities.id)),
       this.db
         .select({
           id: s.user.id,
@@ -717,7 +738,10 @@ export class CrmService {
         ),
     ]);
     const everyone = await this.db
-      .select()
+      .select({
+        ...getTableColumns(s.people),
+        summary: compact ? sql<string>`''` : s.people.summary,
+      })
       .from(s.people)
       .where(
         and(
@@ -728,6 +752,7 @@ export class CrmService {
           ),
         ),
       );
+    everyone.sort((a, b) => a.id.localeCompare(b.id));
     const people = everyone.filter((person) => !person.archivedAt);
     const activePeople = new Set(people.map((person) => person.id));
     const activeRelationships = relationships.filter((relationship) =>
@@ -770,26 +795,42 @@ export class CrmService {
         ),
       )
       .orderBy(asc(s.companies.name));
+    const productsByPerson = new Map<string, Set<string>>();
+    for (const relationship of relationships) {
+      const ids =
+        productsByPerson.get(relationship.personId) ?? new Set<string>();
+      ids.add(relationship.productId);
+      productsByPerson.set(relationship.personId, ids);
+    }
     const productsOf = (rows: typeof everyone) => [
       ...new Set(
-        relationships
-          .filter((relationship) =>
-            rows.some((person) => person.id === relationship.personId),
-          )
-          .map((relationship) => relationship.productId),
+        rows.flatMap((person) => [...(productsByPerson.get(person.id) ?? [])]),
       ),
     ];
-    const companyProducts = (companyId: string) => {
-      const current = people.filter((person) => person.companyId === companyId);
-      return productsOf(
-        current.length
-          ? current
-          : archivedPeople.filter((person) => person.companyId === companyId),
-      );
+    const companiesAt = (rows: typeof everyone) => {
+      const result = new Map<string, typeof everyone>();
+      for (const person of rows) {
+        if (!person.companyId) continue;
+        const members = result.get(person.companyId) ?? [];
+        members.push(person);
+        result.set(person.companyId, members);
+      }
+      return result;
     };
+    const activeCompanies = companiesAt(people);
+    const archivedCompanies = companiesAt(archivedPeople);
+    const companyProducts = (companyId: string) =>
+      productsOf(
+        activeCompanies.get(companyId) ??
+          archivedCompanies.get(companyId) ??
+          [],
+      );
     return {
+      compact,
       products: permission.products,
-      people,
+      people: compact
+        ? people.map((person) => ({ ...person, summary: "" }))
+        : people,
       companies: allCompanies.filter((company) => !company.archivedAt),
       archived: {
         people: archivedPeople.map((person) => ({
@@ -810,8 +851,15 @@ export class CrmService {
             productIds: companyProducts(company.id),
           })),
       },
-      relationships: activeRelationships,
-      actions: active(actions),
+      relationships: compact
+        ? activeRelationships.map((relationship) => ({
+            ...relationship,
+            context: "",
+          }))
+        : activeRelationships,
+      actions: compact
+        ? active(actions).map((action) => ({ ...action, reason: "" }))
+        : active(actions),
       sequences,
       enrollments: active(enrollments),
       folders,

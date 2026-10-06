@@ -360,7 +360,7 @@ test("a delayed previous-organization snapshot cannot reappear after switching o
   const regular = request.getMockImplementation();
   if (!regular) throw new Error("Missing request implementation");
   request.mockImplementation((url, init) =>
-    url === `/api/crm?organizationId=${demoId(1)}`
+    url === `/api/crm?organizationId=${demoId(1)}&compact=true`
       ? new Promise((resolve) => {
           release = resolve;
         })
@@ -410,7 +410,7 @@ test("a confirmed action updates the queue before refresh and an older read cann
       const input = JSON.parse(String(init.body));
       return serialize(await service.changeAction(principal, input));
     }
-    if (url === `/api/crm?organizationId=${demoId(1)}`) {
+    if (url === `/api/crm?organizationId=${demoId(1)}&compact=true`) {
       reads++;
       return new Promise((resolve) => {
         if (reads === 1) releaseOld = resolve;
@@ -464,7 +464,7 @@ test("modifier Enter saves the draft once without approval or a false version co
       return serialize(
         await service.changeAction(principal, JSON.parse(String(init.body))),
       );
-    if (url === `/api/crm?organizationId=${demoId(1)}`)
+    if (url === `/api/crm?organizationId=${demoId(1)}&compact=true`)
       return new Promise((resolve) => {
         release = resolve;
       });
@@ -790,6 +790,8 @@ test("sidebar links push history so Back and Forward return to the previous view
   expect(window.location.pathname).toBe("/people");
   expect(heading(t.people)).toBeTruthy();
   fireEvent.click(screen.getByRole("link", { name: "Mira Chen" }));
+  expect(window.location.pathname).toBe("/people");
+  fireEvent.click(await screen.findByRole("link", { name: t.openRecord }));
   expect(window.location.pathname).toBe(`/people/${demoId(200)}`);
   expect(heading("Mira Chen", 2)).toBeTruthy();
   act(() => window.history.back());
@@ -1287,7 +1289,7 @@ test("a company record stacks its people and opportunities as sibling sections w
   );
   expect(
     sections.map((section) => section.querySelector("h3")?.textContent),
-  ).toEqual([t.allPeople, t.opportunities]);
+  ).toEqual([t.dealSizeAndTags, t.allPeople, t.opportunities]);
 });
 
 test("product creation is reachable from sidebar, toolbar, keyboard and commands in the active organization", async () => {

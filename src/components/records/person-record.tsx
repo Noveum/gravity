@@ -13,6 +13,7 @@ import { useDraft } from "../crm/use-draft";
 import { PersonDetails, RelatedWork } from "../record-details";
 import { companyPath, personPath, sectionPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
+import { MetadataSection } from "./metadata-section";
 import {
   ActionSummary,
   findAction,
@@ -121,6 +122,11 @@ export function PersonRecord({ personId }: { personId: string }) {
         />
         {context ? (
           <>
+            <MetadataSection entity="person" record={person} />
+            <MetadataSection
+              entity="relationship"
+              record={context.relationship}
+            />
             <PersonDetails
               context={context}
               onCompany={toCompany}

@@ -62,6 +62,11 @@ import {
   touchSnoozeSchema,
 } from "../core/outreach";
 import { authorize, DomainError, type Principal } from "../core/policy";
+import { RecordListService, recordListSchema } from "../core/record-list";
+import {
+  RecordMetadataService,
+  recordMetadataSchema,
+} from "../core/record-metadata";
 import {
   companyArchiveSchema,
   companySchema,
@@ -260,6 +265,16 @@ export const operations: Operation[] = [
   operation({
     api: "crm",
     method: "POST",
+    operation: "record-metadata",
+    name: "update_record_metadata",
+    description:
+      "Set custom tags and deal size on a permitted person, company, relationship or opportunity, requiring its current version.",
+    schema: recordMetadataSchema,
+    run: (c, input) => new RecordMetadataService(c.db).save(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
     operation: "conversation-sharing",
     name: "set_conversation_visibility",
     description:
@@ -340,37 +355,8 @@ export const operations: Operation[] = [
     name: "list_records",
     description:
       "Page authorized people/clients, companies, relationships, deals, meetings, sequences or materials. Search is applied only to readable records.",
-    schema: scopeSchema.extend({
-      entity: z.enum([
-        "people",
-        "companies",
-        "relationships",
-        "opportunities",
-        "meetings",
-        "sequences",
-        "folders",
-        "assets",
-      ]),
-      query: z.string().trim().max(200).default(""),
-      offset: z.coerce.number().int().min(0).max(100000).default(0),
-      limit: z.coerce.number().int().min(1).max(100).default(50),
-    }),
-    run: async (c, input) => {
-      const snapshot = await crm(c).snapshot(c.principal, input);
-      const term = input.query.toLowerCase();
-      const rows = snapshot[input.entity].filter(
-        (row) => !term || JSON.stringify(row).toLowerCase().includes(term),
-      );
-      return {
-        items: rows.slice(input.offset, input.offset + input.limit),
-        total: rows.length,
-        nextOffset:
-          input.offset + input.limit < rows.length
-            ? input.offset + input.limit
-            : null,
-        asOf: snapshot.asOf,
-      };
-    },
+    schema: recordListSchema,
+    run: (c, input) => new RecordListService(c.db).page(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -422,8 +408,11 @@ export const operations: Operation[] = [
     name: "get_workspace",
     description:
       "Read permitted people, companies, products, relationships, sequences, meetings, materials and versions.",
-    schema: scopeSchema,
-    run: (c, input) => crm(c).snapshot(c.principal, input),
+    schema: scopeSchema.extend({
+      compact: z.enum(["true", "false"]).default("false"),
+    }),
+    run: (c, input) =>
+      crm(c).snapshot(c.principal, input, input.compact === "true"),
   }),
   operation({
     api: "crm",

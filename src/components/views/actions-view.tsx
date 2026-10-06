@@ -11,6 +11,13 @@ import {
   useWorkspaceData,
 } from "../crm/crm-context";
 import { useWarmContext } from "../crm/record-context";
+import { formatMoney } from "../money";
+import {
+  Pagination,
+  RecordFilters,
+  useRecordBrowser,
+  useRecordIndex,
+} from "../records/list-browser";
 import { rowKeys } from "../records/peek-keys";
 import { actionFilters, personPath, sectionPath } from "../routes";
 import { initials } from "../shell/workspace-menu";
@@ -43,12 +50,23 @@ export function ActionsView() {
         companyFor(personFor(action.relationshipId)?.id ?? "")?.name,
       ),
   );
-  usePruneSelection(visibleActions.map((action) => action.id));
+  const index = useRecordIndex();
+  const browser = useRecordBrowser(
+    visibleActions,
+    (action) => ({
+      ...index.facts(action.relationshipId),
+      ownerId: action.ownerId,
+      status: action.status,
+    }),
+    (action) => action.title,
+  );
+  usePruneSelection(browser.page.items.map((action) => action.id));
   const now = Date.now();
   return (
     <>
+      <RecordFilters browser={browser} />
       {["now", "upcoming"].map((group) => {
-        const list = visibleActions.filter((action) =>
+        const list = browser.page.items.filter((action) =>
           group === "now"
             ? dueToday(action.dueAt, now, crm.timeZone)
             : !dueToday(action.dueAt, now, crm.timeZone),
@@ -58,7 +76,15 @@ export function ActionsView() {
           <div key={group}>
             <div className="group-title">
               {label(group)}
-              <span>{list.length}</span>
+              <span>
+                {
+                  browser.rows.filter((action) =>
+                    group === "now"
+                      ? dueToday(action.dueAt, now, crm.timeZone)
+                      : !dueToday(action.dueAt, now, crm.timeZone),
+                  ).length
+                }
+              </span>
             </div>
             {list.map((action) => {
               const person = personFor(action.relationshipId);
@@ -74,7 +100,7 @@ export function ActionsView() {
                   data-nav-record={action.id}
                   data-action-id={action.id}
                   data-selected={isSelected || undefined}
-                  onPointerEnter={() => warmContext(action.relationshipId)}
+                  onFocus={() => warmContext(action.relationshipId)}
                   aria-pressed={peek.actionId === action.id}
                   aria-keyshortcuts="Space Enter X D S A"
                   onClick={() =>
@@ -103,6 +129,12 @@ export function ActionsView() {
                     {companyFor(person?.id ?? "")?.name}
                   </span>
                   <span className="row-action">{action.title}</span>
+                  <span className="row-deal-size">
+                    {formatMoney(
+                      index.facts(action.relationshipId).amountMinor ?? null,
+                      index.facts(action.relationshipId).currency ?? "USD",
+                    )}
+                  </span>
                   {action.status === "blocked" && (
                     <span className="badge warning">{t.blocked}</span>
                   )}
@@ -142,7 +174,8 @@ export function ActionsView() {
           </div>
         );
       })}
-      {!visibleActions.length &&
+      <Pagination page={browser.page} />
+      {!browser.page.total &&
         (!data.people.length && data.products.length ? (
           <EmptyState
             title={t.workspaceReady}

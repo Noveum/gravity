@@ -4233,6 +4233,104 @@ tbody tr[data-selected] td:first-child::before {
   margin: 8px 0 0;
 }
 
+.record-filters {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.record-filters summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.record-filter-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  padding-top: 12px;
+}
+.record-filters .record-filter-fields > label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+.record-filters .record-filter-fields input {
+  max-width: 150px;
+}
+.list-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+  background: var(--gravity-surface);
+  font-size: 12px;
+}
+.list-pagination > span:first-child {
+  margin-right: auto;
+}
+nav.list-pagination > label:has(select) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.record-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 240px;
+}
+.record-tags > span.badge {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.metadata-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.metadata-section h3 {
+  flex-basis: 100%;
+}
+.peekable-row {
+  cursor: pointer;
+}
+.source-details {
+  margin: 12px 0;
+}
+.source-details summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.source-details pre {
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  padding: 12px;
+}
+.context-summary {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.row-deal-size {
+  width: 90px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .row-deal-size {
+    display: none;
+  }
+  .record-filter-fields label {
+    flex: 1 1 140px;
+  }
+}
+
 .organization-settings {
   max-width: 1040px;
   margin-inline: auto;

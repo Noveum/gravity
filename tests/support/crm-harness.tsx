@@ -29,6 +29,10 @@ import {
 } from "../../packages/core/outreach";
 import { DomainError } from "../../packages/core/policy";
 import {
+  RecordMetadataService,
+  recordMetadataSchema,
+} from "../../packages/core/record-metadata";
+import {
   companyArchiveSchema,
   companySchema,
   meetingSchema,
@@ -218,6 +222,11 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
       return service.createPerson(principal, personSchema.parse(body));
     const records = new RecordService(harness.local.db);
     const operations: Record<string, () => Promise<unknown>> = {
+      "record-metadata": () =>
+        new RecordMetadataService(harness.local.db).save(
+          principal,
+          recordMetadataSchema.parse(body),
+        ),
       deal: () =>
         service.saveOpportunity(principal, opportunitySchema.parse(body)),
       "person-update": () =>
@@ -278,7 +287,13 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
         params.get("companyId") || "",
       ),
     );
-  return serialize(await service.snapshot(principal, { organizationId }));
+  return serialize(
+    await service.snapshot(
+      principal,
+      { organizationId },
+      params.get("compact") === "true",
+    ),
+  );
 }
 
 export function installCrmHarness() {
@@ -344,10 +359,18 @@ export function installCrmHarness() {
   return harness;
 }
 
-export async function mountCrm(harness: Harness, path = "/actions") {
+export async function mountCrm(
+  harness: Harness,
+  path = "/actions",
+  compact = false,
+) {
   visit(path);
   const snapshot: ClientSnapshot = serialize(
-    await harness.service.snapshot(principal, { organizationId: demoId(1) }),
+    await harness.service.snapshot(
+      principal,
+      { organizationId: demoId(1) },
+      compact,
+    ),
   );
   render(
     <CrmApp

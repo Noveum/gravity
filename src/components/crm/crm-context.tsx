@@ -454,27 +454,39 @@ function useCrmState({
     setOrganizations(next);
     return next;
   }
+  const lookup = useMemo(
+    () => ({
+      people: new Map(
+        sourceData?.people.map((person) => [person.id, person]) ?? [],
+      ),
+      companies: new Map(
+        sourceData?.companies.map((company) => [company.id, company]) ?? [],
+      ),
+      relationships: new Map(
+        sourceData?.relationships.map((relationship) => [
+          relationship.id,
+          relationship,
+        ]) ?? [],
+      ),
+    }),
+    [sourceData],
+  );
   const product = (id: string) =>
     sourceData?.products.find((item) => item.id === id);
   const member = (id: string) =>
     sourceData?.members.find((item) => item.id === id)?.name ?? t.unknown;
   const personFor = (relationshipId: string) =>
-    sourceData?.people.find(
-      (person) =>
-        person.id ===
-        sourceData.relationships.find((r) => r.id === relationshipId)?.personId,
-    );
+    lookup.people.get(lookup.relationships.get(relationshipId)?.personId ?? "");
   const companyFor = (personId: string) =>
-    sourceData?.companies.find(
-      (company) =>
-        company.id ===
-        sourceData.people.find((person) => person.id === personId)?.companyId,
-    );
+    lookup.companies.get(lookup.people.get(personId)?.companyId ?? "");
   return {
     userId,
     demo,
     mcpEndpoint,
     pathname,
+    listFilterKey: ["owner", "kind", "waiting", "pipeline", "stage"]
+      .map((key) => query.get(key) ?? "")
+      .join("/"),
     route,
     toasts,
     notify,
@@ -636,6 +648,26 @@ export function patchRecords(
   operation: string,
   result: unknown,
 ): Snapshot {
+  if (operation === "record-metadata") {
+    const updated = result as {
+      entity: "person" | "company" | "relationship" | "opportunity";
+      record: { id: string };
+    };
+    const key = {
+      person: "people",
+      company: "companies",
+      relationship: "relationships",
+      opportunity: "opportunities",
+    } as const;
+    const collection = key[updated.entity];
+    return {
+      ...snapshot,
+      asOf: new Date().toISOString(),
+      [collection]: snapshot[collection].map((row) =>
+        row.id === updated.record.id ? updated.record : row,
+      ),
+    };
+  }
   if (operation === "person-update")
     return {
       ...snapshot,

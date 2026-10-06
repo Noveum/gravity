@@ -6,6 +6,13 @@ import { type DragEvent, useLayoutEffect, useRef, useState } from "react";
 import { dateLabel } from "../client-api";
 import { useVerbs, useWorkspaceData } from "../crm/crm-context";
 import { focusedRecord } from "../keyboard-navigation";
+import { formatMoney } from "../money";
+import {
+  Pagination,
+  RecordFilters,
+  useRecordBrowser,
+  useRecordIndex,
+} from "../records/list-browser";
 import { rowKeys } from "../records/peek-keys";
 import { RecordDialog } from "../records/record-dialog";
 import { personPath } from "../routes";
@@ -122,6 +129,12 @@ function Board({ productId }: { productId: string }) {
         .join(" ")
         .toLowerCase()
         .includes(crm.search.toLowerCase()),
+  );
+  const index = useRecordIndex();
+  const browser = useRecordBrowser(
+    relationships,
+    (relationship) => index.facts(relationship.id),
+    (relationship) => crm.personFor(relationship.id)?.name ?? "",
   );
   const local = useRef(new Map<string, { stageId: string; version: number }>());
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -241,6 +254,7 @@ function Board({ productId }: { productId: string }) {
       className="page-content deal-board outreach-board"
       aria-label={t.pipelineBoard.replace("{brand}", product?.name ?? "")}
     >
+      <RecordFilters browser={browser} />
       <div
         className="pipeline-stages"
         style={{
@@ -248,7 +262,7 @@ function Board({ productId }: { productId: string }) {
         }}
       >
         {pipeline.map((stage) => {
-          const cards = relationships.filter(
+          const cards = browser.page.items.filter(
             (relationship) => stageOf(relationship)?.id === stage.id,
           );
           return (
@@ -277,7 +291,13 @@ function Board({ productId }: { productId: string }) {
             >
               <div className="group-title">
                 {stage.name}
-                <span>{cards.length}</span>
+                <span>
+                  {
+                    browser.rows.filter(
+                      (relationship) => stageOf(relationship)?.id === stage.id,
+                    ).length
+                  }
+                </span>
               </div>
               {cards.map((relationship) => {
                 const name = nameOf(relationship);
@@ -337,6 +357,13 @@ function Board({ productId }: { productId: string }) {
                     <p className={relationship.nextStep ? "" : "muted"}>
                       {relationship.nextStep || t.noNextStepShort}
                     </p>
+                    <small>
+                      {t.dealSize}:{" "}
+                      {formatMoney(
+                        index.facts(relationship.id).amountMinor ?? null,
+                        index.facts(relationship.id).currency ?? "USD",
+                      )}
+                    </small>
                     {due && (
                       <small
                         className={`relationship-due${overdueDay(due, now, crm.timeZone) ? " overdue" : ""}`}
@@ -351,6 +378,7 @@ function Board({ productId }: { productId: string }) {
           );
         })}
       </div>
+      <Pagination page={browser.page} />
       {menu && (
         <StageMenu
           label={t.moveToMenu.replace("{name}", nameOf(menu.relationship))}

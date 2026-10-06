@@ -10,6 +10,7 @@ import { keyInput } from "../keyboard-navigation";
 import { initials } from "../shell/workspace-menu";
 import { ShortcutHint } from "../ui/shortcut-hint";
 import { ConversationSharing } from "./conversation-sharing";
+import { RecordText } from "./record-text";
 import { RelationshipContext } from "./relationship-context";
 
 type Action = ClientSnapshot["actions"][number];
@@ -21,10 +22,11 @@ export function findAction(
   context: ClientContext | null,
 ): Action | undefined {
   if (!actionId) return undefined;
-  return (
-    snapshot?.actions.find((action) => action.id === actionId) ??
-    context?.actions.find((action) => action.id === actionId)
-  );
+  const action = snapshot?.actions.find((action) => action.id === actionId);
+  const detail = context?.actions.find((action) => action.id === actionId);
+  if (snapshot?.compact && action && detail)
+    return { ...action, reason: detail.reason };
+  return action ?? detail;
 }
 
 export function PersonProfile({
@@ -325,7 +327,7 @@ export function ActionSummary({
     <div className="action-summary">
       <span className="eyebrow">{t.actions}</span>
       <h3>{action.title}</h3>
-      <p>{action.reason}</p>
+      <RecordText value={action.reason} />
       <button
         type="button"
         disabled={

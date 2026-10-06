@@ -14,6 +14,7 @@ export function RecordDialog({
   onClose,
   onSubmit,
   children,
+  loading = false,
   className = "",
 }: {
   title: string;
@@ -21,6 +22,7 @@ export function RecordDialog({
   onClose: () => void;
   onSubmit: (fields: FormData) => Promise<string | null>;
   children: ReactNode;
+  loading?: boolean;
   className?: string;
 }) {
   const modal = useRef<HTMLDialogElement>(null);
@@ -29,7 +31,7 @@ export function RecordDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useModalLifecycle(modal);
-  useReadyFocus(modal, false);
+  useReadyFocus(modal, loading);
   return (
     <dialog
       ref={modal}
@@ -45,7 +47,7 @@ export function RecordDialog({
         onKeyDown={submitOnSaveKey}
         onSubmit={async (event) => {
           event.preventDefault();
-          if (submitting.current) return;
+          if (submitting.current || loading) return;
           submitting.current = true;
           const fields = new FormData(event.currentTarget);
           setBusy(true);
@@ -62,7 +64,7 @@ export function RecordDialog({
           }
         }}
       >
-        <fieldset className="dialog-fields" disabled={busy}>
+        <fieldset className="dialog-fields" disabled={busy || loading}>
           {children}
         </fieldset>
         {error && <p role="alert">{error}</p>}
@@ -79,7 +81,7 @@ export function RecordDialog({
             type="submit"
             title={t.submitHint}
             className="primary"
-            disabled={busy}
+            disabled={busy || loading}
           >
             {busy ? t.saving : submitLabel}
           </button>

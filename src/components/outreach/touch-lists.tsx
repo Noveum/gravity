@@ -48,10 +48,12 @@ export function FollowUpGroups<T extends Touch>({
   touches,
   now,
   row,
+  all = touches,
 }: {
   touches: readonly T[];
   now: number;
   row: (touch: T) => ReactNode;
+  all?: readonly T[];
 }) {
   const { timeZone } = useCrm();
   return [0, 1, 2, 3].map((followUp) => {
@@ -65,7 +67,7 @@ export function FollowUpGroups<T extends Touch>({
       <TouchGroup
         key={followUp}
         title={followUpLabel(followUp)}
-        count={list.length}
+        count={all.filter((touch) => touch.followUp === followUp).length}
       >
         {list.map(row)}
       </TouchGroup>

@@ -6,8 +6,15 @@ import {
   usePruneSelection,
   useWorkspaceData,
 } from "../crm/crm-context";
+import { formatMoney } from "../money";
 import { ArchivedList } from "../records/archived-list";
-import { peekOnSpace } from "../records/peek-keys";
+import {
+  Pagination,
+  RecordFilters,
+  useRecordBrowser,
+  useRecordIndex,
+} from "../records/list-browser";
+import { peekLink, peekOnSpace, peekRow, rowKeys } from "../records/peek-keys";
 import { companyPath, personPath } from "../routes";
 import { EmptyState } from "../ui/states";
 
@@ -22,38 +29,52 @@ export function CompaniesView() {
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
-  usePruneSelection(companies.map((item) => item.id));
+  const index = useRecordIndex();
+  const browser = useRecordBrowser(
+    companies,
+    (company) => company,
+    (company) => company.name,
+  );
+  usePruneSelection(browser.page.items.map((item) => item.id));
   return (
     <div className="table-scroll">
-      {!companies.length && <EmptyState title={t.noCompanies} compact />}
+      <RecordFilters browser={browser} />
+      {!browser.page.total && <EmptyState title={t.noCompanies} compact />}
       <table>
         <thead>
           <tr>
             <th>{t.company}</th>
             <th>{t.people}</th>
             <th>{t.products}</th>
+            <th>{t.dealSize}</th>
+            <th>{t.tags}</th>
           </tr>
         </thead>
         <tbody>
-          {companies.map((company) => {
-            const people = data.people.filter(
-              (person) => person.companyId === company.id,
-            );
-            const relationships = data.relationships.filter((relationship) =>
-              people.some((person) => person.id === relationship.personId),
+          {browser.page.items.map((company) => {
+            const people = index.byCompany.get(company.id) ?? [];
+            const relationships = people.flatMap(
+              (person) => index.byPerson.get(person.id) ?? [],
             );
             return (
               <tr
                 key={company.id}
                 data-selected={selected.has(company.id) || undefined}
+                className="peekable-row"
+                onClick={peekRow(() => crm.openCompany(company.id))}
               >
                 <td>
                   <Link
                     href={companyPath(company.id)}
                     className="text-button"
                     data-nav-record={company.id}
+                    prefetch={false}
+                    onClick={peekLink(() => crm.openCompany(company.id))}
                     aria-keyshortcuts="Space Enter X"
-                    onKeyDown={peekOnSpace(() => crm.openCompany(company.id))}
+                    onKeyDown={rowKeys({
+                      peek: () => crm.openCompany(company.id),
+                      open: () => crm.go(companyPath(company.id)),
+                    })}
                   >
                     {company.name}
                     {selected.has(company.id) && (
@@ -63,15 +84,17 @@ export function CompaniesView() {
                   <small>{company.domain}</small>
                 </td>
                 <td>
-                  {people.map((person) => {
-                    const relationship = relationships.find(
-                      (item) => item.personId === person.id,
-                    );
+                  {people.slice(0, 3).map((person) => {
+                    const relationship = index.byPerson.get(person.id)?.[0];
                     return (
                       <Link
                         href={personPath(person.id)}
                         className="text-button linked-contact"
                         key={person.id}
+                        prefetch={false}
+                        onClick={peekLink(() =>
+                          crm.openPerson(relationship?.id ?? ""),
+                        )}
                         onKeyDown={peekOnSpace(() =>
                           crm.openPerson(relationship?.id ?? ""),
                         )}
@@ -80,6 +103,14 @@ export function CompaniesView() {
                       </Link>
                     );
                   })}
+                  {people.length > 3 && (
+                    <span className="muted">
+                      {t.morePeople.replace(
+                        "{count}",
+                        String(people.length - 3),
+                      )}
+                    </span>
+                  )}
                 </td>
                 <td>
                   {[
@@ -90,11 +121,22 @@ export function CompaniesView() {
                     ),
                   ].join(", ")}
                 </td>
+                <td>{formatMoney(company.amountMinor, company.currency)}</td>
+                <td>
+                  <span className="record-tags">
+                    {company.tags.map((tag) => (
+                      <span className="badge" key={tag}>
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      <Pagination page={browser.page} />
       <ArchivedList
         records={data.archived.companies.map((company) => ({
           id: company.id,

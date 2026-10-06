@@ -27,6 +27,12 @@ import {
 import { TouchRow } from "../outreach/touch-row";
 import { useTouchVerbs } from "../outreach/use-touch-verbs";
 import {
+  Pagination,
+  RecordFilters,
+  useRecordBrowser,
+  useRecordIndex,
+} from "../records/list-browser";
+import {
   type OutreachTab,
   outreachPath,
   outreachTabFor,
@@ -65,7 +71,6 @@ export function OutreachView() {
     verbs.peek(touch);
   }, [crm.organizationId, queryTouch, touches, verbs]);
   useVerbs(verbs.keys);
-  if (!tab) return null;
   const search = crm.search;
   const visible = <T extends Touch>(touches: readonly T[]) =>
     touches.filter((touch) =>
@@ -78,7 +83,29 @@ export function OutreachView() {
   const paused = (queue?.paused ?? []).filter((enrollment) =>
     matchesSearch(search, enrollment.person.name, enrollment.sequenceName),
   );
+  const index = useRecordIndex();
   const now = Date.now();
+  const rows =
+    tab === "today"
+      ? today
+      : tab === "drafts"
+        ? drafts
+        : tab === "approved"
+          ? approved
+          : tab === "sent"
+            ? sent
+            : [];
+  const browser = useRecordBrowser(
+    byUrgency(rows, now, crm.timeZone),
+    (touch) => index.facts(touch.relationshipId),
+    (touch) => touch.person.name,
+  );
+  const pausedBrowser = useRecordBrowser(
+    paused,
+    (enrollment) => index.facts(enrollment.relationshipId),
+    (enrollment) => enrollment.person.name,
+  );
+  if (!tab) return null;
   const open = (touch: Touch) =>
     crm.go(
       personPath(touch.person.id, { relationshipId: touch.relationshipId }),
@@ -106,29 +133,54 @@ export function OutreachView() {
   }
   const drawerTouch =
     verbs.drawer && (touches.get(verbs.drawer.touch.id) ?? verbs.drawer.touch);
-  const flat = (touches: readonly QueueTouch[], title: string) =>
+  const flat = (
+    touches: readonly QueueTouch[],
+    title: string,
+    total: number,
+  ) =>
     touches.length ? (
-      <TouchGroup title={title} count={touches.length}>
+      <TouchGroup title={title} count={total}>
         {byUrgency(touches, now, crm.timeZone).map(row)}
       </TouchGroup>
     ) : null;
   const loading = tab !== "sequences" && tab !== "pipeline" && !due && !queue;
   const content: Record<OutreachTab, () => ReactNode> = {
-    today: () => <FollowUpGroups touches={today} now={now} row={row} />,
-    drafts: () => flat(drafts, t.outreachTabs.drafts),
-    approved: () => flat(approved, t.outreachTabs.approved),
+    today: () => (
+      <FollowUpGroups
+        touches={browser.page.items}
+        all={browser.rows}
+        now={now}
+        row={row}
+      />
+    ),
+    drafts: () =>
+      flat(
+        browser.page.items as QueueTouch[],
+        t.outreachTabs.drafts,
+        browser.rows.length,
+      ),
+    approved: () =>
+      flat(
+        browser.page.items as QueueTouch[],
+        t.outreachTabs.approved,
+        browser.rows.length,
+      ),
     sent: () =>
-      sent.length ? (
-        <TouchGroup title={t.outreachTabs.sent} count={sent.length}>
-          {sent.map((touch) => (
-            <SentRow key={touch.id} touch={touch} />
-          ))}
+      browser.rows.length ? (
+        <TouchGroup title={t.outreachTabs.sent} count={browser.rows.length}>
+          {browser.page.items.flatMap((touch) => {
+            const item = sent.find((row) => row.id === touch.id);
+            return item ? [<SentRow key={item.id} touch={item} />] : [];
+          })}
         </TouchGroup>
       ) : null,
     paused: () =>
-      paused.length ? (
-        <TouchGroup title={t.outreachTabs.paused} count={paused.length}>
-          {paused.map((enrollment) => (
+      pausedBrowser.rows.length ? (
+        <TouchGroup
+          title={t.outreachTabs.paused}
+          count={pausedBrowser.rows.length}
+        >
+          {pausedBrowser.page.items.map((enrollment) => (
             <PausedRow
               key={enrollment.id}
               enrollment={enrollment}
@@ -203,14 +255,27 @@ export function OutreachView() {
           <LoadingState />
         ) : (
           <>
-            {content[tab]()}
-            {listTab && !counts[listTab] && (
-              <EmptyState
-                title={emptyCopy(listTab)}
-                description={t.outreachEmptyDetail}
-                compact
+            {listTab && (
+              <RecordFilters
+                browser={tab === "paused" ? pausedBrowser : browser}
               />
             )}
+            {content[tab]()}
+            {listTab && (
+              <Pagination
+                page={tab === "paused" ? pausedBrowser.page : browser.page}
+              />
+            )}
+            {listTab &&
+              !(tab === "paused"
+                ? pausedBrowser.page.total
+                : browser.page.total) && (
+                <EmptyState
+                  title={emptyCopy(listTab)}
+                  description={t.outreachEmptyDetail}
+                  compact
+                />
+              )}
           </>
         )}
       </section>

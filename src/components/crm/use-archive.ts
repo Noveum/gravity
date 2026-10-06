@@ -1,6 +1,6 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import { companyPath, personPath, sectionPath } from "../routes";
+import { companyPath, personPath } from "../routes";
 import { useCrm } from "./crm-context";
 
 interface Archivable {
@@ -44,8 +44,8 @@ export function useArchive() {
   async function archive(kind: Kind, record: Archivable) {
     const archived = await change(kind, record, true);
     if (!archived) return false;
-    if (!crm.leaveRecord())
-      crm.go(sectionPath(kind === "person" ? "people" : "companies"));
+    crm.closePeek();
+    crm.leaveRecord();
     crm.notify(
       (kind === "person" ? t.personArchived : t.companyArchived).replace(
         "{name}",

@@ -12,6 +12,7 @@ import {
 } from "../record-details";
 import { personPath, sectionPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
+import { MetadataSection } from "./metadata-section";
 import { ArchivedNotice, RecordActions } from "./record-actions";
 
 interface ActivityItem {
@@ -110,6 +111,7 @@ export function CompanyRecord({ companyId }: { companyId: string }) {
         )}
         {context ? (
           <>
+            <MetadataSection entity="company" record={context.company} />
             <CompanyPeople context={context} onPerson={openPerson} />
             <RelatedOpportunities
               className="record-section"

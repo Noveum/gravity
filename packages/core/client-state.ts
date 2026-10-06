@@ -14,6 +14,17 @@ export function productSnapshot(
   );
   const people = snapshot.people.filter((person) => personIds.has(person.id));
   const companyIds = new Set(people.map((person) => person.companyId));
+  const allCompanyIds = new Set(
+    snapshot.people.map((person) => person.companyId),
+  );
+  const archivedProductsByCompany = new Map<string, Set<string>>();
+  for (const person of snapshot.archived.people) {
+    if (!person.companyId) continue;
+    const products =
+      archivedProductsByCompany.get(person.companyId) ?? new Set<string>();
+    for (const productId of person.productIds) products.add(productId);
+    archivedProductsByCompany.set(person.companyId, products);
+  }
   const inBrand = (productIds: readonly string[]) =>
     !productIds.length || productIds.includes(productId);
   return {
@@ -23,12 +34,8 @@ export function productSnapshot(
     companies: snapshot.companies.filter(
       (company) =>
         companyIds.has(company.id) ||
-        (!snapshot.people.some((person) => person.companyId === company.id) &&
-          inBrand(
-            snapshot.archived.people
-              .filter((person) => person.companyId === company.id)
-              .flatMap((person) => person.productIds),
-          )),
+        (!allCompanyIds.has(company.id) &&
+          inBrand([...(archivedProductsByCompany.get(company.id) ?? [])])),
     ),
     archived: {
       people: snapshot.archived.people.filter((person) =>

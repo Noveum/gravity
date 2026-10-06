@@ -38,10 +38,11 @@ describe("browsing records", () => {
       })),
     );
     await mountCrm(harness, "/actions");
-    fireEvent.click(screen.getByRole("button", { name: t.nextPage }));
-    expect(screen.getByText("Page 2 of 3")).toBeTruthy();
+    const list = within(screen.getByRole("region", { name: t.actions }));
+    fireEvent.click(list.getByRole("button", { name: t.nextPage }));
+    expect(list.getByText("Page 2 of 3")).toBeTruthy();
     act(() => visit(`/actions?owner=${demoUser}`));
-    expect(screen.getByText("Page 1 of 3")).toBeTruthy();
+    expect(list.getByText("Page 1 of 3")).toBeTruthy();
   });
   test("archiving from an action inspector retains the actions list", async () => {
     await mountCrm(harness, "/actions", true);

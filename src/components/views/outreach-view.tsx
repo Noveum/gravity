@@ -195,6 +195,7 @@ export function OutreachView() {
             version: verbs.versionOf(verbs.dialog.touch),
             channel: verbs.dialog.touch.channel,
             name: verbs.dialog.touch.person.name,
+            relationshipId: verbs.dialog.touch.relationshipId,
           }}
           onClose={verbs.closeDialog}
           onSent={() => {

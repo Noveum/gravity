@@ -205,7 +205,7 @@ describe("sending an approved touch", () => {
     ).toBeTruthy();
   });
 
-  test("the demo workspace never offers a send", async () => {
+  test("the demo workspace shows who would receive the message but never offers a send", async () => {
     await mountCrm(harness, "/outreach/approved");
     fireEvent.click(
       await screen.findByRole("button", {
@@ -216,6 +216,9 @@ describe("sending an approved touch", () => {
       name: t.sendTitle.replace("{name}", "Amara Stone"),
     });
     expect(within(dialog).getByText(t.sendDemoUnavailable)).toBeTruthy();
+    expect(within(dialog).getByText(t.sendRecipient)).toBeTruthy();
+    expect(within(dialog).getByText("person4@example.test")).toBeTruthy();
+    expect(within(dialog).getByText(t.channel)).toBeTruthy();
     expect(within(dialog).queryByRole("button", { name: t.sendNow })).toBe(
       null,
     );

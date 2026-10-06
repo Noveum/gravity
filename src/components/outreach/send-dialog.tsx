@@ -21,6 +21,7 @@ export type SendSource = {
   version: number;
   channel: string;
   name: string;
+  relationshipId: string;
 };
 
 const providerFor = (channel: string) =>
@@ -200,8 +201,21 @@ export function SendDialog({
       : main;
   };
   const loadError = connectionError || readinessError;
+  const demoRecipient = crm.personFor(source.relationshipId);
   const body = crm.demo ? (
-    <p className="muted">{t.sendDemoUnavailable}</p>
+    <>
+      <dl className="send-summary">
+        <dt>{t.sendRecipient}</dt>
+        <dd>
+          {(source.channel === "linkedin"
+            ? demoRecipient?.linkedinUrl
+            : demoRecipient?.email) || t.unknown}
+        </dd>
+        <dt>{t.channel}</dt>
+        <dd>{label(source.channel)}</dd>
+      </dl>
+      <p className="muted">{t.sendDemoUnavailable}</p>
+    </>
   ) : loadError ? (
     <ErrorState title={loadError} />
   ) : !connections ? (

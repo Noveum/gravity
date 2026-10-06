@@ -329,6 +329,7 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
             version: action.version,
             channel: action.channel,
             name: personFor(action.relationshipId)?.name ?? t.unknown,
+            relationshipId: action.relationshipId,
           }}
           onClose={() => setSending(false)}
           onSent={() => setSending(false)}

@@ -178,6 +178,7 @@ export function mcpHandler(
       for (const operation of operations) {
         if (operation.method !== "GET" && !writable) continue;
         if (operation.permission === "crm:send" && !canSend) continue;
+        if (operationRequirements(operation).humanSession) continue;
         server.registerTool(
           operation.name,
           {

@@ -1312,6 +1312,7 @@ const adminOperations = new Set([
 ]);
 const allProductOperations = new Set([
   "list_assistant_grants",
+  "resolve_delivery",
   "create_workspace",
   "create_organization",
   "create_product",

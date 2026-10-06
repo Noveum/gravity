@@ -8,7 +8,10 @@ import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import { mcpHandler, principalForGrant } from "../packages/mcp/server";
-import { operations } from "../packages/operations/catalog";
+import {
+  operationRequirements,
+  operations,
+} from "../packages/operations/catalog";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let service: CrmService;
@@ -90,6 +93,10 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
     const tool = result.tools.find(
       (tool: { name: string }) => tool.name === operation.name,
     );
+    if (operationRequirements(operation).humanSession) {
+      expect(tool).toBeUndefined();
+      continue;
+    }
     expect(tool).toBeTruthy();
     expect(tool.inputSchema.type).toBe("object");
     expect(tool.inputSchema.properties).not.toHaveProperty("organizationId");
@@ -198,6 +205,17 @@ test("each assistant scope combination lists only its tools and refuses the rest
     "send_action",
     "reconcile_delivery",
   ]);
+  const humanNames = operations
+    .filter((item) => operationRequirements(item).humanSession)
+    .map((item) => item.name);
+  expect(humanNames).toEqual(["resolve_delivery", "accept_invitation"]);
+  const resolve = operations.find((item) => item.name === "resolve_delivery");
+  if (!resolve) throw new Error("resolve_delivery missing");
+  expect(operationRequirements(resolve)).toMatchObject({
+    administrator: true,
+    allProducts: true,
+    humanSession: true,
+  });
   const listed = async (principal: Principal) =>
     (await rpc("tools/list", {}, principal)).result.tools.map(
       (tool: { name: string }) => tool.name,
@@ -211,12 +229,23 @@ test("each assistant scope combination lists only its tools and refuses the rest
     expect(readTools).not.toContain(name);
   const writeTools = await listed(writer);
   expect(writeTools).toEqual(
-    expect.arrayContaining([...readNames, ...writeNames]),
+    expect.arrayContaining(
+      [...readNames, ...writeNames].filter(
+        (name) => !humanNames.includes(name),
+      ),
+    ),
   );
   for (const name of sendNames) expect(writeTools).not.toContain(name);
-  expect(await listed(sender)).toEqual(
-    expect.arrayContaining([...readNames, ...writeNames, ...sendNames]),
+  const machineNames = (names: string[]) =>
+    names.filter((name) => !humanNames.includes(name));
+  const senderTools = await listed(sender);
+  expect(senderTools).toEqual(
+    expect.arrayContaining(
+      machineNames([...readNames, ...writeNames, ...sendNames]),
+    ),
   );
+  for (const tools of [readTools, writeTools, senderTools])
+    for (const name of humanNames) expect(tools).not.toContain(name);
   const draft = {
     name: "Scope refusal fixture",
     productId: demoId(11),

@@ -3,7 +3,7 @@ import type { OutboundService } from "@crm/connectors/outbound";
 import type { JsonValue } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { useCallback, useEffect, useState } from "react";
-import { dateLabel, label, requestJson } from "../client-api";
+import { dateLabel, errorText, label, requestJson } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { RecordDialog, text } from "../records/record-dialog";
 import { initials } from "../shell/workspace-menu";
@@ -23,12 +23,12 @@ const reasons = [
   "written_off",
 ] as const;
 
-export function useDeliveryChecks() {
-  const { organizationId, productId, sourceData } = useCrm();
+export function useDeliveryChecks(enabled: boolean) {
+  const { organizationId, productId, sourceData, notify, timeZone } = useCrm();
   const asOf = sourceData?.asOf;
   const [items, setItems] = useState<DeliveryCheck[]>([]);
   const reload = useCallback(async () => {
-    if (!organizationId) return;
+    if (!organizationId || !enabled) return;
     const scope = new URLSearchParams({
       operation: "deliveries",
       organizationId,
@@ -39,10 +39,10 @@ export function useDeliveryChecks() {
         `/api/outreach?${scope}`,
       );
       setItems(result.items);
-    } catch {
-      setItems([]);
+    } catch (error) {
+      notify(errorText(error, timeZone), "danger");
     }
-  }, [organizationId, productId]);
+  }, [organizationId, productId, enabled, notify, timeZone]);
   useEffect(() => {
     if (asOf) void reload();
   }, [reload, asOf]);

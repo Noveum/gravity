@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
-import { requestJson } from "../src/components/client-api";
+import { RequestError, requestJson } from "../src/components/client-api";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
@@ -189,5 +189,41 @@ describe("deliveries that need a check", () => {
     expect([...outcome.options].map((option) => option.value)).toEqual([
       "sent",
     ]);
+  });
+});
+
+describe("fetching deliveries", () => {
+  const deliveryCalls = () =>
+    vi
+      .mocked(requestJson)
+      .mock.calls.filter(([url]) =>
+        String(url).includes("operation=deliveries"),
+      );
+
+  test("only the Sent tab asks for deliveries", async () => {
+    vi.mocked(requestJson).mockClear();
+    await mountCrm(harness, "/outreach/today");
+    await screen.findByRole("heading", { level: 1 });
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(requestJson)
+          .mock.calls.some(([url]) => String(url).includes("/api/outreach")),
+      ).toBe(true),
+    );
+    expect(deliveryCalls()).toHaveLength(0);
+  });
+
+  test("a failed delivery fetch is reported instead of silently emptying the list", async () => {
+    const previous = vi.mocked(requestJson).getMockImplementation();
+    vi.mocked(requestJson).mockImplementation(async (url, init) => {
+      if (String(url).includes("operation=deliveries"))
+        throw new RequestError("RATE_LIMITED");
+      if (!previous) throw new Error("harness");
+      return previous(url, init);
+    });
+    await mountCrm(harness, "/outreach/sent");
+    const alert = await screen.findByText(t.errors.RATE_LIMITED);
+    expect(alert.closest('[role="alert"]')).toBeTruthy();
   });
 });

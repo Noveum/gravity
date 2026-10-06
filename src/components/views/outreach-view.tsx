@@ -49,7 +49,7 @@ export function OutreachView() {
   const outreach = useOutreachData();
   const { due, queue } = outreach;
   const send = useOutreachSend();
-  const deliveries = useDeliveryChecks();
+  const deliveries = useDeliveryChecks(tab === "sent");
   const touches = new Map<string, Touch>(
     [
       ...(due?.groups.flatMap((group) => group.touches) ?? []),

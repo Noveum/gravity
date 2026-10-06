@@ -19,12 +19,6 @@ import {
   seedWorkspace,
 } from './fixture.ts';
 
-const loggerModule = await import('../src/logger.ts');
-
-mock.module('../src/logger.ts', () => ({
-  ...loggerModule,
-  logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
-}));
 mock.module('ioredis', () => ({ Redis: FakeRedis }));
 
 const { createRealtimeHub } = await import('../src/hub.ts');
@@ -44,7 +38,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await dropSeededWorkspaces();
   resetFakeRedis();
-  mock.module('../src/logger.ts', () => loggerModule);
 });
 
 async function newHub(overrides: Parameters<typeof createRealtimeHub>[0] = {}): Promise<Hub> {

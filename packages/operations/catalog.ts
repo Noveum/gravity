@@ -762,7 +762,7 @@ export const operations: Operation[] = [
     operation: "relationship",
     name: "change_relationship",
     description:
-      "Update outreach stage, priority or next step/date with its current version.",
+      "Update outreach stage, priority, next step/date or owner with its current version. A new ownerId must be an active member with access to the product; the relationship's open touches move to the new sender and lose their approval.",
     schema: relationshipChangeSchema,
     run: (c, input) => outreach(c).changeRelationship(c.principal, input),
   }),

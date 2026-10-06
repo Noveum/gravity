@@ -19,6 +19,7 @@ import * as s from "../database/schema";
 import { zonedDayBounds } from "./calendar";
 import { scopeSchema } from "./crm";
 import { draftHash, draftSubject } from "./drafts";
+import { assertProductAccess, reassignTouches } from "./members";
 import { planEnrollment } from "./outreach-planner";
 import {
   type ContactRules,
@@ -92,13 +93,15 @@ export const relationshipChangeSchema = scopeSchema
     priority: z.enum(["low", "normal", "high"]).optional(),
     nextStep: z.string().trim().max(500).optional(),
     nextStepDueAt: z.iso.datetime().nullable().optional(),
+    ownerId: z.string().trim().min(1).max(200).optional(),
   })
   .refine(
     (value) =>
       value.stageId !== undefined ||
       value.priority !== undefined ||
       value.nextStep !== undefined ||
-      value.nextStepDueAt !== undefined,
+      value.nextStepDueAt !== undefined ||
+      value.ownerId !== undefined,
   );
 const stepSchema = z.object({
   number: z.number().int().min(1).max(20),
@@ -1825,10 +1828,17 @@ export class OutreachService {
           );
         if (!stage) throw new DomainError("NOT_FOUND", 404);
       }
+      const ownerChanged =
+        input.ownerId !== undefined && input.ownerId !== relationship.ownerId;
+      if (input.ownerId !== undefined && ownerChanged)
+        await assertProductAccess(tx, input.organizationId, input.ownerId, [
+          relationship.productId,
+        ]);
       const [updated] = await tx
         .update(s.relationships)
         .set({
           ...(moved ? { stageId: input.stageId } : {}),
+          ...(ownerChanged ? { ownerId: input.ownerId } : {}),
           ...(input.priority !== undefined ? { priority: input.priority } : {}),
           ...(input.nextStep !== undefined ? { nextStep: input.nextStep } : {}),
           ...(input.nextStepDueAt !== undefined
@@ -1848,13 +1858,35 @@ export class OutreachService {
         )
         .returning();
       if (!updated) throw new DomainError("CONFLICT", 409);
-      await tx.insert(s.changeEvents).values({
-        organizationId: input.organizationId,
-        productId: relationship.productId,
-        actorId: principal.userId,
-        type: moved ? "relationship.stage_moved" : "relationship.updated",
-        entityId: relationship.id,
-      });
+      const edited =
+        input.priority !== undefined ||
+        input.nextStep !== undefined ||
+        input.nextStepDueAt !== undefined;
+      const types = [
+        moved
+          ? "relationship.stage_moved"
+          : edited || !ownerChanged
+            ? "relationship.updated"
+            : "",
+        ownerChanged ? "relationship.owner_changed" : "",
+      ].filter(Boolean);
+      await tx.insert(s.changeEvents).values(
+        types.map((type) => ({
+          organizationId: input.organizationId,
+          productId: relationship.productId,
+          actorId: principal.userId,
+          type,
+          entityId: relationship.id,
+        })),
+      );
+      if (ownerChanged)
+        await reassignTouches(
+          tx,
+          principal.userId,
+          input.organizationId,
+          updated.ownerId,
+          { relationshipId: relationship.id },
+        );
       return updated;
     });
   }

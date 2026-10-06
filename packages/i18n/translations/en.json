@@ -1638,5 +1638,11 @@
   "canSendBadge": "Can send",
   "cannotSendBadge": "Cannot send yet",
   "sendingEmpty": "You have no connected accounts in this workspace.",
-  "openConnections": "Open Connections"
+  "openConnections": "Open Connections",
+  "workspaceGrants": "Everyone's assistants",
+  "workspaceGrantsDetail": "Every assistant that can act in this workspace, and whose account it acts for. Revoking stops it at once.",
+  "workspaceGrantsEmpty": "No assistant has access to this workspace.",
+  "grantSince": "Since {date}",
+  "revokeFor": "Revoke access for {name}",
+  "revokeGrantConfirm": "Revoke"
 }

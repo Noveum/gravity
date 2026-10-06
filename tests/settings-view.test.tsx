@@ -590,3 +590,61 @@ describe("sending settings", () => {
     expect(within(panel("sending")).queryByRole("combobox")).toBeNull();
   });
 });
+
+describe("assistant settings", () => {
+  test("an admin sees every assistant grant and revokes a teammate's", async () => {
+    const [grant] = await harness.local.db
+      .insert(s.mcpGrants)
+      .values({
+        organizationId: demoId(1),
+        userId: member,
+        productIds: ["*"],
+      })
+      .returning();
+    await mountSettings(harness, "/settings/assistants");
+    expect(
+      within(panel("assistants")).getByLabelText(t.mcpEndpoint),
+    ).toBeTruthy();
+    const everyone = await within(panel("assistants")).findByRole("group", {
+      name: t.workspaceGrants,
+    });
+    const row = await within(everyone).findByRole("listitem", {
+      name: "Sam Rivera",
+    });
+    fireEvent.click(
+      within(row).getByRole("button", {
+        name: t.revokeFor.replace("{name}", "Sam Rivera"),
+      }),
+    );
+    fireEvent.click(
+      within(row).getByRole("button", { name: t.revokeGrantConfirm }),
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "revoke_assistant")?.body).toMatchObject({
+        grantId: grant?.id,
+      }),
+    );
+    const [stored] = await harness.local.db
+      .select()
+      .from(s.mcpGrants)
+      .where(eq(s.mcpGrants.id, grant?.id ?? ""));
+    expect(stored?.active).toBe(false);
+    await waitFor(() =>
+      expect(
+        within(everyone).queryByRole("listitem", { name: "Sam Rivera" }),
+      ).toBeNull(),
+    );
+  });
+
+  test("a member manages only their own assistants", async () => {
+    await mountSettings(harness, "/settings/assistants", member);
+    expect(
+      within(panel("assistants")).getByLabelText(t.mcpEndpoint),
+    ).toBeTruthy();
+    expect(
+      within(panel("assistants")).queryByRole("group", {
+        name: t.workspaceGrants,
+      }),
+    ).toBeNull();
+  });
+});

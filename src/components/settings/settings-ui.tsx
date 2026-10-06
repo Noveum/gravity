@@ -119,12 +119,14 @@ export function QueryState({
 
 export function ConfirmButton({
   label,
+  ariaLabel,
   confirmLabel,
   disabled = false,
   onConfirm,
   children,
 }: {
   label: string;
+  ariaLabel?: string;
   confirmLabel: string;
   disabled?: boolean;
   onConfirm: () => Promise<unknown>;
@@ -137,6 +139,7 @@ export function ConfirmButton({
       <button
         type="button"
         className="ghost"
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => setAsking(true)}
       >

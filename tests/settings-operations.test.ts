@@ -5,6 +5,7 @@ import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import {
+  operationAvailable,
   operationRequirements,
   operations,
 } from "../packages/operations/catalog";
@@ -60,6 +61,22 @@ async function connection(ownerId: string, productId: string) {
   if (!row) throw new Error("connection fixture");
   return row;
 }
+async function grant(userId: string, organizationId = org, active = true) {
+  const [row] = await local.db
+    .insert(s.mcpGrants)
+    .values({ userId, organizationId, productIds: ["*"], active })
+    .returning();
+  if (!row) throw new Error("grant fixture");
+  return row;
+}
+async function grantActive(id: string) {
+  const [row] = await local.db
+    .select({ active: s.mcpGrants.active })
+    .from(s.mcpGrants)
+    .where(eq(s.mcpGrants.id, id));
+  return row?.active;
+}
+
 describe("update_connection", () => {
   test("the owner moves a connection to another product without new consent", async () => {
     const row = await connection(demoUser, demoId(10));
@@ -131,5 +148,65 @@ describe("update_connection", () => {
       administrator: false,
       currentAccountOrSourceOwner: true,
     });
+  });
+});
+
+describe("assistant grants", () => {
+  test("admins list every active grant in the workspace with its member", async () => {
+    const own = await grant(demoUser);
+    const teammates = await grant("demo-teammate");
+    await grant("demo-teammate", org, false);
+    await grant(demoUser, demoId(2));
+    const listed = await run<{
+      grants: { id: string; userId: string; name: string; email: string }[];
+    }>("list_assistant_grants", owner, {});
+    expect(listed.grants.map((item) => item.id).sort()).toEqual(
+      [own.id, teammates.id].sort(),
+    );
+    expect(
+      listed.grants.find((item) => item.id === teammates.id),
+    ).toMatchObject({
+      userId: "demo-teammate",
+      name: "Sam Rivera",
+      email: "sam@example.test",
+    });
+    await run("list_assistant_grants", { ...agent, readOnly: true }, {});
+  });
+
+  test("members and product-restricted assistants cannot list teammates' grants", async () => {
+    await expect(
+      run("list_assistant_grants", teammate, {}),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      run("list_assistant_grants", { ...agent, productIds: [demoId(10)] }, {}),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const operation = find("list_assistant_grants");
+    expect(operationRequirements(operation)).toMatchObject({
+      administrator: true,
+      allProducts: true,
+    });
+    expect(operationAvailable(operation, teammate, "member")).toBe(false);
+  });
+
+  test("an admin revokes a teammate's grant but a member cannot revoke anyone else's", async () => {
+    const teammates = await grant("demo-teammate");
+    const admins = await grant(demoUser);
+    await expect(
+      run("revoke_assistant", teammate, { grantId: admins.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await grantActive(admins.id)).toBe(true);
+    await expect(
+      run("revoke_assistant", agent, { grantId: teammates.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await grantActive(teammates.id)).toBe(true);
+    expect(
+      await run("revoke_assistant", owner, { grantId: teammates.id }),
+    ).toEqual({ revoked: true });
+    expect(await grantActive(teammates.id)).toBe(false);
+    const events = await local.db
+      .select()
+      .from(s.changeEvents)
+      .where(eq(s.changeEvents.entityId, teammates.id));
+    expect(events.map((event) => event.type)).toContain("assistant.revoked");
   });
 });

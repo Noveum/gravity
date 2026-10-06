@@ -1,4 +1,3 @@
-import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   ProviderConfigurationService,
@@ -19,6 +18,12 @@ import {
   integrationScope,
   updateConnectionInput,
 } from "../connectors/service";
+import {
+  listAssistantGrants,
+  listAssistantGrantsSchema,
+  revokeAssistantGrant,
+  revokeAssistantSchema,
+} from "../core/assistant-grants";
 import { publishChange } from "../core/changes";
 import {
   actionChangeSchema,
@@ -96,7 +101,6 @@ import {
 } from "../core/records";
 import { updateWorkspaceSchema, WorkspaceService } from "../core/workspace";
 import type { Database } from "../database/client";
-import { mcpGrants } from "../database/schema";
 import { downloadAsset, maxFileSize, uploadAsset } from "../storage/files";
 
 export interface OperationContext {
@@ -1141,47 +1145,25 @@ export const operations: Operation[] = [
       }),
   }),
   operation({
+    api: "crm",
+    method: "GET",
+    operation: "assistant-grants",
+    name: "list_assistant_grants",
+    description:
+      "List every active assistant grant in the workspace with its member's name and email, product scope and creation time. Requires admin membership and an all-products grant.",
+    schema: listAssistantGrantsSchema,
+    run: (c, input) =>
+      listAssistantGrants(c.db, c.principal, input.organizationId),
+  }),
+  operation({
     api: "grants",
     method: "DELETE",
     operation: "revoke",
     name: "revoke_assistant",
     description:
-      "Revoke an assistant grant owned by the acting user in the current organization. Revoking this connection invalidates subsequent calls.",
-    schema: z.object({
-      organizationId: z.uuid().optional(),
-      grantId: z.uuid(),
-    }),
-    run: async (c, input) => {
-      const [grant] = await c.db
-        .select()
-        .from(mcpGrants)
-        .where(
-          and(
-            eq(mcpGrants.id, input.grantId),
-            eq(mcpGrants.userId, c.principal.userId),
-          ),
-        );
-      if (!grant) throw new DomainError("NOT_FOUND", 404);
-      if (c.principal.source === "mcp")
-        await authorize(
-          c.db,
-          c.principal,
-          grant.organizationId,
-          undefined,
-          true,
-        );
-      await c.db
-        .update(mcpGrants)
-        .set({ active: false })
-        .where(
-          and(
-            eq(mcpGrants.id, grant.id),
-            eq(mcpGrants.userId, c.principal.userId),
-          ),
-        );
-      publishChange(grant.organizationId);
-      return { revoked: true };
-    },
+      "Revoke an assistant grant. You may revoke your own grant; a workspace admin signed in to Gravity may also revoke a teammate's grant. Revoking this connection invalidates subsequent calls.",
+    schema: revokeAssistantSchema,
+    run: (c, input) => revokeAssistantGrant(c.db, c.principal, input),
     publish: false,
   }),
 ];
@@ -1235,6 +1217,7 @@ const workspaceAdministration = [
   "restore_product",
 ];
 const adminOperations = new Set([
+  "list_assistant_grants",
   "create_workspace",
   "create_organization",
   "create_product",
@@ -1245,6 +1228,7 @@ const adminOperations = new Set([
   ...workspaceAdministration,
 ]);
 const allProductOperations = new Set([
+  "list_assistant_grants",
   "create_workspace",
   "create_organization",
   "create_product",

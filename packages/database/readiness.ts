@@ -33,7 +33,11 @@ export async function assertDatabaseSchema(db: Database) {
       columnName: sql<string>`column_name`,
     })
     .from(sql`information_schema.columns`)
-    .where(sql`table_schema = 'public'`);
+    .where(sql`table_schema = 'public' AND pg_catalog.has_column_privilege(
+      pg_catalog.quote_ident(table_schema) || '.' || pg_catalog.quote_ident(table_name),
+      column_name,
+      'SELECT'
+    )`);
   if (!databaseSchemaComplete(columns))
     throw new Error("DATABASE_SCHEMA_INCOMPLETE");
 }

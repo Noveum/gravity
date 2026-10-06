@@ -3514,6 +3514,43 @@ tbody tr[data-selected] td:first-child::before {
 .touch-group-title {
   top: var(--gravity-group-row);
 }
+.delivery-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.delivery-checks-note {
+  margin: 0;
+  padding: 4px var(--gravity-row-x);
+  border-bottom: 1px solid var(--gravity-border-hairline);
+}
+.delivery-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--gravity-list-row);
+  padding: 0 var(--gravity-row-x);
+  border-bottom: 1px solid var(--gravity-border-hairline);
+  font-size: var(--text-dense);
+  white-space: nowrap;
+  min-width: 0;
+}
+.delivery-row > .row-meta {
+  margin-left: auto;
+}
+.delivery-actions {
+  --gravity-control: 22px;
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+@container (max-width: 420px) {
+  .delivery-row > .row-avatar,
+  .delivery-row > .row-company,
+  .delivery-row > .row-kind {
+    display: none;
+  }
+}
 .touch-row {
   position: relative;
   display: flex;

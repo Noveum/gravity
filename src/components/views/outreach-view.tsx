@@ -3,6 +3,7 @@ import t from "@crm/i18n/translations/en.json";
 import { useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useRef } from "react";
 import { useVerbs, useWorkspaceData } from "../crm/crm-context";
+import { DeliveryChecks, useDeliveryChecks } from "../outreach/delivery-checks";
 import {
   type PausedEnrollment,
   type QueueTouch,
@@ -48,6 +49,7 @@ export function OutreachView() {
   const outreach = useOutreachData();
   const { due, queue } = outreach;
   const send = useOutreachSend();
+  const deliveries = useDeliveryChecks();
   const touches = new Map<string, Touch>(
     [
       ...(due?.groups.flatMap((group) => group.touches) ?? []),
@@ -118,14 +120,18 @@ export function OutreachView() {
     today: () => <FollowUpGroups touches={today} now={now} row={row} />,
     drafts: () => flat(drafts, t.outreachTabs.drafts),
     approved: () => flat(approved, t.outreachTabs.approved),
-    sent: () =>
-      sent.length ? (
-        <TouchGroup title={t.outreachTabs.sent} count={sent.length}>
-          {sent.map((touch) => (
-            <SentRow key={touch.id} touch={touch} />
-          ))}
-        </TouchGroup>
-      ) : null,
+    sent: () => (
+      <>
+        <DeliveryChecks items={deliveries.items} reload={deliveries.reload} />
+        {sent.length ? (
+          <TouchGroup title={t.outreachTabs.sent} count={sent.length}>
+            {sent.map((touch) => (
+              <SentRow key={touch.id} touch={touch} />
+            ))}
+          </TouchGroup>
+        ) : null}
+      </>
+    ),
     paused: () =>
       paused.length ? (
         <TouchGroup title={t.outreachTabs.paused} count={paused.length}>
@@ -222,13 +228,15 @@ export function OutreachView() {
         ) : (
           <>
             {content[tab]()}
-            {listTab && !counts[listTab] && (
-              <EmptyState
-                title={emptyCopy(listTab)}
-                description={t.outreachEmptyDetail}
-                compact
-              />
-            )}
+            {listTab &&
+              !counts[listTab] &&
+              !(listTab === "sent" && deliveries.items.length) && (
+                <EmptyState
+                  title={emptyCopy(listTab)}
+                  description={t.outreachEmptyDetail}
+                  compact
+                />
+              )}
           </>
         )}
       </section>

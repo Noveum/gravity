@@ -293,7 +293,8 @@
     "STAGE_TARGET_INVALID": "Choose another active stage in the same pipeline to move records to.",
     "SEQUENCE_ARCHIVED": "This sequence is archived. Restore it before enrolling or resuming anyone.",
     "SEQUENCE_ACTIVE": "This sequence is not archived.",
-    "FOLDER_NOT_EMPTY": "This folder still holds files or other folders. Empty it before deleting it."
+    "FOLDER_NOT_EMPTY": "This folder still holds files or other folders. Empty it before deleting it.",
+    "DELIVERY_NOT_RESOLVABLE": "This delivery is already settled."
   },
   "consentAccess": "Access",
   "consentLevelRead": "Read",
@@ -1688,5 +1689,37 @@
   "messageSent": "Sent to {name}",
   "sendOutcomeUnknown": "The provider may have sent the message to {name}. Check it under Sent before trying again.",
   "sendRefused": "The provider refused the message ({code}). Fix the cause, then send again.",
-  "sendingNow": "Sending…"
+  "sendingNow": "Sending…",
+  "deliveryChecks": "Needs a check",
+  "deliveryChecksDetail": "These sends may or may not have reached the provider. Never send them again; check them here.",
+  "deliveryStatus": {
+    "sending": "Sending",
+    "unknown": "Outcome unknown",
+    "accepted": "Accepted, not recorded"
+  },
+  "deliverySender": "Sender: {name}",
+  "reconcile": "Reconcile",
+  "reconcileTitle": "Reconcile the send to {name}",
+  "reconcileDetail": "Gravity asks the provider whether this exact message went out. It never sends it again.",
+  "reconcileMessageId": "LinkedIn message ID",
+  "reconcileMessageIdHint": "Copy the ID of the sent message from the original chat. Without it the outcome stays unknown.",
+  "reconciled": "Confirmed the send to {name}",
+  "resolve": "Resolve",
+  "resolveTitle": "Resolve the send to {name}",
+  "resolveDetail": "This records the outcome without contacting the provider. Marking it not sent lets the sender try again, so check first that nothing went out.",
+  "resolveOutcome": "Outcome",
+  "resolveOutcomes": {
+    "sent": "It was sent",
+    "failed": "It was not sent"
+  },
+  "resolveReason": "How you know",
+  "resolveReasons": {
+    "confirmed_in_provider": "Found it in the provider",
+    "absent_in_provider": "It is not in the provider",
+    "recipient_confirmed": "The recipient confirmed it",
+    "written_off": "Written off"
+  },
+  "resolveConfirm": "I checked, and this outcome is correct",
+  "resolveConfirmRequired": "Confirm that you checked before resolving.",
+  "resolved": "Resolved the send to {name}"
 }

@@ -115,6 +115,18 @@ import {
   RecordService,
 } from "../core/records";
 import type { Database } from "../database/client";
+import { fileScope } from "../files/scope";
+import * as library from "../files/service";
+import {
+  fileCompleteSchema,
+  fileCreateSchema,
+  fileListSchema,
+  fileTransferSchema,
+  fileUpdateSchema,
+  fileUploadSchema,
+  MAX_UPLOAD_BYTES,
+  publicFileTokenSchema,
+} from "../files/validators";
 import { downloadAsset, maxFileSize, uploadAsset } from "../storage/files";
 
 export interface OperationContext {
@@ -123,7 +135,7 @@ export interface OperationContext {
 }
 export interface Operation {
   name: string;
-  api: "crm" | "outreach" | "integrations" | "materials" | "grants";
+  api: "crm" | "outreach" | "integrations" | "materials" | "grants" | "files";
   method: "GET" | "POST" | "DELETE";
   operation: string;
   description: string;
@@ -211,6 +223,189 @@ export function materialBytes(value: string) {
 }
 
 export const operations: Operation[] = [
+  operation({
+    api: "files",
+    method: "GET",
+    operation: "list",
+    name: "list_files",
+    description:
+      "List readable folders and files in one product with their current access and ancestors.",
+    schema: fileListSchema.extend({
+      organizationId: z.uuid(),
+      productId: z.uuid(),
+    }),
+    run: async (c, input) => {
+      const scope = await fileScope(c.db, c.principal, input);
+      return library.listFiles(c.db, scope.principal, input);
+    },
+  }),
+  operation({
+    api: "files",
+    method: "GET",
+    operation: "detail",
+    name: "get_file",
+    description:
+      "Read an authorized file and Markdown contents, enforcing all ancestors and the current product grant.",
+    schema: scopeSchema.extend({ productId: z.uuid(), id: z.uuid() }),
+    run: async (c, input) => {
+      const scope = await fileScope(c.db, c.principal, input);
+      return library.getFile(c.db, scope.principal, input.id);
+    },
+  }),
+  operation({
+    api: "files",
+    method: "POST",
+    operation: "create",
+    name: "create_file",
+    description:
+      "Create a product folder or editable Markdown document with private, product-workspace, public, inherited or specific-member access. Public includes anonymous link access.",
+    schema: fileCreateSchema.extend({
+      organizationId: z.uuid(),
+      productId: z.uuid(),
+    }),
+    run: async (c, input) =>
+      library.createFile(
+        await fileScope(c.db, c.principal, input, true),
+        input,
+      ),
+  }),
+  operation({
+    api: "files",
+    method: "POST",
+    operation: "update",
+    name: "update_file",
+    description:
+      "Rename or edit Markdown with expectedSyncId. Only the owner can change sharing; recipient membership and product authorization still apply.",
+    schema: fileUpdateSchema.extend({
+      organizationId: z.uuid(),
+      productId: z.uuid(),
+      id: z.uuid(),
+    }),
+    run: async (c, input) =>
+      library.updateFile(
+        await fileScope(c.db, c.principal, input, true),
+        input.id,
+        input,
+      ),
+  }),
+  operation({
+    api: "files",
+    method: "POST",
+    operation: "transfer",
+    name: "transfer_files",
+    description:
+      "Atomically move, copy or delete up to 1000 product files and folders. All ancestors apply; moving/deleting requires ownership of every descendant. Copies start private.",
+    schema: fileTransferSchema.extend({
+      organizationId: z.uuid(),
+      productId: z.uuid(),
+    }),
+    run: async (c, input) =>
+      library.transferFiles(
+        await fileScope(c.db, c.principal, input, true),
+        input,
+      ),
+  }),
+  operation({
+    api: "files",
+    method: "POST",
+    operation: "reserve",
+    name: "reserve_file_upload",
+    destructive: false,
+    description:
+      "Reserve a private upload up to 100 MiB. PUT bytes to the returned 10-minute URL, then complete. Large bytes go directly to object storage.",
+    schema: fileUploadSchema.extend({
+      organizationId: z.uuid(),
+      productId: z.uuid(),
+    }),
+    run: async (c, input) => {
+      const scope = await fileScope(c.db, c.principal, input, true);
+      return library.startFileUpload(c.db, scope.principal, input);
+    },
+  }),
+  operation({
+    api: "files",
+    method: "POST",
+    operation: "complete",
+    name: "complete_file_upload",
+    description:
+      "Seal an owned upload into an immutable file after size verification. Rechecks destination access and expiration.",
+    schema: fileCompleteSchema.extend({
+      organizationId: z.uuid(),
+      productId: z.uuid(),
+    }),
+    run: async (c, input) =>
+      library.completeFileUpload(
+        await fileScope(c.db, c.principal, input, true),
+        input,
+      ),
+  }),
+  operation({
+    api: "files",
+    method: "POST",
+    operation: "upload-bytes",
+    name: "put_local_file_upload",
+    publish: false,
+    description:
+      "Local demo transport for an owned upload. Disabled in production; production uses the reservation signed PUT URL.",
+    schema: scopeSchema.extend({
+      productId: z.uuid(),
+      uploadId: z.uuid(),
+      dataBase64: z.string().max(Math.ceil(MAX_UPLOAD_BYTES / 3) * 4),
+    }),
+    run: async (c, input) =>
+      library.putLocalUpload(
+        await fileScope(c.db, c.principal, input, true),
+        input.uploadId,
+        materialBytes(input.dataBase64),
+      ),
+  }),
+  operation({
+    api: "files",
+    method: "GET",
+    operation: "download",
+    name: "download_file",
+    description:
+      "Authorize and return a short-lived private download URL or Markdown content. Previously issued URLs expire in 60 seconds.",
+    schema: scopeSchema.extend({
+      productId: z.uuid(),
+      id: z.uuid(),
+      preview: z.enum(["true", "false"]).default("false"),
+    }),
+    run: async (c, input) => {
+      const scope = await fileScope(c.db, c.principal, input);
+      return library.fileDownload(
+        c.db,
+        scope.principal,
+        input.id,
+        input.preview === "true",
+      );
+    },
+  }),
+  operation({
+    api: "files",
+    method: "GET",
+    operation: "public",
+    name: "get_public_file",
+    description:
+      "Read a deliberately published document or folder by its unguessable public token. Every ancestor must permit anonymous access.",
+    schema: z.object({ token: publicFileTokenSchema }),
+    run: (c, input) => library.getPublicFile(c.db, input.token),
+  }),
+  operation({
+    api: "files",
+    method: "GET",
+    operation: "public-download",
+    name: "download_public_file",
+    description:
+      "Download a deliberately public document by token, with current anonymous access checked again.",
+    schema: z.object({
+      token: publicFileTokenSchema,
+      preview: z.enum(["true", "false"]).default("false"),
+    }),
+    run: (c, input) =>
+      library.fileDownload(c.db, null, input.token, input.preview === "true"),
+  }),
+
   operation({
     api: "crm",
     method: "POST",
@@ -1278,6 +1473,7 @@ const defaults = {
   outreach: "due",
   integrations: "overview",
   materials: "download",
+  files: "list",
   grants: "revoke",
 };
 export function apiOperation(

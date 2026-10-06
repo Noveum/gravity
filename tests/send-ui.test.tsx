@@ -254,6 +254,12 @@ test("a refusal because the chat is linked elsewhere points to the person's exis
   expect(link.getAttribute("href")).toBe(
     personPath(demoId(204), { relationshipId: demoId(304) }),
   );
+  fireEvent.click(link);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await within(
+    screen.getByRole("complementary", { name: t.recordDetails }),
+  ).findByRole("heading", { name: "Amara Stone" });
+  expect(window.location.pathname).toBe("/outreach/approved");
 });
 
 describe("sending an approved follow-up", () => {

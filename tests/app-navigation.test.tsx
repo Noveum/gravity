@@ -1082,6 +1082,11 @@ test("under a remembered brand a person's company opens in the inspector", async
     ).findByRole("heading", { name: "Northstar Labs" }),
   ).toBeTruthy();
   expect(await screen.findByRole("button", { name: "Mira Chen" })).toBeTruthy();
+  expect(
+    within(
+      screen.getByRole("complementary", { name: t.recordDetails }),
+    ).getByRole("button", { name: "Coordinate across products" }),
+  ).toBeTruthy();
   expect(screen.queryByText(t.errors.NOT_FOUND)).toBeNull();
   expect(screen.queryByText(t.recordUnavailable)).toBeNull();
   const companyReads = request.mock.calls
@@ -1129,6 +1134,54 @@ test("the company timeline puts upcoming work first and past work newest first",
   const past = within(groups[1] as HTMLElement).getAllByRole("listitem");
   const times = past.map((item) => Number(item.dataset.at));
   expect(times).toEqual([...times].sort((a, b) => b - a));
+});
+
+test("company activity pages completed work without losing the underlying list", async () => {
+  const context = serialize(
+    await service.companyContext(
+      principal,
+      { organizationId: demoId(1) },
+      demoId(100),
+    ),
+  );
+  const action = context.actions[0];
+  if (!action) throw new Error("fixture action missing");
+  const harnessed = request.getMockImplementation();
+  request.mockImplementation(async (url, init) => {
+    if (
+      new URL(url, "http://localhost").searchParams.get("operation") ===
+      "company"
+    )
+      return {
+        ...context,
+        meetings: [],
+        actions: Array.from({ length: 55 }, (_, index) => ({
+          ...action,
+          id: demoId(4000 + index),
+          title: `Completed activity ${index + 1}`,
+          status: "completed",
+          dueAt: new Date(Date.now() - (index + 1) * 86400000).toISOString(),
+        })),
+      };
+    if (!harnessed) throw new Error("harness missing");
+    return harnessed(url, init);
+  });
+  mount("/companies");
+  const list = screen.getByRole("table");
+  fireEvent.click(screen.getByRole("link", { name: "Northstar Labs" }));
+  const activity = await screen.findByRole("region", { name: t.activity });
+  await within(activity).findByRole("button", { name: "Completed activity 1" });
+  expect(within(activity).getAllByRole("listitem")).toHaveLength(50);
+  expect(
+    within(activity).queryByRole("button", { name: "Completed activity 55" }),
+  ).toBeNull();
+  fireEvent.click(within(activity).getByRole("button", { name: t.nextPage }));
+  expect(
+    within(activity).getByRole("button", { name: "Completed activity 55" }),
+  ).toBeTruthy();
+  expect(within(activity).getAllByRole("listitem")).toHaveLength(5);
+  expect(screen.getByRole("table")).toBe(list);
+  expect(window.location.pathname).toBe("/companies");
 });
 
 test("switching workspace drops an owner filter that names a member of the old workspace", async () => {

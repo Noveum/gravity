@@ -1,6 +1,38 @@
 import { expect, test } from "@playwright/test";
 import { demoId } from "../../packages/database/seed";
 
+test("a file preview URL opens after direct navigation and reload", async ({
+  page,
+  request,
+}) => {
+  const response = await request.post("/api/files", {
+    headers: { Origin: String(test.info().project.use.baseURL) },
+    data: {
+      organizationId: demoId(1),
+      productId: demoId(10),
+      operation: "create",
+      kind: "markdown",
+      name: `Linked file ${crypto.randomUUID()}`,
+      body: "# Linked preview",
+      visibility: "private",
+    },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+  const result = await response.json();
+  const id = result.entries[0].id;
+  const href = `/files?open=${id}&productId=${demoId(10)}`;
+  await page.goto(href);
+  const panel = page.locator("#record-inspector");
+  await expect(
+    panel.getByRole("heading", { name: "Linked preview" }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    panel.getByRole("heading", { name: "Linked preview" }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(href);
+});
+
 test("records and files share a persistent resizable inspector", async ({
   page,
   request,

@@ -1168,7 +1168,7 @@
     "previous": "Previous row",
     "first": "First row",
     "last": "Last row",
-    "peek": "Open the row in the side panel",
+    "peek": "Preview the row",
     "open": "Open the record in the side panel",
     "select": "Select or clear the row",
     "extendNext": "Extend the selection down",

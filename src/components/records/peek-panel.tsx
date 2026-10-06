@@ -18,9 +18,16 @@ import {
 import { useArchive } from "../crm/use-archive";
 import { useDraft } from "../crm/use-draft";
 import { FileInspector } from "../files/file-library";
-import { CompanyDetails, PersonDetails, RelatedWork } from "../record-details";
+import {
+  CompanyPeople,
+  CompanyProfile,
+  PersonDetails,
+  RelatedOpportunities,
+  RelatedWork,
+} from "../record-details";
 import { companyPath, personPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
+import { CompanyActivity } from "./company-activity";
 import { MetadataSection } from "./metadata-section";
 import {
   ActionSummary,
@@ -42,7 +49,15 @@ function PersonPeek() {
     )?.id ||
     "";
   const { context, missing } = usePersonContext(relationshipId);
-  const action = findAction(crm.peek.actionId, crm.sourceData, context);
+  const requestedAction = findAction(
+    crm.peek.actionId,
+    crm.sourceData,
+    context,
+  );
+  const action =
+    requestedAction?.relationshipId === relationshipId
+      ? requestedAction
+      : undefined;
   const draft = useDraft(action);
   const archive = useArchive();
   if (missing) return <EmptyState title={t.recordUnavailable} compact />;
@@ -215,13 +230,15 @@ function CompanyPeek() {
         />
       )}
       <MetadataSection entity="company" record={context.company} />
-      <CompanyDetails
-        context={context}
-        onPerson={crm.openPerson}
-        onAction={crm.openPerson}
+      <CompanyProfile company={context.company} />
+      <CompanyPeople context={context} onPerson={crm.openPerson} />
+      <RelatedOpportunities
+        className="record-section"
+        opportunities={context.opportunities}
+        allowOpportunityCreation={!context.company.archivedAt}
         onReveal={crm.reveal}
-        timeZone={crm.timeZone}
       />
+      <CompanyActivity context={context} className="record-section" />
     </>
   );
 }

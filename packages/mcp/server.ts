@@ -306,12 +306,17 @@ export function mcpHandler(
         "list_products",
         {
           description:
-            "List products permitted by the grant and current membership.",
+            "List active products permitted by the grant and current membership in products, and archived ones separately in archivedProducts. Archived products keep their records but accept no new ones.",
           inputSchema: z.object({}),
           annotations: { readOnlyHint: true },
         },
-        async () =>
-          result((await authorize(db, principal, organizationId)).products),
+        async () => {
+          const { products } = await authorize(db, principal, organizationId);
+          return result({
+            products: products.filter((product) => !product.archivedAt),
+            archivedProducts: products.filter((product) => product.archivedAt),
+          });
+        },
       );
       server.registerTool(
         "list_next_actions",

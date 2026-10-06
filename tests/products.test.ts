@@ -12,6 +12,7 @@ import {
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
+import { mcpHandler } from "../packages/mcp/server";
 import {
   operationAvailable,
   operationRequirements,
@@ -363,6 +364,42 @@ describe("archiving products", () => {
       version: existingDeal.version,
       name: "Renamed fixture deal",
     });
+  });
+
+  test("the MCP product list keeps archived products apart from active ones", async () => {
+    await run("archive_product", admin, { productId: demoId(10) });
+    const response = await mcpHandler(local.db, agent, org).fetch(
+      new Request("http://127.0.0.1:3014/mcp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "list_products", arguments: {} },
+        }),
+      }),
+    );
+    const body = await response.text();
+    const envelope = JSON.parse(
+      body
+        .split("\n")
+        .find((line) => line.startsWith("data: "))
+        ?.slice(6) ?? body,
+    );
+    const listed = JSON.parse(envelope.result.content[0].text) as {
+      products: { id: string }[];
+      archivedProducts: { id: string }[];
+    };
+    expect(listed.products.map((item) => item.id).sort()).toEqual(
+      [demoId(11), demoId(12)].sort(),
+    );
+    expect(listed.archivedProducts.map((item) => item.id)).toEqual([
+      demoId(10),
+    ]);
   });
 
   test("the last active product cannot be archived", async () => {

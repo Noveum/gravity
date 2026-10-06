@@ -35,3 +35,29 @@ test("the product access popover stays inside a narrow settings column", () => {
     "max-width": "calc(100cqi - 32px)",
   });
 });
+
+test("settings rows hold 28px on fine pointers and grow controls to 36px on touch", () => {
+  const top = css.replace(
+    /@(media|container)[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g,
+    "",
+  );
+  expect(declarations(top, ".settings-row")).toMatchObject({
+    padding: "0",
+    "box-sizing": "border-box",
+    "min-height": "var(--gravity-list-row)",
+  });
+  const controls = declarations(
+    top,
+    `.settings-row :is(button, select, summary, input:not([type="checkbox"]))`,
+  );
+  expect(controls["min-height"]).toBe("26px");
+  const coarse = [...css.matchAll(/@media \(pointer: coarse\)\s*\{/g)]
+    .map((match) => block(css.slice(match.index), "@media (pointer: coarse)"))
+    .join("\n");
+  expect(
+    declarations(
+      coarse,
+      `.settings-row :is(button, select, summary, input:not([type="checkbox"]))`,
+    )["min-height"],
+  ).toBe("36px");
+});

@@ -4299,8 +4299,9 @@ tbody tr[data-selected] td:first-child::before {
   display: flex;
   align-items: center;
   gap: 8px;
+  box-sizing: border-box;
   min-height: var(--gravity-list-row);
-  padding: 2px 0;
+  padding: 0;
   border-bottom: 1px solid var(--gravity-border-hairline);
   min-width: 0;
 }
@@ -4335,8 +4336,13 @@ tbody tr[data-selected] td:first-child::before {
   flex-shrink: 0;
   max-width: 60%;
 }
-.settings-row :where(input:not([type="checkbox"]), select) {
-  min-height: 24px;
+.settings-row :is(button, select, summary, input:not([type="checkbox"])) {
+  min-height: 26px;
+}
+@media (pointer: coarse) {
+  .settings-row :is(button, select, summary, input:not([type="checkbox"])) {
+    min-height: 36px;
+  }
 }
 .settings-confirm {
   display: inline-flex;

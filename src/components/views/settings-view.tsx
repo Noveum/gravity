@@ -218,7 +218,7 @@ export function SettingsView() {
                         }
                       }}
                     >
-                      {t.revoke}
+                      {t.revokeInvitation}
                     </button>
                   </li>
                 ))}

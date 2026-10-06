@@ -116,11 +116,12 @@ export function MemberAccessDialog({
       {link ? (
         <div className="invite-result">
           <p role="status">{t.inviteReady.replace("{email}", email)}</p>
-          <label>
+          <label className="field">
             {t.invitationLink}
             <input
               value={link}
               readOnly
+              autoFocus
               onFocus={(event) => event.currentTarget.select()}
             />
           </label>
@@ -133,6 +134,7 @@ export function MemberAccessDialog({
               type="button"
               className="primary"
               onClick={async () => {
+                setError("");
                 try {
                   await navigator.clipboard.writeText(link);
                   setCopied(true);

@@ -1620,7 +1620,7 @@
   "noProductAccess": "No product access",
   "adminAccessDetail": "Admins can manage the organization and access all current and future products.",
   "memberAccessDetail": "Members can work only in the products selected below. Choose at least one.",
-  "inviteDetail": "Create an invitation link for your teammate and choose their access.",
+  "inviteDetail": "Create an invitation link for your teammate and choose their access. A new link replaces any pending invitation for the same email.",
   "createInvitation": "Create invitation",
   "invitationLink": "Invitation link",
   "inviteReady": "Invitation ready for {email}.",

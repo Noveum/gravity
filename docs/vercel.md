@@ -41,6 +41,8 @@ For social sign-in, configure the corresponding complete pair: `GOOGLE_CLIENT_ID
 
 Use the repository root, Next.js framework and committed Bun install/build commands. Select Node.js 22 in your Vercel project settings.
 
+Scheduled sync is not in the default `vercel.json`. The five-minute cron lives only in `vercel.scheduled.json`, and Vercel reads crons only from the root `vercel.json` it uploads. To deploy scheduled sync, copy `vercel.scheduled.json` over `vercel.json` in the source you deploy, deploy, then check that the production project lists the `/api/integrations/cron` cron. Deploying without that copy step ships no schedule, and provider sync then runs only when a user triggers it.
+
 - **Basic Vercel:** the default `vercel.json` has no cron. Deploy normally; users can trigger provider sync manually. This avoids requiring a plan that supports a five-minute cron.
 - **Scheduled Vercel:** copy `vercel.scheduled.json` over `vercel.json` in your deployment source before deploying on a plan that supports the included five-minute schedule. This is the configuration used by Noveum's hosted instance.
 - **External scheduler:** keep the basic configuration and have your scheduler call `GET <APP_URL>/api/integrations/cron` with `Authorization: Bearer <CRON_SECRET>`. Keep the credential out of the URL. Provider account consent is still required.
@@ -84,6 +86,8 @@ For Codex, Claude Code or another OAuth MCP client, connect to `<APP_URL>/mcp`, 
 
 ## Verify and operate
 
-Check `/api/health` returns `ready`, verify sign-in and onboarding, add a contact, save a deal, then refresh to confirm persistence. Qualify product restrictions with a second user and revoke/reconnect one assistant grant. Check each provider's actual consent and sync before relying on its imported data. Sending is not implemented.
+Check `/api/health` returns `ready`, verify sign-in and onboarding, add a contact, save a deal, then refresh to confirm persistence. Qualify product restrictions with a second user and revoke/reconnect one assistant grant. Check each provider's actual consent and sync before relying on its imported data.
+
+Sending is implemented for Gmail and LinkedIn. A message goes out only through an explicit `send_touch` or `send_action` call, made by an assistant holding `crm:send` or through the same operation on `/api/outreach`. The workspace UI has no send button yet. Each send needs a current approval, the owner's provider consent (Gmail asks for `gmail.send` separately from read access) and a durable idempotency key, and the contact rules apply. An outcome the provider leaves unclear is recorded as unknown and is never retried automatically: reconcile it with `reconcile_delivery`, or have an admin close it with `resolve_delivery`. Scheduled sync imports replies; it never sends.
 
 Database backups do not include uploaded files. Keep private storage backups separately and rehearse recovery. Provider-key rotation, stable encryption-key retention and migration review remain the operator's responsibility.

@@ -991,6 +991,23 @@ describe("detail bindings", () => {
     await press("h");
     expect(document.activeElement?.hasAttribute("data-nav-record")).toBe(true);
   });
+  test("H returns focus to the row being peeked, not the first row", async () => {
+    await mountCrm(harness, "/people");
+    const rows = [
+      ...document.querySelectorAll<HTMLElement>(
+        "#records-panel [data-nav-record]",
+      ),
+    ];
+    const target = rows[2];
+    if (!target) throw new Error("people fixture");
+    target.focus();
+    await press(" ");
+    await waitFor(() => expect(peek()).toBeTruthy());
+    await press("l");
+    expect(peek()?.contains(document.activeElement)).toBe(true);
+    await press("h");
+    expect(document.activeElement).toBe(target);
+  });
   test("B returns to the previous record in the peek", async () => {
     binding("previous-record");
     await mountCrm(harness, "/people");

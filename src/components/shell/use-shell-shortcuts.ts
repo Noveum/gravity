@@ -201,7 +201,22 @@ export function useShellShortcuts({
       crm.setExpanded(!crm.expanded);
       return true;
     },
-    "list-focus": () => focusRecord("next"),
+    "list-focus": () => {
+      const peeked = [
+        crm.peek.actionId,
+        crm.peek.relationshipId,
+        crm.peek.companyId,
+        crm.personFor(crm.peek.relationshipId)?.id,
+      ].filter(Boolean);
+      const records = navigableRecords();
+      const target = peeked
+        .map((id) => records.find((record) => record.dataset.navRecord === id))
+        .find(Boolean);
+      if (!target) return focusRecord("next");
+      target.focus();
+      target.scrollIntoView({ block: "nearest", inline: "nearest" });
+      return true;
+    },
     "detail-focus": () => {
       const target = document.querySelector<HTMLButtonElement>(
         "#record-inspector button:not(:disabled)",

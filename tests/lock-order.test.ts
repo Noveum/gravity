@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 import { errorResponse } from "../packages/core/http";
-import { MemberService } from "../packages/core/members";
+import { assertProductAccess, MemberService } from "../packages/core/members";
 import { OutreachService } from "../packages/core/outreach";
 import type { Principal } from "../packages/core/policy";
 import { RecordService } from "../packages/core/records";
@@ -120,4 +120,13 @@ test("member administration locks memberships in id order", async () => {
       ),
     ),
   ).toBeTruthy();
+});
+
+test("checking a new owner's product access share-locks their membership", async () => {
+  await assertProductAccess(db, org, demoUser, [demoId(10)]);
+  expect(
+    queries.some((query) =>
+      /from "memberships".*"user_id" = .*for share/is.test(query),
+    ),
+  ).toBe(true);
 });

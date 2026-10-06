@@ -68,6 +68,16 @@ export async function assertProductAccess(
   userId: string,
   productIds: Iterable<string>,
 ) {
+  await db
+    .select({ id: s.memberships.id })
+    .from(s.memberships)
+    .where(
+      and(
+        eq(s.memberships.organizationId, organizationId),
+        eq(s.memberships.userId, userId),
+      ),
+    )
+    .for("share");
   for (const productId of new Set(productIds)) {
     try {
       await authorize(

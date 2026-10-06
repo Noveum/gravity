@@ -34,6 +34,7 @@
   --gravity-accent-contrast: #ffffff;
 
   --gravity-success: #12724c;
+  --gravity-chart-positive: #2b9270;
   --gravity-warning: #96570c;
   --gravity-danger: #ba3237;
   --gravity-danger-hover: #9f2a2e;
@@ -154,6 +155,7 @@
   --gravity-accent-contrast: #08080a;
 
   --gravity-success: #4cb782;
+  --gravity-chart-positive: #4cb782;
   --gravity-warning: #f2c94c;
   --gravity-danger: #ea5a5f;
   --gravity-danger-hover: #f27176;
@@ -3961,7 +3963,7 @@ tbody tr[data-selected] td:first-child::before {
   background: var(--accent);
 }
 .received-dot {
-  background: #44b592;
+  background: var(--gravity-chart-positive);
   margin-left: 10px;
 }
 .activity-chart {
@@ -3985,6 +3987,7 @@ tbody tr[data-selected] td:first-child::before {
   background: var(--hover);
 }
 .bar-stack {
+  width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -4000,7 +4003,7 @@ tbody tr[data-selected] td:first-child::before {
   background: var(--accent);
 }
 .activity-bar.received {
-  background: #44b592;
+  background: var(--gravity-chart-positive);
 }
 .chart-axis {
   display: flex;
@@ -4059,7 +4062,7 @@ tbody tr[data-selected] td:first-child::before {
   border-radius: 2px;
 }
 .stage-won .stage-meter {
-  background: #44b592;
+  background: var(--gravity-chart-positive);
 }
 .stage-lost .stage-meter {
   background: var(--muted);

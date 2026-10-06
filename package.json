@@ -78,7 +78,7 @@
     "type": "git",
     "url": "https://github.com/Noveum/gravity.git"
   },
-  "homepage": "https://github.com/Noveum/gravity#readme",
+  "homepage": "https://gravity.noveum.ai",
   "bugs": {
     "url": "https://github.com/Noveum/gravity/issues"
   },

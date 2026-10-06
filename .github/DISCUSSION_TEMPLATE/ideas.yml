@@ -1,0 +1,20 @@
+title: "[idea]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are for problems that do not have a shape yet. Describe the sales or
+        relationship workflow that hurts; we will work out together whether and how
+        Gravity should solve it, and turn it into an issue once it is concrete.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The workflow that hurts
+      description: Who you are, what you are trying to get done, and where it breaks down.
+    validations:
+      required: true
+  - type: textarea
+    id: thoughts
+    attributes:
+      label: Rough thoughts on a solution
+      description: Optional. Sketches, other tools you have seen, constraints.

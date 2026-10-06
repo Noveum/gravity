@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Where to start contributing
+    url: https://github.com/Noveum/gravity/discussions/57
+    about: Good first issues, the bigger pieces we want help with, and how to get going.
+  - name: Ask a question
+    url: https://github.com/Noveum/gravity/discussions/new?category=q-a
+    about: Running Gravity locally, self-hosting, connecting an assistant over MCP, or building on it.
+  - name: Float an idea
+    url: https://github.com/Noveum/gravity/discussions/new?category=ideas
+    about: Describe a sales workflow that is painful before it has a shape. Ideas become issues once we agree what to build.
+  - name: Documentation
+    url: https://github.com/Noveum/gravity/tree/main/docs
+    about: Setup, MCP tools, architecture, connectors and deployment guides.
+  - name: Report a security vulnerability
+    url: https://github.com/Noveum/gravity/security/advisories/new
+    about: Report privately. Never open a public issue for a security problem.

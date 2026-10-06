@@ -14,6 +14,7 @@ const previewSchema = z.object({
 });
 export function InviteAccept({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
+  const [requiresAccountSwitch, setRequiresAccountSwitch] = useState(false);
   const [error, setError] = useState(token ? "" : t.errors.INVITE_UNAVAILABLE);
   const [preview, setPreview] = useState<z.infer<typeof previewSchema> | null>(
     null,
@@ -30,7 +31,12 @@ export function InviteAccept({ token }: { token: string }) {
         if (active) setPreview(parsed);
       })
       .catch((error: unknown) => {
-        if (active) setError(errorText(error));
+        if (active) {
+          setError(errorText(error));
+          setRequiresAccountSwitch(
+            error instanceof Error && error.message === "INVITE_EMAIL_MISMATCH",
+          );
+        }
       });
     return () => {
       active = false;
@@ -93,29 +99,34 @@ export function InviteAccept({ token }: { token: string }) {
             {error}
           </p>
         )}
-        <button
-          type="button"
-          className="ghost"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await requestJson("/api/auth/sign-out", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: "{}",
-              });
-              browserNavigation.assign(
-                `/sign-in?callbackURL=${encodeURIComponent(`/invite/${token}`)}`,
-              );
-            } catch (error) {
-              setError(errorText(error));
-              setBusy(false);
-            }
-          }}
-        >
-          {t.inviteSignOut}
-        </button>
+        {requiresAccountSwitch && (
+          <button
+            type="button"
+            className="ghost"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await requestJson("/api/auth/sign-out", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: "{}",
+                });
+                browserNavigation.assign(
+                  `/sign-in?callbackURL=${encodeURIComponent(`/invite/${token}`)}`,
+                );
+              } catch (error) {
+                setError(errorText(error));
+                setBusy(false);
+              }
+            }}
+          >
+            {t.inviteSignOut}
+          </button>
+        )}
+        <a className="auth-link" href="/overview">
+          {t.backToWorkspace}
+        </a>
       </section>
     </main>
   );

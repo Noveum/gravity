@@ -173,7 +173,10 @@ test("members, read-only assistants and product restricted assistants cannot man
     );
   await expect(
     settings.accept(user.principal, { token: created.token }),
-  ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  ).rejects.toMatchObject({ code: "INVITE_UNAVAILABLE" });
+  await expect(
+    settings.preview(user.principal, { token: created.token }),
+  ).rejects.toMatchObject({ code: "INVITE_UNAVAILABLE" });
   await local.db
     .update(s.memberships)
     .set({ active: true })

@@ -76,6 +76,30 @@ function validateProducts(products: { id: string }[], ids: string[]) {
     throw new DomainError("FORBIDDEN", 403);
 }
 
+async function invitationProducts(
+  db: Database,
+  invitation: {
+    organizationId: string;
+    inviterId: string;
+    productIds: string[];
+  },
+) {
+  try {
+    const products = await administrator(
+      db,
+      { userId: invitation.inviterId, source: "session" },
+      invitation.organizationId,
+      false,
+    );
+    validateProducts(products, invitation.productIds);
+    return products;
+  } catch (error) {
+    if (error instanceof DomainError && error.code === "FORBIDDEN")
+      throw new DomainError("INVITE_UNAVAILABLE", 409);
+    throw error;
+  }
+}
+
 export class OrganizationSettingsService {
   constructor(
     private db: Database,
@@ -143,10 +167,7 @@ export class OrganizationSettingsService {
       .select()
       .from(s.organizations)
       .where(eq(s.organizations.id, invitation.organizationId));
-    const products = await this.db
-      .select({ id: s.products.id, name: s.products.name })
-      .from(s.products)
-      .where(eq(s.products.organizationId, invitation.organizationId));
+    const products = await invitationProducts(this.db, invitation);
     return {
       organizationName: organization.name,
       email: invitation.email,
@@ -302,12 +323,7 @@ export class OrganizationSettingsService {
       if (invitation.acceptedAt && !existing?.active)
         throw new DomainError("INVITE_UNAVAILABLE", 409);
       if (!existing?.active) {
-        const products = await administrator(
-          tx,
-          { userId: invitation.inviterId, source: "session" },
-          invitation.organizationId,
-        );
-        validateProducts(products, invitation.productIds);
+        await invitationProducts(tx, invitation);
         await tx
           .insert(s.memberships)
           .values({

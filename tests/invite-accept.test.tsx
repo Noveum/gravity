@@ -71,6 +71,7 @@ test("acceptance shows the actual workspace and access, requires one explicit su
 
 test("a mismatched account cannot accept and can sign out with the invitation callback intact", async () => {
   request.mockRejectedValueOnce(new Error("INVITE_EMAIL_MISMATCH"));
+  request.mockRejectedValueOnce(new Error("FORBIDDEN"));
   request.mockResolvedValueOnce({});
   const navigate = vi
     .spyOn(browserNavigation, "assign")
@@ -86,6 +87,11 @@ test("a mismatched account cannot accept and can sign out with the invitation ca
   ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: t.inviteSignOut }));
   await waitFor(() =>
+    expect(screen.getByRole("alert").textContent).toBe(t.errors.FORBIDDEN),
+  );
+  expect(navigate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: t.inviteSignOut }));
+  await waitFor(() =>
     expect(navigate).toHaveBeenCalledWith(
       `/sign-in?callbackURL=${encodeURIComponent(`/invite/${token}`)}`,
     ),
@@ -98,6 +104,10 @@ test("invalid links and expired acceptance responses cannot navigate or silently
     .spyOn(browserNavigation, "assign")
     .mockImplementation(() => {});
   const view = render(<InviteAccept token="" />);
+  expect(screen.queryByRole("button", { name: t.inviteSignOut })).toBeNull();
+  expect(
+    screen.getByRole("link", { name: t.backToWorkspace }).getAttribute("href"),
+  ).toBe("/overview");
   expect(screen.getByRole("alert").textContent).toBe(
     t.errors.INVITE_UNAVAILABLE,
   );

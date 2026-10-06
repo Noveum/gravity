@@ -43,7 +43,7 @@ Apply database migrations and configure these variables on the deployed web serv
 - Specific people: selected current workspace members have viewer or editor access.
 - Inherit: a nested item uses its folder's access.
 
-Every parent folder must also be readable. Public links and direct downloads cannot bypass a restricted ancestor. Only owners can change sharing, move, or delete items. A folder move or delete requires access and ownership of its entire tree. Moving an inherited item to the root makes it private. Copies start private and belong to the person copying them.
+Every parent folder must also be readable. Inherited editing follows the nearest folder with explicit access; more distant ancestors require read access. Public links and direct downloads cannot bypass a restricted ancestor. Only owners can change sharing, move, or delete items. A folder move or delete requires access and ownership of its entire tree. Moving an inherited item to the root makes it private. Copies start private and belong to the person copying them.
 
 Sharing an item with a workspace member does not grant access to its parent folders. Share those folders too when necessary. Public folders list only publicly readable children.
 
@@ -51,7 +51,11 @@ Markdown supports editing and a rendered preview. HTML is not executed, and embe
 
 Spreadsheet parsing runs in a dedicated worker, which terminates when the preview closes. Only a page of up to 100 rows and 30 columns crosses into the UI. The preview checks workbook structure before allocating the Excel model, accepting at most 200,000 populated cells, 200,000 row records, 100 worksheets, 200,000 shared strings, 10 million text characters, 2 million sheet positions summed across sheets, and 64 MB of expanded archive data. A 30-second loading deadline stops expensive parsing. Larger or malformed workbooks display an explanation while the original remains downloadable. Merged cells show individual cell text rather than merged layout, and formulas show their saved results without recalculation.
 
+Slide previews inline embedded image, style, and font resources before entering the sandbox, which prevents browser blob restrictions from hiding images. Converted embedded resources are limited to 64 MB per slide.
+
 Uploads use ten-minute reservations. Finalization checks owner, destination access, and stored size, then copies bytes to a new immutable storage key. Reusing an upload URL cannot overwrite a finalized document. Downloads check current access and issue URLs that expire after sixty seconds. Revocation blocks new downloads immediately; an already-issued URL can remain usable until it expires.
+
+Document reads and downloads retrieve permissions and content in the same database snapshot. An in-flight read authorized before revocation can finish with its earlier content, but cannot return content made private after that authorization.
 
 Realtime messages carry only item IDs, with user scopes for current and former authorized readers. Clients fetch the changed item through an access check and patch cached folders. Names, sharing grants, document bodies, and storage keys never appear in event history. Large folders render a window of rows, and uploads run with at most three concurrent transfers.
 

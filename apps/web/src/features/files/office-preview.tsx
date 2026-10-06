@@ -9,6 +9,64 @@ import { DocumentFrame } from './document-frame.tsx';
 import { localOfficeArchive } from './office-archive.ts';
 import { usePreviewBytes } from './use-preview-bytes.ts';
 
+async function slideHtml(host: HTMLElement): Promise<string> {
+  const clone = host.cloneNode(true);
+  if (!(clone instanceof HTMLElement)) throw new Error('This slide could not be previewed.');
+  const resources = new Map<string, Promise<string>>();
+  let bytes = 0;
+  async function inline(source: string) {
+    const pattern = /blob:[^"'()\s<>]+/g;
+    for (const url of new Set(source.match(pattern) ?? [])) {
+      if (resources.has(url)) continue;
+      resources.set(
+        url,
+        (async () => {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error('An embedded slide image could not be loaded.');
+          const blob = await response.blob();
+          bytes += blob.size;
+          if (bytes > 64 * 1024 * 1024)
+            throw new Error('This slide has too much embedded media to preview safely.');
+          return await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              if (typeof reader.result === 'string') resolve(reader.result);
+              else reject(new Error('An embedded slide image could not be read.'));
+            };
+            reader.onerror = () => reject(new Error('An embedded slide image could not be read.'));
+            reader.readAsDataURL(blob);
+          });
+        })(),
+      );
+    }
+    const resolved = new Map(
+      await Promise.all(
+        [...new Set(source.match(pattern) ?? [])].map(
+          async (url) => [url, await resources.get(url)] as const,
+        ),
+      ),
+    );
+    return source.replace(pattern, (url) => resolved.get(url) ?? url);
+  }
+  await Promise.all(
+    [clone, ...clone.querySelectorAll('*')].flatMap((element) => [
+      ...[...element.attributes]
+        .filter((attribute) => ['src', 'href', 'xlink:href', 'style'].includes(attribute.name))
+        .map(async (attribute) => {
+          attribute.value = await inline(attribute.value);
+        }),
+      ...(element.tagName === 'STYLE'
+        ? [
+            (async () => {
+              element.textContent = await inline(element.textContent ?? '');
+            })(),
+          ]
+        : []),
+    ]),
+  );
+  return clone.innerHTML;
+}
+
 function WordPreview({ data, name }: { readonly data: ArrayBuffer; readonly name: string }) {
   const [html, setHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +155,8 @@ function SlidesPreview({ data, name }: { readonly data: ArrayBuffer; readonly na
       slide.current = handle;
       await handle?.ready;
       if (cancelled) return;
-      setHtml(host.innerHTML);
+      const snapshot = await slideHtml(host);
+      if (!cancelled) setHtml(snapshot);
     }
     load().catch((failure: unknown) => {
       if (!cancelled) setError(messageOf(failure));
@@ -124,8 +183,10 @@ function SlidesPreview({ data, name }: { readonly data: ArrayBuffer; readonly na
       slide.current = handle;
       await handle?.ready;
       if (viewer.current !== instance) return;
+      const snapshot = await slideHtml(host);
+      if (viewer.current !== instance) return;
       setPage(next);
-      setHtml(host.innerHTML);
+      setHtml(snapshot);
     } catch (failure: unknown) {
       setError(messageOf(failure));
     } finally {

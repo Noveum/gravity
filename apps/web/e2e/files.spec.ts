@@ -14,6 +14,40 @@ import fileSamples from './file-samples.json' with { type: 'json' };
 import { readFixture } from './fixture.ts';
 import { signIn } from './sign-in.ts';
 
+async function presentationWithImage(data: Buffer, image: Buffer): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(data);
+  zip.file('ppt/media/review-image.png', image);
+  const types = zip.file('[Content_Types].xml');
+  if (types === null) throw new Error('Missing presentation content types');
+  zip.file(
+    types.name,
+    (await types.async('string')).replace(
+      '</Types>',
+      '<Default Extension="png" ContentType="image/png"/></Types>',
+    ),
+  );
+  for (const page of [1, 2]) {
+    const slide = zip.file(`ppt/slides/slide${page}.xml`);
+    const relationships = zip.file(`ppt/slides/_rels/slide${page}.xml.rels`);
+    if (slide === null || relationships === null) throw new Error('Missing slide');
+    zip.file(
+      relationships.name,
+      (await relationships.async('string')).replace(
+        '</Relationships>',
+        '<Relationship Id="rIdReviewImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/review-image.png"/></Relationships>',
+      ),
+    );
+    zip.file(
+      slide.name,
+      (await slide.async('string')).replace(
+        '</p:spTree>',
+        '<p:pic><p:nvPicPr><p:cNvPr id="4" name="Review image" descr="Embedded preview image"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rIdReviewImage"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="731520" y="3200400"/><a:ext cx="914400" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:spTree>',
+      ),
+    );
+  }
+  return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
 test('folders, Markdown edits, keyboard transfers and drag moves persist after reload', async ({
   browser,
 }) => {
@@ -111,6 +145,12 @@ test('real binary uploads survive reload and download with identical bytes', asy
         mimeType: file.name === 'Report.pdf' ? 'application/octet-stream' : file.mimeType,
         buffer: Buffer.from(base64, 'base64'),
       }));
+    const presentation = uploads.find((upload) => upload.name === 'Presentation.pptx');
+    const image = uploads.find((upload) => upload.name === 'Image.png');
+    if (presentation === undefined || image === undefined) throw new Error('Missing slide sample');
+    presentation.buffer = Buffer.from(
+      await presentationWithImage(presentation.buffer, image.buffer),
+    );
     const screenshots = path.resolve('test-results/file-visuals');
     await mkdir(screenshots, { recursive: true });
     await page.getByLabel('Upload files', { exact: true }).setInputFiles(uploads);
@@ -145,10 +185,28 @@ test('real binary uploads survive reload and download with identical bytes', asy
         await expect(
           page.frameLocator('iframe').getByText('Gravity file library: slide 1', { exact: false }),
         ).toBeVisible();
+        await expect
+          .poll(() =>
+            page
+              .frameLocator('iframe')
+              .locator('img')
+              .first()
+              .evaluate((image) => (image instanceof HTMLImageElement ? image.naturalWidth : 0)),
+          )
+          .toBeGreaterThan(0);
         await dialog.getByRole('button', { name: 'Next slide', exact: true }).click();
         await expect(
           page.frameLocator('iframe').getByText('Gravity file library: slide 2', { exact: false }),
         ).toBeVisible();
+        await expect
+          .poll(() =>
+            page
+              .frameLocator('iframe')
+              .locator('img')
+              .first()
+              .evaluate((image) => (image instanceof HTMLImageElement ? image.naturalWidth : 0)),
+          )
+          .toBeGreaterThan(0);
         const frame = await dialog.locator('iframe').boundingBox();
         if (frame === null) throw new Error('Missing slide frame');
         expect(frame.width / frame.height).toBeCloseTo(16 / 9, 1);
@@ -384,6 +442,8 @@ test('sharing enforces private, workspace, specific people, public and revoked f
     await publicPage.goto(`${BASE}/share/files/${pdfToken}`);
     await expect(publicPage.locator('canvas')).toHaveAttribute('data-rendered', 'true');
     await expect(publicPage.getByText('Page 1 of 2')).toBeVisible();
+    await teammate.getByRole('button', { name: 'Access.md', exact: true }).click();
+    await expect(teammate.getByRole('heading', { name: 'Controlled document' })).toBeVisible();
     const revoked = await owner.request.patch(`${BASE}/api/files/${folder.id}`, {
       data: { access: { visibility: 'private' }, expectedSyncId: folder.syncId },
     });
@@ -391,6 +451,7 @@ test('sharing enforces private, workspace, specific people, public and revoked f
     await expect(
       teammate.getByRole('button', { name: 'Access.md', exact: true }),
     ).not.toBeVisible();
+    await expect(teammate.getByRole('heading', { name: 'Controlled document' })).not.toBeVisible();
     expect(
       (await publicContext.request.get(`${BASE}/api/public/files/${token}/download`)).status(),
     ).toBe(404);

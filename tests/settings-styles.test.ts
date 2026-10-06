@@ -63,3 +63,18 @@ test("settings row actions wrap inside a narrow settings container", () => {
     "max-width": "100%",
   });
 });
+
+test("settings tabs grow to 36px on touch after the narrow container shrinks them", () => {
+  const narrowEnd =
+    css.indexOf("@container (max-width: 720px)") +
+    block(css, "@container (max-width: 720px)").length;
+  const coarseAfterNarrow = [
+    ...css.matchAll(/@media \(pointer: coarse\)\s*\{/g),
+  ]
+    .filter((match) => match.index > narrowEnd)
+    .map((match) => block(css.slice(match.index), "@media (pointer: coarse)"))
+    .join("\n");
+  expect(
+    declarations(coarseAfterNarrow, ".settings-nav-link")["min-height"],
+  ).toBe("36px");
+});

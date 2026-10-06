@@ -4553,6 +4553,7 @@ tbody tr[data-selected] td:first-child::before {
     border-bottom: 1px solid var(--gravity-border-hairline);
     background: var(--gravity-surface);
     overflow-x: auto;
+    overflow-y: hidden;
     scrollbar-width: none;
     z-index: 2;
   }
@@ -4584,6 +4585,14 @@ tbody tr[data-selected] td:first-child::before {
     flex-shrink: 1;
     min-width: 0;
     max-width: 100%;
+  }
+}
+@media (pointer: coarse) {
+  .settings-nav {
+    height: auto;
+  }
+  .settings-nav-link {
+    min-height: 36px;
   }
 }
 @media (hover: hover) {

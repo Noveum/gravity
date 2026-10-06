@@ -20,6 +20,7 @@
   --gravity-border-subtle: #e3e5ea;
   --gravity-border: #d8dbe1;
   --gravity-border-strong: #c2c6ce;
+  --gravity-field-border: #7e838c;
 
   --gravity-text-strong: #0d0f14;
   --gravity-text: #1c1f27;
@@ -141,6 +142,7 @@
   --gravity-border-subtle: #212124;
   --gravity-border: #26262a;
   --gravity-border-strong: #2c2d32;
+  --gravity-field-border: #686a72;
 
   --gravity-text-strong: #f0f0f2;
   --gravity-text: #e4e4e6;
@@ -255,7 +257,7 @@
   outline: none;
 }
 :where(input, select, textarea) {
-  border: 1px solid var(--gravity-border);
+  border: 1px solid var(--gravity-field-border);
   background: var(--gravity-surface);
   border-radius: var(--gravity-radius);
   min-height: var(--gravity-control);
@@ -856,7 +858,6 @@
 .toolbar select {
   max-width: 160px;
   font-size: var(--text-xs);
-  border-color: var(--gravity-border-subtle);
 }
 .toolbar-primary {
   margin-left: auto;
@@ -868,7 +869,7 @@
   gap: 6px;
   min-height: var(--gravity-control);
   padding: 0 8px;
-  border: 1px solid var(--gravity-border-subtle);
+  border: 1px solid var(--gravity-field-border);
   border-radius: var(--gravity-radius);
   background: var(--gravity-surface);
   color: var(--gravity-faint);
@@ -2283,7 +2284,6 @@ ul.timeline {
 }
 .auth-header select {
   background: var(--bg);
-  border-color: var(--line);
   max-width: 100px;
 }
 .auth-layout {

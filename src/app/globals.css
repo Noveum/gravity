@@ -4413,6 +4413,7 @@ tbody tr[data-selected] td:first-child::before {
 @container (max-width: 720px) {
   .settings-layout {
     grid-template-columns: minmax(0, 1fr);
+    align-content: start;
   }
   .settings-nav {
     flex-direction: row;

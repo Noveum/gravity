@@ -134,7 +134,9 @@ function MemberRow({
           ) : (
             <details className="settings-disclosure">
               <summary>
-                {t.productCount.replace("{count}", String(access.length))}
+                {access.length === 1
+                  ? t.productCountOne
+                  : t.productCount.replace("{count}", String(access.length))}
               </summary>
               <div className="settings-popover">
                 <ProductChecks

@@ -381,9 +381,7 @@ describe("member settings", () => {
       }),
     );
     const restricted = memberRow("Restricted member");
-    fireEvent.click(
-      within(restricted).getByText(t.productCount.replace("{count}", "1")),
-    );
+    fireEvent.click(within(restricted).getByText(t.productCountOne));
     fireEvent.click(within(restricted).getByLabelText("AI Platform"));
     fireEvent.click(
       within(restricted).getByRole("button", { name: t.saveAccess }),

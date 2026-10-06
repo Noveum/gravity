@@ -1644,5 +1644,6 @@
   "workspaceGrantsEmpty": "No assistant has access to this workspace.",
   "grantSince": "Since {date}",
   "revokeFor": "Revoke access for {name}",
-  "revokeGrantConfirm": "Revoke"
+  "revokeGrantConfirm": "Revoke",
+  "productCountOne": "1 product"
 }

@@ -49,8 +49,9 @@ test("every field boundary draws its border from the field token", () => {
   const css = readFileSync("src/app/globals.css", "utf8");
   const fieldRules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(
     ([, selector, body]) =>
-      /(?<![.\w-])(input|select|textarea)\b(?!-)|^\s*\.search\s*$/.test(selector) &&
-      /border(-color)?\s*:/.test(body),
+      /(?<![.\w-])(input|select|textarea)\b(?!-)|^\s*\.search\s*$/.test(
+        selector,
+      ) && /border(-color)?\s*:/.test(body),
   );
   expect(fieldRules.length).toBeGreaterThan(1);
   for (const [, selector, body] of fieldRules)

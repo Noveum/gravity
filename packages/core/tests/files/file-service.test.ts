@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { db, eq, schema } from '@gravity/db';
 import type { Principal } from '@gravity/shared/policy';
 import type { FileEntry } from '@gravity/shared/validators';
@@ -49,7 +49,75 @@ async function create(
   return entry;
 }
 
+function afterSelect(ordinal: number, run: () => Promise<void>) {
+  let remaining = ordinal;
+  function observe(query: object): object {
+    return new Proxy(query, {
+      get(target, property, receiver) {
+        const value: unknown = Reflect.get(target, property, receiver);
+        if (typeof value !== 'function') return value;
+        if (property === 'then') {
+          return (resolve: (rows: unknown) => unknown, reject: (error: unknown) => unknown) =>
+            Reflect.apply(value, target, [
+              async (rows: unknown) => {
+                remaining -= 1;
+                if (remaining === 0) await run();
+                return resolve(rows);
+              },
+              reject,
+            ]);
+        }
+        return (...args: unknown[]) => {
+          const result: unknown = Reflect.apply(value, target, args);
+          return typeof result === 'object' && result !== null ? observe(result) : result;
+        };
+      },
+    });
+  }
+  const select = new Proxy(db.select, {
+    apply(target, receiver, args) {
+      const query: unknown = Reflect.apply(target, receiver, args);
+      if (typeof query !== 'object' || query === null) throw new Error('Missing select query');
+      return observe(query);
+    },
+  });
+  return spyOn(db, 'select').mockImplementation(select);
+}
+
 describe('file access', () => {
+  test.each(['detail', 'public detail', 'download', 'public download'])(
+    '%s reads content and access from the same database snapshot during revocation',
+    async (mode) => {
+      const entry = await create({
+        name: 'Shared.md',
+        kind: 'markdown',
+        body: 'Previously public content',
+        visibility: 'public',
+      });
+      const token = entry.publicToken ?? '';
+      const read = async () => {
+        if (mode === 'detail') return await getFile(member, entry.id);
+        if (mode === 'public detail') return await getPublicFile(token);
+        if (mode === 'download') return await fileDownload(member, entry.id, false, storage);
+        return await fileDownload(null, token, false, storage);
+      };
+      const barrier = afterSelect(mode.startsWith('public') ? 2 : 1, async () => {
+        await updateFile({ principal: workspace.admin }, entry.id, {
+          access: { visibility: 'private' },
+          body: 'New private content',
+          expectedSyncId: entry.syncId,
+        });
+      });
+      try {
+        expect((await read()).body).toBe('Previously public content');
+      } finally {
+        barrier.mockRestore();
+      }
+      await expect(read()).rejects.toMatchObject({ status: 404 });
+      expect((await getFile(workspace.admin, entry.id)).body).toBe('New private content');
+    },
+  );
+
   test('private is the default and workspace admins cannot read another person’s private files', async () => {
     const privateFile = await create(
       { name: 'Secret', kind: 'markdown', body: 'Private content' },
@@ -101,6 +169,41 @@ describe('file access', () => {
       expectedSyncId: entry.syncId,
     });
     expect((await getFile(workspace.admin, entry.id)).body).toBe('Edited');
+  });
+
+  test('inherited documents remain editable below an explicit folder inside a viewer-only ancestor', async () => {
+    const root = await create({
+      name: 'Read access',
+      visibility: 'shared',
+      grants: [{ userId: member.userId, role: 'viewer' }],
+    });
+    const folder = await create({
+      name: 'Editable folder',
+      parentId: root.id,
+      visibility: 'workspace',
+    });
+    const document = await create({
+      name: 'Inherited.md',
+      parentId: folder.id,
+      visibility: 'inherit',
+      kind: 'markdown',
+      body: 'Before',
+    });
+    expect((await getFile(member, document.id)).entry.canEdit).toBe(true);
+    await updateFile({ principal: member }, document.id, {
+      body: 'After',
+      expectedSyncId: document.syncId,
+    });
+    expect((await getFile(workspace.admin, document.id)).body).toBe('After');
+    const metadata = await getFile(workspace.admin, document.id, true);
+    expect(metadata.body).toBeNull();
+    expect(metadata.entry).not.toHaveProperty('body');
+    expect(metadata.entry).not.toHaveProperty('storageKey');
+    await updateFile({ principal: workspace.admin }, root.id, {
+      access: { visibility: 'private' },
+      expectedSyncId: root.syncId,
+    });
+    await expect(getFile(member, document.id)).rejects.toMatchObject({ status: 404 });
   });
 
   test('public descendants cannot bypass a private parent and inherited access follows the folder', async () => {

@@ -47,6 +47,22 @@ describe('file policy', () => {
     expect(canAccessFile(tree, 'root', null, 'edit')).toBe(false);
   });
 
+  test('editing inherits the nearest explicit access while every ancestor still requires read access', () => {
+    const root = node('root', {
+      visibility: 'shared',
+      grants: [{ userId: 'member', role: 'viewer' }],
+    });
+    const folder = node('folder', { parentId: 'root', visibility: 'workspace' });
+    const nested = node('nested', { parentId: 'folder', visibility: 'inherit' });
+    const document = node('document', { parentId: 'nested', visibility: 'inherit' });
+    const tree = new Map([root, folder, nested, document].map((item) => [item.id, item]));
+    expect(canAccessFile(tree, 'folder', member, 'edit')).toBe(true);
+    expect(canAccessFile(tree, 'document', member, 'edit')).toBe(true);
+    tree.set('root', { ...root, grants: [] });
+    expect(canAccessFile(tree, 'document', member, 'edit')).toBe(false);
+    expect(canAccessFile(tree, 'document', member)).toBe(false);
+  });
+
   test('cannot grant access across workspaces even when the user matches the owner', () => {
     const tree = new Map([['document', node('document', { visibility: 'public' })]]);
     expect(canAccessFile(tree, 'document', { ...owner, organizationId: 'other' })).toBe(false);

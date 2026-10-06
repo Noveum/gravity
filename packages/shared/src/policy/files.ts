@@ -38,18 +38,13 @@ export function canAccessFile(
   if (action === 'share' && principal?.userId !== node.ownerId) return false;
   if (action !== 'read' && (principal === null || !can(principal, 'record:write'))) return false;
   let current: FileAccessNode | undefined = node;
+  let inheritEdit = action === 'edit';
   const visited = new Set<string>();
   while (current !== undefined) {
     if (visited.has(current.id)) return false;
     visited.add(current.id);
-    if (
-      !permits(
-        current,
-        principal,
-        action === 'edit' && (current.id === id || node.visibility === 'inherit'),
-      )
-    )
-      return false;
+    if (!permits(current, principal, inheritEdit)) return false;
+    inheritEdit = inheritEdit && current.visibility === 'inherit';
     if (current.parentId === null) return current.visibility !== 'inherit';
     current = tree.get(current.parentId);
   }

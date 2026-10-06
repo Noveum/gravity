@@ -46,7 +46,7 @@ const fileColumns = {
   updatedAt: schema.fileEntry.updatedAt,
 };
 
-type FileNode = Omit<typeof schema.fileEntry.$inferSelect, 'body' | 'storageKey'> & FileAccess;
+type FileNode = typeof schema.fileEntry.$inferSelect & FileAccess;
 type Tree = Map<string, FileNode>;
 
 function ancestorIds(organizationId: string, id: string): SQL {
@@ -60,9 +60,28 @@ function ancestorIds(organizationId: string, id: string): SQL {
   ) select id from ancestry)`;
 }
 
-async function fileTree(executor: Executor, organizationId: string, filter?: SQL): Promise<Tree> {
+async function fileTree(
+  executor: Executor,
+  organizationId: string,
+  filter?: SQL,
+  contentId?: string,
+): Promise<Tree> {
   const rows = await executor
-    .select(fileColumns)
+    .select({
+      ...fileColumns,
+      body:
+        contentId === undefined
+          ? sql<string | null>`null`
+          : sql<
+              string | null
+            >`case when ${schema.fileEntry.id} = ${contentId} then ${schema.fileEntry.body} else null end`,
+      storageKey:
+        contentId === undefined
+          ? sql<string | null>`null`
+          : sql<
+              string | null
+            >`case when ${schema.fileEntry.id} = ${contentId} then ${schema.fileEntry.storageKey} else null end`,
+    })
     .from(schema.fileEntry)
     .where(and(eq(schema.fileEntry.organizationId, organizationId), filter));
   return new Map(
@@ -222,19 +241,20 @@ export async function listFiles(principal: Principal, input: unknown): Promise<F
   return { entries: entries.map((node) => present(tree, node, principal)), ancestors };
 }
 
-export async function getFile(principal: Principal, id: string, metadataOnly = false) {
+async function fileSnapshot(principal: Principal, id: string, metadataOnly = false) {
   const tree = await fileTree(
     db,
     principal.organizationId,
     inArray(schema.fileEntry.id, ancestorIds(principal.organizationId, id)),
+    metadataOnly ? undefined : id,
   );
   const node = readable(tree, id, principal);
-  if (metadataOnly) return { entry: present(tree, node, principal), body: null };
-  const [row] = await db
-    .select({ body: schema.fileEntry.body })
-    .from(schema.fileEntry)
-    .where(eq(schema.fileEntry.id, id));
-  return { entry: present(tree, node, principal), body: row?.body ?? null };
+  return { tree, node };
+}
+
+export async function getFile(principal: Principal, id: string, metadataOnly = false) {
+  const { tree, node } = await fileSnapshot(principal, id, metadataOnly);
+  return { entry: present(tree, node, principal), body: node.body };
 }
 
 export async function createFile(context: WriteContext, input: unknown) {
@@ -494,7 +514,7 @@ export async function completeFileUpload(
   });
 }
 
-export async function getPublicFile(token: string) {
+async function publicFileSnapshot(token: string) {
   publicFileTokenSchema.parse(token);
   const [reference] = await db
     .select({ id: schema.fileEntry.id, organizationId: schema.fileEntry.organizationId })
@@ -508,15 +528,17 @@ export async function getPublicFile(token: string) {
       eq(schema.fileEntry.parentId, ref.id),
       inArray(schema.fileEntry.id, ancestorIds(ref.organizationId, ref.id)),
     ),
+    ref.id,
   );
   const node = readable(tree, ref.id, null);
-  const [row] = await db
-    .select({ body: schema.fileEntry.body })
-    .from(schema.fileEntry)
-    .where(eq(schema.fileEntry.id, node.id));
+  return { tree, node };
+}
+
+export async function getPublicFile(token: string) {
+  const { tree, node } = await publicFileSnapshot(token);
   return {
     entry: present(tree, node, null),
-    body: row?.body ?? null,
+    body: node.body,
     entries: [...tree.values()]
       .filter((child) => child.parentId === node.id && canAccessFile(tree, child.id, null))
       .map((child) => present(tree, child, null)),
@@ -529,11 +551,10 @@ export async function fileDownload(
   preview: boolean,
   storage?: FileStorage,
 ) {
-  const publicResult = principal === null ? await getPublicFile(reference) : null;
-  const id = publicResult?.entry.id ?? reference;
-  if (principal !== null) await getFile(principal, id);
-  const [row] = await db.select().from(schema.fileEntry).where(eq(schema.fileEntry.id, id));
-  const file = requireRow(row, 'That file does not exist.');
+  const { node: file } =
+    principal === null
+      ? await publicFileSnapshot(reference)
+      : await fileSnapshot(principal, reference);
   if (file.kind === 'folder') throw validationFailed('Open the folder to download its files.');
   if (file.kind === 'markdown') return { body: file.body ?? '', name: file.name, url: null };
   if (file.storageKey === null) throw notFound('That file has no uploaded content.');

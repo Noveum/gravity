@@ -9,7 +9,10 @@ import {
   test,
   vi,
 } from "vitest";
-import { OutboundService } from "../packages/connectors/outbound";
+import {
+  OutboundService,
+  resolveDeliverySchema,
+} from "../packages/connectors/outbound";
 import {
   emailDraft,
   gmailSendScope,
@@ -24,6 +27,10 @@ import type { Principal } from "../packages/core/policy";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
+import {
+  operationRequirements,
+  operations,
+} from "../packages/operations/catalog";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 const org = demoId(1);
@@ -1059,4 +1066,114 @@ test("a LinkedIn send refuses before claiming when the account's chat with the p
     .from(s.deliveries)
     .where(eq(s.deliveries.connectionId, f.connectionId));
   expect(deliveries).toHaveLength(0);
+});
+const resolveOperation = () => {
+  const found = operations.find((item) => item.name === "resolve_delivery");
+  if (!found) throw new Error("resolve_delivery missing");
+  return found;
+};
+const resolveAs = (actor: Principal, input: Record<string, unknown>) =>
+  resolveOperation().execute(
+    { db: local.db, principal: actor },
+    { organizationId: org, ...input },
+  );
+const resolveAt = (at: number, input: Record<string, unknown>) =>
+  new OutboundService(local.db, fetch, () => at).resolve(
+    human,
+    resolveDeliverySchema.parse({ organizationId: org, ...input }),
+  );
+test("resolve_delivery is admin-only, human-only and needs explicit confirmation", async () => {
+  const f = await fixture();
+  const stuck = await new OutboundService(
+    local.db,
+    async () => {
+      throw new Error("timeout");
+    },
+    clock,
+  ).send(principal, f.input);
+  expect(stuck.status).toBe("unknown");
+  const input = {
+    deliveryId: stuck.id,
+    outcome: "failed",
+    reason: "absent_in_provider",
+    confirm: true,
+  };
+  await expect(resolveAs(principal, input)).rejects.toMatchObject({
+    code: "HUMAN_ACTION_REQUIRED",
+  });
+  await expect(
+    resolveAs({ userId: "demo-teammate", source: "session" }, input),
+  ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  await expect(
+    resolveAs(human, { ...input, confirm: undefined }),
+  ).rejects.toThrow();
+  await expect(
+    resolveAs(human, { ...input, confirm: false }),
+  ).rejects.toThrow();
+  expect(operationRequirements(resolveOperation())).toMatchObject({
+    administrator: true,
+    humanSession: true,
+  });
+  expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+    "DELIVERY_IN_PROGRESS",
+  );
+  const resolved = await resolveAs(human, input);
+  expect(resolved).toMatchObject({
+    id: stuck.id,
+    status: "failed",
+    errorCode: "RESOLVED_ABSENT_IN_PROVIDER",
+    retrySafe: true,
+  });
+  expect((await f.service.readiness(principal, f.input)).blockedBy).toBeNull();
+  const events = await local.db
+    .select()
+    .from(s.changeEvents)
+    .where(eq(s.changeEvents.entityId, stuck.id));
+  expect(events.map((event) => event.type)).toContain("delivery.resolved");
+  await expect(resolveAs(human, input)).rejects.toMatchObject({
+    code: "DELIVERY_NOT_RESOLVABLE",
+  });
+});
+test("resolve_delivery waits out the live sending window and records a confirmed send", async () => {
+  const f = await fixture();
+  if (!("touchId" in f.source)) throw new Error("fixture");
+  const stuck = await new OutboundService(
+    local.db,
+    async () => {
+      throw new Error("timeout");
+    },
+    clock,
+  ).send(principal, f.input);
+  await local.db
+    .update(s.deliveries)
+    .set({ status: "sending", createdAt: new Date(now) })
+    .where(eq(s.deliveries.id, stuck.id));
+  const input = {
+    deliveryId: stuck.id,
+    outcome: "sent",
+    reason: "confirmed_in_provider",
+    confirm: true,
+  };
+  await expect(resolveAt(now + 60000, input)).rejects.toMatchObject({
+    code: "DELIVERY_IN_PROGRESS",
+  });
+  const resolved = await resolveAt(now + 121000, input);
+  expect(resolved).toMatchObject({
+    status: "sent",
+    errorCode: "RESOLVED_CONFIRMED_IN_PROVIDER",
+    providerAccepted: true,
+  });
+  const [touch] = await local.db
+    .select()
+    .from(s.touches)
+    .where(eq(s.touches.id, f.source.touchId));
+  expect(touch.status).toBe("sent");
+  const [relationship] = await local.db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, f.relationshipId));
+  expect(relationship.touchCount).toBe(1);
+  await expect(
+    f.service.send(principal, { ...f.input, idempotencyKey: randomUUID() }),
+  ).rejects.toMatchObject({ code: "CONFLICT" });
 });

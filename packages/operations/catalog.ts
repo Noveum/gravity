@@ -7,6 +7,7 @@ import {
   deliverySchema,
   OutboundService,
   reconcileDeliverySchema,
+  resolveDeliverySchema,
   sendActionSchema,
   sendReadinessSchema,
   sendTouchSchema,
@@ -262,6 +263,17 @@ export const operations: Operation[] = [
       "Verify a provider receipt for an ambiguous delivery without resending. Gmail searches its unique Message-ID. LinkedIn requires an externalMessageId in the original chat; a missing receipt leaves the outcome unknown, never authorizes a retry.",
     schema: reconcileDeliverySchema,
     run: (c, input) => new OutboundService(c.db).reconcile(c.principal, input),
+  }),
+  operation({
+    api: "outreach",
+    method: "POST",
+    operation: "resolve-delivery",
+    name: "resolve_delivery",
+    idempotent: false,
+    description:
+      "Close a stuck delivery that is unknown, or abandoned while sending or accepted, as sent or failed with a reason. This never contacts the provider. Marking it failed lets the sender try again, so confirm first that nothing went out. Requires a human admin session and confirm=true; deliveries still inside the live sending window are refused.",
+    schema: resolveDeliverySchema,
+    run: (c, input) => new OutboundService(c.db).resolve(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -1218,6 +1230,7 @@ const workspaceAdministration = [
 ];
 const adminOperations = new Set([
   "list_assistant_grants",
+  "resolve_delivery",
   "create_workspace",
   "create_organization",
   "create_product",
@@ -1238,7 +1251,10 @@ const allProductOperations = new Set([
   "remove_unipile",
   ...memberAdministration,
 ]);
-const humanSessionOperations = new Set(["accept_invitation"]);
+const humanSessionOperations = new Set([
+  "accept_invitation",
+  "resolve_delivery",
+]);
 const ownerOperations = new Set([
   "get_integrations",
   "connect_integration",

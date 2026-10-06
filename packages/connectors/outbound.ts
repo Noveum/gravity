@@ -5,7 +5,12 @@ import { publishChange } from "../core/changes";
 import { scopeSchema } from "../core/crm";
 import { draftHash, draftSubject } from "../core/drafts";
 import { OutreachService, outboundGate } from "../core/outreach";
-import { authorize, DomainError, type Principal } from "../core/policy";
+import {
+  authorize,
+  authorizeAdministrator,
+  DomainError,
+  type Principal,
+} from "../core/policy";
 import { assertActiveRelationships } from "../core/visibility";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
@@ -66,6 +71,17 @@ export const reconcileDeliverySchema = deliverySchema.extend({
   externalMessageId: z.string().min(1).max(500).optional(),
   externalThreadId: z.string().min(1).max(500).optional(),
 });
+export const resolveDeliverySchema = deliverySchema.extend({
+  outcome: z.enum(["sent", "failed"]),
+  reason: z.enum([
+    "confirmed_in_provider",
+    "absent_in_provider",
+    "recipient_confirmed",
+    "written_off",
+  ]),
+  confirm: z.literal(true),
+});
+const liveSendingWindow = 120000;
 type SourceInput = z.infer<typeof sendReadinessSchema>;
 type SendInput = SourceInput & { idempotencyKey: string };
 const credentialContext = (row: typeof s.connections.$inferSelect) =>
@@ -752,42 +768,7 @@ export class OutboundService {
         current.channel === "linkedin"
           ? `${current.externalThreadId}:${current.externalMessageId}`
           : current.externalMessageId;
-      let conflicted = false;
-      if (current.touchId) {
-        const [touch] = await tx
-          .select()
-          .from(s.touches)
-          .where(eq(s.touches.id, current.touchId))
-          .for("update");
-        conflicted = touch?.version !== current.sourceVersion;
-        if (touch && touch.status !== "sent")
-          await tx
-            .update(s.touches)
-            .set({
-              status: "sent",
-              sentAt: now,
-              sentBy: current.ownerId,
-              externalMessageId: messageId,
-              closedAt: now,
-              updatedAt: now,
-              version: touch.version + 1,
-              sentWarnings: conflicted ? ["changed-during-dispatch"] : [],
-            })
-            .where(eq(s.touches.id, touch.id));
-      } else if (current.actionId) {
-        const [action] = await tx
-          .select()
-          .from(s.actions)
-          .where(eq(s.actions.id, current.actionId))
-          .for("update");
-        conflicted = action?.version !== current.sourceVersion;
-        // A newer inbound reply must remain actionable. Its replacement draft is never completed by an older send.
-        if (action?.version === current.sourceVersion)
-          await tx
-            .update(s.actions)
-            .set({ status: "completed", version: action.version + 1 })
-            .where(eq(s.actions.id, action.id));
-      }
+      const conflicted = await this.completeSource(tx, current, now, messageId);
       const [inserted] = await tx
         .insert(s.conversations)
         .values({
@@ -834,14 +815,6 @@ export class OutboundService {
           })
           .onConflictDoNothing();
       await tx
-        .update(s.relationships)
-        .set({
-          touchCount: sql`${s.relationships.touchCount} + 1`,
-          lastOutboundAt: sql`greatest(coalesce(${s.relationships.lastOutboundAt}, ${now.toISOString()}::timestamptz), ${now.toISOString()}::timestamptz)`,
-          version: sql`${s.relationships.version} + 1`,
-        })
-        .where(eq(s.relationships.id, current.relationshipId));
-      await tx
         .update(s.deliveries)
         .set({
           status: "sent",
@@ -860,6 +833,9 @@ export class OutboundService {
         entityId: current.id,
       });
     });
+    await this.advanceAfterSend(delivery);
+  }
+  private async advanceAfterSend(delivery: Delivery) {
     // Planning only: advancing never dispatches the next touch.
     if (delivery.touchId) {
       const principal: Principal = {
@@ -876,6 +852,142 @@ export class OutboundService {
         /* A removed membership must not erase an already persisted receipt. */
       }
     }
+  }
+  private async completeSource(
+    tx: Transaction,
+    current: Delivery,
+    now: Date,
+    messageId: string | null,
+  ) {
+    let conflicted = false;
+    if (current.touchId) {
+      const [touch] = await tx
+        .select()
+        .from(s.touches)
+        .where(eq(s.touches.id, current.touchId))
+        .for("update");
+      conflicted = touch?.version !== current.sourceVersion;
+      if (touch && touch.status !== "sent")
+        await tx
+          .update(s.touches)
+          .set({
+            status: "sent",
+            sentAt: now,
+            sentBy: current.ownerId,
+            externalMessageId: messageId,
+            closedAt: now,
+            updatedAt: now,
+            version: touch.version + 1,
+            sentWarnings: conflicted ? ["changed-during-dispatch"] : [],
+          })
+          .where(eq(s.touches.id, touch.id));
+    } else if (current.actionId) {
+      const [action] = await tx
+        .select()
+        .from(s.actions)
+        .where(eq(s.actions.id, current.actionId))
+        .for("update");
+      conflicted = action?.version !== current.sourceVersion;
+      // A newer inbound reply must remain actionable. Its replacement draft is never completed by an older send.
+      if (action?.version === current.sourceVersion)
+        await tx
+          .update(s.actions)
+          .set({ status: "completed", version: action.version + 1 })
+          .where(eq(s.actions.id, action.id));
+    }
+    await tx
+      .update(s.relationships)
+      .set({
+        touchCount: sql`${s.relationships.touchCount} + 1`,
+        lastOutboundAt: sql`greatest(coalesce(${s.relationships.lastOutboundAt}, ${now.toISOString()}::timestamptz), ${now.toISOString()}::timestamptz)`,
+        version: sql`${s.relationships.version} + 1`,
+      })
+      .where(eq(s.relationships.id, current.relationshipId));
+    return conflicted;
+  }
+  async resolve(
+    principal: Principal,
+    input: z.infer<typeof resolveDeliverySchema>,
+  ) {
+    if (principal.source === "mcp")
+      throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
+    await authorizeAdministrator(this.db, principal, input.organizationId);
+    const [delivery] = await this.db
+      .select()
+      .from(s.deliveries)
+      .where(
+        and(
+          eq(s.deliveries.id, input.deliveryId),
+          eq(s.deliveries.organizationId, input.organizationId),
+        ),
+      );
+    if (!delivery) throw new DomainError("NOT_FOUND", 404);
+    if (input.productId && input.productId !== delivery.productId)
+      throw new DomainError("FORBIDDEN", 403);
+    await authorize(
+      this.db,
+      principal,
+      input.organizationId,
+      delivery.productId,
+      true,
+    );
+    const now = new Date(this.clock());
+    const resolved = await this.db.transaction(async (tx) => {
+      const [relationship] = await tx
+        .select()
+        .from(s.relationships)
+        .where(eq(s.relationships.id, delivery.relationshipId));
+      if (!relationship) throw new DomainError("NOT_FOUND", 404);
+      await tx
+        .select({ id: s.people.id })
+        .from(s.people)
+        .where(eq(s.people.id, relationship.personId))
+        .for("update");
+      const [current] = await tx
+        .select()
+        .from(s.deliveries)
+        .where(eq(s.deliveries.id, delivery.id))
+        .for("update");
+      if (
+        !current ||
+        !["unknown", "sending", "accepted"].includes(current.status)
+      )
+        throw new DomainError("DELIVERY_NOT_RESOLVABLE", 409);
+      if (
+        current.status !== "unknown" &&
+        now.getTime() - current.createdAt.getTime() < liveSendingWindow
+      )
+        throw new DomainError("DELIVERY_IN_PROGRESS", 409);
+      const sentAt = current.sentAt ?? now;
+      if (input.outcome === "sent")
+        await this.completeSource(
+          tx,
+          current,
+          sentAt,
+          current.externalMessageId,
+        );
+      const [saved] = await tx
+        .update(s.deliveries)
+        .set({
+          status: input.outcome,
+          errorCode: `RESOLVED_${input.reason.toUpperCase()}`,
+          ...(input.outcome === "sent" ? { sentAt } : {}),
+        })
+        .where(eq(s.deliveries.id, current.id))
+        .returning();
+      if (!saved) throw new DomainError("NOT_FOUND", 404);
+      await tx.insert(s.changeEvents).values({
+        organizationId: current.organizationId,
+        productId: current.productId,
+        actorId: principal.userId,
+        type: "delivery.resolved",
+        entityId: current.id,
+      });
+      return saved;
+    });
+    if (resolved.status === "sent") await this.advanceAfterSend(resolved);
+    publishChange(input.organizationId);
+    return publicDelivery(resolved, this.clock());
   }
   async reconcile(
     principal: Principal,

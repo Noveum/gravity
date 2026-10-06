@@ -314,7 +314,7 @@ describe("palette, search, guide and create", () => {
     await press("c");
     expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy();
   });
-  test("C on a person record schedules for that person, and on a view without its own create adds a person", async () => {
+  test("C on a person record schedules for that person, on Sequences creates a sequence, and on a view without its own create adds a person", async () => {
     await mountCrm(harness, `/people/${demoId(202)}`);
     await press("c");
     const dialog = await screen.findByRole("dialog", {
@@ -332,6 +332,16 @@ describe("palette, search, guide and create", () => {
     fireEvent(dialog, new Event("cancel"));
     fireEvent.click(screen.getByRole("link", { name: t.sequences }));
     await waitFor(() => expect(pathname()).toBe("/outreach/sequences"));
+    (document.activeElement as HTMLElement | null)?.blur();
+    await press("c");
+    const sequenceDialog = screen.getByRole("dialog", { name: t.newSequence });
+    fireEvent(sequenceDialog, new Event("cancel"));
+    fireEvent.click(
+      within(
+        screen.getByRole("navigation", { name: t.outreachTabsLabel }),
+      ).getByRole("link", { name: new RegExp(`^${t.outreachTabs.today}`) }),
+    );
+    await waitFor(() => expect(pathname()).toBe("/outreach/today"));
     (document.activeElement as HTMLElement | null)?.blur();
     await press("c");
     expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy();

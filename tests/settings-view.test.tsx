@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { gmailSendScope } from "../packages/connectors/outbound-provider";
 import * as s from "../packages/database/schema";
-import { demoId } from "../packages/database/seed";
+import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { settingsSections } from "../src/components/routes";
 import { reopenWorkspace } from "../src/components/workspace-preference";
@@ -62,6 +62,21 @@ describe("settings shell", () => {
 });
 
 describe("workspace settings", () => {
+  test("a slug change keeps the selected product filter when the workspace reopens", async () => {
+    await mountSettings(harness, "/settings/workspace", demoUser, demoId(11));
+    const region = panel("workspace");
+    fireEvent.change(within(region).getByLabelText(t.workspaceSlug), {
+      target: { value: "northstar-filtered" },
+    });
+    fireEvent.click(within(region).getByRole("button", { name: t.save }));
+    await waitFor(() =>
+      expect(reopenWorkspace).toHaveBeenCalledWith(
+        demoId(1),
+        "/settings/workspace",
+        demoId(11),
+      ),
+    );
+  });
   test("an admin saves the name, time zone, address and domains through update_workspace and the workspace is reselected", async () => {
     await mountSettings(harness, "/settings/workspace");
     const region = panel("workspace");
@@ -82,6 +97,7 @@ describe("workspace settings", () => {
       expect(reopenWorkspace).toHaveBeenCalledWith(
         demoId(1),
         "/settings/workspace",
+        "",
       ),
     );
     expect(lastCall(harness, "update_workspace")?.body).toMatchObject({

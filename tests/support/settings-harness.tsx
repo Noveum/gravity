@@ -112,6 +112,7 @@ export async function mountSettings(
   harness: SettingsHarness,
   path: string,
   userId = demoUser,
+  productId = "",
 ) {
   harness.principal = { userId, source: "session" };
   visit(path);
@@ -127,6 +128,7 @@ export async function mountSettings(
       initial={snapshot}
       organizations={organizations}
       initialOrganizationId={demoId(1)}
+      initialProductId={productId}
       userId={userId}
       mcpEndpoint="https://gravity.example.test/mcp"
       demo={false}

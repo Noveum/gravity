@@ -51,7 +51,11 @@ export function WorkspaceSettings() {
       if (!ok) return;
       await crm.reloadOrganizations();
       if ("slug" in changes)
-        reopenWorkspace(organization.id, settingsPath("workspace"));
+        reopenWorkspace(
+          organization.id,
+          settingsPath("workspace"),
+          crm.productId,
+        );
     } finally {
       setBusy(false);
     }

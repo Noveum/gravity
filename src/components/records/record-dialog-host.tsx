@@ -1,6 +1,10 @@
 "use client";
+import t from "@crm/i18n/translations/en.json";
 import { useCrm } from "../crm/crm-context";
+import { usePersonContext } from "../crm/record-context";
 import { companyPath } from "../routes";
+import { EmptyState, LoadingState } from "../ui/states";
+import { RecordDialog } from "./record-dialog";
 import {
   CompanyDialog,
   MeetingDialog,
@@ -16,6 +20,8 @@ export function RecordDialogHost() {
   const close = crm.closeRecordDialog;
   if (dialog.kind === "person") {
     const person = data.people.find((item) => item.id === dialog.id);
+    if (person && data.compact)
+      return <PersonEditLoader personId={person.id} onClose={close} />;
     return person ? <PersonEditDialog person={person} onClose={close} /> : null;
   }
   if (dialog.kind === "company") {
@@ -49,5 +55,36 @@ export function RecordDialogHost() {
       {...(opportunity ? { opportunity } : {})}
       onClose={close}
     />
+  );
+}
+
+function PersonEditLoader({
+  personId,
+  onClose,
+}: {
+  personId: string;
+  onClose: () => void;
+}) {
+  const crm = useCrm();
+  const relationship = crm.sourceData?.relationships.find(
+    (row) => row.personId === personId,
+  );
+  const { context, missing } = usePersonContext(relationship?.id ?? "");
+  if (context?.person)
+    return <PersonEditDialog person={context.person} onClose={onClose} />;
+  return (
+    <RecordDialog
+      title={t.editPerson}
+      submitLabel={t.save}
+      onClose={onClose}
+      loading
+      onSubmit={async () => t.recordUnavailable}
+    >
+      {missing ? (
+        <EmptyState title={t.recordUnavailable} compact />
+      ) : (
+        <LoadingState rows={3} />
+      )}
+    </RecordDialog>
   );
 }

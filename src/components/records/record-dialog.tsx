@@ -14,12 +14,14 @@ export function RecordDialog({
   onClose,
   onSubmit,
   children,
+  loading = false,
 }: {
   title: string;
   submitLabel: string;
   onClose: () => void;
   onSubmit: (fields: FormData) => Promise<string | null>;
   children: ReactNode;
+  loading?: boolean;
 }) {
   const modal = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
@@ -27,7 +29,7 @@ export function RecordDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useModalLifecycle(modal);
-  useReadyFocus(modal, false);
+  useReadyFocus(modal, loading);
   return (
     <dialog
       ref={modal}
@@ -60,7 +62,7 @@ export function RecordDialog({
           }
         }}
       >
-        <fieldset className="dialog-fields" disabled={busy}>
+        <fieldset className="dialog-fields" disabled={busy || loading}>
           {children}
         </fieldset>
         {error && <p role="alert">{error}</p>}
@@ -77,7 +79,7 @@ export function RecordDialog({
             type="submit"
             title={t.submitHint}
             className="primary"
-            disabled={busy}
+            disabled={busy || loading}
           >
             {busy ? t.saving : submitLabel}
           </button>

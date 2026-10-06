@@ -9,7 +9,14 @@ import {
 } from "../crm/crm-context";
 import { useWarmContext } from "../crm/record-context";
 import { ArchivedList } from "../records/archived-list";
-import { peekOnSpace } from "../records/peek-keys";
+import {
+  Pagination,
+  RecordFilters,
+  useRecordBrowser,
+  useRecordIndex,
+} from "../records/list-browser";
+import { MetadataValues } from "../records/metadata-section";
+import { peekLink, peekOnSpace, peekRow, rowKeys } from "../records/peek-keys";
 import { companyPath, personPath } from "../routes";
 import { EmptyState } from "../ui/states";
 
@@ -28,10 +35,25 @@ export function PeopleView() {
   const people = data.people.filter((person) =>
     matches(person.name, person.title, companyFor(person.id)?.name),
   );
-  usePruneSelection(people.map((item) => item.id));
+  const index = useRecordIndex();
+  const browser = useRecordBrowser(
+    people,
+    (person) => ({
+      ...person,
+      ownerIds: (index.byPerson.get(person.id) ?? []).map(
+        (relationship) => relationship.ownerId,
+      ),
+      qualifications: (index.byPerson.get(person.id) ?? []).map(
+        (relationship) => relationship.qualification,
+      ),
+    }),
+    (person) => person.name,
+  );
+  usePruneSelection(browser.page.items.map((item) => item.id));
   return (
     <div className="table-scroll">
-      {!people.length && <EmptyState title={t.noPeople} compact />}
+      <RecordFilters browser={browser} />
+      {!browser.page.total && <EmptyState title={t.noPeople} compact />}
       <table>
         <thead>
           <tr>
@@ -39,19 +61,21 @@ export function PeopleView() {
             <th>{t.company}</th>
             <th>{t.products}</th>
             <th>{t.qualification}</th>
+            <th>{t.dealSize}</th>
+            <th>{t.tags}</th>
           </tr>
         </thead>
         <tbody>
-          {people.map((person) => {
-            const relationships = data.relationships.filter(
-              (relationship) => relationship.personId === person.id,
-            );
+          {browser.page.items.map((person) => {
+            const relationships = index.byPerson.get(person.id) ?? [];
             const first = relationships[0]?.id ?? "";
             const company = companyFor(person.id);
             return (
               <tr
                 key={person.id}
                 data-selected={selected.has(person.id) || undefined}
+                className="peekable-row"
+                onClick={peekRow(() => crm.openPerson(first))}
               >
                 <td>
                   <Link
@@ -59,9 +83,14 @@ export function PeopleView() {
                     className="text-button identity-link"
                     data-nav-record={person.id}
                     aria-label={person.name}
+                    prefetch={false}
+                    onClick={peekLink(() => crm.openPerson(first))}
                     aria-keyshortcuts="Space Enter X"
                     onFocus={() => warmContext(first)}
-                    onKeyDown={peekOnSpace(() => crm.openPerson(first))}
+                    onKeyDown={rowKeys({
+                      peek: () => crm.openPerson(first),
+                      open: () => crm.go(personPath(person.id)),
+                    })}
                   >
                     {person.name}
                     <small>{person.title}</small>
@@ -75,6 +104,8 @@ export function PeopleView() {
                     <Link
                       href={companyPath(company.id)}
                       className="text-button"
+                      prefetch={false}
+                      onClick={peekLink(() => crm.openCompany(company.id))}
                       onKeyDown={peekOnSpace(() => crm.openCompany(company.id))}
                     >
                       {company.name}
@@ -90,7 +121,10 @@ export function PeopleView() {
                       type="button"
                       className="badge"
                       aria-pressed={peek.relationshipId === relationship.id}
-                      onClick={() => crm.openPerson(relationship.id)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        crm.openPerson(relationship.id);
+                      }}
                     >
                       {product(relationship.productId)?.name} ·{" "}
                       {label(relationship.purpose)}
@@ -102,11 +136,24 @@ export function PeopleView() {
                     .map((relationship) => label(relationship.qualification))
                     .join(" · ")}
                 </td>
+                <td>
+                  <MetadataValues record={{ ...person, tags: [] }} />
+                </td>
+                <td>
+                  <span className="record-tags">
+                    {person.tags.map((tag) => (
+                      <span className="badge" key={tag}>
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      <Pagination page={browser.page} />
       <ArchivedList
         records={data.archived.people.map((person) => ({
           id: person.id,

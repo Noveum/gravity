@@ -41,7 +41,7 @@ export function useLiveSnapshot({
           generation === fetchGeneration.current;
         try {
           const snapshot = await requestJson<ClientSnapshot>(
-            `/api/crm?organizationId=${organizationId}`,
+            `/api/crm?organizationId=${organizationId}&compact=true`,
           );
           if (current()) {
             setData(snapshot);

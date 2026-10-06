@@ -3,6 +3,9 @@ import type { ClientCompanyContext, ClientContext } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { Building2, ChevronRight } from "lucide-react";
 import { dateLabel, label } from "./client-api";
+import { formatMoney } from "./money";
+import { Pagination, useListPage } from "./records/list-browser";
+import { RecordText } from "./records/record-text";
 
 interface WorkProps {
   actions: ClientContext["actions"];
@@ -20,36 +23,40 @@ export function RelatedWork({
   onAction,
   onReveal,
 }: WorkProps) {
+  const actionPage = useListPage(
+    actions.filter((action) => action.status !== "completed"),
+    actions[0]?.relationshipId ?? "",
+  );
+  const meetingPage = useListPage(meetings, meetings[0]?.relationshipId ?? "");
   return (
     <div className="related-work">
       <section>
         <h3>{t.actions}</h3>
-        {actions
-          .filter((a) => a.status !== "completed")
-          .map((a) => (
-            <button
-              type="button"
-              className="related-row"
-              key={a.id}
-              onClick={() => onAction(a.relationshipId, a.id)}
-            >
-              <span>
-                {a.title}
-                <small>
-                  {label(a.kind)} · {label(a.status)} ·{" "}
-                  {dateLabel(a.dueAt, timeZone)}
-                </small>
-              </span>
-              <ChevronRight size={13} />
-            </button>
-          ))}
+        {actionPage.items.map((a) => (
+          <button
+            type="button"
+            className="related-row"
+            key={a.id}
+            onClick={() => onAction(a.relationshipId, a.id)}
+          >
+            <span>
+              {a.title}
+              <small>
+                {label(a.kind)} · {label(a.status)} ·{" "}
+                {dateLabel(a.dueAt, timeZone)}
+              </small>
+            </span>
+            <ChevronRight size={13} />
+          </button>
+        ))}
+        {actionPage.total > actionPage.size && <Pagination page={actionPage} />}
         {!actions.some((a) => a.status !== "completed") && (
           <p className="muted">{t.noActions}</p>
         )}
       </section>
       <section>
         <h3>{t.meetings}</h3>
-        {meetings.map((m) => (
+        {meetingPage.items.map((m) => (
           <button
             type="button"
             className="related-row"
@@ -65,6 +72,9 @@ export function RelatedWork({
             <ChevronRight size={13} />
           </button>
         ))}
+        {meetingPage.total > meetingPage.size && (
+          <Pagination page={meetingPage} />
+        )}
         {!meetings.length && <p className="muted">{t.noRelatedMeetings}</p>}
       </section>
       <RelatedOpportunities opportunities={opportunities} onReveal={onReveal} />
@@ -76,10 +86,14 @@ export function RelatedOpportunities({
   onReveal,
   className,
 }: Pick<WorkProps, "opportunities" | "onReveal"> & { className?: string }) {
+  const page = useListPage(
+    opportunities,
+    opportunities[0]?.relationshipId ?? "",
+  );
   return (
     <section className={className}>
       <h3>{t.opportunities}</h3>
-      {opportunities.map((o) => (
+      {page.items.map((o) => (
         <button
           type="button"
           className="related-row"
@@ -88,18 +102,12 @@ export function RelatedOpportunities({
         >
           <span>
             {o.name}
-            <small>
-              {o.amountMinor === null
-                ? t.amountUnknown
-                : new Intl.NumberFormat("en", {
-                    style: "currency",
-                    currency: o.currency,
-                  }).format(o.amountMinor / 100)}
-            </small>
+            <small>{formatMoney(o.amountMinor, o.currency)}</small>
           </span>
           <ChevronRight size={13} />
         </button>
       ))}
+      {page.total > page.size && <Pagination page={page} />}
       {!opportunities.length && (
         <p className="muted">{t.noRelatedOpportunities}</p>
       )}
@@ -132,9 +140,7 @@ export function CompanyProfile({
           <p>{company.domain}</p>
         </div>
       </div>
-      <p className="context-summary">
-        {company.description || t.companyDescriptionEmpty}
-      </p>
+      <RecordText value={company.description || t.companyDescriptionEmpty} />
     </>
   );
 }
@@ -145,20 +151,25 @@ export function CompanyPeople({
   context: ClientCompanyContext;
   onPerson: (relationshipId: string) => void;
 }) {
+  const page = useListPage(context.people, context.company.id);
+  const relationships = new Map<
+    string,
+    ClientCompanyContext["relationships"]
+  >();
+  for (const relationship of context.relationships) {
+    const rows = relationships.get(relationship.personId) ?? [];
+    rows.push(relationship);
+    relationships.set(relationship.personId, rows);
+  }
   return (
     <section className="record-section">
       <h3>{t.allPeople}</h3>
-      {context.people.map((p) => (
+      {page.items.map((p) => (
         <div className="company-contact" key={p.id}>
           <button
             type="button"
             className="text-button"
-            onClick={() =>
-              onPerson(
-                context.relationships.find((r) => r.personId === p.id)?.id ||
-                  "",
-              )
-            }
+            onClick={() => onPerson(relationships.get(p.id)?.[0]?.id || "")}
           >
             {p.name}
           </button>
@@ -166,27 +177,25 @@ export function CompanyPeople({
             {p.title} · {p.email || t.unknown}
           </small>
           <div className="relationship-links">
-            {context.relationships
-              .filter((r) => r.personId === p.id)
-              .map((r) => (
-                <button
-                  type="button"
-                  className="badge"
-                  key={r.id}
-                  onClick={() => onPerson(r.id)}
-                >
-                  {
-                    context.products.find(
-                      (product) => product.id === r.productId,
-                    )?.name
-                  }{" "}
-                  · {label(r.purpose)}
-                  <ChevronRight size={10} />
-                </button>
-              ))}
+            {(relationships.get(p.id) ?? []).map((r) => (
+              <button
+                type="button"
+                className="badge"
+                key={r.id}
+                onClick={() => onPerson(r.id)}
+              >
+                {
+                  context.products.find((product) => product.id === r.productId)
+                    ?.name
+                }{" "}
+                · {label(r.purpose)}
+                <ChevronRight size={10} />
+              </button>
+            ))}
           </div>
         </div>
       ))}
+      {page.total > page.size && <Pagination page={page} />}
     </section>
   );
 }
@@ -300,7 +309,7 @@ export function PersonDetails({
       </dl>
       {context.person?.summary &&
         context.person.summary !== context.relationship.context && (
-          <p className="muted">{context.person.summary}</p>
+          <RecordText value={context.person.summary} />
         )}
       <h3>{t.otherRelationships}</h3>
       <div className="relationship-links">

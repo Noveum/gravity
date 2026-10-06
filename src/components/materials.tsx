@@ -5,6 +5,7 @@ import { Download, FileText, Folder, Plus, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { dateLabel, errorText, requestJson } from "./client-api";
 import { submitOnSaveKey, useModalLifecycle } from "./modal-lifecycle";
+import { Pagination, useListPage } from "./records/list-browser";
 import { EmptyState } from "./ui/states";
 
 export function Materials({
@@ -43,6 +44,10 @@ export function Materials({
         data.assetStages.some(
           (link) => link.assetId === asset.id && link.stageId === stageId,
         )),
+  );
+  const page = useListPage(
+    assets,
+    `${organizationId}/${productId}/${folderId}/${stageId}`,
   );
   function open(value: typeof dialog) {
     setFormProduct(productId || data.products[0]?.id || "");
@@ -190,7 +195,7 @@ export function Materials({
                   </tr>
                 </thead>
                 <tbody>
-                  {assets.map((asset) => (
+                  {page.items.map((asset) => (
                     <tr key={asset.id}>
                       <td>
                         <div className="asset-name">
@@ -242,6 +247,7 @@ export function Materials({
                   ))}
                 </tbody>
               </table>
+              <Pagination page={page} />
             </div>
           ) : (
             <EmptyState

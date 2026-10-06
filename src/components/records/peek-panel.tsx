@@ -11,10 +11,12 @@ import {
 import Link from "next/link";
 import { useWorkspaceData } from "../crm/crm-context";
 import { useCompanyContext, usePersonContext } from "../crm/record-context";
+import { useArchive } from "../crm/use-archive";
 import { useDraft } from "../crm/use-draft";
 import { CompanyDetails, PersonDetails, RelatedWork } from "../record-details";
 import { companyPath, personPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
+import { MetadataSection } from "./metadata-section";
 import {
   ActionSummary,
   findAction,
@@ -22,12 +24,14 @@ import {
   PersonProfile,
   RelationshipProperties,
 } from "./person-panels";
+import { RecordActions } from "./record-actions";
 
 function PersonPeek() {
   const crm = useWorkspaceData();
   const { context, missing } = usePersonContext(crm.peek.relationshipId);
   const action = findAction(crm.peek.actionId, crm.sourceData, context);
   const draft = useDraft(action);
+  const archive = useArchive();
   if (missing) return <EmptyState title={t.recordUnavailable} compact />;
   if (!context) return <LoadingState rows={4} />;
   return (
@@ -38,6 +42,24 @@ function PersonPeek() {
         company={context.company}
         onCompany={crm.openCompany}
       />
+      {context.person && (
+        <RecordActions
+          busy={crm.busy}
+          onEdit={() =>
+            crm.openRecordDialog({
+              kind: "person",
+              id: context.person?.id ?? "",
+            })
+          }
+          onArchive={() => {
+            if (context.person) void archive.archive("person", context.person);
+          }}
+        />
+      )}
+      {context.person && (
+        <MetadataSection entity="person" record={context.person} />
+      )}
+      <MetadataSection entity="relationship" record={context.relationship} />
       <PersonDetails
         context={context}
         onCompany={crm.openCompany}
@@ -61,16 +83,27 @@ function PersonPeek() {
 function CompanyPeek() {
   const crm = useWorkspaceData();
   const { context, missing } = useCompanyContext(crm.peek.companyId);
+  const archive = useArchive();
   if (missing) return <EmptyState title={t.recordUnavailable} compact />;
   if (!context) return <LoadingState rows={4} />;
   return (
-    <CompanyDetails
-      context={context}
-      onPerson={crm.openPerson}
-      onAction={crm.openPerson}
-      onReveal={crm.reveal}
-      timeZone={crm.timeZone}
-    />
+    <>
+      <RecordActions
+        busy={crm.busy}
+        onEdit={() =>
+          crm.openRecordDialog({ kind: "company", id: context.company.id })
+        }
+        onArchive={() => void archive.archive("company", context.company)}
+      />
+      <MetadataSection entity="company" record={context.company} />
+      <CompanyDetails
+        context={context}
+        onPerson={crm.openPerson}
+        onAction={crm.openPerson}
+        onReveal={crm.reveal}
+        timeZone={crm.timeZone}
+      />
+    </>
   );
 }
 

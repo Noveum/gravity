@@ -4,6 +4,13 @@ import { Pencil } from "lucide-react";
 import { dateLabel, label } from "../client-api";
 import { useCreate, useEdit, useWorkspaceData } from "../crm/crm-context";
 import { useRevealedRecord } from "../crm/use-revealed-record";
+import { formatMoney } from "../money";
+import {
+  Pagination,
+  RecordFilters,
+  useRecordBrowser,
+  useRecordIndex,
+} from "../records/list-browser";
 import { EmptyState } from "../ui/states";
 
 export function MeetingsView() {
@@ -32,11 +39,22 @@ export function MeetingsView() {
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
+  const index = useRecordIndex();
+  const browser = useRecordBrowser(
+    meetings,
+    (meeting) => ({
+      ...index.facts(meeting.relationshipId),
+      status: meeting.status,
+    }),
+    (meeting) => meeting.title,
+    focusedRecord,
+  );
   return (
     <div className="page-content">
+      <RecordFilters browser={browser} />
       <p className="callout">{t.meetingNote}</p>
-      {!meetings.length && <EmptyState title={t.noMeetings} compact />}
-      {meetings.map((meeting) => (
+      {!browser.page.total && <EmptyState title={t.noMeetings} compact />}
+      {browser.page.items.map((meeting) => (
         <article
           className={`meeting ${focusedRecord === meeting.id ? "record-highlight" : ""}`}
           key={meeting.id}
@@ -79,6 +97,13 @@ export function MeetingsView() {
             </div>
           </div>
           <p>{meeting.summary}</p>
+          <p className="muted">
+            {t.dealSize}:{" "}
+            {formatMoney(
+              index.facts(meeting.relationshipId).amountMinor ?? null,
+              index.facts(meeting.relationshipId).currency ?? "USD",
+            )}
+          </p>
           {meeting.proposedCommitment && (
             <div className="commitment-box">
               <span className="eyebrow">{t.meetingProposal}</span>
@@ -137,6 +162,7 @@ export function MeetingsView() {
           )}
         </article>
       ))}
+      <Pagination page={browser.page} />
     </div>
   );
 }

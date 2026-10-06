@@ -408,6 +408,10 @@ export function OpportunityDialog({
               stageId: stage?.id,
               status: stage?.category,
               ownerId: text(fields, "ownerId"),
+              tags: text(fields, "tags")
+                .split(",")
+                .map((tag) => tag.trim())
+                .filter(Boolean),
               amountMinor: parseMoney(text(fields, "amount"), currency),
               currency,
               probability:
@@ -438,6 +442,10 @@ export function OpportunityDialog({
           }}
         />
       )}
+      <label>
+        {t.tags}
+        <input name="tags" defaultValue={opportunity?.tags.join(", ") ?? ""} />
+      </label>
       <label>
         {t.name}
         <input

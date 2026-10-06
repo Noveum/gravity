@@ -44,6 +44,7 @@ export function useArchive() {
   async function archive(kind: Kind, record: Archivable) {
     const archived = await change(kind, record, true);
     if (!archived) return false;
+    crm.closePeek();
     if (!crm.leaveRecord())
       crm.go(sectionPath(kind === "person" ? "people" : "companies"));
     crm.notify(

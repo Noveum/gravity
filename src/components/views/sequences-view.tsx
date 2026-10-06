@@ -10,6 +10,7 @@ import { useOutreachSend } from "../outreach/outreach-data";
 import { SequenceDialog } from "../outreach/sequence-dialog";
 import { SequenceEditor } from "../outreach/sequence-editor";
 import { followUpLabel } from "../outreach/touch-labels";
+import { PagedItems, Pagination, useListPage } from "../records/list-browser";
 import { personPath } from "../routes";
 import { ShortcutHint } from "../ui/shortcut-hint";
 import { EmptyState } from "../ui/states";
@@ -40,6 +41,10 @@ export function SequencesView() {
           product(b.productId)?.name ?? "",
         ) || a.name.localeCompare(b.name),
     );
+  const page = useListPage(
+    sequences,
+    `${crm.organizationId}/${crm.productId}/${search}`,
+  );
   async function change(enrollment: Enrollment, command: "pause" | "resume") {
     const name = personFor(enrollment.relationshipId)?.name ?? t.unknown;
     const result = await send({
@@ -76,7 +81,7 @@ export function SequencesView() {
       </div>
       {creating && <SequenceDialog onClose={() => setCreating(false)} />}
       {!sequences.length && <EmptyState title={t.noSequences} compact />}
-      {sequences.map((sequence) => {
+      {page.items.map((sequence) => {
         const title = `${sequence.name} · ${product(sequence.productId)?.name ?? ""}`;
         const enrollments = data.enrollments.filter(
           (enrollment) => enrollment.sequenceId === sequence.id,
@@ -129,87 +134,113 @@ export function SequencesView() {
                 ))}
               </div>
             )}
-            <table
-              className="sequence-enrollments"
-              aria-label={`${t.enrollments}: ${title}`}
+            <PagedItems
+              rows={enrollments}
+              scope={`${crm.organizationId}/${sequence.id}`}
+              label={sequence.name}
             >
-              <thead>
-                <tr>
-                  <th>{t.person}</th>
-                  <th>{t.status}</th>
-                  <th>{t.stepFollowUp}</th>
-                  <th>
-                    <span className="sr-only">{t.enrollmentChange}</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {enrollments.map((enrollment) => {
-                  const person = personFor(enrollment.relationshipId);
-                  const name = person?.name ?? t.unknown;
-                  return (
-                    <tr key={enrollment.id} aria-label={name}>
-                      <td>
-                        {person ? (
-                          <Link
-                            className="text-button"
-                            href={personPath(person.id, {
-                              relationshipId: enrollment.relationshipId,
-                            })}
-                          >
-                            {name}
-                          </Link>
-                        ) : (
-                          name
-                        )}
-                      </td>
-                      <td>
-                        <span
-                          className={`badge ${enrollment.status === "paused" ? "warning" : ""}`}
-                        >
-                          {enrollment.pauseReason
-                            ? label(`paused_${enrollment.pauseReason}`)
-                            : t.enrollmentStatus[
-                                enrollment.status as keyof typeof t.enrollmentStatus
-                              ]}
-                        </span>
-                      </td>
-                      <td>
-                        {t.currentStep
-                          .replace("{step}", String(enrollment.step))
-                          .replace("{total}", String(sequence.steps.length))}
-                      </td>
-                      <td>
-                        {enrollment.status === "running" && (
-                          <button
-                            type="button"
-                            className="ghost"
-                            aria-label={`${t.pause}: ${name}`}
-                            onClick={() => void change(enrollment, "pause")}
-                          >
-                            {t.pause}
-                          </button>
-                        )}
-                        {enrollment.status === "paused" && (
-                          <button
-                            type="button"
-                            className="ghost"
-                            aria-label={`${t.resume}: ${name}`}
-                            onClick={() => void change(enrollment, "resume")}
-                          >
-                            {t.resume}
-                          </button>
-                        )}
-                      </td>
+              {(pageEnrollments) => (
+                <table
+                  className="sequence-enrollments"
+                  aria-label={`${t.enrollments}: ${title}`}
+                >
+                  <thead>
+                    <tr>
+                      <th>{t.person}</th>
+                      <th>{t.status}</th>
+                      <th>{t.stepFollowUp}</th>
+                      <th>
+                        <span className="sr-only">{t.enrollmentChange}</span>
+                      </th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {pageEnrollments.map((enrollment) => {
+                      const person = personFor(enrollment.relationshipId);
+                      const name = person?.name ?? t.unknown;
+                      return (
+                        <tr key={enrollment.id} aria-label={name}>
+                          <td>
+                            {person ? (
+                              <Link
+                                onClick={(event) => {
+                                  if (
+                                    event.metaKey ||
+                                    event.ctrlKey ||
+                                    event.shiftKey ||
+                                    event.altKey
+                                  )
+                                    return;
+                                  event.preventDefault();
+                                  crm.openPerson(enrollment.relationshipId);
+                                }}
+                                prefetch={false}
+                                className="text-button"
+                                href={personPath(person.id, {
+                                  relationshipId: enrollment.relationshipId,
+                                })}
+                              >
+                                {name}
+                              </Link>
+                            ) : (
+                              name
+                            )}
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${enrollment.status === "paused" ? "warning" : ""}`}
+                            >
+                              {enrollment.pauseReason
+                                ? label(`paused_${enrollment.pauseReason}`)
+                                : t.enrollmentStatus[
+                                    enrollment.status as keyof typeof t.enrollmentStatus
+                                  ]}
+                            </span>
+                          </td>
+                          <td>
+                            {t.currentStep
+                              .replace("{step}", String(enrollment.step))
+                              .replace(
+                                "{total}",
+                                String(sequence.steps.length),
+                              )}
+                          </td>
+                          <td>
+                            {enrollment.status === "running" && (
+                              <button
+                                type="button"
+                                className="ghost"
+                                aria-label={`${t.pause}: ${name}`}
+                                onClick={() => void change(enrollment, "pause")}
+                              >
+                                {t.pause}
+                              </button>
+                            )}
+                            {enrollment.status === "paused" && (
+                              <button
+                                type="button"
+                                className="ghost"
+                                aria-label={`${t.resume}: ${name}`}
+                                onClick={() =>
+                                  void change(enrollment, "resume")
+                                }
+                              >
+                                {t.resume}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </PagedItems>
             {!enrollments.length && <p className="muted">{t.noEnrollments}</p>}
           </article>
         );
       })}
+      <Pagination page={page} />
     </div>
   );
 }

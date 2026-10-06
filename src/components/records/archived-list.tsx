@@ -1,12 +1,17 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
+import { Pagination, useListPage } from "./list-browser";
 
 export function ArchivedList({
   records,
 }: {
   records: { id: string; name: string; detail: string; href: string }[];
 }) {
+  const page = useListPage(
+    records,
+    records.map((record) => record.id).join("/"),
+  );
   if (!records.length) return null;
   return (
     <details className="archived-list">
@@ -15,7 +20,7 @@ export function ArchivedList({
         <span>{records.length}</span>
       </summary>
       <ul>
-        {records.map((record) => (
+        {page.items.map((record) => (
           <li key={record.id}>
             <Link href={record.href} className="text-button">
               {record.name}
@@ -24,6 +29,7 @@ export function ArchivedList({
           </li>
         ))}
       </ul>
+      <Pagination page={page} />
     </details>
   );
 }

@@ -30,12 +30,17 @@ test("settings lead with invitations, keep organization scope and leave workspac
     await within(settings).findByText(t.noPendingInvitations),
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "AI Platform" }));
-  expect(within(settings).getByText("Sam Rivera")).toBeTruthy();
+  expect(window.location.pathname).toBe("/overview");
+  fireEvent.click(screen.getByRole("link", { name: t.settings }));
+  const productSettings = screen.getByRole("region", { name: t.settings });
+  expect(within(productSettings).getByText("Sam Rivera")).toBeTruthy();
   expect(
-    within(settings).getByText("API Marketplace", { selector: "strong" }),
+    within(productSettings).getByText("API Marketplace", {
+      selector: "strong",
+    }),
   ).toBeTruthy();
   expect(
-    within(settings).getAllByText(
+    within(productSettings).getAllByText(
       /API Marketplace, Services|AI Platform, API Marketplace, Services/,
     ).length,
   ).toBeGreaterThan(0);

@@ -17,17 +17,40 @@ export function splitRecordText(value: string) {
   }
   return { summary: value, source: "" };
 }
-export function RecordText({ value }: { value: string }) {
+export function RecordText({
+  value,
+  limit = 320,
+  title = t.fullNotes,
+}: {
+  value: string;
+  limit?: number;
+  title?: string;
+}) {
   const { summary, source } = splitRecordText(value);
+  const long = summary.length > limit;
+  const preview = summary
+    .slice(0, limit)
+    .replace(/\s+\S*$/, "")
+    .trimEnd();
   return (
-    <>
-      {summary && <p className="context-summary">{summary}</p>}
+    <div className="record-text">
+      {summary && (
+        <p className="context-summary record-text-preview">
+          {long ? `${preview || summary.slice(0, limit)}…` : summary}
+        </p>
+      )}
+      {long && (
+        <details className="record-text-details">
+          <summary>{title}</summary>
+          <p className="context-summary">{summary}</p>
+        </details>
+      )}
       {source && (
         <details className="source-details">
           <summary>{t.importedSourceData}</summary>
           <pre>{source}</pre>
         </details>
       )}
-    </>
+    </div>
   );
 }

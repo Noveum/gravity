@@ -289,6 +289,8 @@ test("the routed Connections view loads the active scope, shows callback results
     demoId(1),
   );
   fireEvent.click(screen.getByRole("button", { name: "AI Platform" }));
+  expect(window.location.pathname).toBe("/overview");
+  fireEvent.click(screen.getByRole("link", { name: t.integrations }));
   await waitFor(() =>
     expect(integrationReads().at(-1)?.searchParams.get("productId")).toBe(
       demoId(10),
@@ -1289,7 +1291,7 @@ test("a company record stacks its people and opportunities as sibling sections w
   );
   expect(
     sections.map((section) => section.querySelector("h3")?.textContent),
-  ).toEqual([t.dealSizeAndTags, t.allPeople, t.opportunities]);
+  ).toEqual([t.companyDealSizeAndTags, t.allPeople, t.opportunities]);
 });
 
 test("product creation is reachable from sidebar, toolbar, keyboard and commands in the active organization", async () => {

@@ -62,8 +62,9 @@ export function RecordDialogHost() {
   if (dialog.id && !opportunity) return null;
   return (
     <OpportunityDialog
-      key={dialog.id ?? "new"}
+      key={dialog.id ?? dialog.relationshipId ?? "new"}
       {...(opportunity ? { opportunity } : {})}
+      relationshipId={dialog.relationshipId}
       onClose={close}
     />
   );

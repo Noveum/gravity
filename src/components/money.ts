@@ -39,9 +39,9 @@ export function formatMoney(amountMinor: number | null, currency: string) {
     return new Intl.NumberFormat("en", {
       style: "currency",
       currency,
-      maximumFractionDigits: 0,
+      maximumFractionDigits: minorDigits(currency),
     }).format(amount);
   } catch {
-    return `${currency} ${amount.toFixed(0)}`;
+    return `${currency} ${amount.toFixed(minorDigits(currency))}`;
   }
 }

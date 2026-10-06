@@ -270,7 +270,10 @@ function CrmShell({ children }: { children: ReactNode }) {
                 label: t.allProducts,
                 kind: "filter" as const,
                 active: !crm.productId,
-                onSelect: () => crm.switchProduct(""),
+                onSelect: () => {
+                  crm.switchProduct("");
+                  goToSection("overview");
+                },
               },
               ...products.map((product) => ({
                 id: `product-${product.id}`,
@@ -278,7 +281,10 @@ function CrmShell({ children }: { children: ReactNode }) {
                 dot: product.color,
                 kind: "filter" as const,
                 active: crm.productId === product.id,
-                onSelect: () => crm.switchProduct(product.id),
+                onSelect: () => {
+                  crm.switchProduct(product.id);
+                  goToSection("overview");
+                },
               })),
             ]
           : []),

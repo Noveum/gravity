@@ -11,6 +11,7 @@ import {
   useRecordBrowser,
   useRecordIndex,
 } from "../records/list-browser";
+import { RecordText } from "../records/record-text";
 import { EmptyState } from "../ui/states";
 
 export function MeetingsView() {
@@ -34,7 +35,7 @@ export function MeetingsView() {
     return crm.openRecordDialog({ kind: "meeting", id });
   });
   const meetings = data.meetings.filter((meeting) =>
-    [meeting.title, personFor(meeting.relationshipId)?.name]
+    [meeting.title, meeting.summary, personFor(meeting.relationshipId)?.name]
       .join(" ")
       .toLowerCase()
       .includes(search.toLowerCase()),
@@ -96,14 +97,20 @@ export function MeetingsView() {
               </button>
             </div>
           </div>
-          <p>{meeting.summary}</p>
-          <p className="muted">
-            {t.dealSize}:{" "}
-            {formatMoney(
-              index.facts(meeting.relationshipId).amountMinor ?? null,
-              index.facts(meeting.relationshipId).currency ?? "USD",
-            )}
-          </p>
+          <RecordText
+            value={meeting.summary}
+            limit={240}
+            title={t.meetingDetails}
+          />
+          {index.facts(meeting.relationshipId).amountMinor != null && (
+            <p className="muted">
+              {t.dealSize}:{" "}
+              {formatMoney(
+                index.facts(meeting.relationshipId).amountMinor ?? null,
+                index.facts(meeting.relationshipId).currency ?? "USD",
+              )}
+            </p>
+          )}
           {meeting.proposedCommitment && (
             <div className="commitment-box">
               <span className="eyebrow">{t.meetingProposal}</span>

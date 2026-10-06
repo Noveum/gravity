@@ -38,6 +38,14 @@ export function parseMoney(value: string, currency: string): number | null {
     throw new Error("INVALID_INPUT");
   return minor;
 }
+export function weightedAmount(
+  amountMinor: number | null,
+  probability: number | null,
+) {
+  return amountMinor === null || probability === null
+    ? null
+    : Math.round((amountMinor * probability) / 100);
+}
 export function totals(
   deals: ClientSnapshot["opportunities"],
   weighted = false,
@@ -55,7 +63,7 @@ export function totals(
       count: 0,
     };
     row.amountMinor += weighted
-      ? Math.round((deal.amountMinor * (deal.probability ?? 0)) / 100)
+      ? (weightedAmount(deal.amountMinor, deal.probability) ?? 0)
       : deal.amountMinor;
     row.count++;
     currencies.set(deal.currency, row);

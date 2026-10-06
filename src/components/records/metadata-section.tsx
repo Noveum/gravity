@@ -46,24 +46,38 @@ export function MetadataSection({
   const [currency, setCurrency] = useState(record.currency);
   return (
     <section className="record-section metadata-section">
-      <h3>
-        {entity === "relationship"
-          ? t.relationshipDealSizeAndTags
-          : t.dealSizeAndTags}
-      </h3>
-      <MetadataValues record={record} />
-      {!record.archivedAt && (
-        <button
-          className="ghost"
-          type="button"
-          onClick={() => {
-            setCurrency(record.currency);
-            setEditing(record);
-          }}
-        >
-          {t.editDealSizeAndTags}
-        </button>
-      )}
+      <details
+        className="estimate-details"
+        open={record.amountMinor !== null || record.tags.length > 0}
+      >
+        <summary>
+          <h3>
+            {entity === "relationship"
+              ? t.relationshipDealSizeAndTags
+              : entity === "person"
+                ? t.personDealSizeAndTags
+                : entity === "company"
+                  ? t.companyDealSizeAndTags
+                  : t.dealSizeAndTags}
+          </h3>
+        </summary>
+        <MetadataValues record={record} />
+        {entity !== "opportunity" && (
+          <p className="muted field-hint">{t.estimateForecastNote}</p>
+        )}
+        {!record.archivedAt && (
+          <button
+            className="ghost"
+            type="button"
+            onClick={() => {
+              setCurrency(record.currency);
+              setEditing(record);
+            }}
+          >
+            {t.editDealSizeAndTags}
+          </button>
+        )}
+      </details>
       {editing && editing.id === record.id && (
         <RecordDialog
           title={t.editDealSizeAndTags}

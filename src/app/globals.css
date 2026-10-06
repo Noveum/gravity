@@ -419,6 +419,7 @@
 }
 
 .sidebar {
+  container-type: inline-size;
   background: var(--gravity-surface);
   border-right: 1px solid var(--gravity-border-subtle);
   display: flex;
@@ -1684,6 +1685,12 @@ ul.timeline {
   margin-bottom: 20px;
   font-size: var(--text-dense);
 }
+.timeline-event p,
+.evidence-item p,
+.meeting h2 {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 .commitment-box {
   padding: 12px 14px;
   background: var(--gravity-surface-2);
@@ -1770,7 +1777,7 @@ ul.timeline {
 }
 .deal-card-edit {
   --gravity-control: 22px;
-  opacity: 0;
+  opacity: 1;
   transition: opacity 120ms ease;
 }
 .deal-card:hover .deal-card-edit,
@@ -2234,7 +2241,7 @@ ul.timeline {
   align-items: center;
   gap: 6px;
   text-decoration: none;
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 .auth-header select {
   background: var(--bg);
@@ -2277,7 +2284,7 @@ ul.timeline {
   text-wrap: balance;
 }
 .auth-story-description {
-  color: var(--muted);
+  color: var(--gravity-muted);
   font-size: 15px;
   max-width: 370px;
   margin-top: 22px;
@@ -2352,7 +2359,7 @@ ul.timeline {
   gap: 16px;
   margin-top: 30px;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 .auth-form-region {
   min-width: 0;
@@ -2383,7 +2390,7 @@ ul.timeline {
 }
 .auth-card p {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--gravity-muted);
   margin-bottom: 20px;
 }
 .auth-card .auth-description {
@@ -2491,7 +2498,7 @@ ul.timeline {
   top: 50%;
   left: 13px;
   transform: translateY(-50%);
-  color: var(--muted);
+  color: var(--gravity-muted);
   pointer-events: none;
 }
 .auth-card .auth-email-input > input {
@@ -3133,7 +3140,7 @@ tbody tr[data-selected] td:first-child::before {
   grid-column: 1 / -1;
 }
 .integration-intro {
-  color: var(--muted);
+  color: var(--gravity-muted);
   font-size: 12px;
 }
 .integration-card h2 {
@@ -3159,7 +3166,7 @@ tbody tr[data-selected] td:first-child::before {
 .connection-meta {
   display: block;
   margin-top: 6px;
-  color: var(--muted);
+  color: var(--gravity-muted);
   font-size: 11px;
 }
 .connection-buttons {
@@ -3191,7 +3198,7 @@ tbody tr[data-selected] td:first-child::before {
   gap: 8px;
   flex: 1;
   min-width: min(240px, 100%);
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 .import-search-input {
   width: 100%;
@@ -3199,7 +3206,7 @@ tbody tr[data-selected] td:first-child::before {
 }
 .import-page-status {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 .import-row .import-match {
   width: 100%;
@@ -3207,7 +3214,7 @@ tbody tr[data-selected] td:first-child::before {
 }
 .import-row details {
   margin-top: 10px;
-  color: var(--muted);
+  color: var(--gravity-muted);
   font-size: 12px;
 }
 .import-preview {
@@ -3300,7 +3307,7 @@ tbody tr[data-selected] td:first-child::before {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--hover);
-  color: var(--muted);
+  color: var(--gravity-muted);
   font-size: 12px;
 }
 .provider-privacy :where(p) {
@@ -3317,7 +3324,7 @@ tbody tr[data-selected] td:first-child::before {
   gap: 20px;
   padding: 0;
   margin: 24px 0;
-  color: var(--muted);
+  color: var(--gravity-muted);
   font-size: 12px;
 }
 .provider-steps li {
@@ -3791,6 +3798,11 @@ tbody tr[data-selected] td:first-child::before {
   flex: 0 0 auto;
   overflow: visible;
 }
+@container (max-width: 260px) {
+  .nav-item > .nav-shortcut {
+    display: none;
+  }
+}
 .product-picker {
   display: inline-flex;
   align-items: center;
@@ -3869,7 +3881,7 @@ tbody tr[data-selected] td:first-child::before {
   gap: 7px;
   align-items: center;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 .metric-label > :where(svg):last-child {
   margin-left: auto;
@@ -3933,7 +3945,7 @@ tbody tr[data-selected] td:first-child::before {
   align-items: center;
   gap: 6px;
   font-size: 10px;
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 .sent-dot,
 .received-dot {
@@ -3967,6 +3979,7 @@ tbody tr[data-selected] td:first-child::before {
   background: var(--hover);
 }
 .bar-stack {
+  width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -3988,7 +4001,7 @@ tbody tr[data-selected] td:first-child::before {
   display: flex;
   justify-content: space-between;
   margin-top: 8px;
-  color: var(--muted);
+  color: var(--gravity-muted);
   font-size: 10px;
 }
 .overview-pipeline {
@@ -4024,7 +4037,7 @@ tbody tr[data-selected] td:first-child::before {
 }
 .stage-summary :where(span):first-child {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 .stage-summary :where(strong) {
   font-size: 20px;
@@ -4044,7 +4057,7 @@ tbody tr[data-selected] td:first-child::before {
   background: #44b592;
 }
 .stage-lost .stage-meter {
-  background: var(--muted);
+  background: var(--gravity-muted);
 }
 .pipeline-summary {
   display: grid;
@@ -4065,7 +4078,7 @@ tbody tr[data-selected] td:first-child::before {
   min-width: 0;
 }
 .pipeline-summary :where(span) {
-  color: var(--muted);
+  color: var(--gravity-muted);
   font-size: 10px;
 }
 .pipeline-summary :where(strong) {
@@ -4088,7 +4101,7 @@ tbody tr[data-selected] td:first-child::before {
   white-space: nowrap;
 }
 .report-table :where(th) {
-  color: var(--muted);
+  color: var(--gravity-muted);
   font-weight: 500;
 }
 .attention-row,
@@ -4111,7 +4124,7 @@ tbody tr[data-selected] td:first-child::before {
 }
 .attention-row :where(small),
 .drill-row :where(small) {
-  color: var(--muted);
+  color: var(--gravity-muted);
   font-size: 11px;
 }
 .analytics-drawer {
@@ -4134,7 +4147,7 @@ tbody tr[data-selected] td:first-child::before {
   display: flex;
   gap: 8px;
   align-items: center;
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 .deal-card {
   display: flex;
@@ -4147,7 +4160,7 @@ tbody tr[data-selected] td:first-child::before {
 .stage-value {
   display: block;
   padding: 0 10px 10px;
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 @media (max-width: 1200px) {
   .metric-grid {
@@ -4214,7 +4227,7 @@ tbody tr[data-selected] td:first-child::before {
   display: block;
   margin-top: 4px;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 .integration-intro > h2 {
   margin: 0 0 8px;
@@ -4229,7 +4242,7 @@ tbody tr[data-selected] td:first-child::before {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--gravity-muted);
   margin: 8px 0 0;
 }
 
@@ -4302,7 +4315,7 @@ nav.list-pagination > label:has(select) {
 }
 .source-details summary {
   cursor: pointer;
-  color: var(--muted);
+  color: var(--gravity-muted);
 }
 .source-details pre {
   max-height: 280px;
@@ -4315,6 +4328,40 @@ nav.list-pagination > label:has(select) {
 .context-summary {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+.record-text {
+  min-width: 0;
+  max-width: 72ch;
+}
+.record-text .context-summary {
+  border: 0;
+  padding: 0;
+  margin: 8px 0;
+  font-size: var(--text-dense);
+  line-height: 1.65;
+}
+.record-text-details > summary {
+  cursor: pointer;
+  color: var(--gravity-accent);
+  font-size: var(--text-xs);
+  padding: 4px 0;
+}
+.record-text-details > .context-summary {
+  max-height: 360px;
+  overflow-y: auto;
+}
+.record-text:has(> .record-text-details[open]) > .record-text-preview {
+  display: none;
+}
+.record-text-details > summary:focus-visible {
+  outline: 2px solid var(--gravity-accent);
+  outline-offset: 2px;
+}
+.meeting .section-heading > :first-child {
+  min-width: 0;
+}
+.meeting .section-heading {
+  align-items: flex-start;
 }
 .row-deal-size {
   width: 90px;
@@ -4782,4 +4829,48 @@ nav.list-pagination > label:has(select) {
   margin-top: 0;
   border-top: 1px solid var(--gravity-border-subtle);
   padding-top: 12px;
+}
+
+.forecast-preview,
+.record-forecast {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: var(--gravity-surface-2);
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: var(--gravity-radius-md);
+}
+.forecast-preview :where(small),
+.record-forecast :where(small) {
+  color: var(--gravity-muted);
+  line-height: 1.5;
+}
+.record-forecast {
+  margin-bottom: 8px;
+  font-size: var(--text-xs);
+}
+.deal-card :where(small, .text-button) {
+  overflow-wrap: anywhere;
+}
+
+.estimate-details > summary {
+  cursor: pointer;
+  color: var(--gravity-muted);
+  font-size: var(--text-xs);
+}
+.estimate-details > summary :where(h3) {
+  display: inline;
+}
+.estimate-details > summary:focus-visible {
+  outline: 2px solid var(--gravity-accent);
+  outline-offset: 3px;
+}
+.deal-context > summary {
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--gravity-muted);
+}
+
+.forecast-explanation {
+  margin: -8px 0 20px;
 }

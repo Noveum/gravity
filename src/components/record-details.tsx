@@ -1,8 +1,10 @@
 "use client";
+import { money, totals, weightedAmount } from "@crm/core/analytics";
 import type { ClientCompanyContext, ClientContext } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { Building2, ChevronRight } from "lucide-react";
 import { dateLabel, label } from "./client-api";
+import { useWorkspaceData } from "./crm/crm-context";
 import { formatMoney } from "./money";
 import { Pagination, useListPage } from "./records/list-browser";
 import { RecordText } from "./records/record-text";
@@ -13,6 +15,8 @@ interface WorkProps {
   opportunities: ClientContext["opportunities"];
   timeZone: string;
   onAction: (relationshipId: string, actionId: string) => void;
+  relationshipId?: string;
+  allowOpportunityCreation?: boolean;
   onReveal: (view: "meetings" | "opportunities", id: string) => void;
 }
 export function RelatedWork({
@@ -22,6 +26,8 @@ export function RelatedWork({
   timeZone,
   onAction,
   onReveal,
+  relationshipId,
+  allowOpportunityCreation,
 }: WorkProps) {
   const actionPage = useListPage(
     actions.filter((action) => action.status !== "completed"),
@@ -77,7 +83,12 @@ export function RelatedWork({
         )}
         {!meetings.length && <p className="muted">{t.noRelatedMeetings}</p>}
       </section>
-      <RelatedOpportunities opportunities={opportunities} onReveal={onReveal} />
+      <RelatedOpportunities
+        opportunities={opportunities}
+        onReveal={onReveal}
+        relationshipId={relationshipId}
+        allowOpportunityCreation={allowOpportunityCreation}
+      />
     </div>
   );
 }
@@ -85,24 +96,85 @@ export function RelatedOpportunities({
   opportunities,
   onReveal,
   className,
-}: Pick<WorkProps, "opportunities" | "onReveal"> & { className?: string }) {
+  relationshipId,
+  allowOpportunityCreation = true,
+}: Pick<
+  WorkProps,
+  "opportunities" | "onReveal" | "relationshipId" | "allowOpportunityCreation"
+> & { className?: string }) {
+  const crm = useWorkspaceData();
+  const open = opportunities.filter((deal) => deal.status === "open");
+  const included = open.filter(
+    (deal) => deal.amountMinor !== null && deal.probability !== null,
+  );
+  const forecast = totals(open, true);
   const page = useListPage(
     opportunities,
     opportunities[0]?.relationshipId ?? "",
   );
   return (
     <section className={className}>
-      <h3>{t.opportunities}</h3>
+      <div className="section-heading">
+        <h3>{t.opportunities}</h3>
+        {allowOpportunityCreation && (
+          <button
+            type="button"
+            className="small"
+            onClick={() =>
+              crm.openRecordDialog({ kind: "opportunity", relationshipId })
+            }
+          >
+            {t.newDeal}
+          </button>
+        )}
+      </div>
+      {!!open.length && (
+        <div className="record-forecast">
+          <span>{t.expectedRevenue}</span>
+          <strong>
+            {forecast.length
+              ? forecast
+                  .map((row) => money(row.amountMinor, row.currency))
+                  .join(" · ")
+              : t.forecastUnknown}
+          </strong>
+          <small>
+            {t.forecastCoverage
+              .replace("{included}", String(included.length))
+              .replace("{total}", String(open.length))}
+          </small>
+        </div>
+      )}
       {page.items.map((o) => (
         <button
           type="button"
           className="related-row"
           key={o.id}
-          onClick={() => onReveal("opportunities", o.id)}
+          onClick={() =>
+            !crm.sourceData.opportunities.some((deal) => deal.id === o.id)
+              ? onReveal("opportunities", o.id)
+              : crm.openRecordDialog({ kind: "opportunity", id: o.id })
+          }
         >
           <span>
             {o.name}
-            <small>{formatMoney(o.amountMinor, o.currency)}</small>
+            <small>
+              {formatMoney(o.amountMinor, o.currency)} ·{" "}
+              {crm.product(o.productId)?.name} · {label(o.status)}
+            </small>
+            <small>
+              {t.probability}:{" "}
+              {o.probability === null ? t.unspecified : `${o.probability}%`}
+            </small>
+            <small>
+              {t.expectedRevenue}:{" "}
+              {weightedAmount(o.amountMinor, o.probability) === null
+                ? t.forecastUnknown
+                : formatMoney(
+                    weightedAmount(o.amountMinor, o.probability),
+                    o.currency,
+                  )}
+            </small>
           </span>
           <ChevronRight size={13} />
         </button>
@@ -217,6 +289,7 @@ export function CompanyDetails({
         actions={context.actions}
         meetings={context.meetings}
         opportunities={context.opportunities}
+        allowOpportunityCreation={!context.company.archivedAt}
         timeZone={timeZone}
         onAction={onAction}
         onReveal={onReveal}
@@ -228,10 +301,12 @@ export function PersonDetails({
   context,
   onCompany,
   onPerson,
+  includeSummary = true,
 }: {
   context: ClientContext;
   onCompany: (companyId: string) => void;
   onPerson: (relationshipId: string) => void;
+  includeSummary?: boolean;
 }) {
   return (
     <section className="record-section">
@@ -307,7 +382,8 @@ export function PersonDetails({
           </>
         )}
       </dl>
-      {context.person?.summary &&
+      {includeSummary &&
+        context.person?.summary &&
         context.person.summary !== context.relationship.context && (
           <RecordText value={context.person.summary} />
         )}

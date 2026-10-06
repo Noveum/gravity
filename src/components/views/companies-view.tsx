@@ -46,7 +46,7 @@ export function CompaniesView() {
             <th>{t.company}</th>
             <th>{t.people}</th>
             <th>{t.products}</th>
-            <th>{t.dealSize}</th>
+            <th>{t.estimatedDealSize}</th>
             <th>{t.tags}</th>
           </tr>
         </thead>

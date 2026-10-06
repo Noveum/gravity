@@ -20,12 +20,12 @@ test("all CRM and authentication tables have RLS with only the trusted server po
     SELECT relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'r'
   `);
-  expect(tables.rows).toHaveLength(44);
+  expect(tables.rows).toHaveLength(45);
   expect(tables.rows.every((table) => table.relrowsecurity)).toBe(true);
   const policies = await local.client.query<{ roles: string[] }>(`
     SELECT roles FROM pg_policies WHERE schemaname = 'public'
   `);
-  expect(policies.rows).toHaveLength(44);
+  expect(policies.rows).toHaveLength(45);
   expect(
     policies.rows.every((policy) => policy.roles.join() === "gravity_app"),
   ).toBe(true);
@@ -77,7 +77,7 @@ test("runtime role holds read and write grants on every public table", async () 
       WHERE n.nspname = 'public' AND c.relkind = 'r'
       ORDER BY c.relname
     `);
-    expect(tables.rows).toHaveLength(44);
+    expect(tables.rows).toHaveLength(45);
     expect(
       tables.rows
         .filter((table) => !table.granted)

@@ -43,7 +43,7 @@ LinkedIn uses each owner's encrypted Unipile setup. Replies target a linked owne
 
 ## Limits and verification
 
-Calendar currently imports events; creating provider calendar events is not implemented. Fireflies imports meeting notes. Contract PDFs use materials; dedicated contract signing/lifecycle and membership invitations are not implemented. Message attachments and automatic bounce/suppression ingestion are not implemented. These are absent platform features, not hidden HTTP-only APIs, and capabilities report the limits. Product-wide sharing of an imported private thread remains an explicit classification decision.
+Calendar currently imports events; creating provider calendar events is not implemented. Fireflies imports meeting notes. Contract PDFs use materials; dedicated contract signing/lifecycle is not implemented. Workspace invitation and membership administration operations require admin/all-products access; invitation acceptance is restricted to the verified human recipient. Message attachments and automatic bounce/suppression ingestion are not implemented. These are absent platform features, not hidden HTTP-only APIs, and capabilities report the limits. Product-wide sharing of an imported private thread remains an explicit classification decision.
 
 The additive migration introduces one protected `deliveries` table with tenant/product/source/owner foreign keys, RLS, server-role grants and browser-role revocations. New production readiness checks require that table. Existing tables and records are not modified by this migration. Apply only after reviewing the actual target, an encrypted pre-migration backup and runtime permissions; do not seed the supplied database.
 

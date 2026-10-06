@@ -35,7 +35,7 @@ export function isEditable(target: EventTarget | null) {
   if (!(target instanceof Element)) return false;
   if (target instanceof HTMLInputElement) return !textTypes.has(target.type);
   return !!target.closest(
-    "textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox]",
+    "textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox], [role=combobox], [role=listbox], [role=menu]",
   );
 }
 

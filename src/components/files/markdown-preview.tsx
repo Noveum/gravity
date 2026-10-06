@@ -1,3 +1,4 @@
+import t from "@crm/i18n/translations/en.json";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -14,7 +15,7 @@ export function MarkdownPreview({ body }: { readonly body: string }) {
               target="_blank"
               rel="noopener noreferrer"
             >
-              {alt || "Image"}
+              {alt || t.files.image}
             </a>
           ),
           a: ({ href, children }) => (

@@ -101,6 +101,7 @@ bun run test
 bun run lint
 bun run build
 bun run test:public
+bun run test:files
 bun run licenses:check
 ```
 

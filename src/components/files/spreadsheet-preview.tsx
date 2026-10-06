@@ -125,7 +125,7 @@ function WorkbookPreview({ data }: { readonly data: ArrayBuffer }) {
         <label className="flex items-center gap-2">
           {t.files.worksheet}
           <select
-            aria-label="Worksheet"
+            aria-label={t.files.worksheet}
             value={index}
             onChange={(event) => {
               setIndex(Number(event.target.value));

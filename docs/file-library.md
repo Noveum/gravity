@@ -16,11 +16,13 @@ Maximum upload size is 100 MiB per file. Original bytes remain available for dow
 
 Deleted metadata and expired reservations do not currently garbage collect storage objects. Copies share immutable object references. Retention cleanup must verify that no live file references an object before removing it; never configure a lifecycle rule that deletes final referenced objects blindly.
 
+Storage sealing and Markdown decoding run before the short metadata transaction, with destination access, reservation ownership and expiry checked again inside it. Network requests have connection and request deadlines. Invalid UTF-8 Markdown uploads remain ordinary downloadable files instead of failing completion.
+
 ## Access
 
 Private items are owner-only. Workspace items require current workspace membership and access to the owning product. Specific-person sharing grants viewer or editor access, also subject to current product access. Public access deliberately permits anonymous viewing/download through an unguessable token. Inherited access resolves the closest explicit scope. Every ancestor must remain readable, including for public links.
 
-Only owners change sharing or move/delete their items. Editors can rename and edit Markdown or add children to editable folders. Making an ancestor private revokes descendant public links and specific-person access immediately for new reads. The UI refreshes through the existing authorized revision feed and clears preview content during revalidation. MCP uses the same operation catalog and services as HTTP, preserving its organization/product grants and read/write scope. Sharing a document never grants message sending, account access or access to another product.
+Only owners change sharing or move/delete their items. Editors can rename and edit Markdown or add children to editable folders. Making an ancestor private revokes descendant public links and specific-person access immediately for new reads. The UI refreshes through the existing authorized revision feed and hides preview content during revalidation while preserving navigation state; denied reads unmount content and clear its cache. MCP uses the same operation catalog and services as HTTP, preserving its organization/product grants and read/write scope. Sharing a document never grants message sending, account access or access to another product.
 
 ## Previews
 
@@ -33,3 +35,5 @@ Office input previews are limited to 32 MiB and validated ZIP expansion budgets.
 Run `bun run verify` for lint, dependency licenses, strict types, the complete unit/integration suite, the production build and public-site smoke tests. Run `bun run test:files` for browser uploads and rendering using fictional fixtures and a local demo server with uniquely named fixtures. It checks downloads against original bytes, nested folder copy/paste, native directory uploads and keyboard transfers, virtualized list/grid/column views and offscreen selection, slide navigation, PDF canvas output, image decoding, Markdown persistence, large Excel paging and oversized workbook fallback.
 
 `bun run test:file-storage` qualifies signed transfers against local MinIO at port 9030 in a fresh private bucket and removes that bucket afterward. It checks size mismatches, empty files, UTF-8 decoding, private access and immutable final objects after replaying a signed upload. Override `FILE_STORAGE_TEST_ENDPOINT`, `FILE_STORAGE_TEST_ACCESS_KEY` and `FILE_STORAGE_TEST_SECRET_KEY` for another local instance. Remote endpoints are deliberately rejected.
+
+The UUID override pins 11.1.1 to fix the affected dependency advisory while retaining CommonJS compatibility for ExcelJS, which uses UUID v4. The large-workbook browser scenario qualifies that dependency path.

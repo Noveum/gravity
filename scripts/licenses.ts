@@ -28,6 +28,17 @@ const reviewedLicenses = JSON.parse(
 ) as Record<string, { license: string; source: string }>;
 const inventory = new Map<string, DependencyLicense>();
 const seen = new Set<string>();
+const directKeys = new Set(
+  Object.keys({
+    ...manifest.dependencies,
+    ...manifest.devDependencies,
+  }).flatMap((name) => {
+    const path = join("node_modules", name, "package.json");
+    if (!existsSync(path)) return [];
+    const dependency = JSON.parse(readFileSync(path, "utf8"));
+    return [`${dependency.name}@${dependency.version}`];
+  }),
+);
 function scan(directory: string) {
   if (!existsSync(directory)) return;
   const canonical = realpathSync(directory);
@@ -56,10 +67,7 @@ function scan(directory: string) {
         name: dependency.name,
         version: dependency.version,
         license,
-        direct: !!(
-          manifest.dependencies?.[dependency.name] ||
-          manifest.devDependencies?.[dependency.name]
-        ),
+        direct: directKeys.has(key),
         repository:
           typeof dependency.repository === "string"
             ? dependency.repository
@@ -88,7 +96,10 @@ const missingDirect = Object.keys({
   ...manifest.dependencies,
   ...manifest.devDependencies,
 }).filter(
-  (name) => !dependencies.some((dependency) => dependency.name === name),
+  (name) =>
+    !dependencies.some(
+      (dependency) => dependency.name === name && dependency.direct,
+    ),
 );
 if (missingDirect.length)
   throw new Error(

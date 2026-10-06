@@ -266,6 +266,24 @@ test("large workbooks page in a worker, jump to distant cells, and keep oversize
   await expect(
     dialog.getByRole("cell", { name: "Distant cell", exact: true }),
   ).toBeVisible();
+  const revalidation = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === "/api/files" &&
+      url.searchParams.get("operation") === "detail" &&
+      url.searchParams.get("id") === file.id
+    );
+  });
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event("visibilitychange")),
+  );
+  await revalidation;
+  await expect(
+    dialog.getByRole("cell", { name: "Distant cell", exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByLabel("Go to cell", { exact: true })).toHaveValue(
+    "BL199",
+  );
   await page.screenshot({
     path: ".data/file-browser-results/large-workbook.png",
   });

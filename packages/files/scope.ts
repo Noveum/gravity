@@ -33,7 +33,8 @@ export async function fileScope(
     db,
     principal: {
       ...principal,
-      ...input,
+      organizationId: input.organizationId,
+      productId: input.productId,
       role: membership.role,
       writable:
         !principal.readOnly &&

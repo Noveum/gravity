@@ -92,7 +92,7 @@ export function PdfPreview({
   }, [document, page]);
   return (
     <section
-      aria-label={`PDF preview of ${name}`}
+      aria-label={t.files.pdfPreviewOf.replace("{name}", name)}
       className="flex flex-col gap-3"
     >
       {error === null ? null : (
@@ -109,7 +109,9 @@ export function PdfPreview({
         <canvas
           ref={canvas}
           role="img"
-          aria-label={`${name}, page ${page}`}
+          aria-label={t.files.documentPage
+            .replace("{name}", name)
+            .replace("{page}", String(page))}
           data-rendered={rendered}
           className="mx-auto h-auto max-w-full"
         />

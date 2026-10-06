@@ -16,5 +16,6 @@ export function usePreviewBytes(entry: FileEntry, downloadPath: string) {
     },
     staleTime: 60_000,
     gcTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 }

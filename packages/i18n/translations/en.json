@@ -2109,6 +2109,9 @@
     "rowRange": "Rows {first}–{last}",
     "columnRange": "Columns {first}–{last}",
     "previewOf": "Preview of {name}",
+    "pdfPreviewOf": "PDF preview of {name}",
+    "documentPage": "{name}, page {page}",
+    "image": "Image",
     "worksheetName": "Worksheet {name}",
     "unsupportedFormat": "A preview is not available for this file format ({format}). The original file is saved and available to download."
   }

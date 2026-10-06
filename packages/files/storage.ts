@@ -21,6 +21,18 @@ export interface FileStorage {
   ): Promise<string>;
   readText(key: string): Promise<string>;
 }
+export class UnsupportedTextEncoding extends Error {}
+function decodeText(bytes: Uint8Array) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+      bytes,
+    );
+  } catch (error) {
+    if (error instanceof TypeError)
+      throw new UnsupportedTextEncoding("File is not valid UTF-8.");
+    throw error;
+  }
+}
 function path(key: string) {
   if (!/^[a-f0-9-]{36}\/(pending|files)\/[a-f0-9-]{36}$/.test(key))
     throw new DomainError("NOT_FOUND", 404);
@@ -69,6 +81,11 @@ function storageConnection() {
         },
         requestChecksumCalculation: "WHEN_REQUIRED",
         responseChecksumValidation: "WHEN_REQUIRED",
+        requestHandler: {
+          connectionTimeout: 5_000,
+          requestTimeout: 60_000,
+          throwOnRequestTimeout: true,
+        },
       }),
     };
   return connection;
@@ -84,10 +101,7 @@ export function objectStorage(): FileStorage {
         await writeLocalUpload(target, bytes);
       },
       downloadUrl: async (key) => `local:${key}`,
-      readText: async (key) =>
-        new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-          await readLocalObject(key),
-        ),
+      readText: async (key) => decodeText(await readLocalObject(key)),
     };
   const { client, bucket: Bucket } = storageConnection();
   return {
@@ -134,9 +148,7 @@ export function objectStorage(): FileStorage {
     readText: async (Key) => {
       const result = await client.send(new GetObjectCommand({ Bucket, Key }));
       if (!result.Body) throw new DomainError("NOT_FOUND", 404);
-      return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-        await result.Body.transformToByteArray(),
-      );
+      return decodeText(await result.Body.transformToByteArray());
     },
   };
 }

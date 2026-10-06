@@ -18,7 +18,12 @@ import {
   requireRow,
   validationFailed,
 } from "./scope";
-import { type FileStorage, objectStorage, writeLocalUpload } from "./storage";
+import {
+  type FileStorage,
+  objectStorage,
+  UnsupportedTextEncoding,
+  writeLocalUpload,
+} from "./storage";
 import {
   type FileAccess,
   type FileEntry,
@@ -213,7 +218,7 @@ async function fileBatch<T extends object>(
         .select({ id: schema.organizations.id })
         .from(schema.organizations)
         .where(eq(schema.organizations.id, context.principal.organizationId))
-        .for("update");
+        .for("no key update");
       await authorize(
         tx,
         context.principal,
@@ -393,7 +398,13 @@ export async function createFile(context: WriteContext, input: unknown) {
           ? new TextEncoder().encode(parsed.body).byteLength
           : 0,
     });
-    const after = await fileTree(batch.tx, batch.organizationId);
+    const after = await fileTree(
+      batch.tx,
+      batch.organizationId,
+      undefined,
+      undefined,
+      context.principal.productId,
+    );
     await emitChanges(batch, before, after, [id]);
     return { entries: entriesOf(after, context.principal, [id]) };
   });
@@ -437,7 +448,13 @@ export async function updateFile(
         updatedAt: new Date(),
       })
       .where(eq(schema.fileEntry.id, id));
-    const after = await fileTree(batch.tx, batch.organizationId);
+    const after = await fileTree(
+      batch.tx,
+      batch.organizationId,
+      undefined,
+      undefined,
+      context.principal.productId,
+    );
     const changed =
       parsed.access === undefined
         ? new Set([id])
@@ -602,7 +619,13 @@ export async function transferFiles(context: WriteContext, input: unknown) {
         descendants,
         parsed.parentId,
       );
-    const after = await fileTree(batch.tx, batch.organizationId);
+    const after = await fileTree(
+      batch.tx,
+      batch.organizationId,
+      undefined,
+      undefined,
+      context.principal.productId,
+    );
     await emitChanges(batch, before, after, affected);
     return { entries: entriesOf(after, principal, affected) };
   });
@@ -646,35 +669,84 @@ export async function startFileUpload(
   return { uploadId: id, url };
 }
 
+async function ownedUpload(
+  executor: Executor,
+  principal: Principal,
+  id: string,
+) {
+  const [pending] = await executor
+    .select()
+    .from(schema.fileUpload)
+    .where(
+      and(
+        eq(schema.fileUpload.id, id),
+        eq(schema.fileUpload.organizationId, principal.organizationId),
+        eq(schema.fileUpload.ownerId, principal.userId),
+        eq(schema.fileUpload.productId, principal.productId),
+      ),
+    );
+  const upload = requireRow(pending, "That upload does not exist.");
+  if (upload.expiresAt.getTime() < Date.now())
+    throw conflict("The upload expired. Upload the file again.");
+  return upload;
+}
+
 export async function completeFileUpload(
   context: WriteContext,
   input: unknown,
   storage: FileStorage = objectStorage(),
 ) {
   const { uploadId } = fileCompleteSchema.parse(input);
-  return await fileBatch(context, async (batch, before) => {
-    const [pending] = await batch.tx
-      .select()
-      .from(schema.fileUpload)
-      .where(
-        and(
-          eq(schema.fileUpload.id, uploadId),
-          eq(schema.fileUpload.organizationId, batch.organizationId),
-          eq(schema.fileUpload.ownerId, context.principal.userId),
-          eq(schema.fileUpload.productId, context.principal.productId),
+  const principal = context.principal;
+  assertCan(principal, "record:write");
+  await authorize(
+    context.db,
+    principal,
+    principal.organizationId,
+    principal.productId,
+    true,
+  );
+  const reserved = await ownedUpload(context.db, principal, uploadId);
+  const destination = await fileTree(
+    context.db,
+    principal.organizationId,
+    reserved.parentId === null
+      ? isNull(schema.fileEntry.parentId)
+      : inArray(
+          schema.fileEntry.id,
+          ancestorIds(principal.organizationId, reserved.parentId),
         ),
-      );
-    const upload = requireRow(pending, "That upload does not exist.");
-    if (upload.expiresAt.getTime() < Date.now())
-      throw conflict("The upload expired. Upload the file again.");
-    writableParent(before, upload.parentId, context.principal);
-    const id = newId();
-    const storageKey = `${batch.organizationId}/files/${id}`;
-    await storage.sealUpload(upload.storageKey, storageKey, upload.size);
-    const markdown =
-      /\.(md|markdown)$/i.test(upload.name) &&
-      upload.size <= MAX_MARKDOWN_LENGTH;
-    const body = markdown ? await storage.readText(storageKey) : null;
+    undefined,
+    principal.productId,
+    principal,
+  );
+  writableParent(destination, reserved.parentId, principal);
+  const id = newId();
+  const storageKey = `${principal.organizationId}/files/${id}`;
+  await storage.sealUpload(reserved.storageKey, storageKey, reserved.size);
+  let body: string | null = null;
+  if (
+    /\.(md|markdown)$/i.test(reserved.name) &&
+    reserved.size <= MAX_MARKDOWN_LENGTH
+  ) {
+    try {
+      body = await storage.readText(storageKey);
+    } catch (error) {
+      if (!(error instanceof UnsupportedTextEncoding)) throw error;
+    }
+  }
+  const markdown = body !== null;
+  return await fileBatch(context, async (batch, before) => {
+    const upload = await ownedUpload(batch.tx, principal, uploadId);
+    if (
+      upload.storageKey !== reserved.storageKey ||
+      upload.size !== reserved.size ||
+      upload.name !== reserved.name ||
+      upload.mimeType !== reserved.mimeType ||
+      upload.parentId !== reserved.parentId
+    )
+      throw conflict("The upload changed. Upload the file again.");
+    writableParent(before, upload.parentId, principal);
     await batch.tx.insert(schema.fileEntry).values({
       id,
       organizationId: batch.organizationId,
@@ -694,7 +766,13 @@ export async function completeFileUpload(
     await batch.tx
       .delete(schema.fileUpload)
       .where(eq(schema.fileUpload.id, uploadId));
-    const after = await fileTree(batch.tx, batch.organizationId);
+    const after = await fileTree(
+      batch.tx,
+      batch.organizationId,
+      undefined,
+      undefined,
+      context.principal.productId,
+    );
     await emitChanges(batch, before, after, [id]);
     return { entries: entriesOf(after, context.principal, [id]) };
   });

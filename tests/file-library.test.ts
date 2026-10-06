@@ -6,8 +6,8 @@ import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import { fileScope } from "../packages/files/scope";
-import { getFile } from "../packages/files/service";
-import { readLocalObject } from "../packages/files/storage";
+import { completeFileUpload, getFile } from "../packages/files/service";
+import { objectStorage, readLocalObject } from "../packages/files/storage";
 import {
   fileDetailSchema,
   fileMutationSchema,
@@ -433,4 +433,125 @@ describe("production file library access and persistence", () => {
       run("complete", { uploadId: reserved.uploadId }, member),
     ).rejects.toMatchObject({ status: 409 });
   });
+
+  test("invalid UTF-8 Markdown stays downloadable while unrelated read failures propagate", async () => {
+    const bytes = Buffer.from([0xff, 0xfe, 0x41]);
+    const reserved = fileUploadResponseSchema.parse(
+      await run("reserve", {
+        name: "Legacy encoding.md",
+        mimeType: "text/markdown",
+        size: bytes.length,
+      }),
+    );
+    await run("upload-bytes", {
+      uploadId: reserved.uploadId,
+      dataBase64: bytes.toString("base64"),
+    });
+    const uploaded = fileMutationSchema.parse(
+      await run("complete", { uploadId: reserved.uploadId }),
+    ).entries[0];
+    expect(uploaded.kind).toBe("file");
+    const download = (await run("download", { id: uploaded.id })) as {
+      url: string;
+    };
+    expect(await readLocalObject(download.url.slice(6))).toEqual(
+      new Uint8Array(bytes),
+    );
+
+    const pending = fileUploadResponseSchema.parse(
+      await run("reserve", {
+        name: "Read failure.md",
+        mimeType: "text/markdown",
+        size: 1,
+      }),
+    );
+    await run("upload-bytes", {
+      uploadId: pending.uploadId,
+      dataBase64: Buffer.from("x").toString("base64"),
+    });
+    const context = await fileScope(local.db, owner, scope, true);
+    await expect(
+      completeFileUpload(
+        context,
+        { uploadId: pending.uploadId },
+        {
+          ...objectStorage(),
+          readText: async () => {
+            throw new TypeError("Network read failed");
+          },
+        },
+      ),
+    ).rejects.toThrow("Network read failed");
+    const completed = fileMutationSchema.parse(
+      await run("complete", { uploadId: pending.uploadId }),
+    ).entries[0];
+    expect(completed.kind).toBe("markdown");
+  });
+
+  test.each(["access", "expiry"])(
+    "slow sealing permits other writes and rechecks %s before completion",
+    async (change) => {
+      const folder = await create({ visibility: "workspace" });
+      const reserved = fileUploadResponseSchema.parse(
+        await run(
+          "reserve",
+          {
+            name: `Delayed ${change}.txt`,
+            mimeType: "text/plain",
+            size: 1,
+            parentId: folder.id,
+          },
+          member,
+        ),
+      );
+      await run(
+        "upload-bytes",
+        {
+          uploadId: reserved.uploadId,
+          dataBase64: Buffer.from("x").toString("base64"),
+        },
+        member,
+      );
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const storage = objectStorage();
+      const context = await fileScope(local.db, member, scope, true);
+      const completing = completeFileUpload(
+        context,
+        { uploadId: reserved.uploadId },
+        {
+          ...storage,
+          sealUpload: async (...args) => {
+            started.resolve();
+            await release.promise;
+            await storage.sealUpload(...args);
+          },
+        },
+      );
+      const result = completing.then(
+        () => null,
+        (error: unknown) => error,
+      );
+      await started.promise;
+      try {
+        await create({ name: randomUUID() });
+        if (change === "access")
+          await run("update", {
+            id: folder.id,
+            expectedSyncId: folder.syncId,
+            access: { visibility: "private", grants: [] },
+          });
+        else
+          await local.db
+            .update(s.fileUpload)
+            .set({ expiresAt: new Date(0) })
+            .where(eq(s.fileUpload.id, reserved.uploadId));
+      } finally {
+        release.resolve();
+      }
+      expect(await result).toMatchObject({
+        status: change === "access" ? 404 : 409,
+      });
+    },
+  );
 });

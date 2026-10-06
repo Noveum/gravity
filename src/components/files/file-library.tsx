@@ -196,9 +196,14 @@ function Browser({
     void client
       .cancelQueries()
       .then(async () => {
-        const details = client.resetQueries({ queryKey: ["file", cacheScope] });
-        client.removeQueries({ queryKey: ["file-preview"] });
-        client.removeQueries({ queryKey: ["file-text-preview"] });
+        const details = client.invalidateQueries({
+          queryKey: ["file", cacheScope],
+        });
+        client.removeQueries({ queryKey: ["file-preview"], type: "inactive" });
+        client.removeQueries({
+          queryKey: ["file-text-preview"],
+          type: "inactive",
+        });
         await Promise.all([
           details,
           client.invalidateQueries({ queryKey: filesKey(cacheScope) }),
@@ -1645,6 +1650,7 @@ function Preview({
   close: () => void;
   busy: boolean;
 }) {
+  const client = useQueryClient();
   const query = useQuery({
     queryKey: fileKey(cacheScope, entry.id),
     queryFn: ({ signal }) => detail(scope, entry.id, signal),
@@ -1661,7 +1667,11 @@ function Preview({
       setEditing(false);
       setDraft("");
     }
-  }, [query.error, query.data?.entry.canEdit]);
+    if (query.error) {
+      client.removeQueries({ queryKey: ["file-preview", entry.id] });
+      client.removeQueries({ queryKey: ["file-text-preview", entry.id] });
+    }
+  }, [query.error, query.data?.entry.canEdit, client, entry.id]);
   return (
     <Modal
       title={current?.name ?? entry.name}
@@ -1689,77 +1699,80 @@ function Preview({
       }
     >
       <div className="file-preview">
-        {query.isFetching ? (
-          <p role="status">{labels.loading}</p>
-        ) : query.error ? (
+        {query.isFetching && <p role="status">{labels.loading}</p>}
+        {query.error ? (
           <p role="alert">{errorText(query.error)}</p>
-        ) : current?.kind === "file" ? (
-          <FilePreview
-            entry={current}
-            downloadPath={fileUrl(scope, {
-              operation: "download",
-              id: entry.id,
-            })}
-          />
         ) : (
-          current && (
-            <>
-              {editing ? (
+          <div hidden={query.isFetching}>
+            {current?.kind === "file" ? (
+              <FilePreview
+                entry={current}
+                downloadPath={fileUrl(scope, {
+                  operation: "download",
+                  id: entry.id,
+                })}
+              />
+            ) : (
+              current && (
                 <>
-                  <div className="library-markdown-editor">
-                    <textarea
-                      aria-label={labels.source}
-                      maxLength={1_000_000}
-                      value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
-                    />
-                    <MarkdownPreview body={draft} />
-                  </div>
-                  <div className="dialog-actions">
-                    <button type="button" onClick={() => setEditing(false)}>
-                      {t.cancel}
-                    </button>
-                    <button
-                      type="button"
-                      className="primary"
-                      disabled={busy}
-                      onClick={async () => {
-                        try {
-                          await run("update", {
-                            id: entry.id,
-                            body: draft,
-                            expectedSyncId: version,
-                          });
-                          setEditing(false);
-                        } catch (failure) {
-                          setError(errorText(failure));
-                        }
-                      }}
-                    >
-                      {t.save}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <MarkdownPreview body={query.data?.body ?? ""} />
-                  {current.canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDraft(query.data?.body ?? "");
-                        setVersion(current.syncId);
-                        setEditing(true);
-                      }}
-                    >
-                      {labels.editMarkdown}
-                    </button>
+                  {editing ? (
+                    <>
+                      <div className="library-markdown-editor">
+                        <textarea
+                          aria-label={labels.source}
+                          maxLength={1_000_000}
+                          value={draft}
+                          onChange={(event) => setDraft(event.target.value)}
+                        />
+                        <MarkdownPreview body={draft} />
+                      </div>
+                      <div className="dialog-actions">
+                        <button type="button" onClick={() => setEditing(false)}>
+                          {t.cancel}
+                        </button>
+                        <button
+                          type="button"
+                          className="primary"
+                          disabled={busy}
+                          onClick={async () => {
+                            try {
+                              await run("update", {
+                                id: entry.id,
+                                body: draft,
+                                expectedSyncId: version,
+                              });
+                              setEditing(false);
+                            } catch (failure) {
+                              setError(errorText(failure));
+                            }
+                          }}
+                        >
+                          {t.save}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <MarkdownPreview body={query.data?.body ?? ""} />
+                      {current.canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraft(query.data?.body ?? "");
+                            setVersion(current.syncId);
+                            setEditing(true);
+                          }}
+                        >
+                          {labels.editMarkdown}
+                        </button>
+                      )}
+                    </>
                   )}
+                  {error && <p role="alert">{error}</p>}
                 </>
-              )}
-              {error && <p role="alert">{error}</p>}
-            </>
-          )
+              )
+            )}
+          </div>
         )}
       </div>
     </Modal>

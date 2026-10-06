@@ -11,6 +11,7 @@ Reviewed the V1 repair against the official documentation MCP, the DSN's public 
 | P2 | Permission and reconnection status notifications did not restore/report the correct state. `PERMISSIONS` now reports a permission error and `RECONNECTED` restores the connection. | `packages/connectors/unipile-v1.ts:94` |
 | P2 | A failed chat ownership check before message submission could become an unreconcilable unknown send. Preflight errors are now definite failures; ambiguity after submission remains protected from retries. | `packages/connectors/outbound-provider.ts:230`, `packages/connectors/outbound.ts:647` |
 | P2 | External account listing could exceed a product-restricted assistant grant. Listing and webhook management require all-products MCP access; bound connection operations recheck owner and product authorization. | `packages/connectors/configuration.ts:232`, `packages/connectors/configuration.ts:269` |
+| P2 | After a webhook setup failure, editable account/product fields could disagree with the account already connected. Those fields and account reload controls now stay locked during webhook retry, which continues on the saved connection and product. | `src/components/integration-cards.tsx:816` |
 
 ## Review dimensions
 
@@ -23,7 +24,7 @@ Reviewed the V1 repair against the official documentation MCP, the DSN's public 
 
 The existing owner/product isolation and unknown-send safeguards were sound and remain covered by regression tests. There is no database migration or provider-account migration.
 
-The final focused permission, registration and webhook tests passed: three files, 26 tests. Type checking, lint and the production build passed on the reviewed code. The pull request's verification section records the full-suite result separately.
+The pre-merge review integrated current main, preserving its relationship-context changes, and removed obsolete manual-webhook UI copy. The focused setup, registration, ingress and V1 adapter tests passed: four files, 27 tests. The pull request's verification section records the final combined full-suite, type checking, lint, build and CI results separately.
 
 ## Live qualification limits
 

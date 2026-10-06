@@ -816,7 +816,7 @@ function ConnectDialog({
                   <select
                     name="accountId"
                     required
-                    disabled={busy}
+                    disabled={busy || !!completedConnectionId}
                     defaultValue=""
                   >
                     <option value="" disabled>
@@ -834,7 +834,7 @@ function ConnectDialog({
                   </select>
                 </label>
               )}
-              {!loadingAccounts && error && (
+              {!loadingAccounts && error && !completedConnectionId && (
                 <button
                   type="button"
                   disabled={busy}
@@ -843,7 +843,7 @@ function ConnectDialog({
                   {t.unipileRetryAccounts}
                 </button>
               )}
-              {accountCursor && (
+              {accountCursor && !completedConnectionId && (
                 <button
                   type="button"
                   disabled={busy || loadingAccounts}
@@ -887,7 +887,7 @@ function ConnectDialog({
               name="productId"
               required
               defaultValue={productId || data.products[0]?.id || ""}
-              disabled={busy || !!connectionId}
+              disabled={busy || !!connectionId || !!completedConnectionId}
               data-primary-field
             >
               {data.products.map((p) => (
@@ -940,6 +940,7 @@ function ConnectDialog({
                 busy ||
                 (v1 &&
                   !connectionId &&
+                  !completedConnectionId &&
                   (loadingAccounts ||
                     !accounts.some((account) => account.status === "OK")))
               }

@@ -217,9 +217,17 @@ test("failed V1 webhook setup retries the same account connection and product", 
   const form = select.closest("form");
   if (!form) throw new Error("FORM_MISSING");
   fireEvent.submit(form);
-  fireEvent.click(
-    await screen.findByRole("button", { name: t.unipileRetryWebhooks }),
-  );
+  const retry = await screen.findByRole("button", {
+    name: t.unipileRetryWebhooks,
+  });
+  expect((select as HTMLSelectElement).disabled).toBe(true);
+  expect(
+    (screen.getByLabelText(t.defaultProduct) as HTMLSelectElement).disabled,
+  ).toBe(true);
+  expect(
+    screen.queryByRole("button", { name: t.unipileRetryAccounts }),
+  ).toBeNull();
+  fireEvent.click(retry);
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   const inputs = request.mock.calls
     .filter((value) => value[1]?.method === "POST")

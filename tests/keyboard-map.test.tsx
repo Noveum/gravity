@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -260,6 +261,38 @@ describe("palette, search, guide and create", () => {
     await press("?");
     const guide = screen.getByRole("dialog", { name: t.keyboardHelp });
     expect(within(guide).getByText(t.shortcutLabels.done)).toBeTruthy();
+  });
+  test("the guide hides shortcuts that do nothing on the current page", async () => {
+    const openGuide = async () => {
+      await press("?");
+      return screen.getByRole("dialog", { name: t.keyboardHelp });
+    };
+    const closeGuide = async (guide: HTMLElement) => {
+      fireEvent(guide, new Event("cancel"));
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("dialog", { name: t.keyboardHelp }),
+        ).toBeNull(),
+      );
+    };
+    await mountCrm(harness, "/outreach/today");
+    let guide = await openGuide();
+    expect(within(guide).queryByText(t.shortcutLabels.select)).toBeNull();
+    await closeGuide(guide);
+    cleanup();
+    await mountCrm(harness, "/people");
+    guide = await openGuide();
+    expect(within(guide).getByText(t.shortcutLabels.select)).toBeTruthy();
+    expect(within(guide).queryByText(t.shortcutLabels.draft)).toBeNull();
+    await closeGuide(guide);
+    cleanup();
+    await mountCrm(harness);
+    row(/Leena Rao.*Prepare the pilot proposal/).focus();
+    await press(" ");
+    await waitFor(() => expect(peek()).toBeTruthy());
+    await screen.findByRole("button", { name: label("draft") });
+    guide = await openGuide();
+    expect(within(guide).getByText(t.shortcutLabels.draft)).toBeTruthy();
   });
   test("C creates in the current view: an action, a person, an upload or an action for the open person", async () => {
     binding("create");

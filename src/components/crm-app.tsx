@@ -103,6 +103,24 @@ function CrmShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [pageUnavailable, setPageUnavailable] = useState<ShortcutId[]>([]);
+  function openHelp() {
+    const listed = section !== "outreach" && navigableRecords().length > 0;
+    const tabs = new Set(
+      [...document.querySelectorAll<HTMLElement>("[data-inspector-tab]")].map(
+        (tab) => tab.dataset.inspectorTab,
+      ),
+    );
+    setPageUnavailable([
+      ...(listed
+        ? []
+        : (["select", "extend-next", "extend-previous"] as const)),
+      ...(["timeline", "evidence", "draft"] as const).filter(
+        (tab) => !tabs.has(tab),
+      ),
+    ]);
+    setHelpOpen(true);
+  }
   const [enrolling, setEnrolling] = useState<readonly string[] | null>(null);
   const paletteFocus = useRef("");
   function openPalette() {
@@ -199,7 +217,7 @@ function CrmShell({ children }: { children: ReactNode }) {
     closeDrawer,
     openDrawer: () => setDrawerOpen(true),
     openPalette,
-    openGuide: () => setHelpOpen(true),
+    openGuide: openHelp,
     toggleSidebar,
     goToSection,
     showPeek,
@@ -402,7 +420,7 @@ function CrmShell({ children }: { children: ReactNode }) {
               demo={crm.demo}
               onShortcuts={() => {
                 setDrawerOpen(false);
-                setHelpOpen(true);
+                openHelp();
               }}
               onNavigate={() => leaveDrawer(sectionPath("settings"))}
               onError={(message) => crm.notify(message, "danger")}
@@ -452,7 +470,7 @@ function CrmShell({ children }: { children: ReactNode }) {
         <TopBar
           crumbs={crumbs}
           onSearch={openPalette}
-          onHelp={() => setHelpOpen(true)}
+          onHelp={openHelp}
           onOpenNavigation={() => setDrawerOpen(true)}
         />
         {data && !recordId && toolbarSections.has(section) && (
@@ -479,6 +497,7 @@ function CrmShell({ children }: { children: ReactNode }) {
               ...(canCreateProduct ? [] : (["create-product"] as const)),
               ...(data?.products.length ? [] : (["create"] as const)),
               ...(data?.relationships.length ? [] : (["schedule"] as const)),
+              ...pageUnavailable,
             ]}
           />
         )}
@@ -491,7 +510,7 @@ function CrmShell({ children }: { children: ReactNode }) {
                 id: "help",
                 title: t.keyboardHelp,
                 shortcut: hint("help"),
-                run: () => setHelpOpen(true),
+                run: openHelp,
               },
               {
                 id: "refresh",

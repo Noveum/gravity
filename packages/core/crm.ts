@@ -4,6 +4,7 @@ import {
   asc,
   desc,
   eq,
+  getTableColumns,
   gte,
   inArray,
   isNull,
@@ -21,6 +22,12 @@ import { overview as calculateOverview } from "./analytics";
 import { draftHash, draftSubject } from "./drafts";
 import { serialize } from "./dto";
 import { authorize, DomainError, type Principal } from "./policy";
+import {
+  emptyRelationshipDetails,
+  fitsRelationshipInput,
+  relationshipDetailsPatchSchema,
+  relationshipDetailsSchema,
+} from "./relationship-context";
 import {
   activeCompany,
   assertActiveRelationships,
@@ -101,12 +108,14 @@ export const personSchema = scopeSchema
     companyId: z.uuid().optional(),
     purpose: z.enum(["buyer", "partner"]).default("buyer"),
     context: z.string().trim().max(10000).default(""),
+    contextDetails: relationshipDetailsPatchSchema.optional(),
     review: z.boolean().default(true),
     channel: z.enum(["gmail", "linkedin"]).default("gmail"),
   })
   .refine((value) => !!value.personId !== !!value.name, {
     message: "Provide a new name or existing person",
-  });
+  })
+  .refine(fitsRelationshipInput);
 export const opportunitySchema = scopeSchema
   .extend({
     id: z.uuid().optional(),
@@ -420,6 +429,10 @@ export class CrmService {
           ownerId: principal.userId,
           purpose: input.purpose,
           context: input.context,
+          contextDetails: relationshipDetailsSchema.parse({
+            ...emptyRelationshipDetails(),
+            ...input.contextDetails,
+          }),
           stageId: firstStage?.id ?? null,
         })
         .onConflictDoNothing()
@@ -484,6 +497,12 @@ export class CrmService {
     const ids = permission.products
       .filter((p) => !scope.productId || p.id === scope.productId)
       .map((p) => p.id);
+    // Rich notes and source archives load on demand through get_person_context.
+    const {
+      contextDetails: _contextDetails,
+      contextSource: _contextSource,
+      ...relationshipColumns
+    } = getTableColumns(s.relationships);
     const readableConversations = await this.db
       .select({ id: s.conversations.id })
       .from(s.conversations)
@@ -529,7 +548,10 @@ export class CrmService {
       touchStats,
       messageStats,
     ] = await Promise.all([
-      this.db.select().from(s.relationships).where(scoped(s.relationships)),
+      this.db
+        .select(relationshipColumns)
+        .from(s.relationships)
+        .where(scoped(s.relationships)),
       this.db
         .select()
         .from(s.actions)

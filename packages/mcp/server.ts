@@ -242,6 +242,12 @@ export function mcpHandler(
         },
         async () => {
           const { membership } = await authorize(db, principal, organizationId);
+          const available = (name: string) =>
+            operations.some(
+              (operation) =>
+                operation.name === name &&
+                operationAvailable(operation, principal, membership.role),
+            );
           return result({
             readContext: true,
             readCompanyContext: true,
@@ -286,10 +292,11 @@ export function mcpHandler(
               writable &&
               principal.productIds === undefined &&
               membership.role === "admin",
-            workspaceInvitations:
-              writable &&
-              principal.productIds === undefined &&
-              membership.role === "admin",
+            workspaceInvitations: {
+              list: available("list_invitations"),
+              revoke: available("revoke_invitation"),
+              create: available("create_invitation"),
+            },
             invitationDelivery: "email-or-copy-link",
             accessGrantsNeedHuman: true,
             humanSessionOperations: operations

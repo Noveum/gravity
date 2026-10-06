@@ -119,6 +119,24 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
   expect(capabilities.operations).toHaveLength(operations.length);
   expect(capabilities.sendMessages).toBe(false);
   expect(capabilities.contractSigningWorkflow).toBe(false);
+  expect(capabilities.workspaceInvitations).toEqual({
+    list: true,
+    revoke: true,
+    create: false,
+  });
+  const readerCapabilities = await call(
+    "get_capabilities",
+    {},
+    {
+      ...writable,
+      readOnly: true,
+    },
+  );
+  expect(readerCapabilities.workspaceInvitations).toEqual({
+    list: true,
+    revoke: false,
+    create: false,
+  });
 });
 test("MCP publishes instructions, workflow prompts and an effective operation permission audit", async () => {
   const initialized = await rpc("initialize", {

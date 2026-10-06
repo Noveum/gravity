@@ -14,12 +14,14 @@ export function RecordDialog({
   onClose,
   onSubmit,
   children,
+  className = "",
 }: {
   title: string;
   submitLabel: string;
   onClose: () => void;
   onSubmit: (fields: FormData) => Promise<string | null>;
   children: ReactNode;
+  className?: string;
 }) {
   const modal = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
@@ -31,7 +33,7 @@ export function RecordDialog({
   return (
     <dialog
       ref={modal}
-      className="dialog"
+      className={`dialog ${className}`}
       aria-labelledby={titleId}
       onCancel={(event) => {
         if (busy) event.preventDefault();

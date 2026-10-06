@@ -1914,6 +1914,7 @@ ul.timeline {
 :root[data-theme-switching] *,
 :root[data-theme-switching] *::before,
 :root[data-theme-switching] *::after {
+  /* biome-ignore lint/complexity/noImportantStyles: a theme switch must stop every transition for one frame, whatever its specificity. */
   transition: none !important;
 }
 

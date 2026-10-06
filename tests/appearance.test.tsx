@@ -88,7 +88,7 @@ test("a theme change suppresses colour transitions for one frame and nothing els
     join(process.cwd(), "src/app/globals.css"),
     "utf8",
   );
-  expect(css.replace(/\s+/g, " ")).toMatch(
+  expect(css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ")).toMatch(
     /:root\[data-theme-switching\] \*, :root\[data-theme-switching\] \*::before, :root\[data-theme-switching\] \*::after \{ transition: none !important; \}/,
   );
 });

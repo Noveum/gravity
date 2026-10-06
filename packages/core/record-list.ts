@@ -12,6 +12,7 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
@@ -197,9 +198,53 @@ export class RecordListService {
         alternatives.push(
           ilike(s.people.title, term),
           ilike(s.people.email, term),
+          exists(
+            this.db
+              .select({ id: s.companies.id })
+              .from(s.companies)
+              .where(
+                and(
+                  eq(s.companies.id, s.people.companyId),
+                  eq(s.companies.organizationId, input.organizationId),
+                  ilike(s.companies.name, term),
+                ),
+              ),
+          ),
         );
       if (input.entity === "companies")
         alternatives.push(ilike(s.companies.domain, term));
+      if (input.entity === "relationships" || "relationshipId" in table) {
+        const related = alias(s.relationships, "searched_relationship");
+        const relationshipId =
+          "relationshipId" in table ? table.relationshipId : s.relationships.id;
+        alternatives.push(
+          exists(
+            this.db
+              .select({ id: s.people.id })
+              .from(s.people)
+              .innerJoin(related, eq(related.personId, s.people.id))
+              .leftJoin(
+                s.companies,
+                and(
+                  eq(s.companies.id, s.people.companyId),
+                  eq(s.companies.organizationId, input.organizationId),
+                ),
+              )
+              .where(
+                and(
+                  eq(related.id, relationshipId),
+                  eq(related.organizationId, input.organizationId),
+                  eq(s.people.organizationId, input.organizationId),
+                  or(
+                    ilike(s.people.name, term),
+                    ilike(s.people.title, term),
+                    ilike(s.companies.name, term),
+                  ),
+                ),
+              ),
+          ),
+        );
+      }
       conditions.push(or(...alternatives));
     }
     if ("tags" in table && input.tag)

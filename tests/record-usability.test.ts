@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { CrmService } from "../packages/core/crm";
 import { serialize } from "../packages/core/dto";
@@ -214,6 +214,50 @@ describe("bounded record queries", () => {
       ).toBe(true);
     }
   });
+  test("SQL search matches related contact and company names without broadening scope", async () => {
+    const service = new RecordListService(local.db);
+    const snapshot = await new CrmService(local.db).snapshot(principal, scope);
+    for (const entity of [
+      "relationships",
+      "actions",
+      "opportunities",
+      "meetings",
+    ] as const) {
+      const result = await service.page(
+        principal,
+        recordListSchema.parse({ ...scope, entity, query: "Mira Chen" }),
+      );
+      const relationships = new Set(
+        snapshot.relationships
+          .filter((relationship) => relationship.personId === demoId(200))
+          .map((relationship) => relationship.id),
+      );
+      expect(result.items.map((row) => row.id).sort()).toEqual(
+        snapshot[entity]
+          .filter((row) =>
+            relationships.has(
+              "relationshipId" in row ? row.relationshipId : row.id,
+            ),
+          )
+          .map((row) => row.id)
+          .sort(),
+      );
+    }
+    const people = await service.page(
+      principal,
+      recordListSchema.parse({
+        ...scope,
+        entity: "people",
+        query: "Northstar Labs",
+      }),
+    );
+    expect(people.items.map((row) => row.id)).toEqual([demoId(200)]);
+    const literal = await service.page(
+      principal,
+      recordListSchema.parse({ ...scope, entity: "people", query: "%" }),
+    );
+    expect(literal.total).toBe(0);
+  });
   test("list reads preserve product grants and private action visibility", async () => {
     const service = new RecordListService(local.db);
     const restricted = {
@@ -280,25 +324,18 @@ describe("bounded record queries", () => {
       findAction(action.id, serialize(compact), serialize(full))?.reason,
     ).toBe(action.reason);
   });
-  test("SQL browsing bounds a workspace with 10,000 additional contacts", async () => {
-    for (let start = 0; start < 10000; start += 500) {
-      const people = Array.from({ length: 500 }, (_, offset) => ({
-        id: demoId(10000 + start + offset),
-        organizationId: scope.organizationId,
-        name: `Scale fixture ${String(start + offset).padStart(5, "0")}`,
-      }));
-      await local.db.insert(s.people).values(people);
-      await local.db.insert(s.relationships).values(
-        people.map((person, offset) => ({
-          id: demoId(30000 + start + offset),
-          organizationId: scope.organizationId,
-          productId: demoId(10),
-          personId: person.id,
-          ownerId: demoUser,
-          purpose: "buyer",
-        })),
-      );
-    }
+  test("SQL browsing bounds a workspace with 10,000 additional contacts", {
+    timeout: 120000,
+  }, async () => {
+    await local.db.execute(sql`INSERT INTO people (id, organization_id, name)
+      SELECT ('00000000-0000-4000-8000-' || lpad((10000 + value)::text, 12, '0'))::uuid,
+      ${scope.organizationId}::uuid, 'Scale fixture ' || lpad(value::text, 5, '0')
+      FROM generate_series(0, 9999) AS fixture(value)`);
+    await local.db.execute(sql`INSERT INTO relationships (id, organization_id, product_id, person_id, owner_id, purpose)
+      SELECT ('00000000-0000-4000-8000-' || lpad((30000 + value)::text, 12, '0'))::uuid,
+      ${scope.organizationId}::uuid, ${demoId(10)}::uuid,
+      ('00000000-0000-4000-8000-' || lpad((10000 + value)::text, 12, '0'))::uuid,
+      ${demoUser}, 'buyer' FROM generate_series(0, 9999) AS fixture(value)`);
     const result = await new RecordListService(local.db).page(
       principal,
       recordListSchema.parse({

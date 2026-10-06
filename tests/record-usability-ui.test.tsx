@@ -18,6 +18,36 @@ const inspector = () =>
   within(screen.getByRole("complementary", { name: t.recordDetails }));
 
 describe("browsing records", () => {
+  test("an open metadata form rejects a concurrent record revision", async () => {
+    await mountCrm(harness, "/people");
+    fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
+    await inspector().findByRole("heading", { name: "Jonah Reed" });
+    fireEvent.click(
+      inspector().getAllByRole("button", {
+        name: t.editDealSizeAndTags,
+      })[0] as HTMLElement,
+    );
+    const dialog = screen.getByRole("dialog", { name: t.editDealSizeAndTags });
+    fireEvent.change(within(dialog).getByLabelText(t.tags), {
+      target: { value: "Local" },
+    });
+    await harness.local.db
+      .update(s.people)
+      .set({ tags: ["External"], version: 2 })
+      .where(eq(s.people.id, demoId(201)));
+    fireEvent.focus(window);
+    await inspector().findByText("External", {}, { timeout: 5000 });
+    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
+    expect(
+      (await within(dialog).findAllByText(t.errors.CONFLICT)).length,
+    ).toBeGreaterThan(0);
+    const [person] = await harness.local.db
+      .select()
+      .from(s.people)
+      .where(eq(s.people.id, demoId(201)));
+    expect(person.tags).toEqual(["External"]);
+    expect(person.version).toBe(2);
+  });
   test("editing from a compact list preserves the complete summary", async () => {
     await mountCrm(harness, "/people", true);
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
@@ -30,7 +60,7 @@ describe("browsing records", () => {
         "Requested API documentation; no purchase decision confirmed.",
       ),
     );
-    fireEvent.change(within(dialog).getByLabelText(t.role), {
+    fireEvent.change(within(dialog).getByLabelText(t.roleTitle), {
       target: { value: "Founder and CEO" },
     });
     fireEvent.click(within(dialog).getByRole("button", { name: t.save }));

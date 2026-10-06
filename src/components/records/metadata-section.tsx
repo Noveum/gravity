@@ -42,7 +42,7 @@ export function MetadataSection({
   record: MetadataRecord;
 }) {
   const crm = useWorkspaceData();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<MetadataRecord | null>(null);
   const [currency, setCurrency] = useState(record.currency);
   return (
     <section className="record-section metadata-section">
@@ -58,17 +58,17 @@ export function MetadataSection({
           type="button"
           onClick={() => {
             setCurrency(record.currency);
-            setEditing(true);
+            setEditing(record);
           }}
         >
           {t.editDealSizeAndTags}
         </button>
       )}
-      {editing && (
+      {editing && editing.id === record.id && (
         <RecordDialog
           title={t.editDealSizeAndTags}
           submitLabel={t.save}
-          onClose={() => setEditing(false)}
+          onClose={() => setEditing(null)}
           onSubmit={async (fields) => {
             let amountMinor: number | null;
             try {
@@ -81,8 +81,8 @@ export function MetadataSection({
                 operation: "record-metadata",
                 organizationId: crm.organizationId,
                 entity,
-                recordId: record.id,
-                version: record.version,
+                recordId: editing.id,
+                version: editing.version,
                 tags: text(fields, "tags")
                   .split(",")
                   .map((tag) => tag.trim())
@@ -101,7 +101,7 @@ export function MetadataSection({
             <input
               data-primary-field
               name="tags"
-              defaultValue={record.tags.join(", ")}
+              defaultValue={editing.tags.join(", ")}
               aria-describedby="tags-hint"
             />
           </label>
@@ -127,7 +127,7 @@ export function MetadataSection({
               type="number"
               min="0"
               step={minorStep(currency)}
-              defaultValue={fromMinor(record.amountMinor, record.currency)}
+              defaultValue={fromMinor(editing.amountMinor, editing.currency)}
             />
           </label>
         </RecordDialog>

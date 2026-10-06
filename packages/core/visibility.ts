@@ -108,6 +108,81 @@ export async function emailTaken(
   return !!taken;
 }
 
+const linkedinHost = "^[a-z]+://([a-z0-9-]+[.])*linkedin[.]com";
+const linkedinSuffix = "[?#].*$";
+export function linkedinKey(value: SQL | typeof s.people.linkedinUrl) {
+  return sql`rtrim(regexp_replace(regexp_replace(lower(trim(${value})), ${linkedinHost}, ''), ${linkedinSuffix}, ''), '/')`;
+}
+
+export async function linkedinTaken(
+  db: Reader,
+  organizationId: string,
+  linkedinUrl: string,
+  exceptPersonId: string,
+) {
+  if (!linkedinUrl.trim()) return false;
+  const [taken] = await db
+    .select({ id: s.people.id })
+    .from(s.people)
+    .where(
+      and(
+        eq(s.people.organizationId, organizationId),
+        ne(s.people.id, exceptPersonId),
+        ne(s.people.linkedinUrl, ""),
+        sql`${linkedinKey(s.people.linkedinUrl)} = ${linkedinKey(sql`${linkedinUrl}`)}`,
+      ),
+    )
+    .limit(1);
+  return !!taken;
+}
+
+export async function optedOutIdentity(
+  db: Reader,
+  organizationId: string,
+  person: Pick<
+    typeof s.people.$inferSelect,
+    "id" | "email" | "otherEmails" | "linkedinUrl"
+  >,
+) {
+  const emails = [
+    ...new Set(
+      [person.email ?? "", ...person.otherEmails]
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+  const matches: SQL[] = [];
+  if (emails.length)
+    matches.push(
+      inArray(sql`lower(${s.people.email})`, emails),
+      sql`${s.people.otherEmails} ?| array[${sql.join(
+        emails.map((email) => sql`${email}`),
+        sql`, `,
+      )}]::text[]`,
+    );
+  if (person.linkedinUrl.trim())
+    matches.push(
+      and(
+        ne(s.people.linkedinUrl, ""),
+        sql`${linkedinKey(s.people.linkedinUrl)} = ${linkedinKey(sql`${person.linkedinUrl}`)}`,
+      ) as SQL,
+    );
+  if (!matches.length) return false;
+  const [found] = await db
+    .select({ id: s.people.id })
+    .from(s.people)
+    .where(
+      and(
+        eq(s.people.organizationId, organizationId),
+        ne(s.people.id, person.id),
+        eq(s.people.doNotContact, true),
+        or(...matches),
+      ),
+    )
+    .limit(1);
+  return !!found;
+}
+
 export async function clearApprovals(
   db: Reader,
   principal: Principal,
@@ -232,4 +307,20 @@ export async function activeCompany(
   )
     throw new DomainError("NOT_FOUND", 404);
   return company;
+}
+export async function shareLockStage(
+  tx: Transaction,
+  organizationId: string,
+  stageId: string,
+) {
+  await tx
+    .select({ id: s.stages.id })
+    .from(s.stages)
+    .where(
+      and(
+        eq(s.stages.id, stageId),
+        eq(s.stages.organizationId, organizationId),
+      ),
+    )
+    .for("share");
 }

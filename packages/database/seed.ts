@@ -331,12 +331,23 @@ export async function seedDemo(db: Database) {
     await tx
       .insert(s.user)
       .values([
-        { id: demoUser, name: "Alex Morgan", email: "alex@example.test" },
-        { id: "demo-teammate", name: "Sam Rivera", email: "sam@example.test" },
+        {
+          id: demoUser,
+          name: "Alex Morgan",
+          email: "alex@example.test",
+          emailVerified: true,
+        },
+        {
+          id: "demo-teammate",
+          name: "Sam Rivera",
+          email: "sam@example.test",
+          emailVerified: true,
+        },
         {
           id: "demo-restricted",
           name: "Restricted member",
           email: "restricted@example.test",
+          emailVerified: true,
         },
       ])
       .onConflictDoNothing();
@@ -366,24 +377,28 @@ export async function seedDemo(db: Database) {
         organizationId: demoId(1),
         name: "AI Platform",
         color: "#7565cf",
+        colorKey: "violet",
       },
       {
         id: demoId(11),
         organizationId: demoId(1),
         name: "API Marketplace",
         color: "#418ca0",
+        colorKey: "teal",
       },
       {
         id: demoId(12),
         organizationId: demoId(1),
         name: "Services",
         color: "#ca9058",
+        colorKey: "orange",
       },
       {
         id: demoId(13),
         organizationId: demoId(2),
         name: "Design Partners",
         color: "#cf6f93",
+        colorKey: "pink",
       },
     ]);
     await tx.insert(s.productMemberships).values(

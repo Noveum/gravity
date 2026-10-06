@@ -21,9 +21,24 @@ interface DependencyLicense {
   license: string;
   direct: boolean;
   repository: string | null;
+  resolutionSource?: string;
 }
+const reviewedLicenses = JSON.parse(
+  readFileSync("docs/dependency-license-resolutions.json", "utf8"),
+) as Record<string, { license: string; source: string }>;
 const inventory = new Map<string, DependencyLicense>();
 const seen = new Set<string>();
+const directKeys = new Set(
+  Object.keys({
+    ...manifest.dependencies,
+    ...manifest.devDependencies,
+  }).flatMap((name) => {
+    const path = join("node_modules", name, "package.json");
+    if (!existsSync(path)) return [];
+    const dependency = JSON.parse(readFileSync(path, "utf8"));
+    return [`${dependency.name}@${dependency.version}`];
+  }),
+);
 function scan(directory: string) {
   if (!existsSync(directory)) return;
   const canonical = realpathSync(directory);
@@ -45,19 +60,21 @@ function scan(directory: string) {
       const license =
         typeof dependency.license === "string"
           ? dependency.license
-          : dependency.license?.type || "UNDECLARED";
+          : dependency.license?.type ||
+            reviewedLicenses[key]?.license ||
+            "UNDECLARED";
       inventory.set(key, {
         name: dependency.name,
         version: dependency.version,
         license,
-        direct: !!(
-          manifest.dependencies?.[dependency.name] ||
-          manifest.devDependencies?.[dependency.name]
-        ),
+        direct: directKeys.has(key),
         repository:
           typeof dependency.repository === "string"
             ? dependency.repository
             : dependency.repository?.url || null,
+        ...(!dependency.license && reviewedLicenses[key]
+          ? { resolutionSource: reviewedLicenses[key].source }
+          : {}),
       });
     }
     scan(join(path, "node_modules"));
@@ -79,7 +96,10 @@ const missingDirect = Object.keys({
   ...manifest.dependencies,
   ...manifest.devDependencies,
 }).filter(
-  (name) => !dependencies.some((dependency) => dependency.name === name),
+  (name) =>
+    !dependencies.some(
+      (dependency) => dependency.name === name && dependency.direct,
+    ),
 );
 if (missingDirect.length)
   throw new Error(
@@ -94,13 +114,13 @@ if (process.argv.includes("--check")) {
       `Undeclared dependency licenses: ${undeclared.map((item) => `${item.name}@${item.version}`).join(", ")}`,
     );
   console.log(
-    `Checked ${dependencies.length} installed locked packages; all direct packages are present and all declare a license. Review the inventory before distribution; this is not license-policy approval.`,
+    `Checked ${dependencies.length} installed locked packages; all direct packages are present and all declare a license or have an exact-version reviewed resolution. Review the inventory before distribution; this is not license-policy approval.`,
   );
   process.exit(0);
 }
 writeFileSync(
   "docs/dependency-licenses.json",
-  `${JSON.stringify({ coverage: "Declared package licenses for locked dependencies installed on the generating platform. Optional packages for other platforms may be absent; inspect their licenses before distributing those binaries. This inventory does not replace upstream license text and notices.", missingLockedPackages: [...locked].filter((key) => !inventory.has(key)).sort(), dependencies }, null, 2)}\n`,
+  `${JSON.stringify({ coverage: "Declared or exact-version reviewed package licenses for locked dependencies installed on the generating platform. Optional packages for other platforms may be absent; inspect their licenses before distributing those binaries. This inventory does not replace upstream license text and notices.", missingLockedPackages: [...locked].filter((key) => !inventory.has(key)).sort(), dependencies }, null, 2)}\n`,
 );
 console.log(
   `Recorded ${dependencies.length} installed locked packages; ${dependencies.filter((dependency) => dependency.license === "UNDECLARED").length} undeclared licenses.`,

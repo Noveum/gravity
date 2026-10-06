@@ -224,9 +224,10 @@ function relationshipLabel(snapshot: Snapshot, relationshipId: string) {
   const person = snapshot.people.find(
     (item) => item.id === relationship?.personId,
   );
-  const product = snapshot.products.find(
-    (item) => item.id === relationship?.productId,
-  );
+  const product = [
+    ...snapshot.products,
+    ...(snapshot.archivedProducts ?? []),
+  ].find((item) => item.id === relationship?.productId);
   return `${person?.name ?? t.unknown} · ${product?.name ?? ""}`;
 }
 

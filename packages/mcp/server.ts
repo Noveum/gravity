@@ -23,6 +23,8 @@ import {
 } from "../operations/catalog";
 import { downloadAsset } from "../storage/files";
 // Call only after the OAuth library has verified signature, issuer, audience and scope.
+export const mcpRequiredScopes = ["crm:read"];
+export const mcpChallengeScopes = ["crm:read", "crm:write", "crm:send"];
 export async function principalForVerifiedToken(db: Database, claims: unknown) {
   const identity = z
     .object({
@@ -175,6 +177,8 @@ export function mcpHandler(
       }
       for (const operation of operations) {
         if (operation.method !== "GET" && !writable) continue;
+        if (operation.permission === "crm:send" && !canSend) continue;
+        if (operationRequirements(operation).humanSession) continue;
         server.registerTool(
           operation.name,
           {
@@ -238,6 +242,12 @@ export function mcpHandler(
         },
         async () => {
           const { membership } = await authorize(db, principal, organizationId);
+          const available = (name: string) =>
+            operations.some(
+              (operation) =>
+                operation.name === name &&
+                operationAvailable(operation, principal, membership.role),
+            );
           return result({
             readContext: true,
             readCompanyContext: true,
@@ -282,11 +292,16 @@ export function mcpHandler(
               writable &&
               principal.productIds === undefined &&
               membership.role === "admin",
-            workspaceInvitations:
-              writable &&
-              principal.productIds === undefined &&
-              membership.role === "admin",
-            invitationDelivery: "copy-link",
+            workspaceInvitations: {
+              list: available("list_invitations"),
+              revoke: available("revoke_invitation"),
+              create: available("create_invitation"),
+            },
+            invitationDelivery: "email-or-copy-link",
+            accessGrantsNeedHuman: true,
+            humanSessionOperations: operations
+              .filter((item) => operationRequirements(item).humanSession)
+              .map((item) => item.name),
             accountConnectionRequired: true,
             providerConsentRequired: true,
             organizationBound: true,
@@ -328,12 +343,18 @@ export function mcpHandler(
         "list_products",
         {
           description:
-            "List products permitted by the grant and current membership.",
-          inputSchema: z.object({}),
+            "List the active products permitted by the grant and current membership. Set includeArchived to also list archived products, each with archivedAt. Archived products keep their records but accept no new ones.",
+          inputSchema: z.object({ includeArchived: z.boolean().optional() }),
           annotations: { readOnlyHint: true },
         },
-        async () =>
-          result((await authorize(db, principal, organizationId)).products),
+        async ({ includeArchived }) => {
+          const { products } = await authorize(db, principal, organizationId);
+          return result(
+            includeArchived
+              ? products
+              : products.filter((product) => !product.archivedAt),
+          );
+        },
       );
       server.registerTool(
         "list_next_actions",

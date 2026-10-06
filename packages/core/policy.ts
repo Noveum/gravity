@@ -2,6 +2,15 @@ import { and, eq } from "drizzle-orm";
 import type { Database } from "../database/client";
 import { memberships, productMemberships, products } from "../database/schema";
 
+export const productColumns = {
+  id: products.id,
+  organizationId: products.organizationId,
+  name: products.name,
+  colorKey: products.colorKey,
+  archivedAt: products.archivedAt,
+  createdAt: products.createdAt,
+};
+
 export interface Principal {
   userId: string;
   source: "session" | "mcp" | "demo";
@@ -55,7 +64,7 @@ export async function authorize(
     );
   if (!membership) throw new DomainError("FORBIDDEN", 403);
   let allowed = await db
-    .select()
+    .select(productColumns)
     .from(products)
     .where(eq(products.organizationId, organizationId));
   if (membership.role !== "admin") {
@@ -79,4 +88,30 @@ export async function authorize(
   if (productId && !allowed.some((product) => product.id === productId))
     throw new DomainError("FORBIDDEN", 403);
   return { membership, products: allowed };
+}
+export async function authorizeAdministrator(
+  db: Database,
+  principal: Principal,
+  organizationId: string,
+  write = true,
+) {
+  const permission = await authorize(
+    db,
+    principal,
+    organizationId,
+    undefined,
+    write,
+  );
+  if (
+    permission.membership.role !== "admin" ||
+    principal.productIds !== undefined
+  )
+    throw new DomainError("FORBIDDEN", 403);
+  return permission;
+}
+export function uniqueViolation(error: unknown) {
+  const cause = (error as { cause?: { code?: string } }).cause;
+  return (
+    (error as { code?: string }).code === "23505" || cause?.code === "23505"
+  );
 }

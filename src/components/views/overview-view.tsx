@@ -1,6 +1,7 @@
 "use client";
 import { money, overview, totals } from "@crm/core/analytics";
 import type { ClientSnapshot } from "@crm/core/dto";
+import { productColorToken } from "@crm/core/product-colors";
 import t from "@crm/i18n/translations/en.json";
 import {
   ArrowUpRight,
@@ -313,7 +314,9 @@ export function OverviewView() {
                     <span
                       className="product-dot"
                       style={{
-                        background: crm.product(pipeline.productId)?.color,
+                        background: productColorToken(
+                          crm.product(pipeline.productId)?.colorKey ?? "",
+                        ),
                       }}
                     />
                     {crm.product(pipeline.productId)?.name}

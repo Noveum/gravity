@@ -1,11 +1,12 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import { ArrowRight, Check } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { errorText, requestJson } from "./client-api";
 import { GravityMark } from "./gravity-logo";
 import { submitOnSaveKey } from "./modal-lifecycle";
 import { Preferences } from "./preferences";
+import { TimeZoneSelect } from "./time-zone-select";
 import {
   type WorkspaceResult,
   workspaceDestination,
@@ -20,18 +21,7 @@ export function WorkspaceSetup({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [timezone, setTimezone] = useState("UTC");
-  const [zones, setZones] = useState(["UTC"]);
   const submitting = useRef(false);
-  useEffect(() => {
-    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    setZones(
-      [
-        ...new Set(["UTC", detected, ...Intl.supportedValuesOf("timeZone")]),
-      ].sort(),
-    );
-    setTimezone(detected);
-  }, []);
   return (
     <main className="setup-page">
       <header className="setup-brand">
@@ -109,20 +99,7 @@ export function WorkspaceSetup({
                 {t.firstProduct}
                 <input name="productName" required maxLength={100} />
               </label>
-              <label>
-                {t.organizationTimezone}
-                <select
-                  name="timezone"
-                  value={timezone}
-                  onChange={(event) => setTimezone(event.target.value)}
-                >
-                  {zones.map((zone) => (
-                    <option key={zone} value={zone}>
-                      {zone}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <TimeZoneSelect />
             </fieldset>
             <p className="setup-included">
               <Check size={14} />

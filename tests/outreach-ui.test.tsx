@@ -129,6 +129,53 @@ describe("outreach routes and tabs", () => {
     ]);
     expect(within(followUp2).getByText(t.overdue)).toBeTruthy();
   });
+
+  test("a touch delivered twice by a reload renders once in its list", async () => {
+    await harness.local.db
+      .update(s.enrollments)
+      .set({ status: "running", pauseReason: null })
+      .where(eq(s.enrollments.id, demoId(500)));
+    const respond = vi.mocked(requestJson).getMockImplementation();
+    if (!respond) throw new Error("missing harness responder");
+    vi.mocked(requestJson).mockImplementation(async (url, init) => {
+      const value = await respond(url, init);
+      if (!String(url).startsWith("/api/outreach?operation=due")) return value;
+      const due = value as {
+        groups: { followUp: number; touches: unknown[] }[];
+      };
+      return {
+        ...due,
+        groups: due.groups.map((group) => ({
+          ...group,
+          touches: [...group.touches, ...group.touches],
+        })),
+      };
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await mountCrm(harness, "/outreach/today");
+      await waitFor(() =>
+        expect(groups()).toEqual([
+          `${t.followUpGroups[0]}: 1`,
+          `${t.followUpGroups[1]}: 1`,
+          `${t.followUpGroups[2]}: 2`,
+        ]),
+      );
+      const followUp2 = screen.getByRole("group", {
+        name: `${t.followUpGroups[2]}: 2`,
+      });
+      expect(
+        within(followUp2).getAllByRole("button", {
+          name: new RegExp(t.followUpGroups[2]),
+        }),
+      ).toHaveLength(2);
+      expect(
+        errors.mock.calls.some((call) => String(call[0]).includes("same key")),
+      ).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
+  });
 });
 
 describe("touch rows, the draft drawer and paused work", () => {

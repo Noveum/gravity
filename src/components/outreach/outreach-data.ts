@@ -21,6 +21,38 @@ interface Loaded {
 
 const remembered = new Map<string, Loaded>();
 
+function distinct<T extends { id: string }>(rows: readonly T[]) {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  });
+}
+function distinctDue(due: Due): Due {
+  const seen = new Set<string>();
+  return {
+    ...due,
+    groups: due.groups.map((group) => ({
+      ...group,
+      touches: group.touches.filter((touch) => {
+        if (seen.has(touch.id)) return false;
+        seen.add(touch.id);
+        return true;
+      }),
+    })),
+  };
+}
+function distinctQueue(queue: Queue): Queue {
+  return {
+    ...queue,
+    drafts: distinct(queue.drafts),
+    approved: distinct(queue.approved),
+    sent: distinct(queue.sent),
+    paused: distinct(queue.paused),
+  };
+}
+
 export type OutreachResult<T> =
   | { ok: true; result: T }
   | {
@@ -82,7 +114,12 @@ export function useOutreachData() {
         requestJson<Queue>(`/api/outreach?operation=queue&${scope}`),
       ]);
       if (current !== generation.current) return;
-      const next = { key, due, queue, failed: false };
+      const next = {
+        key,
+        due: distinctDue(due),
+        queue: distinctQueue(queue),
+        failed: false,
+      };
       remembered.set(key, next);
       setLoaded(next);
     } catch (error) {

@@ -20,12 +20,12 @@ test("all CRM and authentication tables have RLS with only the trusted server po
     SELECT relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'r'
   `);
-  expect(tables.rows).toHaveLength(45);
+  expect(tables.rows).toHaveLength(47);
   expect(tables.rows.every((table) => table.relrowsecurity)).toBe(true);
   const policies = await local.client.query<{ roles: string[] }>(`
     SELECT roles FROM pg_policies WHERE schemaname = 'public'
   `);
-  expect(policies.rows).toHaveLength(45);
+  expect(policies.rows).toHaveLength(47);
   expect(
     policies.rows.every((policy) => policy.roles.join() === "gravity_app"),
   ).toBe(true);
@@ -38,6 +38,9 @@ test("browser roles cannot read CRM, sessions, or signing keys even if table gra
       "session",
       "jwks",
       "provider_configurations",
+      "invitations",
+      "file_entry",
+      "file_upload",
     ]) {
       await local.client.exec(
         `GRANT SELECT, INSERT ON public.${table} TO ${role}`,
@@ -77,7 +80,7 @@ test("runtime role holds read and write grants on every public table", async () 
       WHERE n.nspname = 'public' AND c.relkind = 'r'
       ORDER BY c.relname
     `);
-    expect(tables.rows).toHaveLength(45);
+    expect(tables.rows).toHaveLength(47);
     expect(
       tables.rows
         .filter((table) => !table.granted)
@@ -144,4 +147,30 @@ test("managed database connections verify certificates and bound serverless conn
   expect(() => databaseOptions("not-a-url-containing-secret", {})).toThrow(
     "DATABASE_URL_INVALID",
   );
+});
+
+test("file migration removes inherited browser and bypass-RLS service grants", async () => {
+  const { PGlite } = await import("@electric-sql/pglite");
+  const { drizzle } = await import("drizzle-orm/pglite");
+  const { migrate } = await import("drizzle-orm/pglite/migrator");
+  const client = new PGlite();
+  try {
+    await client.exec(`
+      CREATE ROLE anon NOLOGIN;
+      CREATE ROLE authenticated NOLOGIN;
+      CREATE ROLE service_role NOLOGIN BYPASSRLS;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+    `);
+    await migrate(drizzle(client), { migrationsFolder: "drizzle" });
+    for (const role of ["anon", "authenticated", "service_role"])
+      for (const table of ["file_entry", "file_upload"]) {
+        const result = await client.query<{ allowed: boolean }>(
+          "SELECT has_table_privilege($1, $2, 'SELECT,INSERT,UPDATE,DELETE') AS allowed",
+          [role, `public.${table}`],
+        );
+        expect(result.rows).toEqual([{ allowed: false }]);
+      }
+  } finally {
+    await client.close();
+  }
 });

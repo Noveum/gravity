@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   date,
@@ -15,6 +16,10 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import {
+  defaultProductColorKey,
+  productColorKeys,
+} from "../core/product-colors";
 import type { RelationshipDetails } from "../core/relationship-context";
 import { serverAccessPolicy } from "./access-policy";
 
@@ -44,6 +49,10 @@ export const organizations = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull().unique(),
     timezone: text("timezone").notNull().default("UTC"),
+    allowedEmailDomains: jsonb("allowed_email_domains")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     createdAt: createdAt(),
   },
   () => [serverAccessPolicy()],
@@ -70,12 +79,20 @@ export const products = pgTable(
     organizationId: organizationId(),
     name: text("name").notNull(),
     color: text("color").notNull().default("#7565cf"),
+    colorKey: text("color_key", { enum: productColorKeys })
+      .notNull()
+      .default(defaultProductColorKey),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
     serverAccessPolicy(),
     unique().on(t.organizationId, t.id),
     unique().on(t.organizationId, t.name),
+    check(
+      "product_color_key",
+      sql`${t.colorKey} IN (${sql.raw(productColorKeys.map((key) => `'${key}'`).join(", "))})`,
+    ),
   ],
 ).enableRLS();
 export const productMemberships = pgTable(
@@ -120,6 +137,14 @@ export const invitations = pgTable(
   (t) => [
     serverAccessPolicy(),
     index("invitations_organization_idx").on(t.organizationId),
+    uniqueIndex("invitations_pending_email")
+      .on(t.organizationId, t.email)
+      .where(sql`${t.acceptedAt} IS NULL AND ${t.revokedAt} IS NULL`),
+    check("invitation_email_lowercase", sql`${t.email} = lower(${t.email})`),
+    check(
+      "invitation_single_outcome",
+      sql`${t.acceptedAt} IS NULL OR ${t.revokedAt} IS NULL`,
+    ),
   ],
 ).enableRLS();
 export const companies = pgTable(
@@ -184,6 +209,9 @@ export const people = pgTable(
       columns: [t.organizationId, t.companyId],
       foreignColumns: [companies.organizationId, companies.id],
     }),
+    uniqueIndex("people_organization_linkedin_url")
+      .on(t.organizationId, sql`lower(${t.linkedinUrl})`)
+      .where(sql`${t.linkedinUrl} <> ''`),
   ],
 ).enableRLS();
 export const relationships = pgTable(
@@ -287,6 +315,7 @@ export const sequences = pgTable(
         }[]
       >()
       .notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => [
     serverAccessPolicy(),
@@ -1192,5 +1221,112 @@ export const integrationReceipts = pgTable(
       columns: [t.organizationId, t.connectionId],
       foreignColumns: [connections.organizationId, connections.id],
     }),
+  ],
+).enableRLS();
+
+export const fileEntry = pgTable(
+  "file_entry",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    parentId: uuid("parent_id"),
+    ownerId: text("owner_id").notNull(),
+    name: text("name").notNull(),
+    kind: text("kind").notNull(),
+    visibility: text("visibility").notNull().default("private"),
+    grants: jsonb("grants")
+      .$type<import("../files/validators").FileGrant[]>()
+      .notNull()
+      .default([]),
+    publicToken: text("public_token").notNull(),
+    body: text("body"),
+    storageKey: text("storage_key"),
+    mimeType: text("mime_type"),
+    size: bigint("size", { mode: "number" }).notNull().default(0),
+    syncId: integer("sync_id").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique("file_entry_scope_id").on(t.organizationId, t.productId, t.id),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.ownerId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.parentId],
+      foreignColumns: [t.organizationId, t.productId, t.id],
+    }).onDelete("cascade"),
+    index("file_entry_parent_idx").on(
+      t.organizationId,
+      t.productId,
+      t.parentId,
+    ),
+    uniqueIndex("file_entry_name_unique").on(
+      t.organizationId,
+      t.productId,
+      sql`coalesce(${t.parentId}::text, '')`,
+      t.ownerId,
+      sql`lower(${t.name})`,
+    ),
+    uniqueIndex("file_entry_public_token_unique").on(t.publicToken),
+    check("file_entry_kind", sql`${t.kind} in ('folder','markdown','file')`),
+    check(
+      "file_entry_visibility",
+      sql`${t.visibility} in ('private','workspace','public','shared','inherit')`,
+    ),
+    check(
+      "file_entry_inherit_parent",
+      sql`${t.visibility} <> 'inherit' or ${t.parentId} is not null`,
+    ),
+    check(
+      "file_entry_no_self_parent",
+      sql`${t.parentId} is distinct from ${t.id}`,
+    ),
+    check("file_entry_size", sql`${t.size} between 0 and 104857600`),
+  ],
+).enableRLS();
+export const fileUpload = pgTable(
+  "file_upload",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    ownerId: text("owner_id").notNull(),
+    parentId: uuid("parent_id"),
+    name: text("name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: bigint("size", { mode: "number" }).notNull(),
+    storageKey: text("storage_key").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.ownerId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.parentId],
+      foreignColumns: [
+        fileEntry.organizationId,
+        fileEntry.productId,
+        fileEntry.id,
+      ],
+    }).onDelete("cascade"),
+    check("file_upload_size", sql`${t.size} between 0 and 104857600`),
   ],
 ).enableRLS();

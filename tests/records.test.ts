@@ -840,3 +840,44 @@ describe("the record editing migration", () => {
     }
   });
 });
+
+test("an edit cannot copy another person's LinkedIn profile in any spelling", async () => {
+  const owner = demoId(201);
+  await local.db
+    .update(s.people)
+    .set({ linkedinUrl: "https://www.linkedin.com/in/fictional-copy/" })
+    .where(eq(s.people.id, owner));
+  for (const linkedinUrl of [
+    "https://www.linkedin.com/in/fictional-copy/",
+    "https://www.linkedin.com/in/Fictional-Copy",
+    "https://linkedin.com/in/fictional-copy",
+    "https://uk.linkedin.com/in/fictional-copy/?trk=share",
+    "https://www.linkedin.com/in/fictional-copy#about",
+  ]) {
+    const current = await person(mira);
+    await expect(
+      records.updatePerson(
+        admin,
+        edit(mira, current.version, { name: current.name, linkedinUrl }),
+      ),
+    ).rejects.toMatchObject({ code: "PERSON_EXISTS", status: 409 });
+  }
+  expect((await person(mira)).linkedinUrl).not.toContain("fictional-copy");
+  const holder = await person(owner);
+  await expect(
+    records.updatePerson(
+      admin,
+      personUpdateSchema.parse({
+        organizationId: org,
+        personId: owner,
+        version: holder.version,
+        name: holder.name,
+        title: holder.title,
+        email: holder.email,
+        linkedinUrl: holder.linkedinUrl,
+      }),
+    ),
+  ).resolves.toMatchObject({
+    linkedinUrl: "https://www.linkedin.com/in/fictional-copy/",
+  });
+});

@@ -25,6 +25,12 @@ export async function GET() {
       sql`SELECT owner_id, probability, expected_close_date, closed_at FROM public.opportunities LIMIT 0`,
     );
     await assertDatabaseSchema(db);
+    await db.execute(
+      sql`SELECT 1 / (to_regclass('public.invitations_pending_email') IS NOT NULL)::int`,
+    );
+    await db.execute(
+      sql`SELECT 1 / (to_regclass('public.people_organization_linkedin_url') IS NOT NULL)::int`,
+    );
     isReady = true;
   } catch {
     // Errors can contain SQL, URLs or credentials. Log only bounded status.

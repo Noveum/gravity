@@ -92,8 +92,8 @@ export function MemberAccessDialog({
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [link, setLink] = useState("");
+  const [emailStatus, setEmailStatus] = useState<EmailStatus>("not_configured");
   const [copied, setCopied] = useState(false);
-  const [remove, setRemove] = useState(false);
   useModalLifecycle(modal);
   return (
     <dialog
@@ -116,6 +116,7 @@ export function MemberAccessDialog({
       {link ? (
         <div className="invite-result">
           <p role="status">{t.inviteReady.replace("{email}", email)}</p>
+          <p className="muted">{invitationEmailNote(emailStatus, email)}</p>
           <label className="field">
             {t.invitationLink}
             <input
@@ -159,11 +160,7 @@ export function MemberAccessDialog({
             try {
               const result = await crm.send(
                 {
-                  operation: member
-                    ? remove
-                      ? "member-remove"
-                      : "member-access"
-                    : "invitation",
+                  operation: member ? "member-access" : "invitation",
                   organizationId: crm.organizationId,
                   ...(member ? { userId: member.id } : { email }),
                   role,
@@ -183,9 +180,8 @@ export function MemberAccessDialog({
                   setError(t.errors.INTERNAL_ERROR);
                   return;
                 }
-                setLink(
-                  `${window.location.origin}/invite/${parsed.data.token}`,
-                );
+                setEmailStatus(parsed.data.emailStatus);
+                setLink(parsed.data.acceptUrl);
               }
             } finally {
               submitting.current = false;
@@ -214,41 +210,18 @@ export function MemberAccessDialog({
             productIds={productIds}
             setProductIds={setProductIds}
             products={crm.sourceData.products}
-            disabled={busy || remove}
+            disabled={busy}
           />
-          {member && member.id !== crm.userId && (
-            <fieldset className="product-access" disabled={busy}>
-              <legend>{t.removeMember}</legend>
-              <p className="muted">{t.removeMemberDetail}</p>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={remove}
-                  onChange={(event) => setRemove(event.target.checked)}
-                />
-                {t.confirmRemoveMember}
-              </label>
-            </fieldset>
-          )}
           <div className="dialog-actions">
             <button type="button" onClick={onClose} disabled={busy}>
               {t.cancel}
             </button>
             <button
               type="submit"
-              className={remove ? "danger" : "primary"}
-              disabled={
-                busy ||
-                (!remove && role === "member" && productIds.length === 0)
-              }
+              className="primary"
+              disabled={busy || (role === "member" && productIds.length === 0)}
             >
-              {busy
-                ? t.saving
-                : remove
-                  ? t.removeMember
-                  : member
-                    ? t.saveChanges
-                    : t.createInvitation}
+              {busy ? t.saving : member ? t.saveChanges : t.createInvitation}
               <ShortcutHint id="save" />
             </button>
           </div>
@@ -263,6 +236,16 @@ export function MemberAccessDialog({
   );
 }
 
-const invitationResult = z.object({
-  token: z.string().regex(/^[a-f0-9]{64}$/),
+const emailStatuses = ["sent", "not_configured", "failed"] as const;
+type EmailStatus = (typeof emailStatuses)[number];
+export const invitationResult = z.object({
+  acceptUrl: z.url(),
+  emailStatus: z.enum(emailStatuses),
 });
+export function invitationEmailNote(status: EmailStatus, email: string) {
+  return status === "sent"
+    ? t.invitationEmailed.replace("{email}", email)
+    : status === "failed"
+      ? t.invitationEmailFailed
+      : t.invitationEmailOff;
+}

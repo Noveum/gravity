@@ -3,14 +3,11 @@ import t from "@crm/i18n/translations/en.json";
 import { ChevronsUpDown, Keyboard, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { errorText, requestJson } from "../client-api";
+import { browserNavigation, errorText, requestJson } from "../client-api";
 import { sectionPath } from "../routes";
 import { DropdownMenu, MenuItem, MenuSeparator } from "../ui/dropdown-menu";
 import { initials } from "./workspace-menu";
 
-export const browserNavigation = {
-  assign: (url: string) => window.location.assign(url),
-};
 export async function signOut(demo: boolean) {
   if (!demo)
     await requestJson("/api/auth/sign-out", {

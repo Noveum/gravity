@@ -1,5 +1,10 @@
 import t from "@crm/i18n/translations/en.json";
 
+export const browserNavigation = {
+  assign: (url: string) => window.location.assign(url),
+  replace: (url: string) => window.location.replace(url),
+};
+
 export class RequestError extends Error {
   constructor(
     code: string,
@@ -64,4 +69,5 @@ export interface Organization {
   name: string;
   slug: string;
   timezone: string;
+  allowedEmailDomains?: string[];
 }

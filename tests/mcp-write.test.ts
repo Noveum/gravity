@@ -2,12 +2,17 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { subscribeChanges } from "../packages/core/changes";
 import { CrmService } from "../packages/core/crm";
+import { OutreachService } from "../packages/core/outreach";
 import { authorize, type Principal } from "../packages/core/policy";
+import { RecordService } from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import { mcpHandler, principalForGrant } from "../packages/mcp/server";
-import { operations } from "../packages/operations/catalog";
+import {
+  operationRequirements,
+  operations,
+} from "../packages/operations/catalog";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let service: CrmService;
@@ -72,10 +77,19 @@ async function call(
 }
 
 test("MCP discovery exposes every business API with valid schemas and read-only tokens cannot discover writes", async () => {
-  const { result, error } = await rpc("tools/list", {});
+  const { result, error } = await rpc(
+    "tools/list",
+    {},
+    { ...writable, canSend: true },
+  );
   expect(error).toBeUndefined();
   const names = result.tools.map((tool: { name: string }) => tool.name);
   expect(new Set(names).size).toBe(names.length);
+  expect(names).toHaveLength(
+    operations.filter((item) => !operationRequirements(item).humanSession)
+      .length + 8,
+  );
+  expect(names).toHaveLength(108);
   expect(
     new Set(
       operations.map((item) => `${item.api}:${item.method}:${item.operation}`),
@@ -85,6 +99,10 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
     const tool = result.tools.find(
       (tool: { name: string }) => tool.name === operation.name,
     );
+    if (operationRequirements(operation).humanSession) {
+      expect(tool).toBeUndefined();
+      continue;
+    }
     expect(tool).toBeTruthy();
     expect(tool.inputSchema.type).toBe("object");
     expect(tool.inputSchema.properties).not.toHaveProperty("organizationId");
@@ -101,6 +119,24 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
   expect(capabilities.operations).toHaveLength(operations.length);
   expect(capabilities.sendMessages).toBe(false);
   expect(capabilities.contractSigningWorkflow).toBe(false);
+  expect(capabilities.workspaceInvitations).toEqual({
+    list: true,
+    revoke: true,
+    create: false,
+  });
+  const readerCapabilities = await call(
+    "get_capabilities",
+    {},
+    {
+      ...writable,
+      readOnly: true,
+    },
+  );
+  expect(readerCapabilities.workspaceInvitations).toEqual({
+    list: true,
+    revoke: false,
+    create: false,
+  });
 });
 test("MCP publishes instructions, workflow prompts and an effective operation permission audit", async () => {
   const initialized = await rpc("initialize", {
@@ -110,6 +146,19 @@ test("MCP publishes instructions, workflow prompts and an effective operation pe
   });
   expect(initialized.result.instructions).toContain("get_permission_audit");
   expect(initialized.result.instructions).toContain("idempotencyKey");
+  expect(initialized.result.instructions).not.toMatch(/not implemented\.$/);
+  expect(initialized.result.instructions).not.toContain(
+    "member administration are not implemented",
+  );
+  for (const phrase of [
+    "all-products grant",
+    "invitations",
+    "Granting access",
+    "accept_invitation",
+    "resolve_delivery",
+    "includeArchived",
+  ])
+    expect(initialized.result.instructions).toContain(phrase);
   const prompts = await rpc("prompts/list", {});
   expect(
     prompts.result.prompts.map((prompt: { name: string }) => prompt.name),
@@ -188,7 +237,91 @@ test("ordinary CRM write permission cannot perform outbound sending", async () =
     version: 1,
     idempotencyKey: "stable-key-without-permission",
   });
-  expect(blocked.error).toContain("SEND_PERMISSION_REQUIRED");
+  expect(blocked.error).toMatch(/send_touch/);
+  expect(blocked.result).toBeUndefined();
+});
+test("each assistant scope combination lists only its tools and refuses the rest", async () => {
+  const sendNames = operations
+    .filter((item) => item.permission === "crm:send")
+    .map((item) => item.name);
+  const writeNames = operations
+    .filter((item) => item.method !== "GET" && !item.permission)
+    .map((item) => item.name);
+  const readNames = operations
+    .filter((item) => item.method === "GET")
+    .map((item) => item.name);
+  expect(sendNames).toEqual([
+    "send_touch",
+    "send_action",
+    "reconcile_delivery",
+  ]);
+  const humanNames = operations
+    .filter((item) => operationRequirements(item).humanSession)
+    .map((item) => item.name);
+  expect(humanNames.sort()).toEqual([
+    "accept_invitation",
+    "create_invitation",
+    "preview_invitation",
+    "reactivate_member",
+    "resolve_delivery",
+  ]);
+  const resolve = operations.find((item) => item.name === "resolve_delivery");
+  if (!resolve) throw new Error("resolve_delivery missing");
+  expect(operationRequirements(resolve)).toMatchObject({
+    administrator: true,
+    allProducts: true,
+    humanSession: true,
+  });
+  const listed = async (principal: Principal) =>
+    (await rpc("tools/list", {}, principal)).result.tools.map(
+      (tool: { name: string }) => tool.name,
+    );
+  const reader = { ...writable, readOnly: true, canSend: false };
+  const writer = { ...writable, readOnly: false, canSend: false };
+  const sender = { ...writable, readOnly: false, canSend: true };
+  const readTools = await listed(reader);
+  expect(readTools).toEqual(expect.arrayContaining(readNames));
+  for (const name of [...writeNames, ...sendNames])
+    expect(readTools).not.toContain(name);
+  const writeTools = await listed(writer);
+  expect(writeTools).toEqual(
+    expect.arrayContaining(
+      [...readNames, ...writeNames].filter(
+        (name) => !humanNames.includes(name),
+      ),
+    ),
+  );
+  for (const name of sendNames) expect(writeTools).not.toContain(name);
+  const machineNames = (names: string[]) =>
+    names.filter((name) => !humanNames.includes(name));
+  const senderTools = await listed(sender);
+  expect(senderTools).toEqual(
+    expect.arrayContaining(
+      machineNames([...readNames, ...writeNames, ...sendNames]),
+    ),
+  );
+  for (const tools of [readTools, writeTools, senderTools])
+    for (const name of humanNames) expect(tools).not.toContain(name);
+  const draft = {
+    name: "Scope refusal fixture",
+    productId: demoId(11),
+    email: "scope-refusal@example.test",
+  };
+  expect((await call("create_person", draft, reader)).error).toMatch(
+    /create_person/,
+  );
+  const sendInput = {
+    touchId: demoId(990),
+    connectionId: demoId(991),
+    version: 1,
+    idempotencyKey: "stable-key-for-scope-refusal",
+  };
+  expect((await call("send_touch", sendInput, writer)).error).toMatch(
+    /send_touch/,
+  );
+  expect((await call("send_touch", sendInput, sender)).error).not.toMatch(
+    /SEND_PERMISSION_REQUIRED|not found/i,
+  );
 });
 
 test("MCP rejects approved review tasks before creating a delivery", async () => {
@@ -1018,7 +1151,7 @@ test("MCP may revoke its own assistant grant but never a teammate's or another o
   ).toContain("NOT_FOUND");
   expect(
     (await call("revoke_assistant", { grantId: otherOrg.id })).error,
-  ).toContain("FORBIDDEN");
+  ).toContain("NOT_FOUND");
   expect(await call("revoke_assistant", { grantId: own.id })).toEqual({
     revoked: true,
   });
@@ -1033,7 +1166,7 @@ test("MCP contact policies require current versions and organization-wide grants
     version: before.version,
     cooldownDays: 3,
     dailyCapPerSender: 25,
-    quietHoursStart: 21,
+    quietHoursStart: 19,
     quietHoursEnd: 8,
   };
   expect(
@@ -1138,4 +1271,142 @@ test("MCP exposes typed relationship context and edits it without crm:send", asy
       })
     ).relationship.contextDetails.needs,
   ).toBe("Fictional requirement");
+});
+test("assistants may tighten contact safety but loosening it is human-only", async () => {
+  const human: Principal = { userId: demoUser, source: "session" };
+  const outreach = new OutreachService(local.db);
+  const start = await outreach.contactRules(human, demoId(1));
+  const baseline = await outreach.updateContactRules(human, {
+    organizationId: demoId(1),
+    version: start.version,
+    cooldownDays: 5,
+    dailyCapPerSender: 30,
+    quietHoursStart: 20,
+    quietHoursEnd: 8,
+  });
+  const base = {
+    version: baseline.version,
+    cooldownDays: 5,
+    dailyCapPerSender: 30,
+    quietHoursStart: 20,
+    quietHoursEnd: 8,
+  };
+  for (const looser of [
+    { dailyCapPerSender: 31 },
+    { cooldownDays: 4 },
+    { quietHoursStart: 21 },
+    { quietHoursEnd: 7 },
+    { quietHoursStart: 8, quietHoursEnd: 8 },
+    { quietHoursStart: 22, quietHoursEnd: 9 },
+  ])
+    expect(
+      (await call("update_contact_rules", { ...base, ...looser })).error,
+      JSON.stringify(looser),
+    ).toContain("HUMAN_ACTION_REQUIRED");
+  expect((await outreach.contactRules(human, demoId(1))).version).toBe(
+    baseline.version,
+  );
+  const tightened = await call("update_contact_rules", {
+    ...base,
+    cooldownDays: 6,
+    dailyCapPerSender: 20,
+    quietHoursStart: 19,
+    quietHoursEnd: 9,
+  });
+  expect(tightened).toMatchObject({
+    cooldownDays: 6,
+    dailyCapPerSender: 20,
+    quietHoursStart: 19,
+    quietHoursEnd: 9,
+  });
+  const relaxed = await outreach.updateContactRules(human, {
+    organizationId: demoId(1),
+    version: tightened.version,
+    cooldownDays: 3,
+    dailyCapPerSender: 40,
+    quietHoursStart: 20,
+    quietHoursEnd: 8,
+  });
+  expect(relaxed.dailyCapPerSender).toBe(40);
+  const created = await call("create_person", {
+    productId: demoId(11),
+    name: "Fictional Safety Client",
+    review: false,
+  });
+  const before = await call("get_person", { personId: created.personId });
+  const optedOut = await call("set_contact_preferences", {
+    personId: created.personId,
+    version: before.person.version,
+    doNotContact: true,
+    timeZone: null,
+  });
+  expect(optedOut.doNotContact).toBe(true);
+  expect(
+    (
+      await call("set_contact_preferences", {
+        personId: created.personId,
+        version: optedOut.version,
+        doNotContact: false,
+        timeZone: null,
+      })
+    ).error,
+  ).toContain("HUMAN_ACTION_REQUIRED");
+  const cleared = await outreach.setContactPreferences(human, {
+    organizationId: demoId(1),
+    personId: created.personId,
+    version: optedOut.version,
+    doNotContact: false,
+    timeZone: null,
+  });
+  expect(cleared.doNotContact).toBe(false);
+});
+test("an assistant cannot change where a do-not-contact person is reached", async () => {
+  const created = await call("create_person", {
+    productId: demoId(11),
+    name: "Fictional Opted Out Client",
+    email: "opted-out@example.test",
+    review: false,
+  });
+  const before = await call("get_person", { personId: created.personId });
+  const optedOut = await call("set_contact_preferences", {
+    personId: created.personId,
+    version: before.person.version,
+    doNotContact: true,
+    timeZone: null,
+  });
+  const base = {
+    personId: created.personId,
+    version: optedOut.version,
+    name: "Fictional Opted Out Client",
+    email: "opted-out@example.test",
+    otherEmails: [],
+    linkedinUrl: "",
+  };
+  for (const change of [
+    { email: "new-route@example.test" },
+    { otherEmails: ["second-route@example.test"] },
+    { linkedinUrl: "https://www.linkedin.com/in/opted-out-fixture/" },
+  ])
+    expect(
+      (await call("update_person", { ...base, ...change })).error,
+    ).toContain("HUMAN_ACTION_REQUIRED");
+  const renamed = await call("update_person", {
+    ...base,
+    name: "Fictional Renamed Client",
+  });
+  expect(renamed.name).toBe("Fictional Renamed Client");
+  const edited = await new RecordService(local.db).updatePerson(
+    { userId: demoUser, source: "session" },
+    {
+      organizationId: demoId(1),
+      ...base,
+      version: renamed.version,
+      name: renamed.name,
+      title: "",
+      phone: "",
+      summary: "",
+      email: "new-route@example.test",
+    },
+  );
+  expect(edited.email).toBe("new-route@example.test");
 });

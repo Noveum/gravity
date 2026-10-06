@@ -135,7 +135,7 @@ describe("browsing records", () => {
     expect(list.getByText("Page 1 of 3")).toBeTruthy();
   });
   test("archiving from an action inspector retains the actions list", async () => {
-    await mountCrm(harness, "/actions", true);
+    await mountCrm(harness, "/actions", { compact: true });
     const action = document.querySelector<HTMLElement>(
       "button[data-nav-record]",
     );
@@ -157,11 +157,9 @@ describe("browsing records", () => {
   test.each(["person", "company"] as const)(
     "an open %s editor retains its initial revision after a live refresh",
     async (entity) => {
-      await mountCrm(
-        harness,
-        entity === "person" ? "/people" : "/companies",
-        true,
-      );
+      await mountCrm(harness, entity === "person" ? "/people" : "/companies", {
+        compact: true,
+      });
       const id = entity === "person" ? demoId(201) : demoId(100);
       const name = entity === "person" ? "Jonah Reed" : "Northstar Labs";
       fireEvent.click(screen.getByRole("link", { name }));
@@ -235,7 +233,7 @@ describe("browsing records", () => {
     expect(person.version).toBe(2);
   });
   test("editing from a compact list preserves the complete summary", async () => {
-    await mountCrm(harness, "/people", true);
+    await mountCrm(harness, "/people", { compact: true });
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
     await inspector().findByRole("heading", { name: "Jonah Reed" });
     fireEvent.click(inspector().getByRole("button", { name: t.edit }));

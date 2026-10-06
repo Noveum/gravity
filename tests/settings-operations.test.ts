@@ -173,6 +173,16 @@ describe("update_connection", () => {
   });
 });
 
+test("an owner who lost access to the old product can still move the connection to one they can write", async () => {
+  const stranded = await connection("demo-restricted", demoId(10));
+  await expect(
+    run("update_connection", restricted, {
+      connectionId: stranded.id,
+      productId: demoId(11),
+    }),
+  ).resolves.toMatchObject({ id: stranded.id, productId: demoId(11) });
+});
+
 describe("assistant grants", () => {
   test("admins list every active grant in the workspace with its member", async () => {
     const own = await grant(demoUser);

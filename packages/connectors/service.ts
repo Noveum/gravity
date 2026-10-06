@@ -1050,13 +1050,7 @@ export class IntegrationService {
         )
         .for("update");
       if (!connection?.productId) throw new DomainError("NOT_FOUND", 404);
-      await authorize(
-        tx,
-        principal,
-        input.organizationId,
-        connection.productId,
-        true,
-      );
+      await authorize(tx, principal, input.organizationId, undefined, true);
       if (connection.productId === input.productId) return connection;
       await authorize(
         tx,

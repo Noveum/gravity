@@ -1133,7 +1133,7 @@ export const operations: Operation[] = [
     operation: "update-connection",
     name: "update_connection",
     description:
-      "Change the default product of the acting user's own connection without new provider consent. Future imports file into that product; existing review items keep theirs. The product must be active and writable.",
+      "Change the default product of the acting user's own connection without new provider consent. Future imports file into that product; existing review items keep theirs. The new product must be active and writable by you; access to the old product is not required.",
     schema: updateConnectionInput,
     publish: false,
     run: (c, input) => integrations(c).updateConnection(c.principal, input),

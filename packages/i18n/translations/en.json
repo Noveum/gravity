@@ -1628,5 +1628,15 @@
   "allowContact": "Allow contact",
   "markDoNotContact": "Mark do not contact",
   "markedDoNotContact": "Marked do not contact",
-  "contactAllowed": "Contact allowed again"
+  "contactAllowed": "Contact allowed again",
+  "sendingAccounts": "Sending accounts",
+  "sendingDetail": "Approved messages go out from these accounts. Each connection files imported conversations into its default product.",
+  "otherConnections": "Other connections",
+  "connectionProductDetail": "Imported meetings and notes file into the default product. Existing review items keep theirs.",
+  "connectionProductFor": "Default product for {name}",
+  "connectionProductSaved": "Default product changed",
+  "canSendBadge": "Can send",
+  "cannotSendBadge": "Cannot send yet",
+  "sendingEmpty": "You have no connected accounts in this workspace.",
+  "openConnections": "Open Connections"
 }

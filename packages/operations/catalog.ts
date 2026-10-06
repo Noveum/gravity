@@ -17,6 +17,7 @@ import {
   IntegrationService,
   integrationOverviewInput,
   integrationScope,
+  updateConnectionInput,
 } from "../connectors/service";
 import { publishChange } from "../core/changes";
 import {
@@ -1032,6 +1033,17 @@ export const operations: Operation[] = [
   operation({
     api: "integrations",
     method: "POST",
+    operation: "update-connection",
+    name: "update_connection",
+    description:
+      "Change the default product of the acting user's own connection without new provider consent. Future imports file into that product; existing review items keep theirs. The product must be active and writable.",
+    schema: updateConnectionInput,
+    publish: false,
+    run: (c, input) => integrations(c).updateConnection(c.principal, input),
+  }),
+  operation({
+    api: "integrations",
+    method: "POST",
     operation: "link",
     name: "link_import",
     description:
@@ -1248,6 +1260,7 @@ const ownerOperations = new Set([
   "connect_integration",
   "sync_integration",
   "disconnect_integration",
+  "update_connection",
   "link_import",
   "ignore_import",
   "configure_unipile",

@@ -13,6 +13,7 @@ import { OutreachSettings } from "../settings/outreach-settings";
 import { PipelineSettings } from "../settings/pipeline-settings";
 import { PreferenceSettings } from "../settings/preference-settings";
 import { ProductSettings } from "../settings/product-settings";
+import { SendingSettings } from "../settings/sending-settings";
 import { SettingsNav } from "../settings/settings-nav";
 import { WorkspaceSettings } from "../settings/workspace-settings";
 
@@ -23,6 +24,7 @@ const panels: Partial<Record<SettingsSection, ComponentType>> = {
   members: MemberSettings,
   outreach: OutreachSettings,
   connections: ConnectionSettings,
+  sending: SendingSettings,
   assistants: AssistantSettings,
   preferences: PreferenceSettings,
 };

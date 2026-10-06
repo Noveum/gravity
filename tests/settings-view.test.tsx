@@ -2,6 +2,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { gmailSendScope } from "../packages/connectors/outbound-provider";
 import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
@@ -522,5 +523,70 @@ describe("outreach settings", () => {
     expect(
       within(region()).getByRole("button", { name: t.markDoNotContact }),
     ).toBeTruthy();
+  });
+});
+
+describe("sending settings", () => {
+  test("the owner sees which accounts can send and moves a connection to another product through update_connection", async () => {
+    const [mailbox] = await harness.local.db
+      .insert(s.connections)
+      .values({
+        organizationId: demoId(1),
+        ownerId: "demo-you",
+        provider: "gmail",
+        productId: demoId(10),
+        externalAccountId: "fixture-mailbox",
+        displayName: "fixture@example.test",
+        status: "connected",
+        scopes: [gmailSendScope],
+      })
+      .returning();
+    await harness.local.db.insert(s.connections).values({
+      organizationId: demoId(1),
+      ownerId: "demo-you",
+      provider: "calendar",
+      productId: demoId(11),
+      externalAccountId: "fixture-calendar",
+      displayName: "calendar@example.test",
+      status: "connected",
+    });
+    await mountSettings(harness, "/settings/sending");
+    const sending = await within(panel("sending")).findByRole("group", {
+      name: t.sendingAccounts,
+    });
+    const row = await within(sending).findByRole("listitem", {
+      name: "fixture@example.test",
+    });
+    expect(within(row).getByText(t.canSendBadge)).toBeTruthy();
+    expect(
+      within(panel("sending")).getByRole("listitem", {
+        name: "calendar@example.test",
+      }),
+    ).toBeTruthy();
+    fireEvent.change(
+      within(row).getByLabelText(
+        t.connectionProductFor.replace("{name}", "fixture@example.test"),
+      ),
+      { target: { value: demoId(11) } },
+    );
+    await waitFor(() =>
+      expect(lastCall(harness, "update_connection")?.body).toMatchObject({
+        connectionId: mailbox?.id,
+        productId: demoId(11),
+      }),
+    );
+    const [stored] = await harness.local.db
+      .select()
+      .from(s.connections)
+      .where(eq(s.connections.id, mailbox?.id ?? ""));
+    expect(stored?.productId).toBe(demoId(11));
+  });
+
+  test("a member without connections is pointed to Connections", async () => {
+    await mountSettings(harness, "/settings/sending", member);
+    expect(
+      await within(panel("sending")).findByText(t.sendingEmpty),
+    ).toBeTruthy();
+    expect(within(panel("sending")).queryByRole("combobox")).toBeNull();
   });
 });

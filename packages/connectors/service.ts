@@ -16,6 +16,7 @@ import { appUrl } from "../auth/options";
 import { publishChange } from "../core/changes";
 import { pauseForReply, peopleByEmail } from "../core/outreach";
 import { authorize, DomainError, type Principal } from "../core/policy";
+import { assertProductActive } from "../core/products";
 import { assertActiveRelationships } from "../core/visibility";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
@@ -62,6 +63,11 @@ export const connectInput = integrationScope.extend({
   apiKey: z.string().min(10).max(2000).optional(),
   connectionId: z.uuid().optional(),
   allowSending: z.boolean().default(true),
+});
+export const updateConnectionInput = z.object({
+  organizationId: z.uuid(),
+  connectionId: z.uuid(),
+  productId: z.uuid(),
 });
 const accountActor = (principal: Principal) => {
   if (principal.source === "session") return;
@@ -1015,6 +1021,58 @@ export class IntegrationService {
         relationshipId,
         linkedByMember,
       );
+  }
+  async updateConnection(
+    principal: Principal,
+    input: z.infer<typeof updateConnectionInput>,
+  ) {
+    accountActor(principal);
+    const updated = await this.db.transaction(async (tx) => {
+      const [connection] = await tx
+        .select()
+        .from(s.connections)
+        .where(
+          and(
+            eq(s.connections.id, input.connectionId),
+            eq(s.connections.organizationId, input.organizationId),
+            eq(s.connections.ownerId, principal.userId),
+          ),
+        )
+        .for("update");
+      if (!connection?.productId) throw new DomainError("NOT_FOUND", 404);
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        connection.productId,
+        true,
+      );
+      if (connection.productId === input.productId) return connection;
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
+      await assertProductActive(tx, input.organizationId, input.productId);
+      const [saved] = await tx
+        .update(s.connections)
+        .set({ productId: input.productId })
+        .where(eq(s.connections.id, connection.id))
+        .returning();
+      if (!saved) throw new DomainError("NOT_FOUND", 404);
+      await tx.insert(s.changeEvents).values({
+        organizationId: input.organizationId,
+        productId: input.productId,
+        actorId: principal.userId,
+        type: "connection.product_changed",
+        entityId: connection.id,
+      });
+      return saved;
+    });
+    publishChange(input.organizationId);
+    return publicConnection(updated);
   }
   async disconnect(principal: Principal, organizationId: string, id: string) {
     const connection = await this.own(principal, organizationId, id);

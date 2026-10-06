@@ -609,6 +609,35 @@ describe("sending settings", () => {
     expect(stored?.productId).toBe(demoId(11));
   });
 
+  test("a connection on an archived product shows that product's name as a disabled choice", async () => {
+    await harness.local.db.insert(s.connections).values({
+      organizationId: demoId(1),
+      ownerId: "demo-you",
+      provider: "gmail",
+      productId: demoId(10),
+      externalAccountId: "archived-mailbox",
+      displayName: "archived@example.test",
+      status: "connected",
+      scopes: [gmailSendScope],
+    });
+    const [archived] = await harness.local.db
+      .update(s.products)
+      .set({ archivedAt: new Date() })
+      .where(eq(s.products.id, demoId(10)))
+      .returning();
+    await mountSettings(harness, "/settings/sending");
+    const row = await within(panel("sending")).findByRole("listitem", {
+      name: "archived@example.test",
+    });
+    const select = within(row).getByLabelText(
+      t.connectionProductFor.replace("{name}", "archived@example.test"),
+    ) as HTMLSelectElement;
+    const current = select.selectedOptions[0];
+    expect(current?.textContent).toBe(archived?.name);
+    expect(current?.disabled).toBe(true);
+    expect(within(row).queryByText(t.unknown)).toBeNull();
+  });
+
   test("a member without connections is pointed to Connections", async () => {
     await mountSettings(harness, "/settings/sending", member);
     expect(

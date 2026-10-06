@@ -21,14 +21,19 @@ const sendingProviders = new Set(["gmail", "linkedin"]);
 function ConnectionRow({
   connection,
   products,
+  archivedProducts,
   onMove,
 }: {
   connection: PublicConnection;
   products: { id: string; name: string }[];
+  archivedProducts: { id: string; name: string }[];
   onMove: (productId: string) => void;
 }) {
   const sender = sendingProviders.has(connection.provider);
   const known = products.some((product) => product.id === connection.productId);
+  const archived = archivedProducts.find(
+    (product) => product.id === connection.productId,
+  );
   return (
     <li className="settings-row" aria-label={connection.displayName}>
       <span className="settings-row-main">
@@ -57,7 +62,9 @@ function ConnectionRow({
           onChange={(event) => onMove(event.target.value)}
         >
           {!known && (
-            <option value={connection.productId ?? ""}>{t.unknown}</option>
+            <option value={connection.productId ?? ""} disabled={!!archived}>
+              {archived?.name ?? t.unknown}
+            </option>
           )}
           {products.map((product) => (
             <option key={product.id} value={product.id}>
@@ -105,6 +112,7 @@ export function SendingSettings() {
           key={`${connection.id}:${connection.productId}`}
           connection={connection}
           products={products}
+          archivedProducts={crm.sourceData.archivedProducts ?? []}
           onMove={(productId) => void move(connection.id, productId)}
         />
       ))}

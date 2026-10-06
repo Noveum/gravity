@@ -924,7 +924,7 @@ test("MCP may revoke its own assistant grant but never a teammate's or another o
   ).toContain("NOT_FOUND");
   expect(
     (await call("revoke_assistant", { grantId: otherOrg.id })).error,
-  ).toContain("FORBIDDEN");
+  ).toContain("NOT_FOUND");
   expect(await call("revoke_assistant", { grantId: own.id })).toEqual({
     revoked: true,
   });

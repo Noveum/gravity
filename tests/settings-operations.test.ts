@@ -210,3 +210,53 @@ describe("assistant grants", () => {
     expect(events.map((event) => event.type)).toContain("assistant.revoked");
   });
 });
+
+describe("revoke_assistant scope and repeat calls", () => {
+  test("a grant outside the named workspace is not found and stays active", async () => {
+    const elsewhere = await grant(demoUser, demoId(2));
+    await expect(
+      run("revoke_assistant", owner, { grantId: elsewhere.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await grantActive(elsewhere.id)).toBe(true);
+  });
+
+  test("an admin of another workspace cannot revoke a grant here", async () => {
+    await local.db
+      .insert(s.memberships)
+      .values({
+        organizationId: demoId(2),
+        userId: "demo-teammate",
+        role: "admin",
+      })
+      .onConflictDoNothing();
+    const here = await grant(demoUser);
+    for (const organizationId of [org, demoId(2)])
+      await expect(
+        find("revoke_assistant").execute(
+          { db: local.db, principal: teammate },
+          { organizationId, grantId: here.id },
+        ),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await grantActive(here.id)).toBe(true);
+  });
+
+  test("revoking an already inactive grant succeeds without another event", async () => {
+    const teammates = await grant("demo-teammate");
+    expect(
+      await run("revoke_assistant", owner, { grantId: teammates.id }),
+    ).toEqual({ revoked: true });
+    expect(
+      await run("revoke_assistant", owner, { grantId: teammates.id }),
+    ).toEqual({ revoked: true });
+    const events = await local.db
+      .select()
+      .from(s.changeEvents)
+      .where(
+        and(
+          eq(s.changeEvents.entityId, teammates.id),
+          eq(s.changeEvents.type, "assistant.revoked"),
+        ),
+      );
+    expect(events).toHaveLength(1);
+  });
+});

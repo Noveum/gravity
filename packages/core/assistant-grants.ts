@@ -60,7 +60,14 @@ export async function revokeAssistantGrant(
   const [grant] = await db
     .select()
     .from(s.mcpGrants)
-    .where(eq(s.mcpGrants.id, input.grantId));
+    .where(
+      and(
+        eq(s.mcpGrants.id, input.grantId),
+        input.organizationId
+          ? eq(s.mcpGrants.organizationId, input.organizationId)
+          : undefined,
+      ),
+    );
   if (!grant) throw new DomainError("NOT_FOUND", 404);
   const own = grant.userId === principal.userId;
   if (own) {
@@ -75,18 +82,21 @@ export async function revokeAssistantGrant(
       throw error;
     }
   }
-  await db.transaction(async (tx) => {
-    await tx
+  const revoked = await db.transaction(async (tx) => {
+    const [changed] = await tx
       .update(s.mcpGrants)
       .set({ active: false })
-      .where(eq(s.mcpGrants.id, grant.id));
+      .where(and(eq(s.mcpGrants.id, grant.id), eq(s.mcpGrants.active, true)))
+      .returning({ id: s.mcpGrants.id });
+    if (!changed) return false;
     await tx.insert(s.changeEvents).values({
       organizationId: grant.organizationId,
       actorId: principal.userId,
       type: "assistant.revoked",
       entityId: grant.id,
     });
+    return true;
   });
-  publishChange(grant.organizationId);
+  if (revoked) publishChange(grant.organizationId);
   return { revoked: true };
 }

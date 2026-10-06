@@ -261,7 +261,7 @@ export class InvitationService {
   }
 
   async list(principal: Principal, organizationId: string) {
-    await authorizeAdministrator(this.db, principal, organizationId);
+    await authorizeAdministrator(this.db, principal, organizationId, false);
     const rows = await this.db
       .select()
       .from(s.invitations)

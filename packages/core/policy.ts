@@ -84,13 +84,14 @@ export async function authorizeAdministrator(
   db: Database,
   principal: Principal,
   organizationId: string,
+  write = true,
 ) {
   const permission = await authorize(
     db,
     principal,
     organizationId,
     undefined,
-    true,
+    write,
   );
   if (
     permission.membership.role !== "admin" ||

@@ -413,3 +413,21 @@ test("accepting skips products archived after the invitation was sent", async ()
     .where(eq(s.productMemberships.userId, invitee.userId));
   expect(grants.map((row) => row.productId)).toEqual([demoId(11)]);
 });
+
+test("a read-only admin can list invitations but cannot change them", async () => {
+  const created = await invite();
+  const reader = { ...agent, readOnly: true };
+  await expect(
+    run<{ invitations: { id: string }[] }>("list_invitations", reader, {
+      organizationId: org,
+    }),
+  ).resolves.toMatchObject({
+    invitations: [expect.objectContaining({ id: created.invitation.id })],
+  });
+  await expect(
+    run("revoke_invitation", reader, {
+      organizationId: org,
+      invitationId: created.invitation.id,
+    }),
+  ).rejects.toMatchObject({ code: "FORBIDDEN" });
+});

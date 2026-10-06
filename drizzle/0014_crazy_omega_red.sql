@@ -18,3 +18,5 @@ ALTER TABLE "invitations" ADD CONSTRAINT "invitations_organization_id_organizati
 ALTER TABLE "invitations" ADD CONSTRAINT "invitations_inviter_id_user_id_fk" FOREIGN KEY ("inviter_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "invitations_organization_idx" ON "invitations" USING btree ("organization_id");--> statement-breakpoint
 CREATE POLICY "gravity_server_access" ON "invitations" AS PERMISSIVE FOR ALL TO "gravity_app" USING (true) WITH CHECK (true);
+--> statement-breakpoint
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.invitations TO gravity_app;

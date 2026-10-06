@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
+import { OrganizationSettingsService } from "../packages/core/organization-settings";
+import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 
@@ -130,4 +132,58 @@ test("preferences save immediately, restore density and show only relevant setti
   expect(within(help).getByText(t.inviteMember)).toBeTruthy();
   expect(within(help).queryByText(t.shortcutLabels.save)).toBeNull();
   expect(within(help).queryByText(t.shortcutLabels.done)).toBeNull();
+});
+
+test("the command palette invites members from settings", async () => {
+  await mountCrm(harness, "/settings");
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  const commands = screen.getByRole("dialog", { name: t.commands });
+  const invite = within(commands).getByRole("option", {
+    name: `${t.inviteMember}C`,
+  });
+  fireEvent.click(invite);
+  expect(screen.getByRole("dialog", { name: t.inviteMember })).toBeTruthy();
+});
+
+test("the sequence command keeps its C hint while the person command has none", async () => {
+  await mountCrm(harness, "/outreach/sequences");
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  const commands = screen.getByRole("dialog", { name: t.commands });
+  expect(
+    within(commands).getByRole("option", { name: t.addPerson }),
+  ).toBeTruthy();
+  fireEvent.click(
+    within(commands).getByRole("option", { name: `${t.newSequence}C` }),
+  );
+  expect(screen.getByRole("dialog", { name: t.newSequence })).toBeTruthy();
+});
+
+test("a refreshed snapshot updates organization details and pending invitations from another client", async () => {
+  await mountCrm(harness, "/settings");
+  await screen.findByText(t.noPendingInvitations);
+  const service = new OrganizationSettingsService(harness.local.db);
+  const principal = { userId: demoUser, source: "demo" as const };
+  await service.updateOrganization(principal, {
+    organizationId: demoId(1),
+    name: "Updated Fictional Team",
+    timezone: "Asia/Tokyo",
+  });
+  await service.invite(principal, {
+    organizationId: demoId(1),
+    email: "another.teammate@example.test",
+    role: "member",
+    productIds: [demoId(10)],
+  });
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  fireEvent.click(screen.getByRole("option", { name: t.refresh }));
+  expect(
+    await screen.findByRole("heading", {
+      name: "Updated Fictional Team",
+      level: 2,
+    }),
+  ).toBeTruthy();
+  expect((screen.getByLabelText(t.timezone) as HTMLInputElement).value).toBe(
+    "Asia/Tokyo",
+  );
+  expect(await screen.findByText("another.teammate@example.test")).toBeTruthy();
 });

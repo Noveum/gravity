@@ -13,7 +13,10 @@ import {
   toggleSelection,
 } from "../packages/core/shortcuts";
 import t from "../packages/i18n/translations/en.json";
-import { shellShortcutScopes } from "../src/components/shell/shortcut-context";
+import {
+  shellShortcutGuideScopes,
+  shellShortcutScopes,
+} from "../src/components/shell/shortcut-context";
 
 const stroke = (key: string, extra: Partial<KeyStroke> = {}): KeyStroke => ({
   key,
@@ -197,6 +200,23 @@ describe("selection", () => {
 });
 
 describe("review follow-ups", () => {
+  test("list help includes row actions while settings help excludes them", () => {
+    const context = { hasData: true, recordId: "", showPeek: false };
+    expect(
+      shellShortcutGuideScopes({
+        ...context,
+        section: "people",
+        pathname: "/people",
+      }),
+    ).toContain("row");
+    expect(
+      shellShortcutGuideScopes({
+        ...context,
+        section: "settings",
+        pathname: "/settings",
+      }),
+    ).toEqual(["global"]);
+  });
   test("actual shell contexts never activate duplicate shortcuts, including outreach peeks", () => {
     const contexts = [
       ["settings", "/settings"],

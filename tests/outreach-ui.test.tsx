@@ -199,6 +199,10 @@ describe("touch rows, the draft drawer and paused work", () => {
     const zone = organizations[0]?.timezone ?? "UTC";
     if (organizations[0]) organizations[0].timezone = "Asia/Tokyo";
     try {
+      await harness.local.db
+        .update(s.organizations)
+        .set({ timezone: "Asia/Tokyo" })
+        .where(eq(s.organizations.id, demoId(1)));
       await harness.local.db.insert(s.contactRules).values({
         organizationId: demoId(1),
         cooldownDays: 10,

@@ -47,3 +47,10 @@ export function shellShortcutScopes({
       : []),
   ];
 }
+
+export function shellShortcutGuideScopes(
+  input: Parameters<typeof shellShortcutScopes>[0],
+): ShortcutScope[] {
+  const scopes = shellShortcutScopes(input);
+  return scopes.includes("list") ? [...scopes, "row"] : scopes;
+}

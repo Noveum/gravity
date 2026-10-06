@@ -42,7 +42,7 @@ import {
   viewSections,
 } from "./shell/navigation";
 import { recordsForPalette } from "./shell/palette-records";
-import { shellShortcutScopes } from "./shell/shortcut-context";
+import { shellShortcutGuideScopes } from "./shell/shortcut-context";
 import { Sidebar, type SidebarGroup, type SidebarItem } from "./shell/sidebar";
 import { TopBar } from "./shell/top-bar";
 import { useShellShortcuts } from "./shell/use-shell-shortcuts";
@@ -458,7 +458,7 @@ function CrmShell({ children }: { children: ReactNode }) {
         )}
         {helpOpen && (
           <Shortcuts
-            scopes={shellShortcutScopes({
+            scopes={shellShortcutGuideScopes({
               hasData: !!data,
               section,
               recordId,
@@ -590,6 +590,16 @@ function CrmShell({ children }: { children: ReactNode }) {
                     },
                   ]
                 : []),
+              ...(section === "settings" && crm.isAdmin
+                ? [
+                    {
+                      id: "invite-member",
+                      title: t.inviteMember,
+                      shortcut: hint("create"),
+                      run: () => crm.create(),
+                    },
+                  ]
+                : []),
             ]}
           />
         )}
@@ -667,7 +677,7 @@ function CrmShell({ children }: { children: ReactNode }) {
               <a className="primary" href="/onboarding">
                 {t.createWorkspace}
               </a>
-            )}{" "}
+            )}
           </div>
         ) : (
           <div

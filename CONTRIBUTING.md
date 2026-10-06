@@ -87,7 +87,7 @@ a finished pull request.
 
 ```bash
 bun run dev          # app on http://127.0.0.1:3014 with hot reload
-bun run verify       # the CI checks in one command (CI also runs bun audit)
+bun run verify       # lint, licenses, types, tests, build and public smoke test
 bun run format       # apply Biome formatting and safe lint fixes
 ```
 
@@ -108,7 +108,13 @@ bun run test tests/records.test.ts
 | `bun run build` | Production Next.js build |
 | `bun run test:public` | Starts the built app with no database or demo identity and checks the public pages |
 
-CI additionally runs `bun audit` for known vulnerabilities in locked dependencies.
+CI additionally runs:
+
+- `bun audit` for known vulnerabilities in locked dependencies.
+- `bun run test:files`, the Playwright end-to-end suite in `tests/browser/`. Run
+  `bunx playwright install chromium` once before the first local run.
+- `tests/outreach-postgres.test.ts` against a real PostgreSQL server. Locally it
+  skips itself unless `GRAVITY_POSTGRES_TEST_URL` points at a local superuser URL.
 While iterating, `bun run typecheck && bun run test` is the fast subset.
 
 ## How the code fits together
@@ -125,7 +131,7 @@ packages/connectors/     Gmail, Calendar, Unipile LinkedIn and Fireflies adapter
 packages/storage/        Private file storage and validation
 packages/i18n/           Interface strings
 drizzle/                 Generated SQL migrations
-tests/                   Vitest suites: SQL, HTTP, OAuth, MCP and React
+tests/                   Vitest suites (SQL, HTTP, OAuth, MCP, React); tests/browser/ for Playwright
 ```
 
 The most important idea: **every business operation is defined once** in

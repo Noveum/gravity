@@ -198,7 +198,7 @@ Contributions are welcome, and not only code: docs, bug reports, translations,
 accessibility and design all count.
 
 ```bash
-bun run verify   # lint, licenses, types, tests, build and public smoke test, as CI does
+bun run verify   # lint, licenses, types, tests, build and public smoke test
 ```
 
 - [**Good first issues**](https://github.com/Noveum/gravity/labels/good%20first%20issue), small and with file paths in the description

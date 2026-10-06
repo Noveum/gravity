@@ -17,6 +17,7 @@ Closes #
 ## Checklist
 
 - [ ] `bun run verify` passes (lint, licenses, types, tests, build, public smoke test)
+- [ ] `bun run test:files` passes if I touched the file library
 - [ ] New behaviour has a test that fails without the change
 - [ ] Business operations are defined in `packages/operations/catalog.ts`, so HTTP and MCP stay in step
 - [ ] Interface strings are in `packages/i18n/translations/en.json`

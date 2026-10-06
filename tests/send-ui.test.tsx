@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
-import { requestJson } from "../src/components/client-api";
+import { RequestError, requestJson } from "../src/components/client-api";
+import { personPath } from "../src/components/routes";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
@@ -224,6 +225,35 @@ describe("sending an approved touch", () => {
     );
     expect(readinessCalls).toHaveLength(0);
   });
+});
+
+test("a refusal because the chat is linked elsewhere points to the person's existing thread", async () => {
+  const dialog = await openSendFromApproved();
+  const confirm = within(dialog).getByRole("button", { name: t.sendNow });
+  await waitFor(() =>
+    expect((confirm as HTMLButtonElement).disabled).toBe(false),
+  );
+  const harnessed = vi.mocked(requestJson).getMockImplementation();
+  vi.mocked(requestJson).mockImplementation(async (url, init) => {
+    if (init?.method === "POST")
+      throw new RequestError("THREAD_ALREADY_LINKED");
+    if (!harnessed) throw new Error("harness");
+    return harnessed(url, init);
+  });
+  fireEvent.click(confirm);
+  const message = await within(dialog).findByText(
+    t.errors.THREAD_ALREADY_LINKED,
+    { exact: false },
+  );
+  const alert = message.closest<HTMLElement>('[role="alert"]');
+  if (!alert) throw new Error("alert");
+  expect(t.errors.THREAD_ALREADY_LINKED).toMatch(/existing/i);
+  const link = within(alert).getByRole("link", {
+    name: t.openPersonRecord.replace("{name}", "Amara Stone"),
+  });
+  expect(link.getAttribute("href")).toBe(
+    personPath(demoId(204), { relationshipId: demoId(304) }),
+  );
 });
 
 describe("sending an approved follow-up", () => {

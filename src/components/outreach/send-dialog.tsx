@@ -6,10 +6,12 @@ import type {
 } from "@crm/connectors/service";
 import type { JsonValue } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
+import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { errorText, label, RequestError, requestJson } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { useModalLifecycle } from "../modal-lifecycle";
+import { personPath } from "../routes";
 import { ErrorState, LoadingState } from "../ui/states";
 import { gateReason } from "./touch-labels";
 
@@ -115,6 +117,7 @@ export function SendDialog({
   const [idempotencyKey] = useState(newIdempotencyKey);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [threadLinked, setThreadLinked] = useState(false);
   const [chosen, setChosen] = useState("");
   useModalLifecycle(modal);
   useEffect(() => {
@@ -138,6 +141,7 @@ export function SendDialog({
     sending.current = true;
     setBusy(true);
     setError("");
+    setThreadLinked(false);
     try {
       const delivery = await requestJson<Delivery>("/api/outreach", {
         method: "POST",
@@ -172,6 +176,9 @@ export function SendDialog({
       onClose();
     } catch (cause) {
       setError(errorText(cause, crm.timeZone));
+      setThreadLinked(
+        cause instanceof Error && cause.message === "THREAD_ALREADY_LINKED",
+      );
     } finally {
       sending.current = false;
       setBusy(false);
@@ -201,15 +208,15 @@ export function SendDialog({
       : main;
   };
   const loadError = connectionError || readinessError;
-  const demoRecipient = crm.personFor(source.relationshipId);
+  const recipient = crm.personFor(source.relationshipId);
   const body = crm.demo ? (
     <>
       <dl className="send-summary">
         <dt>{t.sendRecipient}</dt>
         <dd>
           {(source.channel === "linkedin"
-            ? demoRecipient?.linkedinUrl
-            : demoRecipient?.email) || t.unknown}
+            ? recipient?.linkedinUrl
+            : recipient?.email) || t.unknown}
         </dd>
         <dt>{t.channel}</dt>
         <dd>{label(source.channel)}</dd>
@@ -274,7 +281,24 @@ export function SendDialog({
     >
       <h2 id={titleId}>{t.sendTitle.replace("{name}", source.name)}</h2>
       {body}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert">
+          {error}
+          {threadLinked && recipient && (
+            <>
+              {" "}
+              <Link
+                href={personPath(recipient.id, {
+                  relationshipId: source.relationshipId,
+                })}
+                onClick={onClose}
+              >
+                {t.openPersonRecord.replace("{name}", recipient.name)}
+              </Link>
+            </>
+          )}
+        </p>
+      )}
       <div className="dialog-actions">
         <button
           ref={cancel}

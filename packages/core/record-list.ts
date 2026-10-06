@@ -4,6 +4,7 @@ import {
   count,
   eq,
   exists,
+  getTableColumns,
   ilike,
   inArray,
   isNull,
@@ -261,9 +262,24 @@ export class RecordListService {
         conditions.push(sql`${table.amountMinor} <= ${input.maximum}`);
     }
     const where = and(...conditions);
+    const columns =
+      input.entity === "assets"
+        ? {
+            id: s.assets.id,
+            organizationId: s.assets.organizationId,
+            productId: s.assets.productId,
+            folderId: s.assets.folderId,
+            name: s.assets.name,
+            mimeType: s.assets.mimeType,
+            size: s.assets.size,
+            status: s.assets.status,
+            version: s.assets.version,
+            createdAt: s.assets.createdAt,
+          }
+        : getTableColumns(table);
     const [items, totals] = await Promise.all([
       this.db
-        .select()
+        .select(columns)
         .from(table)
         .where(where)
         .orderBy(asc(label), asc(table.id))

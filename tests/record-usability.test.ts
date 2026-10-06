@@ -38,6 +38,26 @@ const metadata = (
 beforeAll(async () => {
   local = await createLocalDatabase();
   await seedDemo(local.db);
+  await local.db
+    .insert(s.folders)
+    .values({
+      id: demoId(9000),
+      ...scope,
+      productId: demoId(10),
+      name: "Fixture folder",
+    });
+  await local.db.insert(s.assets).values({
+    id: demoId(9001),
+    ...scope,
+    productId: demoId(10),
+    folderId: demoId(9000),
+    name: "Fixture file",
+    storageKey: "fixture/private-storage-key",
+    mimeType: "text/plain",
+    size: 1,
+    sha256: "0".repeat(64),
+    uploadedBy: demoUser,
+  });
 });
 afterAll(async () => {
   await local.client.close();
@@ -212,6 +232,14 @@ describe("bounded record queries", () => {
           (row) => row.organizationId === scope.organizationId,
         ),
       ).toBe(true);
+      if (entity === "assets") {
+        expect(result.items).toHaveLength(1);
+        for (const item of result.items) {
+          expect(item).not.toHaveProperty("storageKey");
+          expect(item).not.toHaveProperty("sha256");
+          expect(item).not.toHaveProperty("uploadedBy");
+        }
+      }
     }
   });
   test("SQL search matches related contact and company names without broadening scope", async () => {

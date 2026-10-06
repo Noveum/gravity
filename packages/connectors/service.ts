@@ -190,9 +190,7 @@ export class IntegrationService {
           eq(s.connections.ownerId, principal.userId),
           inArray(
             s.connections.productId,
-            scope.productId
-              ? [scope.productId]
-              : allowed.products.map((p) => p.id),
+            allowed.products.map((p) => p.id),
           ),
         ),
       );
@@ -211,7 +209,7 @@ export class IntegrationService {
       ),
       inArray(
         s.integrationItems.productId,
-        allowed.products.map((p) => p.id),
+        scope.productId ? [scope.productId] : allowed.products.map((p) => p.id),
       ),
       eq(s.integrationItems.status, "unmatched"),
       search

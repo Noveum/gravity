@@ -124,6 +124,10 @@ export function personPath(
   });
 }
 
+export const invitePath = (token: string) =>
+  `/invite/${encodeURIComponent(token)}`;
+const isInvitePath = (pathname: string) => /^\/invite\/[^/]+$/.test(pathname);
+
 export function companyPath(companyId: string) {
   return `${sectionPaths.companies}/${encodeURIComponent(companyId)}`;
 }
@@ -159,7 +163,11 @@ export function appPath(value: string | null | undefined) {
     return null;
   try {
     const url = new URL(value, originProbe);
-    if (url.origin !== originProbe || !routeFor(url.pathname)) return null;
+    if (
+      url.origin !== originProbe ||
+      !(routeFor(url.pathname) || isInvitePath(url.pathname))
+    )
+      return null;
     return `${url.pathname}${url.search}`;
   } catch {
     return null;

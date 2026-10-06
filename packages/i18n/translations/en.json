@@ -1491,6 +1491,19 @@
     "connections": "Start with get_permission_audit and get_integrations. Each connection belongs to the current user, organization and product. Configure private Unipile settings with configure_unipile only when the owner supplies credentials through an appropriate private setup flow. connect_integration starts Gmail/Calendar/LinkedIn authorization or Fireflies setup; show the returned URL to the user for provider consent. Gmail allowSending=true requests send permission; reconnect old read-only mailboxes before sending. Use sync_integration to import a bounded page and repeat when more=true. Review unmatched imports with get_integrations/link_import/ignore_import. Never log or disclose keys or another owner’s data.",
     "send": "Use get_permission_audit to confirm crm:read crm:write crm:send, then read the intended touch/action and person context. Identify the owner’s connected sender and, for replies, the linked conversation. Gmail draft format is Subject: title, a blank line, and the body; for a Gmail reply the subject must match its thread. Save and approve the exact draft using current versions, then call get_send_readiness. Resolve policy or authorization blockers without bypassing them. Only when sending is explicitly requested, call send_touch or send_action with the current version and one newly generated stable idempotencyKey. Reuse that key if the response is interrupted. Inspect the returned delivery status: sent means provider accepted and CRM receipt persisted, not recipient delivery/read. For unknown, get_delivery/reconcile_delivery may verify a provider receipt; absence of proof does not make a retry safe. Never call record_touch_sent to pretend an unsent draft was sent."
   },
+  "inviteTitle": "Join {workspace}",
+  "inviteDescription": "You were invited to {workspace} as {role}.",
+  "inviteAccept": "Accept invitation",
+  "inviteAccepting": "Joining workspace",
+  "inviteDecline": "Decline",
+  "inviteAccepted": "You joined {workspace}.",
+  "inviteOpenWorkspace": "Open {workspace}",
+  "inviteSignInTitle": "Sign in to accept your invitation",
+  "inviteSignInDescription": "Sign in with the email address that received the invitation. You will come back here afterwards.",
+  "inviteSignIn": "Sign in",
+  "inviteUnavailableTitle": "This invitation cannot be used",
+  "inviteRoleAdmin": "an admin",
+  "inviteRoleMember": "a member",
   "inviteEmailSubject": "You are invited to {workspace} on Gravity",
   "inviteEmailBody": "You have been invited to join {workspace} on Gravity.\n\nAccept the invitation:\n{link}\n\nThe link works once and expires on {expires}. If you did not expect this invitation, you can ignore this email."
 }

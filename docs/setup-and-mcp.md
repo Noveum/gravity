@@ -18,7 +18,8 @@ The local fictional demo works without credentials. `CRM_DEMO_MODE=false` or any
 | `BETTER_AUTH_SECRET` | Stable auth/encryption secret, generated and stored securely |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional Google login app |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Optional GitHub login app |
-| `RESEND_API_KEY`, `EMAIL_FROM` | Optional passwordless email sign-in; sender must be verified in Resend |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Optional passwordless email sign-in and invitation emails; sender must be verified in Resend |
+| `ALLOWED_EMAIL_DOMAINS` | Optional comma-separated email domains that invitations may target and accept from. Empty means no deployment restriction; each workspace can narrow it further |
 | `INTEGRATION_ENCRYPTION_KEY`, `CRON_SECRET` | Stable provider encryption key and private scheduled-sync credential |
 | `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Private object storage credentials |
 | `S3_ENDPOINT`, `S3_REGION` | Provider endpoint/region; region defaults to `auto` |
@@ -58,7 +59,7 @@ Tokens are resource-bound to the MCP URL and expire after five minutes. On each 
 
 The endpoint requires `crm:read crm:write crm:send`; include `offline_access` for refresh. AI assistants is a dedicated sidebar option (`G X`), and the MCP card appears first in Connections. Reconnect old read-only clients and refresh cached tool discovery after upgrading.
 
-All current business HTTP operations are defined once in `packages/operations/catalog.ts`. The CRM, outreach, integrations, material upload/download and grant-revocation HTTP adapters execute that registry. MCP registers every definition automatically with the same domain schema, validation, permissions, audit events and real-time change hints. `get_capabilities` returns the current operation inventory and HTTP mapping; `tools/list` provides each tool's complete input schema. There are 63 shared operations (44 mutations), plus eight context and compatibility helpers.
+All current business HTTP operations are defined once in `packages/operations/catalog.ts`. The CRM, outreach, integrations, material upload/download and grant-revocation HTTP adapters execute that registry. MCP registers every definition automatically with the same domain schema, validation, permissions, audit events and real-time change hints. `get_capabilities` returns the current operation inventory and HTTP mapping; `tools/list` provides each tool's complete input schema. There are 73 shared operations (52 mutations), plus eight context and compatibility helpers. Members, product access, deactivation with work reassignment and invitations are managed through `list_members`, `change_member_role`, `set_member_products`, `deactivate_member`, `reactivate_member`, `create_invitation`, `resend_invitation`, `revoke_invitation`, `list_invitations` and `accept_invitation`. Invitation links open `/invite/<token>`; only a SHA-256 hash of the token is stored, and assistants cannot accept an invitation.
 
 | Area | Tools |
 |---|---|

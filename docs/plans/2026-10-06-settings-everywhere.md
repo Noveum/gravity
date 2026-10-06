@@ -117,3 +117,33 @@ Tests: one per control.
 ## Review
 
 Each task gets an implementer, then a reviewer, then fix rounds. A whole-branch review runs at the end, followed by one PR and a merge. The controller applies the migrations to production after the merge, with the owner's standing approval from 2026-10-06.
+
+## Task 5: S5 Fixes from the reviews of main
+
+Items from the review of #16 to #21, plus findings from the live audit, which are appended below.
+
+1. **A LinkedIn send to a chat that is already linked elsewhere gets stuck.** Location: `packages/connectors/outbound.ts:789-794`, `finalize`. Today, once the provider has accepted the message, `finalize` throws `THREAD_ALREADY_LINKED`. The delivery stays at "accepted", every later send to that person returns `DELIVERY_IN_PROGRESS`, and the touch can be neither skipped nor recorded.
+   - After the provider accepts, receipt bookkeeping must never throw. If the conversation is linked to another relationship or owner:
+     - skip the conversation and message inserts;
+     - still complete the touch or action and update the counters;
+     - set the delivery to `sent` with `errorCode: "THREAD_ALREADY_LINKED"`.
+   - Before dispatch, when a LinkedIn send has no conversation, resolve the account's existing chat with that person. If that chat is linked to another relationship, refuse with `THREAD_ALREADY_LINKED` before claiming.
+   - Test both paths with the outbound fixture.
+2. **The MCP route demands every scope.** `src/app/mcp/route.ts:33` requires `crm:read crm:write crm:send` on every token, so no one can connect an assistant that is read-only, or that can write but not send. Fix:
+   - Require `crm:read`.
+   - Register write tools only with `crm:write`, and send tools only with `crm:send`. Keep the existing `readOnly` and `canSend` branches.
+   - Let consent offer read, read and write, or read, write and send.
+   - Tests cover each combination: which tools are listed, and that a forbidden call is refused.
+3. **Agents must not loosen safety settings.**
+   - Clearing do-not-contact, raising the daily cap, shortening the cooldown and narrowing quiet hours are human-only. An MCP principal gets `HUMAN_ACTION_REQUIRED`.
+   - Agents can still mark someone do-not-contact and tighten the rules.
+   - Test both directions.
+4. **Stuck deliveries need a way out.**
+   - Add `resolve_delivery`. It is admin-only, human-only and needs an explicit confirmation.
+   - It moves an `unknown`, abandoned `sending` or abandoned `accepted` delivery to `sent` or `failed`, with a reason, and records an event. This unblocks the person.
+   - It refuses deliveries that are still within the live sending window.
+   - Test it.
+5. **Legacy won and lost deals have no `closed_at`.**
+   - Add a data migration that backfills `closed_at` for won and lost deals from the `opportunity.won` and `opportunity.lost` change events, falling back to the update time.
+   - Saving a closed deal without changing its status keeps `closed_at`. Make sure it is never left null.
+6. **Stale docs.** `docs/vercel.md` says sending is not implemented. Correct it, and state plainly how scheduled sync gets deployed now that the crons live in `vercel.scheduled.json`.

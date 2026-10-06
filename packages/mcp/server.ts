@@ -23,6 +23,8 @@ import {
 } from "../operations/catalog";
 import { downloadAsset } from "../storage/files";
 // Call only after the OAuth library has verified signature, issuer, audience and scope.
+export const mcpRequiredScopes = ["crm:read"];
+export const mcpChallengeScopes = ["crm:read", "crm:write", "crm:send"];
 export async function principalForVerifiedToken(db: Database, claims: unknown) {
   const identity = z
     .object({
@@ -175,6 +177,8 @@ export function mcpHandler(
       }
       for (const operation of operations) {
         if (operation.method !== "GET" && !writable) continue;
+        if (operation.permission === "crm:send" && !canSend) continue;
+        if (operationRequirements(operation).humanSession) continue;
         server.registerTool(
           operation.name,
           {
@@ -286,7 +290,11 @@ export function mcpHandler(
               writable &&
               principal.productIds === undefined &&
               membership.role === "admin",
-            invitationDelivery: "copy-link",
+            invitationDelivery: "email-or-copy-link",
+            accessGrantsNeedHuman: true,
+            humanSessionOperations: operations
+              .filter((item) => operationRequirements(item).humanSession)
+              .map((item) => item.name),
             accountConnectionRequired: true,
             providerConsentRequired: true,
             organizationBound: true,
@@ -328,12 +336,17 @@ export function mcpHandler(
         "list_products",
         {
           description:
-            "List products permitted by the grant and current membership.",
+            "List active products permitted by the grant and current membership in products, and archived ones separately in archivedProducts. Archived products keep their records but accept no new ones.",
           inputSchema: z.object({}),
           annotations: { readOnlyHint: true },
         },
-        async () =>
-          result((await authorize(db, principal, organizationId)).products),
+        async () => {
+          const { products } = await authorize(db, principal, organizationId);
+          return result({
+            products: products.filter((product) => !product.archivedAt),
+            archivedProducts: products.filter((product) => product.archivedAt),
+          });
+        },
       );
       server.registerTool(
         "list_next_actions",

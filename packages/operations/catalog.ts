@@ -1,4 +1,3 @@
-import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   ProviderConfigurationService,
@@ -6,8 +5,10 @@ import {
 } from "../connectors/configuration";
 import {
   deliverySchema,
+  listDeliveriesSchema,
   OutboundService,
   reconcileDeliverySchema,
+  resolveDeliverySchema,
   sendActionSchema,
   sendReadinessSchema,
   sendTouchSchema,
@@ -17,7 +18,14 @@ import {
   IntegrationService,
   integrationOverviewInput,
   integrationScope,
+  updateConnectionInput,
 } from "../connectors/service";
+import {
+  listAssistantGrants,
+  listAssistantGrantsSchema,
+  revokeAssistantGrant,
+  revokeAssistantSchema,
+} from "../core/assistant-grants";
 import { publishChange } from "../core/changes";
 import {
   actionChangeSchema,
@@ -28,12 +36,24 @@ import {
   meetingChangeSchema,
   messageActivitySchema,
   opportunitySchema,
+  organizationSchema,
   personSchema,
   pipelineSchema,
   scheduleActionSchema,
   scopeSchema,
   workspaceSchema,
 } from "../core/crm";
+import {
+  folderDeleteSchema,
+  folderRenameSchema,
+  MaterialService,
+  materialStatusSchema,
+} from "../core/materials";
+import {
+  listMembersSchema,
+  MemberService,
+  reactivateMemberSchema,
+} from "../core/members";
 import {
   acceptInviteSchema,
   inviteSchema,
@@ -51,7 +71,9 @@ import {
   enrollSchema,
   OutreachService,
   relationshipChangeSchema,
+  sequenceArchiveSchema,
   sequenceCreateSchema,
+  sequenceRestoreSchema,
   sequenceUpdateSchema,
   touchApproveSchema,
   touchDraftSchema,
@@ -61,7 +83,22 @@ import {
   touchSkipSchema,
   touchSnoozeSchema,
 } from "../core/outreach";
+import {
+  archiveStageSchema,
+  createStageSchema,
+  PipelineService,
+  reorderStagesSchema,
+  updatePipelineSchema,
+  updateStageSchema,
+} from "../core/pipelines";
 import { authorize, DomainError, type Principal } from "../core/policy";
+import { productColorKeys } from "../core/product-colors";
+import {
+  archiveProductSchema,
+  ProductService,
+  restoreProductSchema,
+  updateProductSchema,
+} from "../core/products";
 import { RecordListService, recordListSchema } from "../core/record-list";
 import {
   RecordMetadataService,
@@ -78,7 +115,6 @@ import {
   RecordService,
 } from "../core/records";
 import type { Database } from "../database/client";
-import { mcpGrants } from "../database/schema";
 import { downloadAsset, maxFileSize, uploadAsset } from "../storage/files";
 
 export interface OperationContext {
@@ -143,6 +179,10 @@ const outreach = ({ db }: OperationContext) => new OutreachService(db);
 const integrations = ({ db }: OperationContext) => new IntegrationService(db);
 const settings = ({ db }: OperationContext) =>
   new ProviderConfigurationService(db);
+const members = ({ db }: OperationContext) => new MemberService(db);
+const products = ({ db }: OperationContext) => new ProductService(db);
+const pipelines = ({ db }: OperationContext) => new PipelineService(db);
+const materials = ({ db }: OperationContext) => new MaterialService(db);
 const nameSchema = z.string().trim().min(1).max(100);
 const overviewSchema = scopeSchema.extend({
   days: z.coerce
@@ -173,12 +213,14 @@ export function materialBytes(value: string) {
 export const operations: Operation[] = [
   operation({
     api: "crm",
-    method: "GET",
+    method: "POST",
     operation: "invitation-preview",
     name: "preview_invitation",
     description:
-      "Preview the workspace and access in an invitation as its verified recipient. Requires a human session, never an MCP grant.",
+      "Preview the workspace and product access in an invitation as its verified recipient, without accepting it. The token travels in the request body, never in a URL. A recipient who is already an active member gets alreadyMember true. Requires a human session, never an MCP grant.",
     schema: acceptInviteSchema,
+    destructive: false,
+    publish: false,
     run: (c, input) =>
       new OrganizationSettingsService(c.db).preview(c.principal, input),
   }),
@@ -188,7 +230,7 @@ export const operations: Operation[] = [
     operation: "member-remove",
     name: "remove_member",
     description:
-      "Deactivate a workspace membership. Requires admin and all-products access. The last administrator cannot be removed. Historical records are preserved.",
+      "Deactivate a workspace membership. Their relationships, open actions and open touches move in one transaction to reassignToUserId (default: you), approvals on moved touches and actions are cleared, their assistant grants for this organization stop working, and invitations they sent that are still pending are revoked. Actions from their private conversations stay with them. The last administrator cannot be removed. Historical records are preserved. Requires admin and all-products access. Assistants may remove members.",
     schema: removeMemberSchema,
     run: (c, input) =>
       new OrganizationSettingsService(c.db).removeMember(c.principal, input),
@@ -199,7 +241,7 @@ export const operations: Operation[] = [
     operation: "invitations",
     name: "list_invitations",
     description:
-      "List pending workspace invitations. Requires admin and all-products access.",
+      "List pending workspace invitations with email, role, products and expiry. Tokens are never returned. Requires admin and all-products access; a read-only grant may list.",
     schema: organizationScope,
     run: (c, input) =>
       new OrganizationSettingsService(c.db).invitations(c.principal, input),
@@ -210,7 +252,7 @@ export const operations: Operation[] = [
     operation: "invitation",
     name: "create_invitation",
     description:
-      "Create a 14-day invitation for a verified email with explicit role and product access. Share the returned token using /invite/TOKEN. Requires admin and all-products access. This does not send email.",
+      "Create a 14-day invitation for a verified email with explicit role and active product access, replacing any open invitation for that email. Returns acceptUrl, a one-time /invite#TOKEN link to share, and emailStatus: the email is sent when Resend is configured. Deployment and workspace email-domain allowlists apply. Requires admin and all-products access and a signed-in person: granting access is human-only, so assistants get HUMAN_ACTION_REQUIRED.",
     schema: inviteSchema,
     run: (c, input) =>
       new OrganizationSettingsService(c.db).invite(c.principal, input),
@@ -221,7 +263,7 @@ export const operations: Operation[] = [
     operation: "invitation-revoke",
     name: "revoke_invitation",
     description:
-      "Revoke a pending invitation. Requires admin and all-products access.",
+      "Revoke a pending invitation so its link can no longer be accepted. Idempotent. Requires admin and all-products access. Assistants may revoke invitations.",
     schema: revokeInviteSchema,
     run: (c, input) =>
       new OrganizationSettingsService(c.db).revoke(c.principal, input),
@@ -232,7 +274,7 @@ export const operations: Operation[] = [
     operation: "invitation-accept",
     name: "accept_invitation",
     description:
-      "Accept an invitation as its verified recipient. Requires a human session, never an MCP grant.",
+      "Accept an invitation as its verified recipient. Grants the invited role and the invited products that are still active. Requires a human session, never an MCP grant.",
     schema: acceptInviteSchema,
     run: (c, input) =>
       new OrganizationSettingsService(c.db).accept(c.principal, input),
@@ -243,7 +285,7 @@ export const operations: Operation[] = [
     operation: "member-access",
     name: "update_member_access",
     description:
-      "Change an active workspace member role and product access. Requires admin and all-products access; the last administrator cannot be demoted.",
+      "Change an active workspace member role and product access. Requires admin and all-products access; the last administrator cannot be demoted. Assistants may demote a member or remove product access; a call that promotes to admin or adds any product grants access and returns HUMAN_ACTION_REQUIRED as a whole.",
     schema: memberAccessSchema,
     run: (c, input) =>
       new OrganizationSettingsService(c.db).updateMember(c.principal, input),
@@ -254,7 +296,7 @@ export const operations: Operation[] = [
     operation: "organization-settings",
     name: "update_organization",
     description:
-      "Update organization name and timezone. Requires admin and all-products access.",
+      "Change any of the organization name, IANA time zone, URL slug (unique, lowercase letters, digits and single hyphens) or email domain allowlist (lowercased and deduplicated; empty means no workspace restriction). Supply at least one. Requires admin and all-products access. The time zone sets quiet hours, so assistants changing it get HUMAN_ACTION_REQUIRED.",
     schema: organizationSettingsSchema,
     run: (c, input) =>
       new OrganizationSettingsService(c.db).updateOrganization(
@@ -314,13 +356,23 @@ export const operations: Operation[] = [
   }),
   operation({
     api: "outreach",
+    method: "GET",
+    operation: "deliveries",
+    name: "list_deliveries",
+    description:
+      "List unresolved deliveries (sending, unknown or accepted) in products you can read. You see your own; an admin with an all-products grant sees everyone's. canReconcile marks your own settled deliveries for reconcile_delivery; canResolve marks those a human admin may close with resolve_delivery. Never resend an unknown delivery with a new idempotency key.",
+    schema: listDeliveriesSchema,
+    run: (c, input) => new OutboundService(c.db).list(c.principal, input),
+  }),
+  operation({
+    api: "outreach",
     method: "POST",
     operation: "send-touch",
     name: "send_touch",
     permission: "crm:send",
     idempotent: true,
     description:
-      "Actually send the exact approved sequence touch through your Gmail or LinkedIn account. Requires crm:send, current version, due time and contact-policy eligibility. Gmail needs separate gmail.send consent. Reuse the same idempotencyKey for retries; inspect get_delivery after unknown outcomes. Approval/enrollment alone never sends.",
+      "Actually send the exact approved sequence touch through your Gmail or LinkedIn account. Requires crm:send, current version, due time and contact-policy eligibility. Refused with DO_NOT_CONTACT when the person, or anyone in the organization sharing their email or LinkedIn profile, is do-not-contact, and with PRODUCT_ARCHIVED or SEQUENCE_ARCHIVED for archived work. Gmail needs separate gmail.send consent. Reuse the same idempotencyKey for retries; inspect get_delivery after unknown outcomes. Approval/enrollment alone never sends.",
     schema: sendTouchSchema,
     run: (c, input) => new OutboundService(c.db).send(c.principal, input),
   }),
@@ -332,7 +384,7 @@ export const operations: Operation[] = [
     permission: "crm:send",
     idempotent: true,
     description:
-      "Actually send an owned, approved follow-up/reply using your connected Gmail or LinkedIn account. Requires crm:send and current version; supply the same idempotencyKey on retry. Source conversation ownership, opt-outs and contact policies apply. Gmail draft format: Subject: title, blank line, body.",
+      "Actually send an owned, approved follow-up/reply using your connected Gmail or LinkedIn account. Requires crm:send and current version; supply the same idempotencyKey on retry. Source conversation ownership, opt-outs (including anyone sharing the person's email or LinkedIn profile) and contact policies apply; an archived product refuses with PRODUCT_ARCHIVED. Gmail draft format: Subject: title, blank line, body.",
     schema: sendActionSchema,
     run: (c, input) => new OutboundService(c.db).send(c.principal, input),
   }),
@@ -347,6 +399,17 @@ export const operations: Operation[] = [
       "Verify a provider receipt for an ambiguous delivery without resending. Gmail searches its unique Message-ID. LinkedIn requires an externalMessageId in the original chat; a missing receipt leaves the outcome unknown, never authorizes a retry.",
     schema: reconcileDeliverySchema,
     run: (c, input) => new OutboundService(c.db).reconcile(c.principal, input),
+  }),
+  operation({
+    api: "outreach",
+    method: "POST",
+    operation: "resolve-delivery",
+    name: "resolve_delivery",
+    idempotent: false,
+    description:
+      "Close a stuck delivery that is unknown, or abandoned while sending or accepted, as sent or failed with a reason. This never contacts the provider. Marking it failed lets the sender try again, so confirm first that nothing went out; a delivery the provider accepted (status accepted or a provider message ID) can only be resolved as sent, and failed returns DELIVERY_PROVIDER_ACCEPTED. Requires a human admin session and confirm=true; deliveries still inside the live sending window are refused.",
+    schema: resolveDeliverySchema,
+    run: (c, input) => new OutboundService(c.db).resolve(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -392,12 +455,32 @@ export const operations: Operation[] = [
     run: (c, input) => outreach(c).createSequence(c.principal, input),
   }),
   operation({
+    api: "outreach",
+    method: "POST",
+    operation: "sequence-archive",
+    name: "archive_sequence",
+    description:
+      "Archive a sequence with its current version. Its running enrollments pause with reason manual, it refuses new enrollments and paused enrollments cannot resume until it is restored. Steps, history and enrollments are kept. Requires write access to the sequence's product.",
+    schema: sequenceArchiveSchema,
+    run: (c, input) => outreach(c).archiveSequence(c.principal, input),
+  }),
+  operation({
+    api: "outreach",
+    method: "POST",
+    operation: "sequence-restore",
+    name: "restore_sequence",
+    description:
+      "Restore an archived sequence with its current version so it accepts enrollments again. Paused enrollments stay paused until resumed. Requires write access to the sequence's product.",
+    schema: sequenceRestoreSchema,
+    run: (c, input) => outreach(c).restoreSequence(c.principal, input),
+  }),
+  operation({
     api: "crm",
     method: "GET",
     operation: "organizations",
     name: "list_organizations",
     description:
-      "List accessible organizations. MCP is limited to the organization selected during consent.",
+      "List accessible organizations with name, slug, time zone and email domain allowlist. MCP is limited to the organization selected during consent.",
     schema: z.object({}),
     run: (c) => crm(c).organizations(c.principal),
   }),
@@ -517,10 +600,11 @@ export const operations: Operation[] = [
     operation: "organization",
     name: "create_organization",
     description:
-      "Create an organization owned by the acting user. MCP requires admin/all-products access; this never widens the current grant.",
-    schema: z.object({ name: nameSchema }),
+      "Create an organization owned by the acting user, with an IANA time zone (default UTC). MCP requires admin/all-products access; this never widens the current grant.",
+    schema: organizationSchema,
     destructive: false,
-    run: (c, input) => crm(c).createOrganization(c.principal, input.name),
+    run: (c, input) =>
+      crm(c).createOrganization(c.principal, input.name, input.timezone),
   }),
   operation({
     api: "crm",
@@ -533,6 +617,107 @@ export const operations: Operation[] = [
     destructive: false,
     run: (c, input) =>
       crm(c).createProduct(c.principal, input.organizationId, input.name),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "product-update",
+    name: "update_product",
+    description: `Rename or recolour a product. colorKey is one of ${productColorKeys.join(", ")}. Requires admin membership and access to the product.`,
+    schema: updateProductSchema,
+    run: (c, input) => products(c).update(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "product-archive",
+    name: "archive_product",
+    description:
+      "Archive a product: it leaves switchers, filters and new-record forms, its running sequence enrollments pause with reason manual, and its records are kept. The last active product cannot be archived. Requires admin membership and an all-products grant.",
+    schema: archiveProductSchema,
+    run: (c, input) => products(c).archive(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "product-restore",
+    name: "restore_product",
+    description:
+      "Restore an archived product. Paused enrollments stay paused until resumed. Requires admin membership and an all-products grant.",
+    schema: restoreProductSchema,
+    run: (c, input) => products(c).restore(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "stage",
+    name: "create_stage",
+    description:
+      "Add a stage at the end of a deal pipeline (pipeline deal with pipelineId) or a product's outreach pipeline (pipeline outreach). Category is open, won, lost or hold; deal stages cannot be hold. Requires admin membership and access to the product.",
+    schema: createStageSchema,
+    destructive: false,
+    run: (c, input) => pipelines(c).createStage(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "stage-update",
+    name: "update_stage",
+    description:
+      "Rename a stage or change its category. Changing a deal stage's category moves its deals to the matching outcome. Every pipeline keeps at least one open stage. Requires admin membership and access to the product.",
+    schema: updateStageSchema,
+    run: (c, input) => pipelines(c).updateStage(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "stage-order",
+    name: "reorder_stages",
+    description:
+      "Set the order of a pipeline's stages. stageIds must list every active stage of that pipeline exactly once. Requires admin membership and access to the product.",
+    schema: reorderStagesSchema,
+    idempotent: true,
+    run: (c, input) => pipelines(c).reorderStages(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "stage-archive",
+    name: "archive_stage",
+    description:
+      "Archive a stage and move its deals or outreach relationships, and its material links, to moveToStageId in the same pipeline in one transaction. Every pipeline keeps at least one open stage. Requires admin membership and access to the product.",
+    schema: archiveStageSchema,
+    run: (c, input) => pipelines(c).archiveStage(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "pipeline-update",
+    name: "update_pipeline",
+    description:
+      "Rename a deal pipeline. Names are unique per product. Requires admin membership and access to the product.",
+    schema: updatePipelineSchema,
+    run: (c, input) => pipelines(c).updatePipeline(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "members",
+    name: "list_members",
+    description:
+      "List workspace members with name, email, role, active state, explicit product access and counts of owned relationships, open actions and open touches in products you can read.",
+    schema: listMembersSchema,
+    run: (c, input) => members(c).list(c.principal, input.organizationId),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "member-reactivate",
+    name: "reactivate_member",
+    description:
+      "Reactivate a deactivated member. Reassigned work and revoked assistant grants are not restored. Requires admin membership, an all-products grant and a signed-in person: granting access is human-only, so assistants get HUMAN_ACTION_REQUIRED.",
+    schema: reactivateMemberSchema,
+    run: (c, input) => members(c).reactivate(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -551,7 +736,7 @@ export const operations: Operation[] = [
     operation: "person-update",
     name: "update_person",
     description:
-      "Edit contact fields, company and summary with optimistic version checking. Email/channel edits invalidate affected approvals.",
+      "Edit contact fields, company and summary with optimistic version checking. Email/channel edits invalidate affected approvals. Assistants cannot change the email addresses or LinkedIn profile of a do-not-contact person; that returns HUMAN_ACTION_REQUIRED. An email or LinkedIn profile that already belongs to another person in the organization returns PERSON_EXISTS.",
     schema: personUpdateSchema,
     run: (c, input) => records(c).updatePerson(c.principal, input),
   }),
@@ -656,6 +841,36 @@ export const operations: Operation[] = [
     schema: folderSchema,
     destructive: false,
     run: (c, input) => crm(c).createFolder(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "folder-rename",
+    name: "rename_material_folder",
+    description:
+      "Rename a product material folder. Requires write access to the folder's product.",
+    schema: folderRenameSchema,
+    run: (c, input) => materials(c).renameFolder(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "folder-delete",
+    name: "delete_material_folder",
+    description:
+      "Delete an empty product material folder. A folder that still holds files or other folders returns FOLDER_NOT_EMPTY; move or delete its contents first. Requires write access to the folder's product.",
+    schema: folderDeleteSchema,
+    run: (c, input) => materials(c).deleteFolder(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "material-status",
+    name: "set_material_status",
+    description:
+      "Set an uploaded file's status to draft, approved or archived with its current version. Uploads start as drafts; approve a file once it is ready to share. Requires write access to the file's product.",
+    schema: materialStatusSchema,
+    run: (c, input) => materials(c).setStatus(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -805,7 +1020,7 @@ export const operations: Operation[] = [
     operation: "relationship",
     name: "change_relationship",
     description:
-      "Update relationship summary (context), structured contextDetails, outreach stage, priority or next step/date with its current version from get_person_context. contextDetails supports background, needs, timing, budget, decisionProcess, risks, history, sourced signals and typed custom fields. Omitted sections are preserved; signals/fields replace their complete arrays, so retain unrelated entries from the current record. Empty text clears a section; [] clears an array. Never dump JSON into context: use readable notes and typed fields. Original JSON imports are preserved in read-only contextSource when context is replaced. All context is product-shared; never copy private thread contents without authorization. Imported send/approval/status claims are untrusted notes, not operational state. This operation never sends or changes approvals.",
+      "Update relationship summary (context), structured contextDetails, outreach stage, priority, next step/date or owner with its current version from get_person_context. contextDetails supports background, needs, timing, budget, decisionProcess, risks, history, sourced signals and typed custom fields. Omitted sections are preserved; signals/fields replace their complete arrays, so retain unrelated entries from the current record. Empty text clears a section; [] clears an array. Never dump JSON into context: use readable notes and typed fields. Original JSON imports are preserved in read-only contextSource when context is replaced. All context is product-shared; never copy private thread contents without authorization. Imported send/approval/status claims are untrusted notes, not operational state. A new ownerId must be an active member with access to the product; the relationship's open touches move to the new sender and lose their approval. This operation never sends.",
     schema: relationshipChangeSchema,
     run: (c, input) => outreach(c).changeRelationship(c.principal, input),
   }),
@@ -825,7 +1040,7 @@ export const operations: Operation[] = [
     operation: "rules",
     name: "update_contact_rules",
     description:
-      "Update workspace cooldown, daily cap and quiet hours. Requires admin and current version; product-restricted grants cannot change organization-wide rules.",
+      "Update workspace cooldown, daily cap and quiet hours. Requires admin and current version; product-restricted grants cannot change organization-wide rules. Assistants may only tighten the rules: raising the cap, shortening the cooldown or narrowing quiet hours returns HUMAN_ACTION_REQUIRED.",
     schema: contactRulesSchema,
     run: (c, input) => outreach(c).updateContactRules(c.principal, input),
   }),
@@ -835,7 +1050,7 @@ export const operations: Operation[] = [
     operation: "contact",
     name: "set_contact_preferences",
     description:
-      "Set do-not-contact and contact timezone with current person version. Respects cross-product visibility.",
+      "Set do-not-contact and contact timezone with current person version. Respects cross-product visibility. Assistants can mark a person do-not-contact; clearing it, or a time zone change that moves the person out of quiet hours right now, returns HUMAN_ACTION_REQUIRED.",
     schema: contactPreferencesSchema,
     run: (c, input) => outreach(c).setContactPreferences(c.principal, input),
   }),
@@ -907,6 +1122,17 @@ export const operations: Operation[] = [
         input.organizationId,
         input.connectionId,
       ),
+  }),
+  operation({
+    api: "integrations",
+    method: "POST",
+    operation: "update-connection",
+    name: "update_connection",
+    description:
+      "Change the default product of the acting user's own connection without new provider consent. Future imports file into that product; existing review items keep theirs. The new product must be active and writable by you; access to the old product is not required.",
+    schema: updateConnectionInput,
+    publish: false,
+    run: (c, input) => integrations(c).updateConnection(c.principal, input),
   }),
   operation({
     api: "integrations",
@@ -1024,47 +1250,25 @@ export const operations: Operation[] = [
       }),
   }),
   operation({
+    api: "crm",
+    method: "GET",
+    operation: "assistant-grants",
+    name: "list_assistant_grants",
+    description:
+      "List every active assistant grant in the workspace with its member's name and email, product scope and creation time. Requires admin membership and an all-products grant.",
+    schema: listAssistantGrantsSchema,
+    run: (c, input) =>
+      listAssistantGrants(c.db, c.principal, input.organizationId),
+  }),
+  operation({
     api: "grants",
     method: "DELETE",
     operation: "revoke",
     name: "revoke_assistant",
     description:
-      "Revoke an assistant grant owned by the acting user in the current organization. Revoking this connection invalidates subsequent calls.",
-    schema: z.object({
-      organizationId: z.uuid().optional(),
-      grantId: z.uuid(),
-    }),
-    run: async (c, input) => {
-      const [grant] = await c.db
-        .select()
-        .from(mcpGrants)
-        .where(
-          and(
-            eq(mcpGrants.id, input.grantId),
-            eq(mcpGrants.userId, c.principal.userId),
-          ),
-        );
-      if (!grant) throw new DomainError("NOT_FOUND", 404);
-      if (c.principal.source === "mcp")
-        await authorize(
-          c.db,
-          c.principal,
-          grant.organizationId,
-          undefined,
-          true,
-        );
-      await c.db
-        .update(mcpGrants)
-        .set({ active: false })
-        .where(
-          and(
-            eq(mcpGrants.id, grant.id),
-            eq(mcpGrants.userId, c.principal.userId),
-          ),
-        );
-      publishChange(grant.organizationId);
-      return { revoked: true };
-    },
+      "Revoke an assistant grant. You may revoke your own grant; a workspace admin signed in to Gravity may also revoke a teammate's grant. Revoking this connection invalidates subsequent calls.",
+    schema: revokeAssistantSchema,
+    run: (c, input) => revokeAssistantGrant(c.db, c.principal, input),
     publish: false,
   }),
 ];
@@ -1094,34 +1298,59 @@ export function operationInput(item: Operation) {
   const { organizationId: _organizationId, ...shape } = item.schema.shape;
   return z.object(shape);
 }
-const adminOperations = new Set([
-  "remove_member",
-  "update_organization",
+const memberAdministration = [
   "update_member_access",
-  "revoke_invitation",
-  "create_invitation",
+  "remove_member",
+  "reactivate_member",
   "list_invitations",
+  "create_invitation",
+  "revoke_invitation",
+];
+const productAdministration = [
+  "update_product",
+  "create_stage",
+  "update_stage",
+  "reorder_stages",
+  "archive_stage",
+  "update_pipeline",
+];
+const workspaceAdministration = [
+  "update_organization",
+  "archive_product",
+  "restore_product",
+];
+const adminOperations = new Set([
+  "list_assistant_grants",
+  "resolve_delivery",
   "create_workspace",
   "create_organization",
   "create_product",
   "create_pipeline",
   "update_contact_rules",
+  ...memberAdministration,
+  ...productAdministration,
+  ...workspaceAdministration,
 ]);
 const allProductOperations = new Set([
-  "remove_member",
-  "update_organization",
-  "update_member_access",
-  "revoke_invitation",
-  "create_invitation",
-  "list_invitations",
+  "list_assistant_grants",
+  "resolve_delivery",
   "create_workspace",
   "create_organization",
   "create_product",
   "update_contact_rules",
+  ...workspaceAdministration,
   "configure_unipile",
   "remove_unipile",
   "list_unipile_accounts",
   "register_unipile_webhooks",
+  ...memberAdministration,
+]);
+const humanSessionOperations = new Set([
+  "preview_invitation",
+  "accept_invitation",
+  "resolve_delivery",
+  "create_invitation",
+  "reactivate_member",
 ]);
 const ownerOperations = new Set([
   "list_unipile_accounts",
@@ -1131,6 +1360,7 @@ const ownerOperations = new Set([
   "connect_integration",
   "sync_integration",
   "disconnect_integration",
+  "update_connection",
   "link_import",
   "ignore_import",
   "configure_unipile",
@@ -1155,6 +1385,7 @@ export function operationRequirements(item: Operation) {
     administrator: adminOperations.has(item.name),
     allProducts: allProductOperations.has(item.name),
     currentAccountOrSourceOwner: ownerOperations.has(item.name),
+    humanSession: humanSessionOperations.has(item.name),
     productAuthorization: true,
   };
 }
@@ -1164,11 +1395,6 @@ export function operationAvailable(
   role: string,
 ) {
   const requirements = operationRequirements(item);
-  if (
-    ["accept_invitation", "preview_invitation"].includes(item.name) &&
-    principal.source === "mcp"
-  )
-    return false;
   return (
     (item.method === "GET" ||
       principal.source === "session" ||
@@ -1177,7 +1403,8 @@ export function operationAvailable(
       principal.source === "session" ||
       principal.canSend === true) &&
     (!requirements.administrator || role === "admin") &&
-    (!requirements.allProducts || principal.productIds === undefined)
+    (!requirements.allProducts || principal.productIds === undefined) &&
+    (!requirements.humanSession || principal.source !== "mcp")
   );
 }
 export async function permissionAudit(

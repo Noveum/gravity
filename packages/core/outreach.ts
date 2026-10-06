@@ -6,6 +6,7 @@ import {
   gt,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lt,
   max,
@@ -19,15 +20,18 @@ import * as s from "../database/schema";
 import { zonedDayBounds } from "./calendar";
 import { scopeSchema } from "./crm";
 import { draftHash, draftSubject } from "./drafts";
+import { assertProductAccess, reassignTouches } from "./members";
 import { planEnrollment } from "./outreach-planner";
 import {
   type ContactRules,
   type ContactViolation,
   contactViolations,
   defaultContactRules,
+  loosensContactRules,
   sendWindow,
 } from "./outreach-rules";
 import { authorize, DomainError, type Principal } from "./policy";
+import { assertProductActive } from "./products";
 import {
   emptyRelationshipDetails,
   fitsRelationshipInput,
@@ -38,6 +42,7 @@ import {
   assertActiveRelationships,
   clearApprovals,
   personVisible,
+  shareLockStage,
 } from "./visibility";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -100,6 +105,7 @@ export const relationshipChangeSchema = scopeSchema
     priority: z.enum(["low", "normal", "high"]).optional(),
     nextStep: z.string().trim().max(500).optional(),
     nextStepDueAt: z.iso.datetime().nullable().optional(),
+    ownerId: z.string().trim().min(1).max(200).optional(),
   })
   .refine(
     (value) =>
@@ -108,7 +114,8 @@ export const relationshipChangeSchema = scopeSchema
       value.stageId !== undefined ||
       value.priority !== undefined ||
       value.nextStep !== undefined ||
-      value.nextStepDueAt !== undefined,
+      value.nextStepDueAt !== undefined ||
+      value.ownerId !== undefined,
   )
   .refine(fitsRelationshipInput);
 const stepSchema = z.object({
@@ -137,6 +144,11 @@ export const sequenceCreateSchema = scopeSchema.extend({
   name: z.string().trim().min(1).max(100),
   steps: sequenceUpdateSchema.shape.steps,
 });
+export const sequenceArchiveSchema = scopeSchema.extend({
+  sequenceId: z.uuid(),
+  version,
+});
+export const sequenceRestoreSchema = sequenceArchiveSchema;
 export const contactRulesSchema = z.object({
   organizationId: z.uuid(),
   version: z.number().int().min(0),
@@ -241,6 +253,28 @@ async function workspaceZone(db: Reader, organizationId: string) {
     .from(s.organizations)
     .where(eq(s.organizations.id, organizationId));
   return organization?.timezone ?? "UTC";
+}
+
+async function unblocksNow(
+  db: Reader,
+  organizationId: string,
+  now: number,
+  zones: { before: string | null; after: string | null },
+) {
+  const [rules, zone] = await Promise.all([
+    readContactRules(db, organizationId),
+    workspaceZone(db, organizationId),
+  ]);
+  const blocked = (timeZone: string | null) =>
+    contactViolations({
+      now,
+      doNotContact: false,
+      timeZone: timeZone ?? zone,
+      lastContactAt: null,
+      sentTodayBySender: 0,
+      rules,
+    }).length > 0;
+  return blocked(zones.before) && !blocked(zones.after);
 }
 
 async function lastContacts(
@@ -374,6 +408,22 @@ export async function advance(
     )
     .orderBy(asc(s.enrollments.id));
   if (!running.length) return result;
+  const archivedProducts = new Set(
+    (
+      await db
+        .select({ id: s.products.id })
+        .from(s.products)
+        .where(
+          and(
+            eq(s.products.organizationId, organizationId),
+            inArray(s.products.id, [
+              ...new Set(running.map((row) => row.productId)),
+            ]),
+            isNotNull(s.products.archivedAt),
+          ),
+        )
+    ).map((row) => row.id),
+  );
   const [sequences, touches, relationships, rules, zone] = await Promise.all([
     db
       .select()
@@ -384,6 +434,7 @@ export async function advance(
           inArray(s.sequences.id, [
             ...new Set(running.map((row) => row.sequenceId)),
           ]),
+          isNull(s.sequences.archivedAt),
         ),
       ),
     db
@@ -436,7 +487,14 @@ export async function advance(
       (row) => row.id === enrollment.relationshipId,
     );
     const person = relationship && people.get(relationship.personId);
-    if (!sequence || !relationship || !person || person.archivedAt) continue;
+    if (
+      !sequence ||
+      !relationship ||
+      !person ||
+      person.archivedAt ||
+      archivedProducts.has(enrollment.productId)
+    )
+      continue;
     const decision = planEnrollment({
       now,
       enrollment: {
@@ -778,7 +836,8 @@ export class OutreachService {
             eq(s.sequences.id, input.sequenceId),
             eq(s.sequences.organizationId, input.organizationId),
           ),
-        );
+        )
+        .for("share");
       if (!sequence) throw new DomainError("NOT_FOUND", 404);
       const permission = await authorize(
         tx,
@@ -789,6 +848,8 @@ export class OutreachService {
       );
       if (input.productId && input.productId !== sequence.productId)
         throw new DomainError("FORBIDDEN", 403);
+      await assertProductActive(tx, input.organizationId, sequence.productId);
+      if (sequence.archivedAt) throw new DomainError("SEQUENCE_ARCHIVED", 409);
       const readable = new Set(
         permission.products.map((product) => product.id),
       );
@@ -1599,6 +1660,26 @@ export class OutreachService {
           throw new DomainError("CONFLICT", 409);
         if (enrollment.status === "stopped")
           throw new DomainError("ENROLLMENT_CLOSED", 409);
+        if (enrollment.status === "completed") {
+          const [sequence] = await tx
+            .select({ archivedAt: s.sequences.archivedAt })
+            .from(s.sequences)
+            .where(
+              and(
+                eq(s.sequences.id, enrollment.sequenceId),
+                eq(s.sequences.organizationId, touch.organizationId),
+              ),
+            )
+            .for("share");
+          if (!sequence) throw new DomainError("NOT_FOUND", 404);
+          if (sequence.archivedAt)
+            throw new DomainError("SEQUENCE_ARCHIVED", 409);
+          await assertProductActive(
+            tx,
+            touch.organizationId,
+            enrollment.productId,
+          );
+        }
         const later = await tx
           .select()
           .from(s.touches)
@@ -1721,6 +1802,11 @@ export class OutreachService {
       await assertActiveRelationships(tx, input.organizationId, [
         relationship.id,
       ]);
+      const [sequence] = await tx
+        .select({ archivedAt: s.sequences.archivedAt })
+        .from(s.sequences)
+        .where(eq(s.sequences.id, found.sequenceId))
+        .for("share");
       const [enrollment] = await tx
         .select()
         .from(s.enrollments)
@@ -1737,6 +1823,9 @@ export class OutreachService {
         if (enrollment.status !== "paused")
           throw new DomainError("CONFLICT", 409);
         if (person.doNotContact) throw new DomainError("DO_NOT_CONTACT", 409);
+        if (sequence?.archivedAt)
+          throw new DomainError("SEQUENCE_ARCHIVED", 409);
+        await assertProductActive(tx, input.organizationId, found.productId);
       }
       const now = this.clock();
       const [updated] = await tx
@@ -1812,6 +1901,8 @@ export class OutreachService {
       if (input.productId && input.productId !== found.productId)
         throw new DomainError("FORBIDDEN", 403);
       await assertActiveRelationships(tx, input.organizationId, [found.id]);
+      if (input.stageId)
+        await shareLockStage(tx, input.organizationId, input.stageId);
       const [relationship] = await tx
         .select()
         .from(s.relationships)
@@ -1834,9 +1925,16 @@ export class OutreachService {
               eq(s.stages.pipeline, "outreach"),
               isNull(s.stages.archivedAt),
             ),
-          );
+          )
+          .for("share");
         if (!stage) throw new DomainError("NOT_FOUND", 404);
       }
+      const ownerChanged =
+        input.ownerId !== undefined && input.ownerId !== relationship.ownerId;
+      if (input.ownerId !== undefined && ownerChanged)
+        await assertProductAccess(tx, input.organizationId, input.ownerId, [
+          relationship.productId,
+        ]);
       const [updated] = await tx
         .update(s.relationships)
         .set({
@@ -1861,6 +1959,7 @@ export class OutreachService {
               }
             : {}),
           ...(moved ? { stageId: input.stageId } : {}),
+          ...(ownerChanged ? { ownerId: input.ownerId } : {}),
           ...(input.priority !== undefined ? { priority: input.priority } : {}),
           ...(input.nextStep !== undefined ? { nextStep: input.nextStep } : {}),
           ...(input.nextStepDueAt !== undefined
@@ -1880,13 +1979,37 @@ export class OutreachService {
         )
         .returning();
       if (!updated) throw new DomainError("CONFLICT", 409);
-      await tx.insert(s.changeEvents).values({
-        organizationId: input.organizationId,
-        productId: relationship.productId,
-        actorId: principal.userId,
-        type: moved ? "relationship.stage_moved" : "relationship.updated",
-        entityId: relationship.id,
-      });
+      const edited =
+        input.context !== undefined ||
+        input.contextDetails !== undefined ||
+        input.priority !== undefined ||
+        input.nextStep !== undefined ||
+        input.nextStepDueAt !== undefined;
+      const types = [
+        moved
+          ? "relationship.stage_moved"
+          : edited || !ownerChanged
+            ? "relationship.updated"
+            : "",
+        ownerChanged ? "relationship.owner_changed" : "",
+      ].filter(Boolean);
+      await tx.insert(s.changeEvents).values(
+        types.map((type) => ({
+          organizationId: input.organizationId,
+          productId: relationship.productId,
+          actorId: principal.userId,
+          type,
+          entityId: relationship.id,
+        })),
+      );
+      if (ownerChanged)
+        await reassignTouches(
+          tx,
+          principal.userId,
+          input.organizationId,
+          updated.ownerId,
+          { relationshipId: relationship.id },
+        );
       return updated;
     });
   }
@@ -1904,6 +2027,7 @@ export class OutreachService {
         values.productId,
         true,
       );
+      await assertProductActive(tx, values.organizationId, values.productId);
       const [sequence] = await tx
         .insert(s.sequences)
         .values({
@@ -1921,6 +2045,113 @@ export class OutreachService {
         entityId: sequence.id,
       });
       return sequence;
+    });
+  }
+  private async lockSequence(
+    tx: Transaction,
+    principal: Principal,
+    input: z.infer<typeof sequenceArchiveSchema>,
+  ) {
+    const [found] = await tx
+      .select()
+      .from(s.sequences)
+      .where(
+        and(
+          eq(s.sequences.id, input.sequenceId),
+          eq(s.sequences.organizationId, input.organizationId),
+        ),
+      );
+    if (!found) throw new DomainError("NOT_FOUND", 404);
+    await authorize(tx, principal, input.organizationId, found.productId, true);
+    if (input.productId && input.productId !== found.productId)
+      throw new DomainError("FORBIDDEN", 403);
+    const [sequence] = await tx
+      .select()
+      .from(s.sequences)
+      .where(eq(s.sequences.id, found.id))
+      .for("update");
+    if (!sequence) throw new DomainError("NOT_FOUND", 404);
+    if (sequence.version !== input.version)
+      throw new DomainError("CONFLICT", 409);
+    return sequence;
+  }
+  async archiveSequence(
+    principal: Principal,
+    input: z.infer<typeof sequenceArchiveSchema>,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const sequence = await this.lockSequence(tx, principal, input);
+      if (sequence.archivedAt) throw new DomainError("SEQUENCE_ARCHIVED", 409);
+      const [archived] = await tx
+        .update(s.sequences)
+        .set({
+          archivedAt: new Date(this.clock()),
+          version: sequence.version + 1,
+        })
+        .where(eq(s.sequences.id, sequence.id))
+        .returning();
+      if (!archived) throw new DomainError("CONFLICT", 409);
+      const running = await tx
+        .select()
+        .from(s.enrollments)
+        .where(
+          and(
+            eq(s.enrollments.organizationId, input.organizationId),
+            eq(s.enrollments.sequenceId, sequence.id),
+            eq(s.enrollments.status, "running"),
+          ),
+        )
+        .orderBy(asc(s.enrollments.id))
+        .for("update");
+      for (const enrollment of running)
+        await tx
+          .update(s.enrollments)
+          .set({
+            status: "paused",
+            pauseReason: "manual",
+            version: enrollment.version + 1,
+          })
+          .where(eq(s.enrollments.id, enrollment.id));
+      await tx.insert(s.changeEvents).values([
+        {
+          organizationId: input.organizationId,
+          productId: sequence.productId,
+          actorId: principal.userId,
+          type: "sequence.archived",
+          entityId: sequence.id,
+        },
+        ...running.map((enrollment) => ({
+          organizationId: input.organizationId,
+          productId: sequence.productId,
+          actorId: principal.userId,
+          type: "enrollment.paused",
+          entityId: enrollment.id,
+        })),
+      ]);
+      return { ...archived, pausedEnrollments: running.length };
+    });
+  }
+  async restoreSequence(
+    principal: Principal,
+    input: z.infer<typeof sequenceRestoreSchema>,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const sequence = await this.lockSequence(tx, principal, input);
+      if (!sequence.archivedAt) throw new DomainError("SEQUENCE_ACTIVE", 409);
+      const [restored] = await tx
+        .update(s.sequences)
+        .set({ archivedAt: null, version: sequence.version + 1 })
+        .where(eq(s.sequences.id, sequence.id))
+        .returning();
+      if (!restored) throw new DomainError("CONFLICT", 409);
+      await tx.insert(s.changeEvents).values({
+        organizationId: input.organizationId,
+        productId: sequence.productId,
+        actorId: principal.userId,
+        type: "sequence.restored",
+        entityId: sequence.id,
+      });
+      return restored;
     });
   }
   async updateSequence(
@@ -2097,6 +2328,14 @@ export class OutreachService {
         (principal.source === "mcp" && principal.productIds !== undefined)
       )
         throw new DomainError("FORBIDDEN", 403);
+      if (
+        principal.source === "mcp" &&
+        loosensContactRules(
+          await readContactRules(tx, input.organizationId),
+          input,
+        )
+      )
+        throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
       const values = {
         cooldownDays: input.cooldownDays,
         dailyCapPerSender: input.dailyCapPerSender,
@@ -2167,6 +2406,21 @@ export class OutreachService {
       if (person.version !== input.version)
         throw new DomainError("CONFLICT", 409);
       if (person.archivedAt) throw new DomainError("RECORD_ARCHIVED", 409);
+      if (
+        principal.source === "mcp" &&
+        person.doNotContact &&
+        !input.doNotContact
+      )
+        throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
+      if (
+        principal.source === "mcp" &&
+        input.timeZone !== person.timeZone &&
+        (await unblocksNow(tx, input.organizationId, this.clock(), {
+          before: person.timeZone,
+          after: input.timeZone,
+        }))
+      )
+        throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
       const [updated] = await tx
         .update(s.people)
         .set({

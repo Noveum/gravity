@@ -9,7 +9,10 @@ import {
   test,
   vi,
 } from "vitest";
-import { OutboundService } from "../packages/connectors/outbound";
+import {
+  OutboundService,
+  resolveDeliverySchema,
+} from "../packages/connectors/outbound";
 import * as outboundProvider from "../packages/connectors/outbound-provider";
 import {
   emailDraft,
@@ -25,6 +28,10 @@ import { DomainError, type Principal } from "../packages/core/policy";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
+import {
+  operationRequirements,
+  operations,
+} from "../packages/operations/catalog";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 const org = demoId(1);
@@ -183,6 +190,8 @@ async function fixture(
     version = approved.version;
   }
   const transport = vi.fn<typeof fetch>(async (url) => {
+    if (String(url).includes("unipile.com") && String(url).endsWith("/chat"))
+      return json({ object: "ChatLookup", data: [] });
     if (String(url).includes("unipile.com") && String(url).includes("/users/"))
       return json({
         id: `user_fixture_${counter}`,
@@ -231,7 +240,7 @@ test("an in-flight send reserves the sender's last daily slot across different p
       ),
     );
   const rules = await first.outreach.contactRules(principal, org);
-  await first.outreach.updateContactRules(principal, {
+  await first.outreach.updateContactRules(human, {
     organizationId: org,
     ...rules,
     dailyCapPerSender: baseline.count + 1,
@@ -265,7 +274,7 @@ test("an in-flight send reserves the sender's last daily slot across different p
   } finally {
     release();
     expect((await sending).status).toBe("sent");
-    await first.outreach.updateContactRules(principal, {
+    await first.outreach.updateContactRules(human, {
       organizationId: org,
       ...rules,
       version: rules.version + 1,
@@ -433,7 +442,7 @@ test("opt-outs, quiet hours, future dates, paused enrollments and daily caps blo
     .set({ status: "running", pauseReason: null })
     .where(eq(s.enrollments.relationshipId, f.relationshipId));
   const rules = await f.outreach.contactRules(principal, org);
-  await f.outreach.updateContactRules(principal, {
+  await f.outreach.updateContactRules(human, {
     organizationId: org,
     ...rules,
     dailyCapPerSender: 1,
@@ -441,7 +450,7 @@ test("opt-outs, quiet hours, future dates, paused enrollments and daily caps blo
   await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
     code: "CONTACT_POLICY_BLOCKED",
   });
-  await f.outreach.updateContactRules(principal, {
+  await f.outreach.updateContactRules(human, {
     organizationId: org,
     ...rules,
     version: rules.version + 1,
@@ -622,7 +631,9 @@ test("no Gmail receipt is not proof of failure and cannot release an ambiguous s
 });
 test("edits during provider preflight require a fresh approval before any network dispatch", async () => {
   const f = await fixture("linkedin");
-  const transport = vi.fn<typeof fetch>(async () => {
+  const transport = vi.fn<typeof fetch>(async (url) => {
+    if (String(url).endsWith("/chat"))
+      return json({ object: "ChatLookup", data: [] });
     if (!("touchId" in f.source)) throw new Error("fixture");
     await f.outreach.editDraft(principal, {
       organizationId: org,
@@ -638,8 +649,10 @@ test("edits during provider preflight require a fresh approval before any networ
   await expect(
     new OutboundService(local.db, transport, clock).send(principal, f.input),
   ).rejects.toMatchObject({ code: "CONFLICT" });
-  expect(transport).toHaveBeenCalledTimes(1);
-  expect(transport.mock.calls[0][1]?.method).toBeUndefined();
+  expect(transport).toHaveBeenCalledTimes(2);
+  expect(
+    transport.mock.calls.every(([, init]) => init?.method === undefined),
+  ).toBe(true);
 });
 test("parallel retries commit one provider call and preserve the same delivery ID", async () => {
   const f = await fixture();
@@ -722,15 +735,18 @@ test("LinkedIn starts a Classic chat using the stored profile and the owner's pr
   const f = await fixture("linkedin");
   const sent = await f.service.send(principal, f.input);
   expect(sent.status).toBe("sent");
-  expect(f.transport).toHaveBeenCalledTimes(2);
+  expect(f.transport).toHaveBeenCalledTimes(3);
   expect(String(f.transport.mock.calls[1][0])).toContain(
+    `/users/user_fixture_${counter}/chat`,
+  );
+  expect(String(f.transport.mock.calls[2][0])).toContain(
     "/inboxes/CLASSIC/chats/send",
   );
-  expect(JSON.parse(String(f.transport.mock.calls[1][1]?.body))).toEqual({
+  expect(JSON.parse(String(f.transport.mock.calls[2][1]?.body))).toEqual({
     text: f.draft,
     users_ids: `user_fixture_${counter}`,
   });
-  expect(f.transport.mock.calls[1][1]?.headers).toHaveProperty(
+  expect(f.transport.mock.calls[2][1]?.headers).toHaveProperty(
     "X-API-KEY",
     "fixture-owner-key",
   );
@@ -978,4 +994,519 @@ test("reopening a sent follow-up clears approval before another deliberate send"
     .from(s.messages)
     .where(eq(s.messages.connectionId, f.connectionId));
   expect(history).toHaveLength(2);
+});
+async function linkElsewhere(
+  f: Awaited<ReturnType<typeof fixture>>,
+  externalThreadId: string,
+) {
+  const other = await f.crm.createPerson(human, {
+    organizationId: org,
+    productId: f.productId,
+    name: `Linked elsewhere ${counter}`,
+    email: `linked-elsewhere-${counter}@example.test`,
+    title: "",
+    purpose: "buyer",
+    context: "",
+    review: false,
+    channel: "linkedin",
+  });
+  await local.db.insert(s.conversations).values({
+    organizationId: org,
+    productId: f.productId,
+    relationshipId: other.relationshipId,
+    connectionId: f.connectionId,
+    externalThreadId,
+    ownerId: demoUser,
+    channel: "linkedin",
+  });
+  return other;
+}
+test("a LinkedIn receipt on a chat linked to another relationship still completes the send", async () => {
+  const f = await fixture("linkedin");
+  await linkElsewhere(f, `thread-${f.connectionId}`);
+  const sent = await f.service.send(principal, f.input);
+  expect(sent.status).toBe("sent");
+  expect(sent.errorCode).toBe("THREAD_ALREADY_LINKED");
+  expect(sent.providerAccepted).toBe(true);
+  if (!("touchId" in f.source)) throw new Error("fixture");
+  const [touch] = await local.db
+    .select()
+    .from(s.touches)
+    .where(eq(s.touches.id, f.source.touchId));
+  expect(touch.status).toBe("sent");
+  const [relationship] = await local.db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, f.relationshipId));
+  expect(relationship.touchCount).toBe(1);
+  expect(relationship.lastOutboundAt?.getTime()).toBe(now);
+  const messages = await local.db
+    .select()
+    .from(s.messages)
+    .where(eq(s.messages.connectionId, f.connectionId));
+  expect(messages).toHaveLength(0);
+  const pending = await local.db
+    .select()
+    .from(s.deliveries)
+    .where(
+      and(
+        eq(s.deliveries.relationshipId, f.relationshipId),
+        sql`${s.deliveries.status} in ('sending', 'unknown', 'accepted')`,
+      ),
+    );
+  expect(pending).toHaveLength(0);
+  expect(await f.service.send(principal, f.input)).toEqual(sent);
+});
+test("a LinkedIn send refuses before claiming when the account's chat with the person is linked elsewhere", async () => {
+  const f = await fixture("linkedin");
+  const chatId = `existing-chat-${f.connectionId}`;
+  await linkElsewhere(f, chatId);
+  const transport = vi.fn<typeof fetch>(async (url) => {
+    if (String(url).endsWith("/chat"))
+      return json({
+        object: "ChatLookup",
+        data: [{ chat_id: chatId, inbox_id: "CLASSIC", has_history: true }],
+      });
+    return json({
+      id: `user_fixture_${counter}`,
+      public_identifier: `fixture-${counter}`,
+    });
+  });
+  await expect(
+    new OutboundService(local.db, transport, clock).send(principal, f.input),
+  ).rejects.toMatchObject({ code: "THREAD_ALREADY_LINKED" });
+  expect(String(transport.mock.calls[1][0])).toContain(
+    `/acc_fixture_${counter}/users/user_fixture_${counter}/chat`,
+  );
+  expect(
+    transport.mock.calls.every(([, init]) => init?.method === undefined),
+  ).toBe(true);
+  const deliveries = await local.db
+    .select()
+    .from(s.deliveries)
+    .where(eq(s.deliveries.connectionId, f.connectionId));
+  expect(deliveries).toHaveLength(0);
+});
+function lookupFails(
+  f: Awaited<ReturnType<typeof fixture>>,
+  lookup: () => Response,
+) {
+  return vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith("/chat")) return lookup();
+    if (init?.method === "POST")
+      return json({
+        message_id: `sent-${f.connectionId}`,
+        chat_id: `thread-${f.connectionId}`,
+      });
+    return json({
+      id: `user_fixture_${counter}`,
+      public_identifier: `fixture-${counter}`,
+    });
+  });
+}
+test("a failed LinkedIn chat lookup never blocks the send", async () => {
+  const failures: (() => Response)[] = [
+    () => json({ error: "not found" }, 404),
+    () => json({ error: "server" }, 500),
+    () => json({ error: "bad request" }, 400),
+    () => json({ object: "ChatLookup", data: { chat_id: "unexpected" } }),
+  ];
+  for (const failure of failures) {
+    const f = await fixture("linkedin");
+    const transport = lookupFails(f, failure);
+    const sent = await new OutboundService(local.db, transport, clock).send(
+      principal,
+      f.input,
+    );
+    expect(sent.status).toBe("sent");
+    expect(sent.errorCode).toBeNull();
+    expect(
+      transport.mock.calls.some(([url]) =>
+        String(url).endsWith(
+          `/acc_fixture_${counter}/inboxes/CLASSIC/chats/send`,
+        ),
+      ),
+    ).toBe(true);
+  }
+});
+test("a failed lookup followed by a receipt on a chat linked elsewhere still ends sent", async () => {
+  const f = await fixture("linkedin");
+  await linkElsewhere(f, `thread-${f.connectionId}`);
+  const transport = lookupFails(f, () => json({ error: "not found" }, 404));
+  const sent = await new OutboundService(local.db, transport, clock).send(
+    principal,
+    f.input,
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.errorCode).toBe("THREAD_ALREADY_LINKED");
+});
+const resolveOperation = () => {
+  const found = operations.find((item) => item.name === "resolve_delivery");
+  if (!found) throw new Error("resolve_delivery missing");
+  return found;
+};
+const resolveAs = (actor: Principal, input: Record<string, unknown>) =>
+  resolveOperation().execute(
+    { db: local.db, principal: actor },
+    { organizationId: org, ...input },
+  );
+const resolveAt = (at: number, input: Record<string, unknown>) =>
+  new OutboundService(local.db, fetch, () => at).resolve(
+    human,
+    resolveDeliverySchema.parse({ organizationId: org, ...input }),
+  );
+test("resolve_delivery is admin-only, human-only and needs explicit confirmation", async () => {
+  const f = await fixture();
+  const stuck = await new OutboundService(
+    local.db,
+    async () => {
+      throw new Error("timeout");
+    },
+    clock,
+  ).send(principal, f.input);
+  expect(stuck.status).toBe("unknown");
+  const input = {
+    deliveryId: stuck.id,
+    outcome: "failed",
+    reason: "absent_in_provider",
+    confirm: true,
+  };
+  await expect(resolveAs(principal, input)).rejects.toMatchObject({
+    code: "HUMAN_ACTION_REQUIRED",
+  });
+  await expect(
+    resolveAs({ userId: "demo-teammate", source: "session" }, input),
+  ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  await expect(
+    resolveAs(human, { ...input, confirm: undefined }),
+  ).rejects.toThrow();
+  await expect(
+    resolveAs(human, { ...input, confirm: false }),
+  ).rejects.toThrow();
+  expect(operationRequirements(resolveOperation())).toMatchObject({
+    administrator: true,
+    humanSession: true,
+  });
+  expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+    "DELIVERY_IN_PROGRESS",
+  );
+  const resolved = await resolveAs(human, input);
+  expect(resolved).toMatchObject({
+    id: stuck.id,
+    status: "failed",
+    errorCode: "RESOLVED_ABSENT_IN_PROVIDER",
+    retrySafe: true,
+  });
+  expect((await f.service.readiness(principal, f.input)).blockedBy).toBeNull();
+  const events = await local.db
+    .select()
+    .from(s.changeEvents)
+    .where(eq(s.changeEvents.entityId, stuck.id));
+  expect(events.map((event) => event.type)).toContain("delivery.resolved");
+  await expect(resolveAs(human, input)).rejects.toMatchObject({
+    code: "DELIVERY_NOT_RESOLVABLE",
+  });
+});
+test("resolve_delivery waits out the live sending window and records a confirmed send", async () => {
+  const f = await fixture();
+  if (!("touchId" in f.source)) throw new Error("fixture");
+  const stuck = await new OutboundService(
+    local.db,
+    async () => {
+      throw new Error("timeout");
+    },
+    clock,
+  ).send(principal, f.input);
+  await local.db
+    .update(s.deliveries)
+    .set({ status: "sending", createdAt: new Date(now) })
+    .where(eq(s.deliveries.id, stuck.id));
+  const input = {
+    deliveryId: stuck.id,
+    outcome: "sent",
+    reason: "confirmed_in_provider",
+    confirm: true,
+  };
+  await expect(resolveAt(now + 60000, input)).rejects.toMatchObject({
+    code: "DELIVERY_IN_PROGRESS",
+  });
+  const resolved = await resolveAt(now + 121000, input);
+  expect(resolved).toMatchObject({
+    status: "sent",
+    errorCode: "RESOLVED_CONFIRMED_IN_PROVIDER",
+    providerAccepted: true,
+  });
+  const [touch] = await local.db
+    .select()
+    .from(s.touches)
+    .where(eq(s.touches.id, f.source.touchId));
+  expect(touch.status).toBe("sent");
+  const [relationship] = await local.db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, f.relationshipId));
+  expect(relationship.touchCount).toBe(1);
+  await expect(
+    f.service.send(principal, { ...f.input, idempotencyKey: randomUUID() }),
+  ).rejects.toMatchObject({ code: "CONFLICT" });
+});
+async function sequenceOf(touchId: string) {
+  const [row] = await local.db
+    .select({ sequenceId: s.enrollments.sequenceId })
+    .from(s.touches)
+    .innerJoin(s.enrollments, eq(s.enrollments.id, s.touches.enrollmentId))
+    .where(eq(s.touches.id, touchId));
+  if (!row) throw new Error("sequence fixture");
+  return row.sequenceId;
+}
+function dispatches(transport: ReturnType<typeof vi.fn>) {
+  return transport.mock.calls.filter(
+    ([url]) => !String(url).includes("/users/"),
+  ).length;
+}
+test("send_touch refuses a touch whose sequence was archived", async () => {
+  const f = await fixture();
+  if (!("touchId" in f.source)) throw new Error("fixture");
+  await local.db
+    .update(s.sequences)
+    .set({ archivedAt: new Date(now) })
+    .where(eq(s.sequences.id, await sequenceOf(f.source.touchId)));
+  expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+    "SEQUENCE_ARCHIVED",
+  );
+  await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
+    code: "SEQUENCE_ARCHIVED",
+    status: 409,
+  });
+  expect(dispatches(f.transport)).toBe(0);
+});
+test("send_touch and send_action refuse work in an archived product", async () => {
+  for (const actionSource of [false, true]) {
+    const f = await fixture("gmail", actionSource);
+    await local.db
+      .update(s.products)
+      .set({ archivedAt: new Date(now) })
+      .where(eq(s.products.id, f.productId));
+    expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+      "PRODUCT_ARCHIVED",
+    );
+    await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
+      code: "PRODUCT_ARCHIVED",
+      status: 409,
+    });
+    expect(dispatches(f.transport)).toBe(0);
+  }
+});
+async function rewindToAccepted(f: Awaited<ReturnType<typeof fixture>>) {
+  if (!("touchId" in f.source)) throw new Error("fixture");
+  const [before] = await local.db
+    .select()
+    .from(s.touches)
+    .where(eq(s.touches.id, f.source.touchId));
+  if (!before) throw new Error("touch fixture");
+  const sent = await f.service.send(principal, f.input);
+  expect(sent.status).toBe("sent");
+  await local.db
+    .update(s.deliveries)
+    .set({ status: "accepted" })
+    .where(eq(s.deliveries.id, sent.id));
+  await local.db
+    .delete(s.touches)
+    .where(
+      and(
+        eq(s.touches.relationshipId, f.relationshipId),
+        eq(s.touches.status, "planned"),
+      ),
+    );
+  await local.db
+    .update(s.touches)
+    .set({
+      status: "approved",
+      sentAt: null,
+      sentBy: null,
+      externalMessageId: null,
+      closedAt: null,
+      version: before.version,
+      sentWarnings: [],
+    })
+    .where(eq(s.touches.id, f.source.touchId));
+  await local.db
+    .update(s.relationships)
+    .set({ lastOutboundAt: null, touchCount: 0 })
+    .where(eq(s.relationships.id, f.relationshipId));
+  const conversations = await local.db
+    .select({ id: s.conversations.id })
+    .from(s.conversations)
+    .where(eq(s.conversations.relationshipId, f.relationshipId));
+  for (const conversation of conversations) {
+    await local.db
+      .delete(s.messages)
+      .where(eq(s.messages.conversationId, conversation.id));
+    await local.db
+      .delete(s.conversations)
+      .where(eq(s.conversations.id, conversation.id));
+  }
+  return { delivery: sent, touchId: f.source.touchId };
+}
+test("resolve_delivery never writes off a provider-accepted delivery, so the touch sends exactly once", async () => {
+  const f = await fixture();
+  const { delivery } = await rewindToAccepted(f);
+  await expect(
+    resolveAt(now + 200000, {
+      deliveryId: delivery.id,
+      outcome: "failed",
+      reason: "absent_in_provider",
+      confirm: true,
+    }),
+  ).rejects.toMatchObject({ code: "DELIVERY_PROVIDER_ACCEPTED", status: 409 });
+  await expect(
+    f.service.send(principal, { ...f.input, idempotencyKey: randomUUID() }),
+  ).rejects.toMatchObject({ code: "DELIVERY_IN_PROGRESS" });
+  const sends = f.transport.mock.calls.filter(([url]) =>
+    String(url).includes("/messages/send"),
+  );
+  expect(sends).toHaveLength(1);
+  await local.db
+    .update(s.deliveries)
+    .set({ status: "unknown" })
+    .where(eq(s.deliveries.id, delivery.id));
+  await expect(
+    resolveAt(now + 200000, {
+      deliveryId: delivery.id,
+      outcome: "failed",
+      reason: "written_off",
+      confirm: true,
+    }),
+  ).rejects.toMatchObject({ code: "DELIVERY_PROVIDER_ACCEPTED" });
+});
+test("resolving a provider-accepted delivery as sent persists the receipt like a normal send", async () => {
+  const f = await fixture();
+  const { delivery, touchId } = await rewindToAccepted(f);
+  const resolved = await resolveAt(now + 200000, {
+    deliveryId: delivery.id,
+    outcome: "sent",
+    reason: "confirmed_in_provider",
+    confirm: true,
+  });
+  expect(resolved).toMatchObject({
+    status: "sent",
+    errorCode: "RESOLVED_CONFIRMED_IN_PROVIDER",
+  });
+  const [touch] = await local.db
+    .select()
+    .from(s.touches)
+    .where(eq(s.touches.id, touchId));
+  expect(touch).toMatchObject({
+    status: "sent",
+    externalMessageId: delivery.externalMessageId,
+  });
+  const [conversation] = await local.db
+    .select()
+    .from(s.conversations)
+    .where(eq(s.conversations.relationshipId, f.relationshipId));
+  expect(conversation?.externalThreadId).toBe(delivery.externalThreadId);
+  const messages = await local.db
+    .select()
+    .from(s.messages)
+    .where(eq(s.messages.conversationId, conversation?.id ?? ""));
+  expect(messages).toHaveLength(1);
+  expect(messages[0]).toMatchObject({
+    direction: "outbound",
+    providerMessageId: delivery.externalMessageId,
+  });
+  const [relationship] = await local.db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, f.relationshipId));
+  expect(relationship?.touchCount).toBe(1);
+});
+test("a do-not-contact person sharing the recipient's email or LinkedIn profile blocks the send", async () => {
+  const cases = [
+    {
+      channel: "gmail" as const,
+      twin: (recipient: { email: string | null; linkedinUrl: string }) => ({
+        email: recipient.email?.toUpperCase() ?? null,
+        linkedinUrl: "",
+        otherEmails: [],
+      }),
+    },
+    {
+      channel: "gmail" as const,
+      twin: (recipient: { email: string | null; linkedinUrl: string }) => ({
+        email: null,
+        linkedinUrl: "",
+        otherEmails: [recipient.email ?? ""],
+      }),
+    },
+    {
+      channel: "linkedin" as const,
+      twin: (recipient: { email: string | null; linkedinUrl: string }) => ({
+        email: null,
+        linkedinUrl: recipient.linkedinUrl
+          .replace("https://www.", "https://")
+          .replace(/\/$/, "")
+          .toUpperCase()
+          .replace("HTTPS://LINKEDIN.COM", "https://linkedin.com"),
+        otherEmails: [],
+      }),
+    },
+  ];
+  for (const { channel, twin } of cases) {
+    const f = await fixture(channel);
+    const [recipient] = await local.db
+      .select()
+      .from(s.people)
+      .where(eq(s.people.id, f.personId));
+    if (!recipient) throw new Error("person fixture");
+    expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+      null,
+    );
+    const [optedOut] = await local.db
+      .insert(s.people)
+      .values({
+        organizationId: org,
+        name: "Opted-out twin",
+        doNotContact: true,
+        ...twin(recipient),
+      })
+      .returning();
+    expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+      "DO_NOT_CONTACT",
+    );
+    await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
+      code: "DO_NOT_CONTACT",
+    });
+    expect(f.transport).not.toHaveBeenCalled();
+    await local.db
+      .update(s.people)
+      .set({ doNotContact: false })
+      .where(eq(s.people.id, optedOut?.id ?? ""));
+    expect((await f.service.readiness(principal, f.input)).blockedBy).toBe(
+      null,
+    );
+  }
+});
+
+test("the existing LinkedIn chat lookup only runs against the Unipile V2 API", async () => {
+  const transport = vi.fn(async () =>
+    json({ data: [{ chat_id: "chat-classic", inbox_id: "CLASSIC" }] }),
+  );
+  expect(
+    await outboundProvider.findLinkedInChat(
+      "account",
+      "user",
+      { apiKey: "fictional-key", apiVersion: "v1", dsn: "api1.example.test" },
+      transport,
+    ),
+  ).toBeNull();
+  expect(transport).not.toHaveBeenCalled();
+  expect(
+    await outboundProvider.findLinkedInChat(
+      "account",
+      "user",
+      { apiKey: "fictional-key", apiVersion: "v2" },
+      transport,
+    ),
+  ).toBe("chat-classic");
+  expect(transport).toHaveBeenCalledOnce();
 });

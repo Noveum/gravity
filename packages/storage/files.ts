@@ -9,6 +9,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { and, eq } from "drizzle-orm";
 import { authorize, DomainError, type Principal } from "../core/policy";
+import { assertProductActive } from "../core/products";
 import type { Database } from "../database/client";
 import { isDemoMode } from "../database/client";
 import * as s from "../database/schema";
@@ -120,6 +121,7 @@ export async function uploadAsset(
   await put(key, input.bytes, input.mimeType);
   try {
     return await db.transaction(async (tx) => {
+      await assertProductActive(tx, input.organizationId, input.productId);
       const [asset] = await tx
         .insert(s.assets)
         .values({

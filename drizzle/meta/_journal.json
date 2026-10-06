@@ -134,6 +134,27 @@
       "when": 1791288895988,
       "tag": "0018_product_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791288896502,
+      "tag": "0019_backfill_deal_closed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791288897249,
+      "tag": "0020_sequence_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791288897945,
+      "tag": "0021_linkedin_url_unique",
+      "breakpoints": true
     }
   ]
 }

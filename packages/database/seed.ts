@@ -377,24 +377,28 @@ export async function seedDemo(db: Database) {
         organizationId: demoId(1),
         name: "AI Platform",
         color: "#7565cf",
+        colorKey: "violet",
       },
       {
         id: demoId(11),
         organizationId: demoId(1),
         name: "API Marketplace",
         color: "#418ca0",
+        colorKey: "teal",
       },
       {
         id: demoId(12),
         organizationId: demoId(1),
         name: "Services",
         color: "#ca9058",
+        colorKey: "orange",
       },
       {
         id: demoId(13),
         organizationId: demoId(2),
         name: "Design Partners",
         color: "#cf6f93",
+        colorKey: "pink",
       },
     ]);
     await tx.insert(s.productMemberships).values(

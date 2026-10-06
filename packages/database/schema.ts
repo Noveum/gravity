@@ -15,6 +15,10 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import {
+  defaultProductColorKey,
+  productColorKeys,
+} from "../core/product-colors";
 import { serverAccessPolicy } from "./access-policy";
 
 export * from "./auth-schema";
@@ -68,12 +72,20 @@ export const products = pgTable(
     organizationId: organizationId(),
     name: text("name").notNull(),
     color: text("color").notNull().default("#7565cf"),
+    colorKey: text("color_key", { enum: productColorKeys })
+      .notNull()
+      .default(defaultProductColorKey),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
     serverAccessPolicy(),
     unique().on(t.organizationId, t.id),
     unique().on(t.organizationId, t.name),
+    check(
+      "product_color_key",
+      sql`${t.colorKey} IN (${sql.raw(productColorKeys.map((key) => `'${key}'`).join(", "))})`,
+    ),
   ],
 ).enableRLS();
 export const productMemberships = pgTable(

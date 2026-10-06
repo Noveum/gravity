@@ -1,4 +1,5 @@
 "use client";
+import { productColorToken } from "@crm/core/product-colors";
 import { bindingLabel, type ShortcutId, shortcut } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import { Plus } from "lucide-react";
@@ -275,7 +276,7 @@ function CrmShell({ children }: { children: ReactNode }) {
               ...products.map((product) => ({
                 id: `product-${product.id}`,
                 label: product.name,
-                dot: product.color,
+                dot: productColorToken(product.colorKey),
                 kind: "filter" as const,
                 active: crm.productId === product.id,
                 onSelect: () => crm.switchProduct(product.id),

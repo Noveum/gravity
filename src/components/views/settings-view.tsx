@@ -1,4 +1,5 @@
 "use client";
+import { productColorToken } from "@crm/core/product-colors";
 import t from "@crm/i18n/translations/en.json";
 import { label } from "../client-api";
 import { useWorkspaceData } from "../crm/crm-context";
@@ -30,7 +31,10 @@ export function SettingsView() {
       <h2 className="spaced">{t.products}</h2>
       {crm.data.products.map((product) => (
         <div className="setting-row" key={product.id}>
-          <span className="product-dot" style={{ background: product.color }} />
+          <span
+            className="product-dot"
+            style={{ background: productColorToken(product.colorKey) }}
+          />
           {product.name}
         </div>
       ))}

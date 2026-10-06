@@ -147,3 +147,27 @@ Items from the review of #16 to #21, plus findings from the live audit, which ar
    - Add a data migration that backfills `closed_at` for won and lost deals from the `opportunity.won` and `opportunity.lost` change events, falling back to the update time.
    - Saving a closed deal without changing its status keeps `closed_at`. Make sure it is never left null.
 6. **Stale docs.** `docs/vercel.md` says sending is not implemented. Correct it, and state plainly how scheduled sync gets deployed now that the crons live in `vercel.scheduled.json`.
+
+The live audit findings follow. Full steps and screenshots are in `.superpowers/sdd/2026-10-06-settings-everywhere/audit-live.md`.
+
+7. **The Overview "Outreach activity" chart draws no bars.**
+   - `.bar-stack` is 0px wide (`globals.css` around 3958).
+   - Its green is hard-coded as `#44b592` in three places. Move it to a token.
+   - Add a test that asserts the bars have a width.
+8. **E saves a dialog while Cancel has focus.**
+   - A plain `E` must never submit when focus is on a button other than the submit button, or on a link.
+   - Cmd or Ctrl Enter still saves from anywhere in the form.
+   - Test both.
+9. **Companies and Meetings have no visible create button.** Add the toolbar create button that the other views have.
+10. **"Show pipeline" silently changes the brand filter for every page** (`pipeline-board.tsx:60`). The board must choose its brand locally without rewriting the global filter cookie. When the global filter is "All", ask which brand to show.
+11. **At 375 wide the toolbar pushes "New action" off-screen.**
+    - Let the toolbar wrap, or move its filters into an overflow menu, so the primary action stays visible.
+    - Hide keyboard hints on coarse pointers (`@media (pointer: coarse)`).
+    - Make hover styles apply only with `@media (hover: hover)`, so they don't stick after a tap.
+12. **Low-priority fixes:**
+    - Sidebar labels truncate at 1440. Fit them, or show a tooltip on truncated labels.
+    - `h` should focus the row being peeked.
+    - The `?` guide should mark, or hide, shortcuts that do nothing on the current page.
+    - Connections shows the MCP card twice. Keep one.
+    - Materials says sharing and extraction "come later". Remove the promise, or link to the roadmap.
+    - Input borders in dark mode are 1.24:1. Raise the border token to at least 3:1 against the surface.

@@ -38,6 +38,10 @@ export const organizations = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull().unique(),
     timezone: text("timezone").notNull().default("UTC"),
+    allowedEmailDomains: jsonb("allowed_email_domains")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     createdAt: createdAt(),
   },
   () => [serverAccessPolicy()],
@@ -977,6 +981,49 @@ export const mcpGrants = pgTable(
     serverAccessPolicy(),
     foreignKey({
       columns: [t.organizationId, t.userId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+  ],
+).enableRLS();
+export const invitations = pgTable(
+  "invitations",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    email: text("email").notNull(),
+    role: text("role", { enum: ["admin", "member"] })
+      .notNull()
+      .default("member"),
+    productIds: jsonb("product_ids").$type<string[]>().notNull().default([]),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    invitedBy: text("invited_by").notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedBy: text("accepted_by"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.organizationId, t.id),
+    uniqueIndex("invitations_pending_email")
+      .on(t.organizationId, t.email)
+      .where(sql`${t.acceptedAt} IS NULL AND ${t.revokedAt} IS NULL`),
+    check("invitation_email_lowercase", sql`${t.email} = lower(${t.email})`),
+    check(
+      "invitation_accepted_by",
+      sql`(${t.acceptedAt} IS NULL) = (${t.acceptedBy} IS NULL)`,
+    ),
+    check(
+      "invitation_single_outcome",
+      sql`${t.acceptedAt} IS NULL OR ${t.revokedAt} IS NULL`,
+    ),
+    foreignKey({
+      columns: [t.organizationId, t.invitedBy],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.acceptedBy],
       foreignColumns: [memberships.organizationId, memberships.userId],
     }),
   ],

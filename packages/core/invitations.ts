@@ -92,7 +92,7 @@ function assertDomain(
     throw new DomainError("EMAIL_DOMAIN_NOT_ALLOWED", 403);
 }
 const acceptUrl = (token: string) =>
-  `${appUrl()}/invite/${encodeURIComponent(token)}`;
+  `${appUrl()}/invite#${encodeURIComponent(token)}`;
 
 export class InvitationService {
   constructor(private db: Database) {}
@@ -270,6 +270,8 @@ export class InvitationService {
   }
 
   async preview(principal: Principal, token: string) {
+    if (principal.source === "mcp" || principal.readOnly)
+      throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
     const { invitation, organization } = await this.inspect(
       this.db,
       principal,

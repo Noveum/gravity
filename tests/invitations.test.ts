@@ -75,9 +75,7 @@ const invite = (input: Record<string, unknown> = {}, principal = admin) =>
     ...input,
   });
 const tokenOf = (created: Created) =>
-  decodeURIComponent(
-    new URL(created.acceptUrl).pathname.split("/").pop() ?? "",
-  );
+  decodeURIComponent(new URL(created.acceptUrl).hash.slice(1));
 const accept = (token: string, principal = invitee) =>
   run("accept_invitation", principal, { token });
 
@@ -94,7 +92,8 @@ describe("creating invitations", () => {
       (Date.parse(created.invitation.expiresAt) - Date.now()) / 86400000;
     expect(days).toBeGreaterThan(6.99);
     expect(days).toBeLessThanOrEqual(7);
-    expect(new URL(created.acceptUrl).pathname).toMatch(/^\/invite\/.{40,}$/);
+    expect(new URL(created.acceptUrl).pathname).toBe("/invite");
+    expect(new URL(created.acceptUrl).hash).toMatch(/^#.{40,}$/);
     expect(created.emailStatus).toBe("not_configured");
     const token = tokenOf(created);
     const [row] = await local.db
@@ -144,7 +143,7 @@ describe("creating invitations", () => {
       invitationId: created.invitation.id,
     });
     expect(resent.emailStatus).toBe("failed");
-    expect(resent.acceptUrl).toContain("/invite/");
+    expect(resent.acceptUrl).toContain("/invite#");
     for (const line of logged) {
       expect(line).not.toContain(tokenOf(created));
       expect(line).not.toContain(tokenOf(resent));

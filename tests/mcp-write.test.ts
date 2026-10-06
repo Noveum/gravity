@@ -212,6 +212,7 @@ test("each assistant scope combination lists only its tools and refuses the rest
   expect(humanNames.sort()).toEqual([
     "accept_invitation",
     "create_invitation",
+    "preview_invitation",
     "reactivate_member",
     "resend_invitation",
     "resolve_delivery",

@@ -24,6 +24,5 @@ export const config = {
     "/connections",
     "/assistants",
     "/settings/:path*",
-    "/invite/:path*",
   ],
 };

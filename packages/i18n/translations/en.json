@@ -1634,6 +1634,7 @@
   "inviteSignInDescription": "Sign in with the email address that received the invitation. You will come back here afterwards.",
   "inviteSignIn": "Sign in",
   "inviteUnavailableTitle": "This invitation cannot be used",
+  "inviteLoading": "Checking your invitation",
   "inviteAlreadyMemberTitle": "You already belong to {workspace}",
   "inviteAlreadyMemberDescription": "Your account is already an active member, so this invitation is not needed.",
   "inviteRoleAdmin": "an admin",

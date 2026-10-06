@@ -724,6 +724,18 @@ export const operations: Operation[] = [
   operation({
     api: "crm",
     method: "POST",
+    operation: "invitation-preview",
+    name: "preview_invitation",
+    description:
+      "Show the workspace name, role and expiry of an invitation from its token to the signed-in person whose verified email matches it, without accepting it. The token travels in the request body, never in a URL. Assistants cannot preview on a person's behalf.",
+    schema: acceptInvitationSchema,
+    destructive: false,
+    publish: false,
+    run: (c, input) => invitations(c).preview(c.principal, input.token),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
     operation: "invitation-accept",
     name: "accept_invitation",
     description:
@@ -1334,6 +1346,7 @@ const allProductOperations = new Set([
   ...memberAdministration,
 ]);
 const humanSessionOperations = new Set([
+  "preview_invitation",
   "accept_invitation",
   "resolve_delivery",
   "create_invitation",

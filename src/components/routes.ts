@@ -157,9 +157,11 @@ export function personPath(
   });
 }
 
-export const invitePath = (token: string) =>
-  `/invite/${encodeURIComponent(token)}`;
-const isInvitePath = (pathname: string) => /^\/invite\/[^/]+$/.test(pathname);
+export const invitePath = "/invite";
+export const inviteLinkPath = (token: string) =>
+  `${invitePath}#${encodeURIComponent(token)}`;
+const isInvitePath = (pathname: string) =>
+  /^\/invite(?:\/[^/]+)?$/.test(pathname);
 
 export function companyPath(companyId: string) {
   return `${sectionPaths.companies}/${encodeURIComponent(companyId)}`;

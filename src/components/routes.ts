@@ -10,7 +10,7 @@ const sectionPaths: Record<Section, string> = {
   sequences: "/sequences",
   meetings: "/meetings",
   opportunities: "/opportunities",
-  materials: "/materials",
+  materials: "/files",
   outreach: "/outreach",
   integrations: "/settings/connections",
   assistants: "/settings/assistants",
@@ -119,6 +119,7 @@ export function sectionPath(section: Section) {
 }
 
 export function routeFor(pathname: string): Route | null {
+  if (pathname === "/materials") return { section: "materials", recordId: "" };
   const [first, second, ...rest] = pathname.split("/").filter(Boolean);
   const section = sections.find((id) => sectionPaths[id] === `/${first}`);
   if (!section) return null;

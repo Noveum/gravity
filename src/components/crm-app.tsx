@@ -479,13 +479,16 @@ function CrmShell({ children }: { children: ReactNode }) {
           onHelp={openHelp}
           onOpenNavigation={() => setDrawerOpen(true)}
         />
-        {data && !recordId && toolbarSections.has(section) && (
-          <ViewToolbar
-            searchInput={searchInput}
-            onEnroll={() => setEnrolling(crm.selection.selected)}
-            onCreateProduct={openProductDialog}
-          />
-        )}
+        {data &&
+          !recordId &&
+          crm.pathname !== "/files" &&
+          toolbarSections.has(section) && (
+            <ViewToolbar
+              searchInput={searchInput}
+              onEnroll={() => setEnrolling(crm.selection.selected)}
+              onCreateProduct={openProductDialog}
+            />
+          )}
         {enrolling && (
           <EnrollDialog
             personIds={enrolling}

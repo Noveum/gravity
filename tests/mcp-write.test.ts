@@ -123,6 +123,19 @@ test("MCP publishes instructions, workflow prompts and an effective operation pe
   });
   expect(initialized.result.instructions).toContain("get_permission_audit");
   expect(initialized.result.instructions).toContain("idempotencyKey");
+  expect(initialized.result.instructions).not.toMatch(/not implemented\.$/);
+  expect(initialized.result.instructions).not.toContain(
+    "member administration are not implemented",
+  );
+  for (const phrase of [
+    "all-products grant",
+    "invitations",
+    "Granting access",
+    "accept_invitation",
+    "resolve_delivery",
+    "archivedProducts",
+  ])
+    expect(initialized.result.instructions).toContain(phrase);
   const prompts = await rpc("prompts/list", {});
   expect(
     prompts.result.prompts.map((prompt: { name: string }) => prompt.name),

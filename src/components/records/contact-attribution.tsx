@@ -130,7 +130,7 @@ export function ContactAttribution({ context }: { context: ClientContext }) {
                   )}
                   {item.provider && (
                     <>
-                      <dt>{copy.sourceKind}</dt>
+                      <dt>{copy.provider}</dt>
                       <dd>{item.provider}</dd>
                     </>
                   )}

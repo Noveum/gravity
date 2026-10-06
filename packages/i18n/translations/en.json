@@ -2157,6 +2157,7 @@
     "at": "Recorded at",
     "unavailable": "Attribution could not be loaded. Retry to check the recorded history.",
     "retry": "Retry",
-    "memberId": "Member ID"
+    "memberId": "Member ID",
+    "provider": "Provider"
   }
 }

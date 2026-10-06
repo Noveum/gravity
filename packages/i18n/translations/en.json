@@ -1701,6 +1701,7 @@
   "deactivate": "Deactivate",
   "deactivateConfirm": "Deactivate member",
   "reassignWorkFrom": "Move work from {name} to",
+  "reassignNeedsAccess": "{name}, no access to {products}",
   "reactivate": "Reactivate",
   "memberDeactivated": "Deactivated",
   "memberMoved": "Member deactivated. Moved {relationships}, {actions} and {touches}.",

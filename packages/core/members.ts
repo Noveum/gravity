@@ -270,48 +270,72 @@ export class MemberService {
       .select()
       .from(s.productMemberships)
       .where(eq(s.productMemberships.organizationId, organizationId));
-    const counted = async (
-      rows: PromiseLike<{ userId: string; count: number }[]>,
-    ) => new Map((await rows).map((row) => [row.userId, row.count]));
     const total = sql<number>`count(*)::int`;
-    const relationships = await counted(
-      this.db
-        .select({ userId: s.relationships.ownerId, count: total })
-        .from(s.relationships)
-        .where(
-          and(
-            eq(s.relationships.organizationId, organizationId),
-            inArray(s.relationships.productId, productIds),
-          ),
-        )
-        .groupBy(s.relationships.ownerId),
-    );
-    const actions = await counted(
-      this.db
-        .select({ userId: s.actions.ownerId, count: total })
-        .from(s.actions)
-        .where(
-          and(
-            eq(s.actions.organizationId, organizationId),
-            inArray(s.actions.productId, productIds),
-            inArray(s.actions.status, [...openActionStatuses]),
-          ),
-        )
-        .groupBy(s.actions.ownerId),
-    );
-    const touches = await counted(
-      this.db
-        .select({ userId: s.touches.senderId, count: total })
-        .from(s.touches)
-        .where(
-          and(
-            eq(s.touches.organizationId, organizationId),
-            inArray(s.touches.productId, productIds),
-            inArray(s.touches.status, [...openTouchStatuses]),
-          ),
-        )
-        .groupBy(s.touches.senderId),
-    );
+    const relationships = await this.db
+      .select({
+        userId: s.relationships.ownerId,
+        productId: s.relationships.productId,
+        count: total,
+      })
+      .from(s.relationships)
+      .where(
+        and(
+          eq(s.relationships.organizationId, organizationId),
+          inArray(s.relationships.productId, productIds),
+        ),
+      )
+      .groupBy(s.relationships.ownerId, s.relationships.productId);
+    const sharedAction = sql<boolean>`coalesce(${s.conversations.visibility} <> 'private', true)`;
+    const actions = await this.db
+      .select({
+        userId: s.actions.ownerId,
+        productId: s.actions.productId,
+        shared: sharedAction,
+        count: total,
+      })
+      .from(s.actions)
+      .leftJoin(
+        s.conversations,
+        eq(s.conversations.id, s.actions.sourceConversationId),
+      )
+      .where(
+        and(
+          eq(s.actions.organizationId, organizationId),
+          inArray(s.actions.productId, productIds),
+          inArray(s.actions.status, [...openActionStatuses]),
+        ),
+      )
+      .groupBy(s.actions.ownerId, s.actions.productId, sharedAction);
+    const touches = await this.db
+      .select({
+        userId: s.touches.senderId,
+        productId: s.touches.productId,
+        count: total,
+      })
+      .from(s.touches)
+      .where(
+        and(
+          eq(s.touches.organizationId, organizationId),
+          inArray(s.touches.productId, productIds),
+          inArray(s.touches.status, [...openTouchStatuses]),
+        ),
+      )
+      .groupBy(s.touches.senderId, s.touches.productId);
+    const countOf = (
+      rows: { userId: string | null; count: number }[],
+      userId: string,
+    ) =>
+      rows
+        .filter((row) => row.userId === userId)
+        .reduce((sum, row) => sum + row.count, 0);
+    const handedOver = (userId: string) =>
+      [
+        ...new Set(
+          [...relationships, ...actions.filter((row) => row.shared), ...touches]
+            .filter((row) => row.userId === userId)
+            .map((row) => row.productId),
+        ),
+      ].sort();
     return {
       members: members.map((member) => ({
         ...member,
@@ -325,10 +349,11 @@ export class MemberService {
           .map((grant) => grant.productId)
           .sort(),
         owned: {
-          relationships: relationships.get(member.userId) ?? 0,
-          actions: actions.get(member.userId) ?? 0,
-          touches: touches.get(member.userId) ?? 0,
+          relationships: countOf(relationships, member.userId),
+          actions: countOf(actions, member.userId),
+          touches: countOf(touches, member.userId),
         },
+        ownedProductIds: handedOver(member.userId),
       })),
     };
   }

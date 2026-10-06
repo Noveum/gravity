@@ -240,6 +240,7 @@ describe("listing members", () => {
       allProducts: boolean;
       productIds: string[];
       owned: { relationships: number; actions: number; touches: number };
+      ownedProductIds: string[];
     }[];
   };
   const byId = (result: Listed) =>
@@ -262,6 +263,73 @@ describe("listing members", () => {
       allProducts: true,
       owned: await owned(demoUser),
     });
+  });
+
+  test("the list names the products whose work a member would hand over on deactivation", async () => {
+    const productsOf = async (userId: string) => {
+      const rows = [
+        ...(await local.db
+          .select({ productId: s.relationships.productId })
+          .from(s.relationships)
+          .where(
+            and(
+              eq(s.relationships.organizationId, org),
+              eq(s.relationships.ownerId, userId),
+            ),
+          )),
+        ...(await local.db
+          .select({ productId: s.actions.productId })
+          .from(s.actions)
+          .leftJoin(
+            s.conversations,
+            eq(s.conversations.id, s.actions.sourceConversationId),
+          )
+          .where(
+            and(
+              eq(s.actions.organizationId, org),
+              eq(s.actions.ownerId, userId),
+              inArray(s.actions.status, ["open", "blocked"]),
+              or(
+                isNull(s.conversations.id),
+                eq(s.conversations.visibility, "product"),
+              ),
+            ),
+          )),
+        ...(await local.db
+          .select({ productId: s.touches.productId })
+          .from(s.touches)
+          .where(
+            and(
+              eq(s.touches.organizationId, org),
+              eq(s.touches.senderId, userId),
+              inArray(s.touches.status, ["planned", "drafted", "approved"]),
+            ),
+          )),
+      ];
+      return [...new Set(rows.map((row) => row.productId))].sort();
+    };
+    const [elsewhere] = await local.db
+      .select({ id: s.relationships.id })
+      .from(s.relationships)
+      .where(eq(s.relationships.productId, demoId(10)))
+      .limit(1);
+    if (!elsewhere) throw new Error("relationship fixture");
+    await local.db
+      .update(s.relationships)
+      .set({ ownerId: "demo-teammate" })
+      .where(eq(s.relationships.id, elsewhere.id));
+    const members = byId(await run<Listed>("list_members", admin, {}));
+    const handedOver = await productsOf("demo-teammate");
+    expect(handedOver.some((id) => id !== demoId(11))).toBe(true);
+    expect(members.get("demo-teammate")?.ownedProductIds).toEqual(handedOver);
+    expect(members.get(demoUser)?.ownedProductIds).toEqual(
+      await productsOf(demoUser),
+    );
+    expect(members.get("demo-restricted")?.ownedProductIds).toEqual([]);
+    const visible = byId(await run<Listed>("list_members", restricted, {}));
+    expect(visible.get("demo-teammate")?.ownedProductIds).toEqual(
+      handedOver.filter((id) => id === demoId(11)),
+    );
   });
 
   test("a product-restricted member only sees products and work they can read", async () => {

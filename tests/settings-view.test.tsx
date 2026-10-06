@@ -465,6 +465,38 @@ describe("member settings", () => {
     );
   });
 
+  test("deactivation offers only members who can take over the work and says why the others cannot", async () => {
+    const [elsewhere] = await harness.local.db
+      .select({ id: s.relationships.id })
+      .from(s.relationships)
+      .where(eq(s.relationships.productId, demoId(10)))
+      .limit(1);
+    if (!elsewhere) throw new Error("relationship fixture");
+    await harness.local.db
+      .update(s.relationships)
+      .set({ ownerId: member })
+      .where(eq(s.relationships.id, elsewhere.id));
+    await mountSettings(harness, "/settings/members");
+    const sam = await waitFor(() => memberRow("Sam Rivera"));
+    fireEvent.click(
+      within(sam).getByRole("button", { name: `${t.deactivate}: Sam Rivera` }),
+    );
+    const target = within(sam).getByLabelText(
+      t.reassignWorkFrom.replace("{name}", "Sam Rivera"),
+    ) as HTMLSelectElement;
+    const options = Object.fromEntries(
+      [...target.options].map((option) => [option.value, option]),
+    );
+    expect(target.value).toBe("demo-you");
+    expect(options["demo-you"]?.disabled).toBe(false);
+    expect(options["demo-restricted"]?.disabled).toBe(true);
+    expect(options["demo-restricted"]?.textContent).toBe(
+      t.reassignNeedsAccess
+        .replace("{name}", "Restricted member")
+        .replace("{products}", "AI Platform"),
+    );
+  });
+
   test("resending an invitation leaves out archived products and refuses when none is left", async () => {
     await harness.local.db.insert(s.invitations).values(
       [

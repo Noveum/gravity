@@ -30,6 +30,7 @@ interface Member {
   allProducts: boolean;
   productIds: string[];
   owned: { relationships: number; actions: number; touches: number };
+  ownedProductIds: string[];
 }
 const invitationList = z.array(
   z.object({
@@ -99,9 +100,14 @@ function MemberRow({
   const others = members.filter(
     (item) => item.active && item.userId !== member.userId,
   );
+  const missing = (target: Member) =>
+    target.allProducts
+      ? []
+      : member.ownedProductIds.filter((id) => !target.productIds.includes(id));
+  const eligible = others.filter((item) => !missing(item).length);
   const [reassign, setReassign] = useState(
-    others.find((item) => item.userId === viewer)?.userId ??
-      others[0]?.userId ??
+    eligible.find((item) => item.userId === viewer)?.userId ??
+      eligible[0]?.userId ??
       "",
   );
   const self = member.userId === viewer;
@@ -144,7 +150,7 @@ function MemberRow({
               label={t.deactivate}
               ariaLabel={`${t.deactivate}: ${member.name}`}
               confirmLabel={t.deactivateConfirm}
-              disabled={!others.length}
+              disabled={!eligible.length}
               onConfirm={async () => {
                 const { ok, result } = await send(
                   {
@@ -164,11 +170,25 @@ function MemberRow({
                 value={reassign}
                 onChange={(event) => setReassign(event.target.value)}
               >
-                {others.map((item) => (
-                  <option key={item.userId} value={item.userId}>
-                    {item.name}
-                  </option>
-                ))}
+                {others.map((item) => {
+                  const blocked = missing(item);
+                  return (
+                    <option
+                      key={item.userId}
+                      value={item.userId}
+                      disabled={blocked.length > 0}
+                    >
+                      {blocked.length
+                        ? t.reassignNeedsAccess
+                            .replace("{name}", item.name)
+                            .replace(
+                              "{products}",
+                              productNames(products, blocked),
+                            )
+                        : item.name}
+                    </option>
+                  );
+                })}
               </select>
             </ConfirmButton>
           )}

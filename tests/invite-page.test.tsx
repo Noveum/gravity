@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { errorResponse } from "../packages/core/http";
 import { DomainError, type Principal } from "../packages/core/policy";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
@@ -59,9 +60,8 @@ beforeEach(async () => {
         input,
       );
     } catch (error) {
-      if (error instanceof DomainError)
-        throw new RequestError(error.code, error.details);
-      throw error;
+      const data = await errorResponse(error).json();
+      throw new RequestError(data.error, data.details ?? {});
     }
   });
   local = await createLocalDatabase();
@@ -221,11 +221,18 @@ test("an unusable invitation explains why and offers no accept button", async ()
   expect(screen.queryByText(/Northstar Collective/)).toBeNull();
 });
 
-test("a visit without any token says the invitation was not found", async () => {
+test("a visit without any token, or with a damaged or unknown one, says the link is not usable", async () => {
   viewer = invitee;
   open(new URL("https://gravity.example.test/invite"));
   expect(await screen.findByText(t.inviteUnavailableTitle)).toBeTruthy();
+  expect(screen.getByText(t.inviteNotFound)).toBeTruthy();
   expect(request).not.toHaveBeenCalled();
+  for (const token of ["short", "x".repeat(43)]) {
+    cleanup();
+    sessionStorage.clear();
+    open(new URL(`https://gravity.example.test/invite#${token}`));
+    expect(await screen.findByText(t.inviteNotFound)).toBeTruthy();
+  }
 });
 
 test("a link already sent as /invite/<token> moves the token into the fragment before anything else", async () => {

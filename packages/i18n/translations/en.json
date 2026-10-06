@@ -1635,6 +1635,7 @@
   "inviteSignIn": "Sign in",
   "inviteUnavailableTitle": "This invitation cannot be used",
   "inviteLoading": "Checking your invitation",
+  "inviteNotFound": "This invitation link is incomplete or no longer exists. Open the link from your email again, or ask an admin to send a new one.",
   "inviteAlreadyMemberTitle": "You already belong to {workspace}",
   "inviteAlreadyMemberDescription": "Your account is already an active member, so this invitation is not needed.",
   "inviteRoleAdmin": "an admin",

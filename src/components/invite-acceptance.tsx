@@ -95,7 +95,9 @@ export function InviteFlow() {
             organizationId: details.organizationId,
             organizationName: details.organizationName,
           });
-        } else setState({ kind: "unavailable", message: errorText(error) });
+        } else if (code === "NOT_FOUND" || code === "INVALID_INPUT")
+          setState({ kind: "missing" });
+        else setState({ kind: "unavailable", message: errorText(error) });
       });
     return () => {
       current = false;
@@ -152,7 +154,7 @@ export function InviteFlow() {
     <AuthLayout
       title={t.inviteUnavailableTitle}
       description={
-        state.kind === "unavailable" ? state.message : t.errors.NOT_FOUND
+        state.kind === "unavailable" ? state.message : t.inviteNotFound
       }
     >
       <a className="auth-link auth-provider" href="/">

@@ -144,7 +144,7 @@ describe("member roles", () => {
           role: "admin",
         }),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    const promoted = await run("change_member_role", agent, {
+    const promoted = await run("change_member_role", admin, {
       userId: "demo-restricted",
       role: "admin",
     });
@@ -398,11 +398,97 @@ test("the permission audit reports every member operation and its requirement", 
     expect(
       operationAvailable(find(name), { ...agent, productIds: [] }, "admin"),
     ).toBe(false);
-    expect(operationAvailable(find(name), agent, "admin")).toBe(true);
+    expect(operationAvailable(find(name), agent, "admin")).toBe(
+      name !== "reactivate_member",
+    );
   }
   expect(operationRequirements(find("list_members"))).toMatchObject({
     administrator: false,
     allProducts: false,
   });
   expect(operationAvailable(find("list_members"), agent, "member")).toBe(true);
+});
+
+describe("agents reduce access but never grant it", () => {
+  test("an agent cannot promote a member to admin but can demote one", async () => {
+    await expect(
+      run("change_member_role", agent, {
+        userId: "demo-restricted",
+        role: "admin",
+      }),
+    ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED", status: 403 });
+    await run("change_member_role", admin, {
+      userId: "demo-restricted",
+      role: "admin",
+    });
+    await expect(
+      run("change_member_role", agent, {
+        userId: "demo-restricted",
+        role: "member",
+      }),
+    ).resolves.toMatchObject({ role: "member" });
+  });
+
+  test("an agent cannot add a product to a member but can remove one", async () => {
+    await run("set_member_products", admin, {
+      userId: "demo-restricted",
+      productIds: [demoId(10)],
+    });
+    await expect(
+      run("set_member_products", agent, {
+        userId: "demo-restricted",
+        productIds: [demoId(10), demoId(11)],
+      }),
+    ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
+    await expect(
+      run("set_member_products", agent, {
+        userId: "demo-restricted",
+        productIds: [demoId(11)],
+      }),
+    ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
+    expect(
+      (await authorize(local.db, restricted, org)).products.map((p) => p.id),
+    ).toEqual([demoId(10)]);
+    await expect(
+      run("set_member_products", agent, {
+        userId: "demo-restricted",
+        productIds: [],
+      }),
+    ).resolves.toMatchObject({ productIds: [] });
+  });
+
+  test("an agent can deactivate a member but only a person can reactivate one", async () => {
+    await expect(
+      run("deactivate_member", agent, { userId: "demo-restricted" }),
+    ).resolves.toBeTruthy();
+    await expect(
+      run("reactivate_member", agent, { userId: "demo-restricted" }),
+    ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
+    await expect(
+      run("reactivate_member", admin, { userId: "demo-restricted" }),
+    ).resolves.toMatchObject({ active: true });
+  });
+
+  test("granting operations are hidden from agents and flagged human-only", () => {
+    expect(operationRequirements(find("reactivate_member")).humanSession).toBe(
+      true,
+    );
+    expect(operationAvailable(find("reactivate_member"), agent, "admin")).toBe(
+      false,
+    );
+    for (const name of [
+      "change_member_role",
+      "set_member_products",
+      "deactivate_member",
+    ]) {
+      expect(operationRequirements(find(name)).humanSession).toBe(false);
+      expect(operationAvailable(find(name), agent, "admin")).toBe(true);
+    }
+    expect(find("change_member_role").description).toContain(
+      "HUMAN_ACTION_REQUIRED",
+    );
+    expect(find("set_member_products").description).toContain(
+      "HUMAN_ACTION_REQUIRED",
+    );
+  });
 });

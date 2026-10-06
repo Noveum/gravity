@@ -174,6 +174,8 @@ export class MemberService {
   ) {
     return this.db.transaction(async (tx) => {
       await authorizeAdministrator(tx, principal, input.organizationId);
+      if (principal.source === "mcp" && input.role === "admin")
+        throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
       const rows = await lockMemberships(tx, input.organizationId);
       const member = findMember(rows, input.userId);
       if (member.role === input.role) return member;
@@ -217,6 +219,23 @@ export class MemberService {
         : [];
       if (found.length !== input.productIds.length)
         throw new DomainError("NOT_FOUND", 404);
+      if (principal.source === "mcp") {
+        const current = new Set(
+          (
+            await tx
+              .select({ productId: s.productMemberships.productId })
+              .from(s.productMemberships)
+              .where(
+                and(
+                  eq(s.productMemberships.organizationId, input.organizationId),
+                  eq(s.productMemberships.userId, member.userId),
+                ),
+              )
+          ).map((row) => row.productId),
+        );
+        if (input.productIds.some((productId) => !current.has(productId)))
+          throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
+      }
       await tx
         .delete(s.productMemberships)
         .where(
@@ -407,6 +426,8 @@ export class MemberService {
   ) {
     return this.db.transaction(async (tx) => {
       await authorizeAdministrator(tx, principal, input.organizationId);
+      if (principal.source === "mcp")
+        throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
       const member = findMember(
         await lockMemberships(tx, input.organizationId),
         input.userId,

@@ -163,7 +163,7 @@ describe("creating invitations", () => {
     await expect(
       run("list_invitations", teammate, { organizationId: org }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    const created = await invite({}, agent);
+    const created = await invite();
     for (const name of ["resend_invitation", "revoke_invitation"])
       await expect(
         run(name, teammate, {
@@ -362,5 +362,39 @@ describe("accepting invitations", () => {
         administrator: true,
         allProducts: true,
       });
+  });
+});
+
+describe("agents and invitations", () => {
+  test("an agent cannot create or resend an invitation but can list and revoke one", async () => {
+    await expect(invite({}, agent)).rejects.toMatchObject({
+      code: "HUMAN_ACTION_REQUIRED",
+      status: 403,
+    });
+    const created = await invite();
+    await expect(
+      run("resend_invitation", agent, {
+        organizationId: org,
+        invitationId: created.invitation.id,
+      }),
+    ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
+    await expect(
+      run<{ invitations: unknown[] }>("list_invitations", agent, {
+        organizationId: org,
+      }),
+    ).resolves.toBeTruthy();
+    await expect(
+      run("revoke_invitation", agent, {
+        organizationId: org,
+        invitationId: created.invitation.id,
+      }),
+    ).resolves.toBeTruthy();
+    for (const name of ["create_invitation", "resend_invitation"]) {
+      expect(operationRequirements(find(name)).humanSession).toBe(true);
+      expect(operationAvailable(find(name), agent, "admin")).toBe(false);
+    }
+    expect(operationRequirements(find("revoke_invitation")).humanSession).toBe(
+      false,
+    );
   });
 });

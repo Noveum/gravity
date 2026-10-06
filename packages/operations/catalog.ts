@@ -646,7 +646,7 @@ export const operations: Operation[] = [
     operation: "member-role",
     name: "change_member_role",
     description:
-      "Switch a member between admin and member. The last active admin cannot be demoted. Requires admin membership and an all-products grant.",
+      "Switch a member between admin and member. The last active admin cannot be demoted. Requires admin membership and an all-products grant. Assistants may demote to member; promoting to admin grants access and returns HUMAN_ACTION_REQUIRED.",
     schema: memberRoleSchema,
     run: (c, input) => members(c).changeRole(c.principal, input),
   }),
@@ -656,7 +656,7 @@ export const operations: Operation[] = [
     operation: "member-products",
     name: "set_member_products",
     description:
-      "Replace the products a member can access with the supplied product IDs; an empty list removes all product access. Admins already see every product. Requires admin membership and an all-products grant.",
+      "Replace the products a member can access with the supplied product IDs; an empty list removes all product access. Admins already see every product. Requires admin membership and an all-products grant. Assistants may only remove products; a list that adds any product returns HUMAN_ACTION_REQUIRED.",
     schema: memberProductsSchema,
     run: (c, input) => members(c).setProducts(c.principal, input),
   }),
@@ -666,7 +666,7 @@ export const operations: Operation[] = [
     operation: "member-deactivate",
     name: "deactivate_member",
     description:
-      "Deactivate a member. Their relationships, open actions and open touches move in one transaction to reassignToUserId (default: you), approvals on moved touches and actions are cleared, and their assistant grants and sessions for this organization stop working. Actions from their private conversations stay with them. The last active admin cannot be deactivated. Requires admin membership and an all-products grant.",
+      "Deactivate a member. Their relationships, open actions and open touches move in one transaction to reassignToUserId (default: you), approvals on moved touches and actions are cleared, and their assistant grants and sessions for this organization stop working. Actions from their private conversations stay with them. The last active admin cannot be deactivated. Requires admin membership and an all-products grant. Assistants may deactivate members.",
     schema: deactivateMemberSchema,
     run: (c, input) => members(c).deactivate(c.principal, input),
   }),
@@ -676,7 +676,7 @@ export const operations: Operation[] = [
     operation: "member-reactivate",
     name: "reactivate_member",
     description:
-      "Reactivate a deactivated member. Reassigned work and revoked assistant grants are not restored. Requires admin membership and an all-products grant.",
+      "Reactivate a deactivated member. Reassigned work and revoked assistant grants are not restored. Requires admin membership, an all-products grant and a signed-in person: granting access is human-only, so assistants get HUMAN_ACTION_REQUIRED.",
     schema: reactivateMemberSchema,
     run: (c, input) => members(c).reactivate(c.principal, input),
   }),
@@ -696,7 +696,7 @@ export const operations: Operation[] = [
     operation: "invitation",
     name: "create_invitation",
     description:
-      "Invite an email address as admin or member with optional product access. Expires after expiresInDays (default 7). Returns a one-time accept link to share; the email is also sent when Resend is configured. Deployment and workspace email-domain allowlists apply. Requires admin membership and an all-products grant.",
+      "Invite an email address as admin or member with optional product access. Expires after expiresInDays (default 7). Returns a one-time accept link to share; the email is also sent when Resend is configured. Deployment and workspace email-domain allowlists apply. Requires admin membership, an all-products grant and a signed-in person: granting access is human-only, so assistants get HUMAN_ACTION_REQUIRED.",
     schema: createInvitationSchema,
     destructive: false,
     run: (c, input) => invitations(c).create(c.principal, input),
@@ -707,7 +707,7 @@ export const operations: Operation[] = [
     operation: "invitation-resend",
     name: "resend_invitation",
     description:
-      "Issue a fresh accept link for a pending or expired invitation and send it again. The previous link stops working. Requires admin membership and an all-products grant.",
+      "Issue a fresh accept link for a pending or expired invitation and send it again. The previous link stops working. Requires admin membership, an all-products grant and a signed-in person: assistants get HUMAN_ACTION_REQUIRED.",
     schema: resendInvitationSchema,
     run: (c, input) => invitations(c).resend(c.principal, input),
   }),
@@ -717,7 +717,7 @@ export const operations: Operation[] = [
     operation: "invitation-revoke",
     name: "revoke_invitation",
     description:
-      "Revoke a pending invitation so its link can no longer be accepted. Requires admin membership and an all-products grant.",
+      "Revoke a pending invitation so its link can no longer be accepted. Requires admin membership and an all-products grant. Assistants may revoke invitations.",
     schema: revokeInvitationSchema,
     run: (c, input) => invitations(c).revoke(c.principal, input),
   }),
@@ -1336,6 +1336,9 @@ const allProductOperations = new Set([
 const humanSessionOperations = new Set([
   "accept_invitation",
   "resolve_delivery",
+  "create_invitation",
+  "resend_invitation",
+  "reactivate_member",
 ]);
 const ownerOperations = new Set([
   "set_conversation_visibility",

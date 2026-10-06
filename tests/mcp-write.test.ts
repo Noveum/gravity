@@ -209,7 +209,13 @@ test("each assistant scope combination lists only its tools and refuses the rest
   const humanNames = operations
     .filter((item) => operationRequirements(item).humanSession)
     .map((item) => item.name);
-  expect(humanNames).toEqual(["resolve_delivery", "accept_invitation"]);
+  expect(humanNames.sort()).toEqual([
+    "accept_invitation",
+    "create_invitation",
+    "reactivate_member",
+    "resend_invitation",
+    "resolve_delivery",
+  ]);
   const resolve = operations.find((item) => item.name === "resolve_delivery");
   if (!resolve) throw new Error("resolve_delivery missing");
   expect(operationRequirements(resolve)).toMatchObject({

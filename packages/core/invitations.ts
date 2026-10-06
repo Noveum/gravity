@@ -123,6 +123,8 @@ export class InvitationService {
     const { invitation, organization } = await this.db
       .transaction(async (tx) => {
         await authorizeAdministrator(tx, principal, values.organizationId);
+        if (principal.source === "mcp")
+          throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
         const organization = await workspace(tx, values.organizationId);
         assertDomain(values.email, organization);
         const products = values.productIds.length
@@ -207,6 +209,8 @@ export class InvitationService {
     const { invitation, organization } = await this.db.transaction(
       async (tx) => {
         await authorizeAdministrator(tx, principal, values.organizationId);
+        if (principal.source === "mcp")
+          throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
         const organization = await workspace(tx, values.organizationId);
         const current = await this.locked(tx, values);
         if (current.revokedAt) throw new DomainError("INVITATION_REVOKED", 410);

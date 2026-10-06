@@ -4453,6 +4453,12 @@ tbody tr[data-selected] td:first-child::before {
   .settings-row-actions {
     justify-content: flex-start;
   }
+  .settings-popover {
+    left: 0;
+    right: auto;
+    min-width: min(220px, calc(100cqi - 32px));
+    max-width: calc(100cqi - 32px);
+  }
 }
 @media (hover: hover) {
   .settings-nav-link:not([aria-current="page"]):hover {

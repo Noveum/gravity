@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -261,6 +262,38 @@ describe("palette, search, guide and create", () => {
     const guide = screen.getByRole("dialog", { name: t.keyboardHelp });
     expect(within(guide).getByText(t.shortcutLabels.done)).toBeTruthy();
   });
+  test("the guide hides shortcuts that do nothing on the current page", async () => {
+    const openGuide = async () => {
+      await press("?");
+      return screen.getByRole("dialog", { name: t.keyboardHelp });
+    };
+    const closeGuide = async (guide: HTMLElement) => {
+      fireEvent(guide, new Event("cancel"));
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("dialog", { name: t.keyboardHelp }),
+        ).toBeNull(),
+      );
+    };
+    await mountCrm(harness, "/outreach/today");
+    let guide = await openGuide();
+    expect(within(guide).queryByText(t.shortcutLabels.select)).toBeNull();
+    await closeGuide(guide);
+    cleanup();
+    await mountCrm(harness, "/people");
+    guide = await openGuide();
+    expect(within(guide).getByText(t.shortcutLabels.select)).toBeTruthy();
+    expect(within(guide).queryByText(t.shortcutLabels.draft)).toBeNull();
+    await closeGuide(guide);
+    cleanup();
+    await mountCrm(harness);
+    row(/Leena Rao.*Prepare the pilot proposal/).focus();
+    await press(" ");
+    await waitFor(() => expect(peek()).toBeTruthy());
+    await screen.findByRole("button", { name: label("draft") });
+    guide = await openGuide();
+    expect(within(guide).getByText(t.shortcutLabels.draft)).toBeTruthy();
+  });
   test("C creates in the current view: an action, a person, an upload or an action for the open person", async () => {
     binding("create");
     await mountCrm(harness);
@@ -281,7 +314,7 @@ describe("palette, search, guide and create", () => {
     await press("c");
     expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy();
   });
-  test("C on a person record schedules for that person, and on Sequences creates a sequence", async () => {
+  test("C on a person record schedules for that person, on Sequences creates a sequence, and on a view without its own create adds a person", async () => {
     await mountCrm(harness, `/people/${demoId(202)}`);
     await press("c");
     const dialog = await screen.findByRole("dialog", {
@@ -301,7 +334,17 @@ describe("palette, search, guide and create", () => {
     await waitFor(() => expect(pathname()).toBe("/outreach/sequences"));
     (document.activeElement as HTMLElement | null)?.blur();
     await press("c");
-    expect(screen.getByRole("dialog", { name: t.newSequence })).toBeTruthy();
+    const sequenceDialog = screen.getByRole("dialog", { name: t.newSequence });
+    fireEvent(sequenceDialog, new Event("cancel"));
+    fireEvent.click(
+      within(
+        screen.getByRole("navigation", { name: t.outreachTabsLabel }),
+      ).getByRole("link", { name: new RegExp(`^${t.outreachTabs.today}`) }),
+    );
+    await waitFor(() => expect(pathname()).toBe("/outreach/today"));
+    (document.activeElement as HTMLElement | null)?.blur();
+    await press("c");
+    expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy();
   });
   test("C on materials opens the upload dialog", async () => {
     await mountCrm(harness, "/materials");
@@ -1007,6 +1050,23 @@ describe("detail bindings", () => {
     await press("h");
     expect(document.activeElement?.hasAttribute("data-nav-record")).toBe(true);
   });
+  test("H returns focus to the row being peeked, not the first row", async () => {
+    await mountCrm(harness, "/people");
+    const rows = [
+      ...document.querySelectorAll<HTMLElement>(
+        "#records-panel [data-nav-record]",
+      ),
+    ];
+    const target = rows[2];
+    if (!target) throw new Error("people fixture");
+    target.focus();
+    await press(" ");
+    await waitFor(() => expect(peek()).toBeTruthy());
+    await press("l");
+    expect(peek()?.contains(document.activeElement)).toBe(true);
+    await press("h");
+    expect(document.activeElement).toBe(target);
+  });
   test("B returns to the previous record in the peek", async () => {
     binding("previous-record");
     await mountCrm(harness, "/people");
@@ -1033,7 +1093,7 @@ describe("detail bindings", () => {
 });
 
 describe("dialogs and safety", () => {
-  test("E saves a dialog when focus is outside a text field, and types E inside one; Cmd Enter saves from a field", async () => {
+  test("E saves a dialog from its submit button, never from Cancel, and types E inside a field; Cmd Enter saves from a field", async () => {
     binding("save");
     await mountCrm(harness);
     row(/Leena Rao.*Prepare the pilot proposal/).focus();
@@ -1065,6 +1125,13 @@ describe("dialogs and safety", () => {
     expect(first.title.value).toBe("Send the recap e");
     expect(harness.posts).toHaveLength(0);
     within(first.dialog).getByRole("button", { name: t.cancel }).focus();
+    await press("e");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+    expect(harness.posts).toHaveLength(0);
+    expect(screen.getByRole("dialog", { name: t.scheduleAction })).toBeTruthy();
+    first.dialog
+      .querySelector<HTMLButtonElement>("button[type='submit']")
+      ?.focus();
     await press("e");
     await waitFor(() =>
       expect(

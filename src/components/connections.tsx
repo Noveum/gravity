@@ -11,50 +11,6 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 
-import { IntegrationCards } from "./integration-cards";
-export function Connections({
-  data,
-  endpoint,
-  demo,
-  onRevoke,
-  organizationId,
-  productId,
-  initialNotice,
-  onChanged,
-  timeZone = "UTC",
-}: {
-  data: ClientSnapshot;
-  endpoint: string;
-  demo: boolean;
-  onRevoke: (id: string) => Promise<boolean>;
-  organizationId: string;
-  productId: string;
-  initialNotice: string;
-  onChanged: () => Promise<void>;
-  timeZone?: string;
-}) {
-  return (
-    <div className="page-content integration-grid">
-      <AssistantAccess
-        data={data}
-        endpoint={endpoint}
-        demo={demo}
-        onRevoke={onRevoke}
-      />
-      <IntegrationCards
-        key={`${organizationId}:${productId}`}
-        data={data}
-        organizationId={organizationId}
-        productId={productId}
-        demo={demo}
-        initialNotice={initialNotice}
-        onChanged={onChanged}
-        timeZone={timeZone}
-      />
-    </div>
-  );
-}
-
 export function AssistantAccess({
   data,
   endpoint,

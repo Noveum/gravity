@@ -1,8 +1,6 @@
-import t from "@crm/i18n/translations/en.json";
-import { SettingsView } from "@/components/views/settings-view";
-import { pageTitle } from "../page-title";
+import { redirect } from "next/navigation";
+import { settingsPath } from "@/components/routes";
 
-export const metadata = pageTitle(t.settings);
 export default function Page() {
-  return <SettingsView />;
+  redirect(settingsPath("workspace"));
 }

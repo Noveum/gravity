@@ -12,7 +12,7 @@ import type { ClientSnapshot } from "../packages/core/dto";
 import t from "../packages/i18n/translations/en.json";
 import { requestJson } from "../src/components/client-api";
 import { PersonDialog } from "../src/components/person-dialog";
-import { SettingsForm } from "../src/components/settings-form";
+import { TimeZoneSelect } from "../src/components/time-zone-select";
 
 vi.mock("../src/components/client-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/components/client-api")>()),
@@ -132,50 +132,6 @@ test("double submission creates one person, locks fields, and invokes creation o
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-test("organization settings preserve values and prevent overlapping submissions", async () => {
-  let finish: (success: boolean) => void = () => {};
-  const mutate = vi.fn(
-    () =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
-  const reload = vi.fn(async () => {});
-  render(
-    <SettingsForm
-      organization={{
-        id: "org",
-        name: "Northstar",
-        slug: "northstar",
-        timezone: "UTC",
-      }}
-      disabled={false}
-      mutate={mutate}
-      onOrganizations={reload}
-    />,
-  );
-  const name = screen.getByLabelText(t.organizationName) as HTMLInputElement;
-  fireEvent.change(name, { target: { value: "Fictional correction" } });
-  const form = name.closest("form") as HTMLFormElement;
-  fireEvent.submit(form);
-  fireEvent.submit(form);
-  expect(mutate).toHaveBeenCalledOnce();
-  expect(mutate).toHaveBeenCalledWith({
-    operation: "organization-settings",
-    organizationId: "org",
-    name: "Fictional correction",
-    timezone: "UTC",
-  });
-  expect(name.matches(":disabled")).toBe(true);
-  await act(async () => finish(false));
-  expect(name.value).toBe("Fictional correction");
-  expect(reload).not.toHaveBeenCalled();
-  fireEvent.submit(form);
-  await act(async () => finish(true));
-  expect(name.value).toBe("Fictional correction");
-  expect(reload).toHaveBeenCalledOnce();
-});
-
 test("a dialog shows the shared loading state while its scope loads", async () => {
   let loaded!: (data: ClientSnapshot) => void;
   request.mockImplementationOnce(
@@ -191,4 +147,38 @@ test("a dialog shows the shared loading state while its scope loads", async () =
   expect(loading.textContent).toBe(t.loading);
   await act(async () => loaded(snapshot));
   expect(screen.queryByRole("status")).toBeNull();
+});
+
+test("the time zone picker defaults to the browser's zone and submits the chosen zone", async () => {
+  const resolved = Intl.DateTimeFormat.prototype.resolvedOptions;
+  const zone = vi
+    .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+    .mockImplementation(function (this: Intl.DateTimeFormat) {
+      return { ...resolved.call(this), timeZone: "Asia/Kolkata" };
+    });
+  try {
+    const submitted: string[] = [];
+    render(
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitted.push(
+            String(new FormData(event.currentTarget).get("timezone")),
+          );
+        }}
+      >
+        <TimeZoneSelect />
+      </form>,
+    );
+    const select = (await screen.findByLabelText(
+      t.organizationTimezone,
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("Asia/Kolkata"));
+    fireEvent.submit(select.closest("form") as HTMLFormElement);
+    fireEvent.change(select, { target: { value: "Europe/London" } });
+    fireEvent.submit(select.closest("form") as HTMLFormElement);
+    expect(submitted).toEqual(["Asia/Kolkata", "Europe/London"]);
+  } finally {
+    zone.mockRestore();
+  }
 });

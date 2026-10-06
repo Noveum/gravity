@@ -12,8 +12,8 @@ const sectionPaths: Record<Section, string> = {
   opportunities: "/opportunities",
   materials: "/materials",
   outreach: "/outreach",
-  integrations: "/connections",
-  assistants: "/assistants",
+  integrations: "/settings/connections",
+  assistants: "/settings/assistants",
   settings: "/settings",
 };
 const recordSections: ReadonlySet<Section> = new Set(["people", "companies"]);
@@ -42,6 +42,33 @@ export function outreachTabFor(pathname: string): OutreachTab | null {
   if (second === undefined) return null;
   return isOutreachTab(second) ? second : null;
 }
+export const settingsSections = [
+  "workspace",
+  "brands",
+  "pipelines",
+  "members",
+  "outreach",
+  "connections",
+  "sending",
+  "assistants",
+  "preferences",
+] as const;
+export type SettingsSection = (typeof settingsSections)[number];
+export const isSettingsSection = (value: string): value is SettingsSection =>
+  (settingsSections as readonly string[]).includes(value);
+export const settingsPath = (section: SettingsSection) =>
+  `${sectionPaths.settings}/${section}`;
+export function settingsSectionFor(pathname: string): SettingsSection | null {
+  const [first, second, ...rest] = pathname.split("/").filter(Boolean);
+  if (`/${first}` !== sectionPaths.settings || rest.length) return null;
+  if (second === undefined) return "workspace";
+  return isSettingsSection(second) ? second : null;
+}
+const settingsHome: Partial<Record<Section, SettingsSection>> = {
+  integrations: "connections",
+  assistants: "assistants",
+  settings: "workspace",
+};
 const sections = Object.keys(sectionPaths) as Section[];
 
 export const homePath = sectionPaths.actions;
@@ -84,6 +111,8 @@ export interface Route {
 }
 
 export function sectionPath(section: Section) {
+  const settings = settingsHome[section];
+  if (settings) return settingsPath(settings);
   return section === "sequences"
     ? outreachPath("sequences")
     : sectionPaths[section];
@@ -94,6 +123,10 @@ export function routeFor(pathname: string): Route | null {
   const section = sections.find((id) => sectionPaths[id] === `/${first}`);
   if (!section) return null;
   if (second === undefined) return { section, recordId: "" };
+  if (section === "settings")
+    return !rest.length && isSettingsSection(second)
+      ? { section, recordId: "" }
+      : null;
   if (section === "outreach")
     return !rest.length && isOutreachTab(second)
       ? { section, recordId: "" }
@@ -123,6 +156,12 @@ export function personPath(
     action: focus.actionId,
   });
 }
+
+export const invitePath = "/invite";
+export const inviteLinkPath = (token: string) =>
+  `${invitePath}#${encodeURIComponent(token)}`;
+const isInvitePath = (pathname: string) =>
+  /^\/invite(?:\/[^/]+)?$/.test(pathname);
 
 export function companyPath(companyId: string) {
   return `${sectionPaths.companies}/${encodeURIComponent(companyId)}`;
@@ -159,7 +198,11 @@ export function appPath(value: string | null | undefined) {
     return null;
   try {
     const url = new URL(value, originProbe);
-    if (url.origin !== originProbe || !routeFor(url.pathname)) return null;
+    if (
+      url.origin !== originProbe ||
+      !(routeFor(url.pathname) || isInvitePath(url.pathname))
+    )
+      return null;
     return `${url.pathname}${url.search}`;
   } catch {
     return null;

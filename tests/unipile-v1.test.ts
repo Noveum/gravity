@@ -242,4 +242,19 @@ test("an existing V1 account is bound only after authoritative account verificat
   await expect(mismatch.connect(principal, input)).rejects.toMatchObject({
     code: "PROVIDER_RESPONSE_INVALID",
   });
+  for (const [status, code] of [
+    ["CREDENTIALS", "RECONNECT_REQUIRED"],
+    ["PERMISSIONS", "PROVIDER_PERMISSION"],
+    ["ERROR", "PROVIDER_UNAVAILABLE"],
+  ]) {
+    const unavailable = new IntegrationService(local.db, async () =>
+      json({
+        ...account,
+        sources: [{ id: `${account.id}_MESSAGING`, status }],
+      }),
+    );
+    await expect(unavailable.connect(principal, input)).rejects.toMatchObject({
+      code,
+    });
+  }
 });

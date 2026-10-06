@@ -387,8 +387,16 @@ export class IntegrationService {
       );
       if (account.id !== accountId)
         throw new DomainError("PROVIDER_RESPONSE_INVALID", 502);
-      if (unipileV1Status(account) !== "OK")
-        throw new DomainError("RECONNECT_REQUIRED", 422);
+      const status = unipileV1Status(account);
+      if (status !== "OK")
+        throw new DomainError(
+          status === "CREDENTIALS"
+            ? "RECONNECT_REQUIRED"
+            : status === "PERMISSIONS"
+              ? "PROVIDER_PERMISSION"
+              : "PROVIDER_UNAVAILABLE",
+          422,
+        );
       const connection = await this.db.transaction(async (tx) => {
         const [current] = await tx
           .select()

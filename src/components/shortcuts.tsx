@@ -4,6 +4,7 @@ import {
   bindingLabel,
   type Shortcut,
   type ShortcutId,
+  type ShortcutScope,
   shortcutSections,
   shortcuts,
 } from "@crm/core/shortcuts";
@@ -53,9 +54,13 @@ export function ShortcutKeys({
 export function Shortcuts({
   onClose,
   unavailable = [],
+  scopes,
+  labelOverrides = {},
 }: {
   onClose: () => void;
   unavailable?: readonly ShortcutId[];
+  scopes?: readonly ShortcutScope[];
+  labelOverrides?: Partial<Record<ShortcutId, string>>;
 }) {
   const modal = useRef<HTMLDialogElement>(null);
   const [query, setQuery] = useState("");
@@ -63,9 +68,13 @@ export function Shortcuts({
   useModalLifecycle(modal);
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const filtered = shortcuts.filter((shortcut) => {
-    if (unavailable.includes(shortcut.id)) return false;
+    if (
+      unavailable.includes(shortcut.id) ||
+      (scopes && !scopes.includes(shortcut.scope))
+    )
+      return false;
     const text = [
-      shortcut.label,
+      labelOverrides[shortcut.id] ?? shortcut.label,
       t.shortcutSections[shortcut.section],
       ...shortcut.bindings.map((binding) => bindingLabel(binding, mac)),
     ]
@@ -109,7 +118,7 @@ export function Shortcuts({
                   key={shortcut.id}
                   data-shortcut={shortcut.id}
                 >
-                  <span>{shortcut.label}</span>
+                  <span>{labelOverrides[shortcut.id] ?? shortcut.label}</span>
                   <ShortcutKeys shortcut={shortcut} mac={mac} />
                 </div>
               ))}

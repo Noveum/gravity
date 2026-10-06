@@ -32,7 +32,6 @@ import {
   type Section,
   sectionPath,
 } from "./routes";
-import { SettingsForm } from "./settings-form";
 import {
   breadcrumbsFor,
   listedViews,
@@ -43,6 +42,7 @@ import {
   viewSections,
 } from "./shell/navigation";
 import { recordsForPalette } from "./shell/palette-records";
+import { shellShortcutScopes } from "./shell/shortcut-context";
 import { Sidebar, type SidebarGroup, type SidebarItem } from "./shell/sidebar";
 import { TopBar } from "./shell/top-bar";
 import { useShellShortcuts } from "./shell/use-shell-shortcuts";
@@ -458,10 +458,26 @@ function CrmShell({ children }: { children: ReactNode }) {
         )}
         {helpOpen && (
           <Shortcuts
+            scopes={shellShortcutScopes({
+              hasData: !!data,
+              section,
+              recordId,
+              showPeek,
+              pathname: crm.pathname,
+            })}
+            labelOverrides={
+              section === "settings" ? { create: t.inviteMember } : {}
+            }
             onClose={() => setHelpOpen(false)}
             unavailable={[
               ...(canCreateProduct ? [] : (["create-product"] as const)),
-              ...(data?.products.length ? [] : (["create"] as const)),
+              ...(section === "settings"
+                ? crm.isAdmin
+                  ? []
+                  : (["create"] as const)
+                : data?.products.length
+                  ? []
+                  : (["create"] as const)),
               ...(data?.relationships.length ? [] : (["schedule"] as const)),
             ]}
           />
@@ -637,15 +653,10 @@ function CrmShell({ children }: { children: ReactNode }) {
               <EmptyState title={t.organizationIsolation} compact />
             )}
             {!organizationId && (
-              <SettingsForm
-                organizationId={organizationId}
-                mutate={crm.mutate}
-                onOrganizations={async () => {
-                  const next = await crm.reloadOrganizations();
-                  crm.switchOrganization(next[0]?.id ?? "");
-                }}
-              />
-            )}
+              <a className="primary" href="/onboarding">
+                {t.createWorkspace}
+              </a>
+            )}{" "}
           </div>
         ) : (
           <div

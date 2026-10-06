@@ -132,8 +132,8 @@ test("double submission creates one person, locks fields, and invokes creation o
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-test("settings preserve a failed value, prevent overlapping submissions, and clear only a successful value", async () => {
-  let finish!: (success: boolean) => void;
+test("organization settings preserve values and prevent overlapping submissions", async () => {
+  let finish: (success: boolean) => void = () => {};
   const mutate = vi.fn(
     () =>
       new Promise<boolean>((resolve) => {
@@ -143,25 +143,36 @@ test("settings preserve a failed value, prevent overlapping submissions, and cle
   const reload = vi.fn(async () => {});
   render(
     <SettingsForm
-      organizationId="org"
-      canCreateProduct
+      organization={{
+        id: "org",
+        name: "Northstar",
+        slug: "northstar",
+        timezone: "UTC",
+      }}
+      disabled={false}
       mutate={mutate}
       onOrganizations={reload}
     />,
   );
-  const name = screen.getByLabelText(t.productName) as HTMLInputElement;
-  fireEvent.change(name, { target: { value: "Fictional duplicate" } });
-  fireEvent.keyDown(name, { key: "Enter", metaKey: true });
-  fireEvent.submit(name.closest("form") as HTMLFormElement);
-  expect(mutate).toHaveBeenCalledOnce();
-  expect(name.disabled).toBe(true);
-  await act(async () => finish(false));
-  expect(name.value).toBe("Fictional duplicate");
-  expect(reload).not.toHaveBeenCalled();
+  const name = screen.getByLabelText(t.organizationName) as HTMLInputElement;
   fireEvent.change(name, { target: { value: "Fictional correction" } });
-  fireEvent.keyDown(name, { key: "Enter", ctrlKey: true });
+  const form = name.closest("form") as HTMLFormElement;
+  fireEvent.submit(form);
+  fireEvent.submit(form);
+  expect(mutate).toHaveBeenCalledOnce();
+  expect(mutate).toHaveBeenCalledWith({
+    operation: "organization-settings",
+    organizationId: "org",
+    name: "Fictional correction",
+    timezone: "UTC",
+  });
+  expect(name.matches(":disabled")).toBe(true);
+  await act(async () => finish(false));
+  expect(name.value).toBe("Fictional correction");
+  expect(reload).not.toHaveBeenCalled();
+  fireEvent.submit(form);
   await act(async () => finish(true));
-  expect(name.value).toBe("");
+  expect(name.value).toBe("Fictional correction");
   expect(reload).toHaveBeenCalledOnce();
 });
 

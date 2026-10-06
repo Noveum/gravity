@@ -85,6 +85,11 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
   expect(error).toBeUndefined();
   const names = result.tools.map((tool: { name: string }) => tool.name);
   expect(new Set(names).size).toBe(names.length);
+  expect(names).toHaveLength(
+    operations.filter((item) => !operationRequirements(item).humanSession)
+      .length + 8,
+  );
+  expect(names).toHaveLength(97);
   expect(
     new Set(
       operations.map((item) => `${item.api}:${item.method}:${item.operation}`),

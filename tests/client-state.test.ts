@@ -23,6 +23,24 @@ afterAll(async () => local.client.close());
 describe("instant authorized product projection", () => {
   test("matches server filtering, preserves canonical people and leaves the source intact", async () => {
     const principal = { userId: demoUser, source: "demo" as const };
+    await local.db.insert(schema.contactContributions).values([
+      {
+        organizationId: demoId(1),
+        productId: demoId(10),
+        personId: demoId(200),
+        actorId: demoUser,
+        transport: "demo",
+        kind: "submitted",
+      },
+      {
+        organizationId: demoId(1),
+        productId: demoId(11),
+        personId: demoId(200),
+        actorId: "demo-teammate",
+        transport: "demo",
+        kind: "submitted",
+      },
+    ]);
     const full = serialize(
       await service.snapshot(principal, { organizationId: demoId(1) }),
     );
@@ -36,6 +54,7 @@ describe("instant authorized product projection", () => {
       );
       for (const key of [
         "relationships",
+        "contactAttribution",
         "people",
         "companies",
         "actions",

@@ -19,6 +19,7 @@ import {
 } from "../record-details";
 import { EmptyState, LoadingState } from "../ui/states";
 import { CompanyActivity } from "./company-activity";
+import { ContactAttribution } from "./contact-attribution";
 import { MetadataSection } from "./metadata-section";
 import {
   ActionSummary,
@@ -85,6 +86,10 @@ function PersonPeek() {
         context={context}
         action={action}
         includeContext={false}
+      />
+      <ContactAttribution
+        key={`${context.person?.id}/${context.relationship.productId}`}
+        context={context}
       />
       {context.person && (
         <MetadataSection entity="person" record={context.person} />

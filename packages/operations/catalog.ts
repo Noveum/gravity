@@ -28,6 +28,12 @@ import {
 } from "../core/assistant-grants";
 import { publishChange } from "../core/changes";
 import {
+  attributionListSchema,
+  ContactAttributionService,
+  contactImportSchema,
+  importBatchSchema,
+} from "../core/contact-attribution";
+import {
   actionChangeSchema,
   actionPlanSchema,
   CrmService,
@@ -694,6 +700,43 @@ export const operations: Operation[] = [
   }),
   operation({
     api: "crm",
+    method: "POST",
+    operation: "import-batch",
+    name: "create_contact_import_batch",
+    idempotent: true,
+    destructive: false,
+    description:
+      "Create an immutable contact import batch. submittedBy, transport and MCP client/grant are server assigned. sourceMemberId is an explicitly declared source member, not the uploader. Use a stable submissionKey for retries; changed metadata conflicts. Source member must currently access this product. No file contents or credentials in label/key.",
+    schema: importBatchSchema,
+    run: (c, input) =>
+      new ContactAttributionService(c.db).createBatch(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "contact-import",
+    name: "record_contact_import",
+    idempotent: true,
+    destructive: false,
+    description:
+      "Append reviewed import provenance to an existing contact with a relationship in this product, without changing original creator or owner. Requires current person version, your own batchId and stable sourceRecordId. Exact retries are idempotent; changing the source row's target conflicts. For new contacts pass importSource to create_person. Never infer the historical importer from ownership.",
+    schema: contactImportSchema,
+    run: (c, input) =>
+      new ContactAttributionService(c.db).recordImport(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "contact-attribution",
+    name: "get_contact_attribution",
+    description:
+      "Page recorded creator, submitters, declared source members, edit history and owner-private provider import metadata. Unknown historical attribution remains null; owners are separate from contributors. Names remain readable for inactive members. Never exposes private transcript bodies or another member's provider metadata.",
+    schema: attributionListSchema,
+    run: (c, input) =>
+      new ContactAttributionService(c.db).list(c.principal, input),
+  }),
+  operation({
+    api: "crm",
     method: "GET",
     operation: "context",
     name: "get_person_context",
@@ -920,7 +963,7 @@ export const operations: Operation[] = [
     operation: "person",
     name: "create_person",
     description:
-      "Create a person/product relationship or add an existing person to a product. Optionally schedule research. Use context for a readable summary and contextDetails for background, needs, timing, budget, decisionProcess, risks, history, sourced signals and typed custom fields. These notes are product-shared; do not dump serialized imports or private thread contents into them.",
+      "Create a person/product relationship or add an existing person to a product. Optionally schedule research. For imports first create_contact_import_batch, then pass importSource {batchId, sourceRecordId} with a stable row identifier; exact retries return the same contact. Submitter is the authenticated actor, and declared source is separate from relationship owner. Use context for a readable summary and contextDetails for background, needs, timing, budget, decisionProcess, risks, history, sourced signals and typed custom fields. These notes are product-shared; do not dump serialized imports or private thread contents into them.",
     schema: personSchema,
     destructive: false,
     run: (c, input) => crm(c).createPerson(c.principal, input),

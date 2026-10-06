@@ -15,6 +15,9 @@ export interface RecordFacts {
   qualification?: string;
   qualifications?: readonly string[];
   status?: string;
+  submitterIds?: readonly string[];
+  sourceMemberIds?: readonly string[];
+  attribution?: boolean;
 }
 
 export function useRecordIndex() {
@@ -172,6 +175,9 @@ export function PagedItems<T>({
 const emptyFilters = {
   tag: "",
   ownerId: "",
+  submittedBy: "",
+  sourceMemberId: "",
+  attribution: "",
   qualification: "",
   status: "",
   currency: "",
@@ -222,6 +228,23 @@ export function useRecordBrowser<T>(
       !value.qualifications?.includes(filters.qualification)
     )
       return false;
+    if (
+      filters.submittedBy &&
+      !value.submitterIds?.includes(filters.submittedBy)
+    )
+      return false;
+    if (
+      filters.sourceMemberId &&
+      !value.sourceMemberIds?.includes(filters.sourceMemberId)
+    )
+      return false;
+    const contributors = new Set([
+      ...(value.submitterIds ?? []),
+      ...(value.sourceMemberIds ?? []),
+    ]);
+    if (filters.attribution === "recorded" && !contributors.size) return false;
+    if (filters.attribution === "unknown" && contributors.size) return false;
+    if (filters.attribution === "shared" && contributors.size < 2) return false;
     if (filters.status && value.status !== filters.status) return false;
     if (filters.size === "known" && value.amountMinor == null) return false;
     if (filters.size === "unknown" && value.amountMinor != null) return false;
@@ -291,6 +314,21 @@ export function useRecordBrowser<T>(
     hasOwner: facts.some(
       ({ value }) => !!value.ownerId || !!value.ownerIds?.length,
     ),
+    hasAttribution: facts.some(({ value }) => value.attribution),
+    attributionMembers: [
+      ...new Set(
+        facts.flatMap(({ value }) => [
+          ...(value.submitterIds ?? []),
+          ...(value.sourceMemberIds ?? []),
+        ]),
+      ),
+    ].map((id) => ({
+      id,
+      name:
+        crm.data.members.find((m) => m.id === id)?.name ??
+        `${t.attribution.memberId}: ${id}`,
+    })),
+    userId: crm.userId,
     members: crm.data.members,
   };
 }
@@ -340,6 +378,55 @@ export function RecordFilters({
               ))}
             </select>
           </label>
+        )}
+        {browser.hasAttribution && (
+          <>
+            <label>
+              {t.attribution.submittedBy}
+              <select
+                value={filters.submittedBy}
+                onChange={(e) => update("submittedBy", e.target.value)}
+              >
+                <option value="">{t.attribution.allSubmitters}</option>
+                <option value={browser.userId}>
+                  {t.attribution.submittedByMe}
+                </option>
+                {browser.attributionMembers
+                  .filter((m) => m.id !== browser.userId)
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              {t.attribution.sourceMember}
+              <select
+                value={filters.sourceMemberId}
+                onChange={(e) => update("sourceMemberId", e.target.value)}
+              >
+                <option value="">{t.attribution.allSources}</option>
+                {browser.attributionMembers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {t.attribution.title}
+              <select
+                value={filters.attribution}
+                onChange={(e) => update("attribution", e.target.value)}
+              >
+                <option value="">{t.attribution.allCoverage}</option>
+                <option value="recorded">{t.attribution.recorded}</option>
+                <option value="unknown">{t.attribution.unknownFilter}</option>
+                <option value="shared">{t.attribution.shared}</option>
+              </select>
+            </label>
+          </>
         )}
         {!!browser.qualifications.length && (
           <label>

@@ -42,6 +42,138 @@ const recordMetadata = () => ({
   currency: text("currency").notNull().default("USD"),
 });
 
+// Attribution is separate from current relationship ownership. Historical records
+// remain unknown unless a reliable submission was recorded.
+export const contactImportBatches = pgTable(
+  "contact_import_batches",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    submittedBy: text("submitted_by").notNull(),
+    sourceMemberId: text("source_member_id"),
+    sourceKind: text("source_kind", {
+      enum: ["file", "agent", "manual"],
+    }).notNull(),
+    label: text("label").notNull(),
+    submissionKey: text("submission_key").notNull(),
+    transport: text("transport", {
+      enum: ["session", "mcp", "demo"],
+    }).notNull(),
+    clientId: text("client_id"),
+    grantId: uuid("grant_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.organizationId, t.productId, t.id),
+    unique().on(t.organizationId, t.submittedBy, t.submissionKey),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.submittedBy],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.sourceMemberId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+  ],
+).enableRLS();
+
+export const contactContributions = pgTable(
+  "contact_contributions",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    personId: uuid("person_id").notNull(),
+    productId: uuid("product_id"),
+    actorId: text("actor_id"),
+    sourceMemberId: text("source_member_id"),
+    kind: text("kind", {
+      enum: ["created", "submitted", "updated", "provider_import"],
+    }).notNull(),
+    transport: text("transport", {
+      enum: ["session", "mcp", "demo", "system"],
+    }).notNull(),
+    clientId: text("client_id"),
+    grantId: uuid("grant_id"),
+    batchId: uuid("batch_id"),
+    sourceRecordId: text("source_record_id"),
+    requestHash: text("request_hash"),
+    connectionId: uuid("connection_id"),
+    sourceConversationId: uuid("source_conversation_id"),
+    provider: text("provider"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    foreignKey({
+      columns: [t.organizationId, t.personId],
+      foreignColumns: [people.organizationId, people.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.actorId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.sourceMemberId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.batchId],
+      foreignColumns: [
+        contactImportBatches.organizationId,
+        contactImportBatches.productId,
+        contactImportBatches.id,
+      ],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.connectionId],
+      foreignColumns: [connections.organizationId, connections.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.sourceConversationId],
+      foreignColumns: [
+        conversations.organizationId,
+        conversations.productId,
+        conversations.id,
+      ],
+    }),
+    index("contact_contributions_person").on(
+      t.organizationId,
+      t.personId,
+      t.createdAt,
+    ),
+    index("contact_contributions_actor").on(
+      t.organizationId,
+      t.actorId,
+      t.personId,
+    ),
+    uniqueIndex("contact_contributions_batch_row").on(
+      t.batchId,
+      t.sourceRecordId,
+    ),
+    uniqueIndex("contact_contributions_provider_row").on(
+      t.connectionId,
+      t.sourceRecordId,
+    ),
+    uniqueIndex("contact_contributions_original_creator")
+      .on(t.personId)
+      .where(sql`${t.kind} = 'created'`),
+    check(
+      "contact_contribution_batch_row",
+      sql`((${t.batchId} IS NULL) = (${t.requestHash} IS NULL)) AND (${t.batchId} IS NULL OR (${t.productId} IS NOT NULL AND ${t.sourceRecordId} IS NOT NULL))`,
+    ),
+  ],
+).enableRLS();
+
 export const organizations = pgTable(
   "organizations",
   {

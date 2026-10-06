@@ -31,6 +31,11 @@ export function productSnapshot(
     ...snapshot,
     relationships,
     people,
+    contactAttribution: (snapshot.contactAttribution ?? []).filter(
+      (row) =>
+        personIds.has(row.personId) &&
+        (!row.productId || row.productId === productId),
+    ),
     companies: snapshot.companies.filter(
       (company) =>
         companyIds.has(company.id) ||

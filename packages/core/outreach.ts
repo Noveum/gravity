@@ -18,6 +18,7 @@ import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { zonedDayBounds } from "./calendar";
+import { recordContactSubmission } from "./contact-attribution";
 import { scopeSchema } from "./crm";
 import { draftHash, draftSubject } from "./drafts";
 import { assertProductAccess, reassignTouches } from "./members";
@@ -1969,6 +1970,12 @@ export class OutreachService {
         )
         .returning();
       if (!updated) throw new DomainError("CONFLICT", 409);
+      await recordContactSubmission(tx, principal, {
+        organizationId: input.organizationId,
+        productId: relationship.productId,
+        personId: relationship.personId,
+        kind: "updated",
+      });
       const edited =
         input.context !== undefined ||
         input.contextDetails !== undefined ||
@@ -2425,6 +2432,11 @@ export class OutreachService {
         )
         .returning();
       if (!updated) throw new DomainError("CONFLICT", 409);
+      await recordContactSubmission(tx, principal, {
+        organizationId: input.organizationId,
+        personId: person.id,
+        kind: "updated",
+      });
       await tx.insert(s.changeEvents).values({
         organizationId: input.organizationId,
         actorId: principal.userId,

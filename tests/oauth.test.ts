@@ -256,6 +256,10 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
     ).toString(),
   );
   expect(claims.crm_grant_id).toBe(grantA.id);
+  expect(await principalForVerifiedToken(local.db, claims)).toMatchObject({
+    clientId: claims.client_id,
+    grantId: grantA.id,
+  });
   expect((await principalForVerifiedToken(local.db, claims)).readOnly).toBe(
     false,
   );

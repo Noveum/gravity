@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { z } from "zod";
+import { recordProviderContribution } from "../core/contact-attribution";
 import { pauseForReply, peopleByEmail } from "../core/outreach";
 import { DomainError } from "../core/policy";
 import type { Database } from "../database/client";
@@ -202,6 +203,24 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
       })
       .onConflictDoNothing()
       .returning();
+    if (message) {
+      const [relationship] = await tx
+        .select({ personId: s.relationships.personId })
+        .from(s.relationships)
+        .where(
+          and(
+            eq(s.relationships.id, conversation.relationshipId),
+            eq(s.relationships.organizationId, connection.organizationId),
+          ),
+        );
+      if (relationship)
+        await recordProviderContribution(tx, connection, {
+          personId: relationship.personId,
+          productId: conversation.productId,
+          sourceRecordId: `message:${event.messageId}`,
+          sourceConversationId: conversation.id,
+        });
+    }
     const [latest] = await tx
       .select()
       .from(s.messages)

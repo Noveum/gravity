@@ -12,6 +12,7 @@ user guides are at [gravity.noveum.ai/docs](https://gravity.noveum.ai/docs).
 | [Multiple accounts and privacy](accounts-and-privacy.md) | Who can see which imported conversations, and how sharing works |
 | [Overview and deals](analytics.md) | How every Overview metric is defined |
 | [File library](file-library.md) | Product-scoped folders, previews and direct-to-storage uploads |
+| [Contact import attribution](contact-attribution.md) | Submitter, declared source, creator, provider history and contributor filters |
 | [Record browsing](record-browsing.md) | Tags, deal sizes, filters, paging and inspectors in the record lists |
 | [Relationship context and signals](relationship-context.md) | Structured context per product relationship, and editing it over MCP |
 | [Requirements and keyboard map](requirements.md) | Every feature, its status, and the full shortcut list |

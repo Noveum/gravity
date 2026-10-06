@@ -5192,3 +5192,16 @@ nav.list-pagination > label:has(select) {
 .forecast-explanation {
   margin: -8px 0 20px;
 }
+
+.attribution-event {
+  padding-block: 12px;
+  border-top: 1px solid var(--gravity-border);
+}
+.attribution-date {
+  display: block;
+  color: var(--gravity-muted);
+  margin-block: 4px 8px;
+}
+.attribution-event dd {
+  overflow-wrap: anywhere;
+}

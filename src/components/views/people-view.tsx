@@ -40,6 +40,13 @@ export function PeopleView() {
     people,
     (person) => ({
       ...person,
+      attribution: true,
+      submitterIds: (data.contactAttribution ?? [])
+        .filter((row) => row.personId === person.id)
+        .flatMap((row) => (row.actorId ? [row.actorId] : [])),
+      sourceMemberIds: (data.contactAttribution ?? [])
+        .filter((row) => row.personId === person.id)
+        .flatMap((row) => (row.sourceMemberId ? [row.sourceMemberId] : [])),
       ownerIds: (index.byPerson.get(person.id) ?? []).map(
         (relationship) => relationship.ownerId,
       ),

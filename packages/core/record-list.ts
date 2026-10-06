@@ -17,6 +17,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
+import { readableAttribution } from "./contact-attribution";
 import { scopeSchema } from "./crm";
 import { authorize, type Principal } from "./policy";
 
@@ -33,6 +34,9 @@ export const recordListSchema = scopeSchema
       "assets",
       "actions",
     ]),
+    submittedBy: z.string().min(1).max(200).optional(),
+    sourceMemberId: z.string().min(1).max(200).optional(),
+    attribution: z.enum(["recorded", "unknown", "shared"]).optional(),
     query: z.string().trim().max(200).default(""),
     tag: z.string().trim().max(50).optional(),
     currency: z
@@ -44,6 +48,11 @@ export const recordListSchema = scopeSchema
     offset: z.coerce.number().int().min(0).max(1000000).default(0),
     limit: z.coerce.number().int().min(1).max(100).default(50),
   })
+  .refine(
+    (input) =>
+      input.entity === "people" ||
+      (!input.submittedBy && !input.sourceMemberId && !input.attribution),
+  )
   .refine(
     (input) =>
       input.minimum === undefined ||
@@ -117,6 +126,54 @@ export class RecordListService {
         isNull(s.people.archivedAt),
         exists(personRelationships(s.people.id)),
       );
+    if (
+      input.entity === "people" &&
+      (input.submittedBy || input.sourceMemberId || input.attribution)
+    ) {
+      const contributions = (filter?: SQL) =>
+        this.db
+          .select({ id: s.contactContributions.id })
+          .from(s.contactContributions)
+          .where(
+            and(
+              readableAttribution(principal, input.organizationId, ids),
+              eq(s.contactContributions.personId, s.people.id),
+              inArray(s.contactContributions.kind, [
+                "created",
+                "submitted",
+                "provider_import",
+              ]),
+              filter,
+            ),
+          );
+      conditions.push(
+        input.attribution === "unknown"
+          ? notExists(contributions())
+          : exists(contributions()),
+      );
+      // Match people who have each contribution anywhere in their visible history,
+      // consistently with the UI's independent contributor filters.
+      if (input.submittedBy)
+        conditions.push(
+          exists(
+            contributions(
+              eq(s.contactContributions.actorId, input.submittedBy),
+            ),
+          ),
+        );
+      if (input.sourceMemberId)
+        conditions.push(
+          exists(
+            contributions(
+              eq(s.contactContributions.sourceMemberId, input.sourceMemberId),
+            ),
+          ),
+        );
+      if (input.attribution === "shared")
+        conditions.push(
+          sql`(SELECT count(DISTINCT contributor) FROM ${s.contactContributions} CROSS JOIN LATERAL (VALUES (${s.contactContributions.actorId}),(${s.contactContributions.sourceMemberId})) AS members(contributor) WHERE ${s.contactContributions.personId}=${s.people.id} AND ${readableAttribution(principal, input.organizationId, ids)} AND ${inArray(s.contactContributions.kind, ["created", "submitted", "provider_import"])} AND contributor IS NOT NULL) > 1`,
+        );
+    }
     if (input.entity === "companies")
       conditions.push(
         isNull(s.companies.archivedAt),

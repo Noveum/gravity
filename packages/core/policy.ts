@@ -19,6 +19,9 @@ export interface Principal {
   readOnly?: boolean;
   // Set only from a verified OAuth scope. A historical read/write grant never authorizes dispatch.
   canSend?: boolean;
+  // Assigned only by the verified OAuth adapter, never from business input.
+  clientId?: string;
+  grantId?: string;
 }
 // A deliberate organization-wide grant. Empty and historical UUID lists stay restricted.
 export const allProductsGrant = ["*"];

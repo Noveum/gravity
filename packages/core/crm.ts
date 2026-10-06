@@ -20,6 +20,13 @@ import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import t from "../i18n/translations/en.json";
 import { overview as calculateOverview } from "./analytics";
+import {
+  attributionHash,
+  ContactAttributionService,
+  importSourceSchema,
+  importSubmission,
+  recordContactSubmission,
+} from "./contact-attribution";
 import { draftHash, draftSubject } from "./drafts";
 import { serialize } from "./dto";
 import {
@@ -121,6 +128,7 @@ export const personSchema = scopeSchema
     contextDetails: relationshipDetailsPatchSchema.optional(),
     review: z.boolean().default(true),
     channel: z.enum(["gmail", "linkedin"]).default("gmail"),
+    importSource: importSourceSchema.optional(),
   })
   .refine((value) => !!value.personId !== !!value.name, {
     message: "Provide a new name or existing person",
@@ -381,6 +389,47 @@ export class CrmService {
         .from(s.organizations)
         .where(eq(s.organizations.id, input.organizationId))
         .for("update");
+      const requestHash = attributionHash({
+        operation: "create-person",
+        ...personSchema.parse(input),
+      });
+      const submission = await importSubmission(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        input.importSource,
+        requestHash,
+      );
+      if (submission?.previous) {
+        const [priorPerson] = await tx
+          .select()
+          .from(s.people)
+          .where(
+            and(
+              eq(s.people.id, submission.previous.personId),
+              eq(s.people.organizationId, input.organizationId),
+            ),
+          );
+        const [priorRelationship] = await tx
+          .select()
+          .from(s.relationships)
+          .where(
+            and(
+              eq(s.relationships.personId, submission.previous.personId),
+              eq(s.relationships.organizationId, input.organizationId),
+              eq(s.relationships.productId, input.productId),
+            ),
+          );
+        if (!priorPerson || priorPerson.archivedAt || !priorRelationship)
+          throw new DomainError("RECORD_ARCHIVED", 409);
+        return {
+          personId: priorPerson.id,
+          relationshipId: priorRelationship.id,
+          productId: input.productId,
+        };
+      }
+      const created = !input.personId;
       let personId = input.personId;
       const productIds = permission.products.map((p) => p.id);
       if (personId) {
@@ -456,6 +505,15 @@ export class CrmService {
         .onConflictDoNothing()
         .returning();
       if (!relationship) throw new DomainError("CONFLICT", 409);
+      await recordContactSubmission(tx, principal, {
+        organizationId: input.organizationId,
+        productId: input.productId,
+        personId,
+        kind: created ? "created" : "submitted",
+        submission,
+        sourceRecordId: input.importSource?.sourceRecordId,
+        requestHash,
+      });
       if (input.review)
         await tx.insert(s.actions).values({
           organizationId: input.organizationId,
@@ -845,6 +903,9 @@ export class CrmService {
       );
     return {
       compact,
+      contactAttribution: await new ContactAttributionService(
+        this.db,
+      ).summaries(principal, scope.organizationId, ids),
       products: permission.products.filter((product) => !product.archivedAt),
       archivedProducts: permission.products.filter(
         (product) => product.archivedAt,

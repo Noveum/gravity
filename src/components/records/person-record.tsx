@@ -13,6 +13,7 @@ import { useDraft } from "../crm/use-draft";
 import { PersonDetails, RelatedWork } from "../record-details";
 import { companyPath, personPath, sectionPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
+import { ContactAttribution } from "./contact-attribution";
 import { MetadataSection } from "./metadata-section";
 import {
   ActionSummary,
@@ -133,6 +134,10 @@ export function PersonRecord({ personId }: { personId: string }) {
               context={context}
               action={action}
               includeContext={false}
+            />
+            <ContactAttribution
+              key={`${person.id}/${context.relationship.productId}`}
+              context={context}
             />
             <MetadataSection entity="person" record={person} />
             <MetadataSection

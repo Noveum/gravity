@@ -60,6 +60,8 @@ export async function principalForVerifiedToken(db: Database, claims: unknown) {
   // Only a cryptographically verified OAuth scope can enable writes. Legacy grants remain read-only.
   return {
     ...principal,
+    clientId: identity.data.client_id,
+    grantId: identity.data.crm_grant_id,
     readOnly: !identity.data.scope.split(" ").includes("crm:write"),
     canSend:
       identity.data.scope.split(" ").includes("crm:send") &&

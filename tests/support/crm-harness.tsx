@@ -282,6 +282,8 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
   const params = new URL(url, "http://localhost").searchParams;
   const organizationId = params.get("organizationId") || demoId(1);
   const listed = params.get("operation");
+  if (listed === "contact-attribution")
+    return viaCatalog(harness, "crm", "GET", Object.fromEntries(params));
   if (listed === "invitations" || listed === "members")
     return serialize(
       await apiOperation("crm", "GET", listed).execute(

@@ -1,0 +1,33 @@
+title: "[question]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask anything about running, self-hosting, configuring or building on Gravity.
+        The answer may already be in the [docs](https://github.com/Noveum/gravity/tree/main/docs);
+        if the docs were wrong or missing, say so and we will fix them.
+
+        Never post a security problem, real contact data or credentials here.
+  - type: textarea
+    id: question
+    attributes:
+      label: What you are trying to do
+      description: The goal, not only the step you are stuck on.
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you have tried
+      description: Commands and their full output, with secrets and connection strings removed.
+  - type: dropdown
+    id: how
+    attributes:
+      label: How are you running Gravity
+      options:
+        - The hosted app at gravity.noveum.ai
+        - Self-hosted
+        - Local development from a clone
+        - Not running it yet
+    validations:
+      required: true

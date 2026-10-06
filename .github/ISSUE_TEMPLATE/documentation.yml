@@ -1,0 +1,43 @@
+name: Documentation
+description: Something in the docs or README is wrong, missing or hard to follow.
+title: "[docs]: "
+labels: ["documentation", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The person who just hit the wall is the only one who can see it clearly, so docs
+        reports are some of the most useful we get. If you already know the fix, a pull
+        request is even better.
+  - type: input
+    id: location
+    attributes:
+      label: Which page
+      placeholder: docs/setup-and-mcp.md, or the Quick start in the README
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is wrong with it
+      options:
+        - The instructions do not work
+        - Something is missing
+        - It is unclear
+        - It is out of date
+        - A link is broken
+        - Typo or formatting
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: Detail
+      description: What you expected, what you found, and where you got stuck. Paste failing commands with their output.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What it should say instead
+      description: Optional, and very welcome.

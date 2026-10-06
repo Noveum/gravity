@@ -1,21 +1,81 @@
 name: Bug report
-description: Report a reproducible Gravity issue using fictional data.
+description: Something in Gravity is broken or behaves differently from the docs.
+title: "[bug]: "
+labels: ["bug", "needs triage"]
 body:
-  - type: input
-    id: version
+  - type: markdown
     attributes:
-      label: Commit or version
+      value: |
+        Thanks for taking the time. Please use **fictional data only**: no real contacts,
+        message bodies, transcripts, tokens or connection strings. The local demo
+        (`bun run dev`) has fictional workspaces you can reproduce against.
+
+        Security problems go to [private vulnerability reporting](https://github.com/Noveum/gravity/security/advisories/new), never here.
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it happen
+      options:
+        - The hosted app at gravity.noveum.ai
+        - My own deployment
+        - Local development from a clone
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Gravity
+      options:
+        - Next actions queue
+        - People, companies and relationships
+        - Deals and pipelines
+        - Outreach, sequences and sending
+        - Meetings and commitments
+        - Sales materials
+        - Overview and analytics
+        - Connections (Gmail, Calendar, LinkedIn, Fireflies)
+        - MCP server and AI assistants
+        - Sign-in, onboarding and workspaces
+        - Keyboard and command menu
+        - Public site and docs
+        - Self-hosting and deployment
+        - Something else
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Steps and expected behavior
-      description: Use fictional records. Report security vulnerabilities privately.
+      label: Steps to reproduce
+      description: Numbered steps, starting from a fresh page load or the local demo.
+      placeholder: |
+        1. Open Next actions in Northstar Collective
+        2. Select Mira's follow-up
+        3. ...
     validations:
       required: true
   - type: textarea
+    id: expected
+    attributes:
+      label: What you expected and what happened instead
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or deployment
+      description: "`git rev-parse --short HEAD` for a clone, or the date you used the hosted app."
+  - type: textarea
     id: environment
     attributes:
-      label: Environment and observed result
-      description: Browser, operating system, runtime and relevant sanitized errors.
+      label: Environment and logs
+      description: Browser, operating system, Node and Bun versions, and sanitized errors from the console or server log.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: This report contains no real customer data, message content or credentials
+          required: true

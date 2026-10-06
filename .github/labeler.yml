@@ -1,0 +1,87 @@
+"area: ui":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/components/**"
+          - "src/app/(crm)/**"
+          - "src/app/globals.css"
+
+"area: public site":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/app/(public)/**"
+          - "packages/public-site/**"
+          - "packages/brand/**"
+          - "public/**"
+
+"area: core":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/core/**"
+          - "packages/operations/**"
+
+"area: database":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/database/**"
+          - "drizzle/**"
+          - "drizzle.config.ts"
+
+"area: auth":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/auth/**"
+          - "src/app/sign-in/**"
+          - "src/app/authorize/**"
+          - "src/app/consent/**"
+          - "src/app/api/auth/**"
+          - "src/app/api/grants/**"
+          - "src/proxy.ts"
+
+"area: mcp":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/mcp/**"
+          - "src/app/mcp/**"
+          - "src/app/.well-known/**"
+
+"area: integrations":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/connectors/**"
+          - "src/app/api/integrations/**"
+          - "src/app/api/webhooks/**"
+
+"area: storage":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/storage/**"
+          - "src/app/api/materials/**"
+
+i18n:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/i18n/**"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "scripts/**"
+          - "vercel*.json"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "bun.lock"
+          - "package.json"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "tests/**"

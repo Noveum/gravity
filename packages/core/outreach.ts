@@ -44,6 +44,7 @@ import {
   personVisible,
   shareLockStage,
 } from "./visibility";
+import { ianaTimeZoneSchema } from "./workspace";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Reader = Database | Transaction;
@@ -52,17 +53,6 @@ type Enrollment = typeof s.enrollments.$inferSelect;
 type Step = (typeof s.sequences.$inferSelect)["steps"][number];
 
 const version = z.number().int().positive();
-const timeZone = z
-  .string()
-  .max(100)
-  .refine((value) => {
-    try {
-      new Intl.DateTimeFormat("en", { timeZone: value });
-      return true;
-    } catch {
-      return false;
-    }
-  });
 const touchScope = scopeSchema.extend({ touchId: z.uuid() });
 
 export const enrollSchema = scopeSchema.extend({
@@ -161,7 +151,7 @@ export const contactPreferencesSchema = scopeSchema.extend({
   personId: z.uuid(),
   version,
   doNotContact: z.boolean(),
-  timeZone: timeZone.nullable(),
+  timeZone: ianaTimeZoneSchema.nullable().optional(),
 });
 
 const openStatuses = ["planned", "drafted", "approved"] as const;
@@ -2412,12 +2402,14 @@ export class OutreachService {
         !input.doNotContact
       )
         throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
+      const zone =
+        input.timeZone === undefined ? person.timeZone : input.timeZone;
       if (
         principal.source === "mcp" &&
-        input.timeZone !== person.timeZone &&
+        zone !== person.timeZone &&
         (await unblocksNow(tx, input.organizationId, this.clock(), {
           before: person.timeZone,
-          after: input.timeZone,
+          after: zone,
         }))
       )
         throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
@@ -2425,7 +2417,7 @@ export class OutreachService {
         .update(s.people)
         .set({
           doNotContact: input.doNotContact,
-          timeZone: input.timeZone,
+          timeZone: zone,
           version: person.version + 1,
         })
         .where(

@@ -131,7 +131,6 @@ export function OutreachSettings() {
         personId,
         version: person.version,
         doNotContact,
-        timeZone: person.timeZone ?? null,
       },
       doNotContact ? t.markedDoNotContact : t.contactAllowed,
       true,

@@ -1050,7 +1050,7 @@ export const operations: Operation[] = [
     operation: "contact",
     name: "set_contact_preferences",
     description:
-      "Set do-not-contact and contact timezone with current person version. Respects cross-product visibility. Assistants can mark a person do-not-contact; clearing it, or a time zone change that moves the person out of quiet hours right now, returns HUMAN_ACTION_REQUIRED.",
+      "Set do-not-contact and contact timezone (an IANA zone; omit it to keep the current one) with current person version. Respects cross-product visibility. Assistants can mark a person do-not-contact; clearing it, or a time zone change that moves the person out of quiet hours right now, returns HUMAN_ACTION_REQUIRED.",
     schema: contactPreferencesSchema,
     run: (c, input) => outreach(c).setContactPreferences(c.principal, input),
   }),

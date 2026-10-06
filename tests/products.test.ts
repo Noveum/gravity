@@ -335,6 +335,10 @@ describe("archiving products", () => {
         },
       ],
       [
+        "create_stage",
+        { productId: demoId(10), pipeline: "outreach", name: "Fixture stage" },
+      ],
+      [
         "upload_material",
         {
           productId: demoId(10),

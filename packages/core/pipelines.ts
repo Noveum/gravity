@@ -8,6 +8,7 @@ import {
   type Principal,
   uniqueViolation,
 } from "./policy";
+import { assertProductActive } from "./products";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Stage = typeof s.stages.$inferSelect;
@@ -290,6 +291,7 @@ export class PipelineService {
             )
             .for("update");
       if (!parent) throw new DomainError("NOT_FOUND", 404);
+      await assertProductActive(tx, input.organizationId, input.productId);
       const group = await lockGroup(tx, {
         organizationId: input.organizationId,
         productId: input.productId,

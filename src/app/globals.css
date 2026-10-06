@@ -601,7 +601,7 @@
   place-items: center;
   flex-shrink: 0;
 }
-.nav-item > .nav-label-text:not(.nav-count) {
+.nav-item > .nav-label-text:not(.nav-count, .nav-shortcut) {
   flex: 1;
   min-width: 0;
   overflow: hidden;

@@ -938,9 +938,9 @@ export class OutboundService {
         .from(s.actions)
         .where(eq(s.actions.id, current.actionId))
         .for("update");
-      conflicted = action?.version !== current.sourceVersion;
-      // A newer inbound reply must remain actionable. Its replacement draft is never completed by an older send.
-      if (action?.version === current.sourceVersion)
+      const replyNotSuperseded = action?.version === current.sourceVersion;
+      conflicted = !replyNotSuperseded;
+      if (action && replyNotSuperseded)
         await tx
           .update(s.actions)
           .set({ status: "completed", version: action.version + 1 })

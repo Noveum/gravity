@@ -21,14 +21,23 @@ export function RecordDialogHost() {
   if (dialog.kind === "person") {
     const person = data.people.find((item) => item.id === dialog.id);
     if (person && data.compact)
-      return <PersonEditLoader personId={person.id} onClose={close} />;
-    return person ? <PersonEditDialog person={person} onClose={close} /> : null;
+      return (
+        <PersonEditLoader
+          key={person.id}
+          personId={person.id}
+          onClose={close}
+        />
+      );
+    return person ? (
+      <PersonEditDialog key={person.id} person={person} onClose={close} />
+    ) : null;
   }
   if (dialog.kind === "company") {
     const company = data.companies.find((item) => item.id === dialog.id);
     if (dialog.id && !company) return null;
     return (
       <CompanyDialog
+        key={dialog.id ?? "new"}
         {...(company ? { company } : {})}
         onClose={close}
         onCreated={(created) => crm.go(companyPath(created.id))}
@@ -40,6 +49,7 @@ export function RecordDialogHost() {
     if (dialog.id && !meeting) return null;
     return (
       <MeetingDialog
+        key={dialog.id ?? dialog.relationshipId ?? "new"}
         {...(meeting ? { meeting } : {})}
         {...(dialog.relationshipId
           ? { relationshipId: dialog.relationshipId }
@@ -52,6 +62,7 @@ export function RecordDialogHost() {
   if (dialog.id && !opportunity) return null;
   return (
     <OpportunityDialog
+      key={dialog.id ?? "new"}
       {...(opportunity ? { opportunity } : {})}
       onClose={close}
     />

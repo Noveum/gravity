@@ -335,6 +335,11 @@ describe("bounded record queries", () => {
       .where(eq(s.people.id, demoId(200)));
     const service = new CrmService(local.db);
     const compact = await service.snapshot(principal, scope, true);
+    for (const relationship of compact.relationships) {
+      expect(relationship.context).toBe("");
+      expect(relationship).not.toHaveProperty("contextDetails");
+      expect(relationship).not.toHaveProperty("contextSource");
+    }
     expect(compact.people.find((row) => row.id === demoId(200))?.summary).toBe(
       "",
     );

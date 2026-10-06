@@ -47,7 +47,7 @@ export function RecordDialog({
         onKeyDown={submitOnSaveKey}
         onSubmit={async (event) => {
           event.preventDefault();
-          if (submitting.current) return;
+          if (submitting.current || loading) return;
           submitting.current = true;
           const fields = new FormData(event.currentTarget);
           setBusy(true);

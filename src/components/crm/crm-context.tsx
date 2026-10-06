@@ -474,6 +474,9 @@ function useCrmState({
     demo,
     mcpEndpoint,
     pathname,
+    listFilterKey: ["owner", "kind", "waiting", "pipeline", "stage"]
+      .map((key) => query.get(key) ?? "")
+      .join("/"),
     route,
     toasts,
     notify,

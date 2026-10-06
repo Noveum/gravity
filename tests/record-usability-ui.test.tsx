@@ -1,11 +1,18 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { eq } from "drizzle-orm";
 import { describe, expect, test, vi } from "vitest";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
+import { visit } from "./support/memory-router";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
 vi.mock("next/link", () => import("./support/memory-router"));
@@ -18,6 +25,89 @@ const inspector = () =>
   within(screen.getByRole("complementary", { name: t.recordDetails }));
 
 describe("browsing records", () => {
+  test("URL filters reset the current list page", async () => {
+    const [existing] = await harness.local.db.select().from(s.actions).limit(1);
+    if (!existing) throw new Error("missing action fixture");
+    await harness.local.db.insert(s.actions).values(
+      Array.from({ length: 105 }, (_, index) => ({
+        ...existing,
+        id: demoId(5000 + index),
+        ownerId: demoUser,
+        title: `Fictional action ${index}`,
+        status: "open" as const,
+      })),
+    );
+    await mountCrm(harness, "/actions");
+    fireEvent.click(screen.getByRole("button", { name: t.nextPage }));
+    expect(screen.getByText("Page 2 of 3")).toBeTruthy();
+    act(() => visit(`/actions?owner=${demoUser}`));
+    expect(screen.getByText("Page 1 of 3")).toBeTruthy();
+  });
+  test("archiving from an action inspector retains the actions list", async () => {
+    await mountCrm(harness, "/actions", true);
+    const action = document.querySelector<HTMLElement>(
+      "button[data-nav-record]",
+    );
+    if (!action) throw new Error("missing action fixture");
+    fireEvent.click(action);
+    fireEvent.click(
+      await inspector().findByRole("button", { name: t.archive }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("complementary", { name: t.recordDetails }),
+      ).toBeNull(),
+    );
+    expect(window.location.pathname).toBe("/actions");
+    expect(
+      harness.posts.some((post) => post.operation === "person-archive"),
+    ).toBe(true);
+  });
+  test.each(["person", "company"] as const)(
+    "an open %s editor retains its initial revision after a live refresh",
+    async (entity) => {
+      await mountCrm(
+        harness,
+        entity === "person" ? "/people" : "/companies",
+        true,
+      );
+      const id = entity === "person" ? demoId(201) : demoId(100);
+      const name = entity === "person" ? "Jonah Reed" : "Northstar Labs";
+      fireEvent.click(screen.getByRole("link", { name }));
+      fireEvent.click(await inspector().findByRole("button", { name: t.edit }));
+      const title = entity === "person" ? t.editPerson : t.editCompany;
+      const dialog = await screen.findByRole("dialog", { name: title });
+      await waitFor(() =>
+        expect(within(dialog).getByLabelText(t.name)).toHaveProperty(
+          "value",
+          name,
+        ),
+      );
+      fireEvent.change(within(dialog).getByLabelText(t.name), {
+        target: { value: "Local edit" },
+      });
+      const table = entity === "person" ? s.people : s.companies;
+      await harness.local.db
+        .update(table)
+        .set({ name: "External edit", version: 2 })
+        .where(eq(table.id, id));
+      fireEvent.focus(window);
+      await inspector().findByRole(
+        "heading",
+        { name: "External edit" },
+        { timeout: 5000 },
+      );
+      fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
+      expect(
+        (await within(dialog).findAllByText(t.errors.CONFLICT)).length,
+      ).toBeGreaterThan(0);
+      const [stored] = await harness.local.db
+        .select()
+        .from(table)
+        .where(eq(table.id, id));
+      expect(stored).toMatchObject({ name: "External edit", version: 2 });
+    },
+  );
   test("an open metadata form rejects a concurrent record revision", async () => {
     await mountCrm(harness, "/people");
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));

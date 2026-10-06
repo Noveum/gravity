@@ -187,7 +187,7 @@ export function useRecordBrowser<T>(
   revealId = "",
 ) {
   const crm = useWorkspaceData();
-  const scope = `${crm.organizationId}/${crm.productId}/${crm.pathname}`;
+  const scope = `${crm.organizationId}/${crm.productId}/${crm.pathname}/${crm.listFilterKey}`;
   const [state, setState] = useState({ scope, filters: emptyFilters });
   const filters = state.scope === scope ? state.filters : emptyFilters;
   const update = (key: keyof typeof emptyFilters, value: string) =>

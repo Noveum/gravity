@@ -20,12 +20,13 @@ const failure = ({ ok, error }: { ok: boolean; error?: string }) =>
   ok ? null : (error ?? "");
 
 export function PersonEditDialog({
-  person,
+  person: initialPerson,
   onClose,
 }: {
   person: Person;
   onClose: () => void;
 }) {
+  const [person] = useState(initialPerson);
   const crm = useCrm();
   const companies = crm.sourceData?.companies ?? [];
   const archivedCompany = crm.sourceData?.archived.companies.find(
@@ -150,7 +151,7 @@ export function PersonEditDialog({
 }
 
 export function CompanyDialog({
-  company,
+  company: initialCompany,
   onClose,
   onCreated,
 }: {
@@ -158,6 +159,7 @@ export function CompanyDialog({
   onClose: () => void;
   onCreated?: (company: Company) => void;
 }) {
+  const [company] = useState(initialCompany);
   const crm = useCrm();
   return (
     <RecordDialog
@@ -259,7 +261,7 @@ function RelationshipField({
 }
 
 export function MeetingDialog({
-  meeting,
+  meeting: initialMeeting,
   relationshipId,
   onClose,
 }: {
@@ -267,6 +269,7 @@ export function MeetingDialog({
   relationshipId?: string;
   onClose: () => void;
 }) {
+  const [meeting] = useState(initialMeeting);
   const crm = useCrm();
   const snapshot = crm.data;
   if (!snapshot) return null;
@@ -353,12 +356,13 @@ export function MeetingDialog({
 }
 
 export function OpportunityDialog({
-  opportunity,
+  opportunity: initialOpportunity,
   onClose,
 }: {
   opportunity?: Opportunity;
   onClose: () => void;
 }) {
+  const [opportunity] = useState(initialOpportunity);
   const crm = useCrm();
   const snapshot = crm.sourceData;
   const [currency, setCurrency] = useState(opportunity?.currency ?? "USD");

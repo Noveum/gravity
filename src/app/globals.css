@@ -4580,6 +4580,10 @@ tbody tr[data-selected] td:first-child::before {
   }
   .settings-row-actions {
     justify-content: flex-start;
+    flex-wrap: wrap;
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 100%;
   }
 }
 @media (hover: hover) {

@@ -52,3 +52,14 @@ test("settings rows hold 28px on fine pointers and grow controls to 36px on touc
     )["min-height"],
   ).toBe("36px");
 });
+
+test("settings row actions wrap inside a narrow settings container", () => {
+  const narrow = block(css, "@container (max-width: 720px)");
+  expect(declarations(narrow, ".settings-row-actions")).toMatchObject({
+    "justify-content": "flex-start",
+    "flex-wrap": "wrap",
+    "flex-shrink": "1",
+    "min-width": "0",
+    "max-width": "100%",
+  });
+});

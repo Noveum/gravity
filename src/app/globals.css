@@ -3758,6 +3758,29 @@ tbody tr[data-selected] td:first-child::before {
   padding: 0 8px 0 0;
   border-bottom: 1px solid var(--gravity-border-hairline);
 }
+.sequences-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+.sequence-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.sequence-enrollment-actions {
+  --gravity-control: 22px;
+  display: inline-flex;
+  gap: 2px;
+  justify-content: flex-end;
+}
+.sequences-archived-title {
+  position: static;
+  margin-bottom: 12px;
+  border-radius: var(--gravity-radius);
+}
 @media (max-width: 760px) {
   .sequence-enrollments {
     table-layout: fixed;

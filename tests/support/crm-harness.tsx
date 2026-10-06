@@ -39,6 +39,10 @@ import {
 import { createLocalDatabase } from "../../packages/database/client";
 import { organizations as organizationTable } from "../../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../../packages/database/seed";
+import {
+  apiOperation,
+  type Operation,
+} from "../../packages/operations/catalog";
 import { RequestError, requestJson } from "../../src/components/client-api";
 import { CrmApp } from "../../src/components/crm-app";
 import { CompanyRecord } from "../../src/components/records/company-record";
@@ -104,6 +108,26 @@ function Routed() {
   return page(routeFor(usePathname()));
 }
 
+async function viaCatalog(
+  harness: Harness,
+  api: Operation["api"],
+  method: Operation["method"],
+  input: Record<string, unknown>,
+) {
+  try {
+    return serialize(
+      await apiOperation(api, method, input.operation).execute(
+        { db: harness.local.db, principal },
+        input,
+      ),
+    );
+  } catch (error) {
+    if (error instanceof DomainError)
+      throw new RequestError(error.code, error.details ?? {});
+    throw error;
+  }
+}
+
 async function respondOutreach(
   harness: Harness,
   url: string,
@@ -142,12 +166,17 @@ async function respondOutreach(
           outreach.updateSequence(principal, sequenceUpdateSchema.parse(body)),
       };
       const run = operations[body.operation];
-      if (!run) throw new Error("UNSUPPORTED");
+      if (!run) return viaCatalog(harness, "outreach", "POST", body);
       return serialize(await run());
     }
     const params = Object.fromEntries(
       new URL(url, "http://localhost").searchParams,
     );
+    if (
+      params.operation &&
+      !["touch", "queue", "due"].includes(params.operation)
+    )
+      return viaCatalog(harness, "outreach", "GET", params);
     const scope = {
       organizationId: params.organizationId || demoId(1),
       ...(params.productId ? { productId: params.productId } : {}),
@@ -213,7 +242,7 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
     };
     const run = operations[body.operation];
     if (run) return serialize(await run());
-    throw new Error("UNSUPPORTED");
+    return viaCatalog(harness, "crm", "POST", body);
   }
   const params = new URL(url, "http://localhost").searchParams;
   const organizationId = params.get("organizationId") || demoId(1);

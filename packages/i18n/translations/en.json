@@ -1653,5 +1653,18 @@
   "grantSince": "Since {date}",
   "revokeFor": "Revoke access for {name}",
   "revokeGrantConfirm": "Revoke",
-  "productCountOne": "1 product"
+  "productCountOne": "1 product",
+  "newSequence": "New sequence",
+  "sequenceCreated": "Created {name}",
+  "firstStepChannel": "First message channel",
+  "newSequenceHint": "The sequence starts with one message. Add follow-ups, delays and templates in the editor next.",
+  "archiveSequence": "Archive sequence",
+  "archiveSequenceDetail": "Running enrollments pause, and nobody new can be enrolled until it is restored. Running now: {count}.",
+  "sequenceArchived": "Archived {name}",
+  "sequenceRestored": "Restored {name}",
+  "archivedSequences": "Archived sequences",
+  "stop": "Stop",
+  "stopEnrollmentTitle": "Stop the sequence for {name}?",
+  "stopEnrollmentDetail": "{name} leaves {sequence}. Open drafts expire and this cannot be undone.",
+  "enrollmentStopped": "Stopped {name}'s sequence"
 }

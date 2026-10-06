@@ -1,5 +1,4 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -10,26 +9,13 @@ import { demoId, seedDemo } from "../packages/database/seed";
 
 const org = demoId(1);
 const at = (value: string) => new Date(value);
+const migrations = join(process.cwd(), "drizzle");
 
-test("a database at 0015 backfills closed_at for won and lost deals from their change events, then the update time", async () => {
-  const folder = await mkdtemp(join(tmpdir(), "gravity-closed-at-"));
+test("the 0016 backfill sets closed_at for won and lost deals from their change events, then the update time", async () => {
   const client = new PGlite();
   try {
-    await cp(join(process.cwd(), "drizzle"), folder, { recursive: true });
-    const journalPath = join(folder, "meta", "_journal.json");
-    const journal = JSON.parse(await readFile(journalPath, "utf8")) as {
-      entries: { idx: number; tag: string }[];
-    };
-    expect(journal.entries.some((entry) => entry.idx === 16)).toBe(true);
-    await writeFile(
-      journalPath,
-      JSON.stringify({
-        ...journal,
-        entries: journal.entries.filter((entry) => entry.idx <= 15),
-      }),
-    );
     const db = drizzle(client, { schema });
-    await migrate(db, { migrationsFolder: folder });
+    await migrate(db, { migrationsFolder: migrations });
     await seedDemo(db);
     const deals = {
       latestWon: demoId(2100),
@@ -80,8 +66,12 @@ test("a database at 0015 backfills closed_at for won and lost deals from their c
         "INSERT INTO change_events (organization_id, actor_id, type, entity_id, created_at) VALUES ($1, 'demo-you', $2, $3, $4)",
         [organizationId, type, entityId, createdAt],
       );
-    await writeFile(journalPath, JSON.stringify(journal));
-    await migrate(db, { migrationsFolder: folder });
+    await client.exec(
+      await readFile(
+        join(migrations, "0016_backfill_deal_closed_at.sql"),
+        "utf8",
+      ),
+    );
     const result = await client.query<{ id: string; closed_at: Date | null }>(
       "SELECT id, closed_at FROM opportunities WHERE id = ANY($1)",
       [Object.values(deals)],
@@ -104,6 +94,5 @@ test("a database at 0015 backfills closed_at for won and lost deals from their c
     expect(unclosed.rows.map((row) => row.id)).toEqual([deals.noTimes]);
   } finally {
     await client.close();
-    await rm(folder, { recursive: true, force: true });
   }
 });

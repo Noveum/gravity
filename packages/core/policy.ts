@@ -80,3 +80,29 @@ export async function authorize(
     throw new DomainError("FORBIDDEN", 403);
   return { membership, products: allowed };
 }
+export async function authorizeAdministrator(
+  db: Database,
+  principal: Principal,
+  organizationId: string,
+  write = true,
+) {
+  const permission = await authorize(
+    db,
+    principal,
+    organizationId,
+    undefined,
+    write,
+  );
+  if (
+    permission.membership.role !== "admin" ||
+    principal.productIds !== undefined
+  )
+    throw new DomainError("FORBIDDEN", 403);
+  return permission;
+}
+export function uniqueViolation(error: unknown) {
+  const cause = (error as { cause?: { code?: string } }).cause;
+  return (
+    (error as { code?: string }).code === "23505" || cause?.code === "23505"
+  );
+}

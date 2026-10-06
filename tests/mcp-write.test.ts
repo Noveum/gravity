@@ -138,7 +138,7 @@ test("MCP publishes instructions, workflow prompts and an effective operation pe
     "Granting access",
     "accept_invitation",
     "resolve_delivery",
-    "archivedProducts",
+    "includeArchived",
   ])
     expect(initialized.result.instructions).toContain(phrase);
   const prompts = await rpc("prompts/list", {});

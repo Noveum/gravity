@@ -438,40 +438,77 @@ describe("archiving products", () => {
     });
   });
 
-  test("the MCP product list keeps archived products apart from active ones", async () => {
+  test("the MCP product list returns active products and adds archived ones only when asked", async () => {
     await run("archive_product", admin, { productId: demoId(10) });
-    const response = await mcpHandler(local.db, agent, org).fetch(
-      new Request("http://127.0.0.1:3014/mcp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: { name: "list_products", arguments: {} },
+    const list = async (args: Record<string, unknown>) => {
+      const response = await mcpHandler(local.db, agent, org).fetch(
+        new Request("http://127.0.0.1:3014/mcp", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "list_products", arguments: args },
+          }),
         }),
-      }),
-    );
-    const body = await response.text();
-    const envelope = JSON.parse(
-      body
-        .split("\n")
-        .find((line) => line.startsWith("data: "))
-        ?.slice(6) ?? body,
-    );
-    const listed = JSON.parse(envelope.result.content[0].text) as {
-      products: { id: string }[];
-      archivedProducts: { id: string }[];
+      );
+      const body = await response.text();
+      const envelope = JSON.parse(
+        body
+          .split("\n")
+          .find((line) => line.startsWith("data: "))
+          ?.slice(6) ?? body,
+      );
+      return JSON.parse(envelope.result.content[0].text) as {
+        id: string;
+        colorKey: string;
+        archivedAt: string | null;
+      }[];
     };
-    expect(listed.products.map((item) => item.id).sort()).toEqual(
+    const active = await list({});
+    expect(Array.isArray(active)).toBe(true);
+    expect(active.map((item) => item.id).sort()).toEqual(
       [demoId(11), demoId(12)].sort(),
     );
-    expect(listed.archivedProducts.map((item) => item.id)).toEqual([
-      demoId(10),
-    ]);
+    const all = await list({ includeArchived: true });
+    expect(all.map((item) => item.id).sort()).toEqual(
+      [demoId(10), demoId(11), demoId(12)].sort(),
+    );
+    expect(all.find((item) => item.id === demoId(10))?.archivedAt).toEqual(
+      expect.any(String),
+    );
+    expect(all.find((item) => item.id === demoId(11))?.archivedAt).toBeNull();
+    for (const item of [...active, ...all]) {
+      expect(item).not.toHaveProperty("color");
+      expect(productColorKeys).toContain(item.colorKey);
+    }
+  });
+
+  test("no product result carries the legacy colour hex", async () => {
+    const results = [
+      await run("update_product", admin, {
+        productId: demoId(11),
+        colorKey: "teal",
+      }),
+      await run("archive_product", admin, { productId: demoId(10) }),
+      await run("restore_product", admin, { productId: demoId(10) }),
+      await run("create_product", admin, { name: "Fixture product" }),
+    ];
+    const snapshot = await new CrmService(local.db).snapshot(admin, {
+      organizationId: org,
+    });
+    for (const item of [
+      ...results,
+      ...snapshot.products,
+      ...snapshot.archivedProducts,
+    ]) {
+      expect(item).not.toHaveProperty("color");
+      expect(item).toHaveProperty("colorKey");
+    }
   });
 
   test("read-only assistants cannot change products", async () => {

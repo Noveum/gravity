@@ -7,6 +7,7 @@ import {
   authorizeAdministrator,
   DomainError,
   type Principal,
+  productColumns,
   uniqueViolation,
 } from "./policy";
 import { productColorKeys } from "./product-colors";
@@ -94,7 +95,7 @@ export class ProductService {
               eq(s.products.id, input.productId),
             ),
           )
-          .returning();
+          .returning(productColumns);
         if (!product) throw new DomainError("NOT_FOUND", 404);
         await tx.insert(s.changeEvents).values({
           organizationId: input.organizationId,
@@ -127,7 +128,7 @@ export class ProductService {
         .update(s.products)
         .set({ archivedAt: new Date() })
         .where(eq(s.products.id, current.id))
-        .returning();
+        .returning(productColumns);
       if (!product) throw new DomainError("NOT_FOUND", 404);
       const running = await tx
         .select()
@@ -182,7 +183,7 @@ export class ProductService {
         .update(s.products)
         .set({ archivedAt: null })
         .where(eq(s.products.id, current.id))
-        .returning();
+        .returning(productColumns);
       if (!product) throw new DomainError("NOT_FOUND", 404);
       await tx.insert(s.changeEvents).values({
         organizationId: input.organizationId,

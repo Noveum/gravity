@@ -22,7 +22,12 @@ import t from "../i18n/translations/en.json";
 import { overview as calculateOverview } from "./analytics";
 import { draftHash, draftSubject } from "./drafts";
 import { serialize } from "./dto";
-import { authorize, DomainError, type Principal } from "./policy";
+import {
+  authorize,
+  DomainError,
+  type Principal,
+  productColumns,
+} from "./policy";
 import { defaultProductColorKey, productColorKeys } from "./product-colors";
 import { assertProductActive } from "./products";
 import { tagsSchema } from "./record-tags";
@@ -238,7 +243,7 @@ async function insertProduct(
     .onConflictDoNothing({
       target: [s.products.organizationId, s.products.name],
     })
-    .returning();
+    .returning(productColumns);
   if (!product) throw new DomainError("PRODUCT_EXISTS", 409);
   await tx
     .insert(s.folders)

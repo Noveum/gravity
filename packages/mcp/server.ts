@@ -336,16 +336,17 @@ export function mcpHandler(
         "list_products",
         {
           description:
-            "List active products permitted by the grant and current membership in products, and archived ones separately in archivedProducts. Archived products keep their records but accept no new ones.",
-          inputSchema: z.object({}),
+            "List the active products permitted by the grant and current membership. Set includeArchived to also list archived products, each with archivedAt. Archived products keep their records but accept no new ones.",
+          inputSchema: z.object({ includeArchived: z.boolean().optional() }),
           annotations: { readOnlyHint: true },
         },
-        async () => {
+        async ({ includeArchived }) => {
           const { products } = await authorize(db, principal, organizationId);
-          return result({
-            products: products.filter((product) => !product.archivedAt),
-            archivedProducts: products.filter((product) => product.archivedAt),
-          });
+          return result(
+            includeArchived
+              ? products
+              : products.filter((product) => !product.archivedAt),
+          );
         },
       );
       server.registerTool(

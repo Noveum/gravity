@@ -30,6 +30,11 @@ const productId = () => uuid("product_id").notNull();
 const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const version = () => integer("version").notNull().default(1);
+const recordMetadata = () => ({
+  tags: jsonb("tags").$type<string[]>().notNull().default([]),
+  amountMinor: integer("amount_minor"),
+  currency: text("currency").notNull().default("USD"),
+});
 
 export const organizations = pgTable(
   "organizations",
@@ -105,8 +110,18 @@ export const companies = pgTable(
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: createdAt(),
     version: version(),
+    ...recordMetadata(),
   },
-  (t) => [serverAccessPolicy(), unique().on(t.organizationId, t.id)],
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.organizationId, t.id),
+    index("companies_browse").on(t.organizationId, t.name, t.id),
+    check(
+      "company_amount_nonnegative",
+      sql`${t.amountMinor} IS NULL OR ${t.amountMinor} >= 0`,
+    ),
+    check("company_currency_valid", sql`${t.currency} ~ '^[A-Z]{3}$'`),
+  ],
 ).enableRLS();
 export const people = pgTable(
   "people",
@@ -126,10 +141,22 @@ export const people = pgTable(
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: createdAt(),
     version: version(),
+    ...recordMetadata(),
   },
   (t) => [
     serverAccessPolicy(),
     unique().on(t.organizationId, t.id),
+    index("people_company_browse").on(
+      t.organizationId,
+      t.companyId,
+      t.archivedAt,
+    ),
+    index("people_name_browse").on(t.organizationId, t.name, t.id),
+    check(
+      "person_amount_nonnegative",
+      sql`${t.amountMinor} IS NULL OR ${t.amountMinor} >= 0`,
+    ),
+    check("person_currency_valid", sql`${t.currency} ~ '^[A-Z]{3}$'`),
     foreignKey({
       columns: [t.organizationId, t.companyId],
       foreignColumns: [companies.organizationId, companies.id],
@@ -160,12 +187,23 @@ export const relationships = pgTable(
     lastInboundAt: timestamp("last_inbound_at", { withTimezone: true }),
     touchCount: integer("touch_count").notNull().default(0),
     version: version(),
+    ...recordMetadata(),
   },
   (t) => [
     serverAccessPolicy(),
     unique().on(t.organizationId, t.id),
     unique().on(t.organizationId, t.productId, t.id),
     unique().on(t.organizationId, t.productId, t.personId, t.purpose),
+    index("relationships_person_browse").on(
+      t.organizationId,
+      t.personId,
+      t.productId,
+    ),
+    check(
+      "relationship_amount_nonnegative",
+      sql`${t.amountMinor} IS NULL OR ${t.amountMinor} >= 0`,
+    ),
+    check("relationship_currency_valid", sql`${t.currency} ~ '^[A-Z]{3}$'`),
     check("relationship_stage_outreach", sql`${t.stagePipeline} = 'outreach'`),
     check("relationship_touch_count", sql`${t.touchCount} >= 0`),
     foreignKey({
@@ -888,6 +926,7 @@ export const opportunities = pgTable(
     name: text("name").notNull(),
     amountMinor: integer("amount_minor"),
     currency: text("currency").notNull().default("USD"),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
     ownerId: text("owner_id"),
     status: text("status", { enum: ["open", "won", "lost"] })
       .notNull()

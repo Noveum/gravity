@@ -2114,5 +2114,20 @@
     "image": "Image",
     "worksheetName": "Worksheet {name}",
     "unsupportedFormat": "A preview is not available for this file format ({format}). The original file is saved and available to download."
+  },
+  "inlineEditing": {
+    "empty": "Click to add",
+    "unsaved": "Unsaved changes",
+    "saved": "Saved",
+    "archiveConfirm": "Archive this record? You can restore it from Archived records.",
+    "confirmArchive": "Confirm archive",
+    "cancelArchive": "Keep record",
+    "list": "List",
+    "board": "Board",
+    "noOpportunities": "No opportunities yet",
+    "opportunitiesHint": "Add a deal when a relationship becomes an opportunity.",
+    "noStageDeals": "No deals in this stage",
+    "openFullPage": "Open as a full page",
+    "finishEditing": "Save or cancel your changes before switching records or views."
   }
 }

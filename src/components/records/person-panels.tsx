@@ -11,6 +11,7 @@ import { keyInput } from "../keyboard-navigation";
 import { SendDialog } from "../outreach/send-dialog";
 import { initials } from "../shell/workspace-menu";
 import { ShortcutHint } from "../ui/shortcut-hint";
+import { PersonFields } from "./contact-fields";
 import { ConversationSharing } from "./conversation-sharing";
 import { RecordText } from "./record-text";
 import { RelationshipContext } from "./relationship-context";
@@ -37,24 +38,27 @@ export function PersonProfile({
   company,
   onCompany,
   recordHeading = false,
+  person,
 }: {
   name: string;
   title: string | null;
   company: { id: string; name: string } | null | undefined;
   onCompany: (companyId: string) => void;
   recordHeading?: boolean;
+  person?: NonNullable<ClientContext["person"]>;
 }) {
   return (
     <div className="profile">
       <span className="profile-avatar">{initials(name)}</span>
       <div>
         <h2
+          className={person ? "sr-only" : undefined}
           tabIndex={recordHeading ? -1 : undefined}
           data-record-heading={recordHeading ? "" : undefined}
         >
           {name}
         </h2>
-        <p>{title}</p>
+        {person ? <PersonFields person={person} profile /> : <p>{title}</p>}
         <small>
           {company && (
             <button

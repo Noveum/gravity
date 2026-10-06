@@ -689,3 +689,14 @@
     display: none;
   }
 }
+
+.inline-library-editor {
+  flex-shrink: 0;
+  margin: 12px;
+  border: 1px solid var(--gravity-border);
+  border-radius: 8px;
+  background: var(--gravity-surface);
+  color: var(--gravity-text);
+  overflow: auto;
+  max-height: 70dvh;
+}

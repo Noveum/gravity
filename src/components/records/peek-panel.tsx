@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { ActionDialog } from "../action-dialog";
 import { useWorkspaceData } from "../crm/crm-context";
 import {
   useArchivedPersonContext,
@@ -18,9 +19,11 @@ import {
 import { useArchive } from "../crm/use-archive";
 import { useDraft } from "../crm/use-draft";
 import { FileInspector } from "../files/file-library";
+import { PersonDialog } from "../person-dialog";
 import { CompanyDetails, PersonDetails, RelatedWork } from "../record-details";
 import { companyPath, personPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
+import { PersonFields } from "./contact-fields";
 import { MetadataSection } from "./metadata-section";
 import {
   ActionSummary,
@@ -30,7 +33,8 @@ import {
   RelationshipProperties,
 } from "./person-panels";
 import { ArchivedNotice, RecordActions } from "./record-actions";
-import { RecordText } from "./record-text";
+import { RecordEditorMode } from "./record-dialog";
+import { RecordDialogHost } from "./record-dialog-host";
 import { RelationshipContext } from "./relationship-context";
 
 function PersonPeek() {
@@ -50,6 +54,7 @@ function PersonPeek() {
   return (
     <>
       <PersonProfile
+        person={context.person ?? undefined}
         name={context.person?.name ?? ""}
         title={context.person?.title ?? ""}
         company={context.company}
@@ -57,6 +62,7 @@ function PersonPeek() {
       />
       {context.person && (
         <RecordActions
+          key={context.person.id}
           busy={crm.busy}
           onEdit={() =>
             crm.openRecordDialog({
@@ -84,18 +90,12 @@ function PersonPeek() {
         <MetadataSection entity="person" record={context.person} />
       )}
       <MetadataSection entity="relationship" record={context.relationship} />
-      <PersonActivity context={context} action={action} draft={draft} />
-      {context.person?.summary &&
-        context.person.summary !== context.relationship.context && (
-          <section className="record-section" aria-label={t.personNotes}>
-            <h3>{t.personNotes}</h3>
-            <RecordText value={context.person.summary} />
-          </section>
-        )}
+      {context.person && <PersonFields person={context.person} notesOnly />}
       <RelationshipContext
         key={context.relationship.id}
         relationship={context.relationship}
       />
+      <PersonActivity context={context} action={action} draft={draft} />
       <RelatedWork
         actions={context.actions}
         meetings={context.meetings}
@@ -143,9 +143,10 @@ function ArchivedPersonPeek() {
 function PersonWithoutRelationship() {
   const crm = useWorkspaceData();
   const archive = useArchive();
-  const person = crm.sourceData.people.find(
-    (item) => item.id === crm.peek.personId,
-  );
+  const { context, missing } = useArchivedPersonContext(crm.peek.personId);
+  const person = context?.person;
+  if (missing) return <EmptyState title={t.recordUnavailable} compact />;
+  if (!context) return <LoadingState rows={4} />;
   if (!person) return <EmptyState title={t.recordUnavailable} compact />;
   const company = crm.sourceData.companies.find(
     (item) => item.id === person.companyId,
@@ -154,17 +155,20 @@ function PersonWithoutRelationship() {
     <>
       <PersonProfile
         name={person.name}
+        person={person}
         title={person.title}
         company={company}
         onCompany={crm.openCompany}
       />
       <RecordActions
+        key={person.id}
         busy={crm.busy}
         onEdit={() => crm.openRecordDialog({ kind: "person", id: person.id })}
         onArchive={() => void archive.archive("person", person)}
       />
       <section className="record-section">
         <h3>{t.contactDetails}</h3>
+        <PersonFields person={person} />
         <dl>
           <dt>{t.email}</dt>
           <dd>{person.email || t.unknown}</dd>
@@ -181,12 +185,7 @@ function PersonWithoutRelationship() {
         </dl>
       </section>
       <MetadataSection entity="person" record={person} />
-      {person.summary && (
-        <section className="record-section" aria-label={t.personNotes}>
-          <h3>{t.personNotes}</h3>
-          <RecordText value={person.summary} />
-        </section>
-      )}
+      <PersonFields person={person} notesOnly />
     </>
   );
 }
@@ -207,6 +206,7 @@ function CompanyPeek() {
         />
       ) : (
         <RecordActions
+          key={context.company.id}
           busy={crm.busy}
           onEdit={() =>
             crm.openRecordDialog({ kind: "company", id: context.company.id })
@@ -282,10 +282,15 @@ export function PeekPanel() {
           {recordHref && (
             <Link
               href={recordHref}
+              data-native-navigation
               className="button icon-button"
-              aria-label={t.openRecord}
-              title={t.openRecord}
-              onClick={() => {
+              aria-label={t.inlineEditing.openFullPage}
+              title={t.inlineEditing.openFullPage}
+              onClick={(event) => {
+                if (!crm.canLeaveEditor()) {
+                  event.preventDefault();
+                  return;
+                }
                 crm.titleFocus.current = recordHref.split("?")[0] ?? "";
               }}
             >
@@ -308,13 +313,48 @@ export function PeekPanel() {
             aria-label={t.closeInspector}
             title={`${t.closeInspector} (Esc)`}
             aria-keyshortcuts="Escape"
-            onClick={crm.closePeek}
+            onClick={() => crm.closePeek()}
           >
             <X size={15} />
           </button>
         </div>
       </div>
-      {peek.fileId ? (
+      {crm.personDialog ? (
+        <PersonDialog
+          data={crm.data}
+          organizationId={crm.organizationId}
+          productId={crm.productId}
+          onClose={() => crm.setPersonDialog(false)}
+          onCreated={async (result) => {
+            await crm.refresh();
+            if (crm.productId && crm.productId !== result.productId)
+              crm.switchProduct(result.productId);
+            crm.openPerson(result.relationshipId);
+            crm.notify(t.updated, "success");
+          }}
+        />
+      ) : crm.actionDialog ? (
+        <ActionDialog
+          data={crm.data}
+          organizationId={crm.organizationId}
+          productId={crm.productId}
+          relationshipId={crm.actionDialogRelationship || peek.relationshipId}
+          userId={crm.userId}
+          onClose={() => crm.setActionDialog(false)}
+          onCreated={async (result) => {
+            await crm.refresh();
+            if (crm.productId && crm.productId !== result.productId)
+              crm.switchProduct(result.productId);
+            crm.openPerson(result.relationshipId, result.actionId);
+            crm.setTab("timeline");
+            crm.notify(t.scheduledAction, "success");
+          }}
+        />
+      ) : crm.recordDialog ? (
+        <RecordEditorMode.Provider value={true}>
+          <RecordDialogHost />
+        </RecordEditorMode.Provider>
+      ) : peek.fileId ? (
         <FileInspector
           key={`${crm.organizationId}/${peek.fileProductId}/${peek.fileId}`}
           fileId={peek.fileId}

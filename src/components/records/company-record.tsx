@@ -12,6 +12,7 @@ import {
 } from "../record-details";
 import { personPath, sectionPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
+import { CompanyFields } from "./contact-fields";
 import { MetadataSection } from "./metadata-section";
 import { ArchivedNotice, RecordActions } from "./record-actions";
 
@@ -92,8 +93,10 @@ export function CompanyRecord({ companyId }: { companyId: string }) {
           company={context?.company ?? { description: "", ...company }}
           recordHeading
         />
+        {context && <CompanyFields company={context.company} />}
         {active ? (
           <RecordActions
+            key={company.id}
             busy={crm.busy}
             onEdit={() =>
               crm.openRecordDialog({ kind: "company", id: active.id })

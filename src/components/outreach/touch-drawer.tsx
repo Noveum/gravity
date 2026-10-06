@@ -6,8 +6,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { dateLabel, errorText, requestJson } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { usePersonContext } from "../crm/record-context";
-import { submitOnSaveKey, useModalLifecycle } from "../modal-lifecycle";
-import { personPath } from "../routes";
+import { submitOnSaveKey } from "../modal-lifecycle";
 import { hasMergeFields, mergeParts } from "./merge-fields";
 import { type Touch, useOutreachSend } from "./outreach-data";
 import { followUpLabel, gateReason, mergePerson } from "./touch-labels";
@@ -51,7 +50,6 @@ export function TouchDrawer({
 }) {
   const crm = useCrm();
   const send = useOutreachSend();
-  const modal = useRef<HTMLDialogElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const titleId = useId();
   const [draft, setDraft] = useState(
@@ -59,7 +57,6 @@ export function TouchDrawer({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  useModalLifecycle(modal);
   useEffect(() => {
     if (edit) field.current?.focus();
   }, [edit]);
@@ -103,11 +100,11 @@ export function TouchDrawer({
     );
   }
   return (
-    <dialog
-      ref={modal}
-      className="dialog touch-drawer"
+    <section
+      className="touch-drawer inline-touch-editor"
+      data-record-editor
+      data-dirty={changed || saving || undefined}
       aria-labelledby={titleId}
-      onCancel={onClose}
     >
       <div className="touch-drawer-main">
         <header className="touch-drawer-head">
@@ -216,17 +213,19 @@ export function TouchDrawer({
             type="button"
             className="ghost"
             onClick={() => {
+              if (!crm.canLeaveEditor()) return;
               onClose();
-              crm.go(
-                personPath(touch.person.id, {
-                  relationshipId: touch.relationshipId,
-                }),
-              );
+              crm.openPerson(touch.relationshipId);
             }}
           >
             {t.openPerson}
           </button>
-          <button type="button" className="ghost" onClick={onClose}>
+          <button
+            type="button"
+            className="ghost"
+            disabled={saving}
+            onClick={onClose}
+          >
             {t.close}
           </button>
         </div>
@@ -282,6 +281,6 @@ export function TouchDrawer({
           </>
         )}
       </aside>
-    </dialog>
+    </section>
   );
 }

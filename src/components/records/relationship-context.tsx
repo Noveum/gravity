@@ -12,6 +12,7 @@ import { useState } from "react";
 import { dateLabel } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { ImportedContext } from "./imported-context";
+import { InlineField } from "./inline-field";
 import { RecordText } from "./record-text";
 import { RelationshipContextDialog } from "./relationship-context-dialog";
 
@@ -20,7 +21,7 @@ export function RelationshipContext({
 }: {
   relationship: ClientContext["relationship"];
 }) {
-  const { timeZone, busy } = useCrm();
+  const { timeZone, busy, send, currentRecord } = useCrm();
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState<ClientContext["relationship"] | null>(
     null,
@@ -56,18 +57,70 @@ export function RelationshipContext({
       </div>
       {!hasNotes && <p className="muted">{t.contextFields.empty}</p>}
       <div className="context-note-grid">
-        {!isImported && relationship.context && (
+        {
           <div className="context-note">
-            <h4>{t.summary}</h4>
-            <RecordText value={relationship.context} />
+            <InlineField
+              key={`${relationship.id}:summary`}
+              label={t.summary}
+              record={relationship}
+              value={isImported ? "" : relationship.context}
+              multiline
+              onSave={async (value, captured) => {
+                const original = currentRecord(captured);
+                const result = await send(
+                  {
+                    operation: "relationship",
+                    organizationId: original.organizationId,
+                    productId: original.productId,
+                    relationshipId: original.id,
+                    version: original.version,
+                    context: value,
+                  },
+                  false,
+                  false,
+                  "/api/outreach",
+                );
+                if (result.ok)
+                  setSaved(result.result as ClientContext["relationship"]);
+                return result.ok
+                  ? null
+                  : (result.error ?? t.errors.INVALID_INPUT);
+              }}
+            />
           </div>
-        )}
+        }
         {contextSectionKeys
           .filter((key) => details[key])
           .map((key) => (
             <div key={key} className="context-note">
-              <h4>{t.contextFields.sections[key]}</h4>
-              <RecordText value={details[key]} />
+              <InlineField
+                key={`${relationship.id}:${key}`}
+                label={t.contextFields.sections[key]}
+                record={relationship}
+                value={details[key]}
+                multiline
+                onSave={async (value, captured) => {
+                  const original = currentRecord(captured);
+                  const result = await send(
+                    {
+                      operation: "relationship",
+                      organizationId: original.organizationId,
+                      productId: original.productId,
+                      relationshipId: original.id,
+                      version: original.version,
+                      contextDetails: { [key]: value },
+                    },
+                    false,
+                    false,
+                    "/api/outreach",
+                  );
+                  if (result.ok)
+                    setSaved(result.result as ClientContext["relationship"]);
+                  return result.ok
+                    ? null
+                    : (result.error ?? t.errors.INVALID_INPUT);
+                }}
+              />
             </div>
           ))}
       </div>

@@ -1,10 +1,9 @@
 "use client";
 import { parseMoney } from "@crm/core/analytics";
 import t from "@crm/i18n/translations/en.json";
-import { useState } from "react";
 import { useWorkspaceData } from "../crm/crm-context";
-import { formatMoney, fromMinor, minorStep } from "../money";
-import { RecordDialog, text } from "./record-dialog";
+import { formatMoney, fromMinor } from "../money";
+import { InlineField } from "./inline-field";
 
 export interface MetadataRecord {
   id: string;
@@ -21,9 +20,11 @@ export function MetadataValues({
 }) {
   return (
     <>
-      <span className="deal-size">
-        {formatMoney(record.amountMinor, record.currency)}
-      </span>
+      {record.amountMinor !== null && (
+        <span className="deal-size">
+          {formatMoney(record.amountMinor, record.currency)}
+        </span>
+      )}
       <span className="record-tags">
         {record.tags.map((tag) => (
           <span key={tag} className="badge">
@@ -42,110 +43,95 @@ export function MetadataSection({
   record: MetadataRecord;
 }) {
   const crm = useWorkspaceData();
-  const [editing, setEditing] = useState<MetadataRecord | null>(null);
-  const [currency, setCurrency] = useState(record.currency);
+  record = crm.currentRecord(record);
+  const heading =
+    entity === "relationship"
+      ? t.relationshipDealSizeAndTags
+      : entity === "person"
+        ? t.personDealSizeAndTags
+        : entity === "company"
+          ? t.companyDealSizeAndTags
+          : t.dealSizeAndTags;
+  const save = async (
+    captured: MetadataRecord,
+    patch: { tags?: string[]; amountMinor?: number | null; currency?: string },
+  ) => {
+    const original = crm.currentRecord(captured);
+    const result = await crm.send(
+      {
+        operation: "record-metadata",
+        organizationId: crm.organizationId,
+        entity,
+        recordId: original.id,
+        version: original.version,
+        tags: original.tags,
+        amountMinor: original.amountMinor,
+        currency: original.currency,
+        ...patch,
+      },
+      false,
+      false,
+    );
+    return result.ok ? null : (result.error ?? t.errors.INVALID_INPUT);
+  };
   return (
     <section className="record-section metadata-section">
-      <details
-        className="estimate-details"
-        open={record.amountMinor !== null || record.tags.length > 0}
-      >
+      <details className="estimate-details">
         <summary>
-          <h3>
-            {entity === "relationship"
-              ? t.relationshipDealSizeAndTags
-              : entity === "person"
-                ? t.personDealSizeAndTags
-                : entity === "company"
-                  ? t.companyDealSizeAndTags
-                  : t.dealSizeAndTags}
-          </h3>
+          <h3>{heading}</h3>
+          <MetadataValues record={record} />
         </summary>
-        <MetadataValues record={record} />
-        {entity !== "opportunity" && (
-          <p className="muted field-hint">{t.estimateForecastNote}</p>
-        )}
-        {!record.archivedAt && (
-          <button
-            className="ghost"
-            type="button"
-            onClick={() => {
-              setCurrency(record.currency);
-              setEditing(record);
-            }}
-          >
-            {t.editDealSizeAndTags}
-          </button>
-        )}
-      </details>
-      {editing && editing.id === record.id && (
-        <RecordDialog
-          title={t.editDealSizeAndTags}
-          submitLabel={t.save}
-          onClose={() => setEditing(null)}
-          onSubmit={async (fields) => {
-            let amountMinor: number | null;
+        <InlineField
+          key={`${record.id}:tags`}
+          label={t.tags}
+          record={record}
+          value={record.tags.join(", ")}
+          readOnly={!!record.archivedAt}
+          onSave={(value, original) =>
+            save(original, {
+              tags: value
+                .split(",")
+                .map((tag) => tag.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+        <InlineField
+          key={`${record.id}:amount`}
+          label={t.dealSize}
+          record={record}
+          value={fromMinor(record.amountMinor, record.currency)}
+          type="number"
+          readOnly={!!record.archivedAt}
+          onSave={async (value, original) => {
             try {
-              amountMinor = parseMoney(text(fields, "amount"), currency);
+              return await save(original, {
+                amountMinor: parseMoney(
+                  value,
+                  crm.currentRecord(original).currency,
+                ),
+              });
             } catch {
               return t.errors.INVALID_INPUT;
             }
-            const result = await crm.send(
-              {
-                operation: "record-metadata",
-                organizationId: crm.organizationId,
-                entity,
-                recordId: editing.id,
-                version: editing.version,
-                tags: text(fields, "tags")
-                  .split(",")
-                  .map((tag) => tag.trim())
-                  .filter(Boolean),
-                amountMinor,
-                currency,
-              },
-              t.updated,
-              false,
-            );
-            return result.ok ? null : (result.error ?? t.errors.INVALID_INPUT);
           }}
-        >
-          <label>
-            {t.tags}
-            <input
-              data-primary-field
-              name="tags"
-              defaultValue={editing.tags.join(", ")}
-              aria-describedby="tags-hint"
-            />
-          </label>
-          <small id="tags-hint">{t.tagsHint}</small>
-          <label>
-            {t.currency}
-            <select
-              name="currency"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-            >
-              {Intl.supportedValuesOf("currency").map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {t.dealSize}
-            <input
-              name="amount"
-              type="number"
-              min="0"
-              step={minorStep(currency)}
-              defaultValue={fromMinor(editing.amountMinor, editing.currency)}
-            />
-          </label>
-        </RecordDialog>
-      )}
+        />
+        <InlineField
+          key={`${record.id}:currency`}
+          label={t.currency}
+          record={record}
+          value={record.currency}
+          readOnly={!!record.archivedAt}
+          options={Intl.supportedValuesOf("currency").map((value) => ({
+            value,
+            label: value,
+          }))}
+          onSave={(value, original) => save(original, { currency: value })}
+        />
+        {entity !== "opportunity" && (
+          <p className="muted field-hint">{t.estimateForecastNote}</p>
+        )}
+      </details>
     </section>
   );
 }

@@ -6,6 +6,7 @@ import { Building2, ChevronRight } from "lucide-react";
 import { dateLabel, label } from "./client-api";
 import { useWorkspaceData } from "./crm/crm-context";
 import { formatMoney } from "./money";
+import { CompanyFields, PersonFields } from "./records/contact-fields";
 import { Pagination, useListPage } from "./records/list-browser";
 import { RecordText } from "./records/record-text";
 
@@ -128,7 +129,7 @@ export function RelatedOpportunities({
           </button>
         )}
       </div>
-      {!!open.length && (
+      {!!included.length && (
         <div className="record-forecast">
           <span>{t.expectedRevenue}</span>
           <strong>
@@ -159,22 +160,28 @@ export function RelatedOpportunities({
           <span>
             {o.name}
             <small>
-              {formatMoney(o.amountMinor, o.currency)} ·{" "}
+              {o.amountMinor !== null && (
+                <>{formatMoney(o.amountMinor, o.currency)} · </>
+              )}
               {crm.product(o.productId)?.name} · {label(o.status)}
             </small>
-            <small>
-              {t.probability}:{" "}
-              {o.probability === null ? t.unspecified : `${o.probability}%`}
-            </small>
-            <small>
-              {t.expectedRevenue}:{" "}
-              {weightedAmount(o.amountMinor, o.probability) === null
-                ? t.forecastUnknown
-                : formatMoney(
-                    weightedAmount(o.amountMinor, o.probability),
-                    o.currency,
-                  )}
-            </small>
+            {o.probability !== null && (
+              <small>
+                {t.probability}:{" "}
+                {o.probability === null ? t.unspecified : `${o.probability}%`}
+              </small>
+            )}
+            {o.amountMinor !== null && o.probability !== null && (
+              <small>
+                {t.expectedRevenue}:{" "}
+                {weightedAmount(o.amountMinor, o.probability) === null
+                  ? t.forecastUnknown
+                  : formatMoney(
+                      weightedAmount(o.amountMinor, o.probability),
+                      o.currency,
+                    )}
+              </small>
+            )}
           </span>
           <ChevronRight size={13} />
         </button>
@@ -289,6 +296,7 @@ export function CompanyDetails({
   return (
     <>
       <CompanyProfile company={context.company} />
+      <CompanyFields company={context.company} />
       <CompanyPeople context={context} onPerson={onPerson} />
       <RelatedWork
         actions={context.actions}
@@ -316,77 +324,41 @@ export function PersonDetails({
   return (
     <section className="record-section">
       <h3>{t.contactDetails}</h3>
-      <dl className="properties">
-        <dt>{t.email}</dt>
-        <dd>
-          {context.person?.email ? (
-            <a href={`mailto:${context.person.email}`}>
-              {context.person.email}
-            </a>
-          ) : (
-            t.unknown
-          )}
-        </dd>
-        {!!context.person?.otherEmails.length && (
-          <>
-            <dt>{t.otherEmails}</dt>
-            <dd className="stacked-values">
-              {context.person.otherEmails.map((email) => (
-                <a key={email} href={`mailto:${email}`}>
-                  {email}
-                </a>
-              ))}
-            </dd>
-          </>
+      {context.person && <PersonFields person={context.person} />}
+      <div className="contact-links">
+        {context.person?.email && (
+          <a href={`mailto:${context.person.email}`}>{context.person.email}</a>
         )}
         {context.person?.phone && (
-          <>
-            <dt>{t.phone}</dt>
-            <dd>
-              <a href={`tel:${context.person.phone.replace(/[^+\d]/g, "")}`}>
-                {context.person.phone}
-              </a>
-            </dd>
-          </>
+          <a href={`tel:${context.person.phone.replace(/[^+\d]/g, "")}`}>
+            {context.person.phone}
+          </a>
         )}
+        {context.person?.otherEmails.map((email) => (
+          <a key={email} href={`mailto:${email}`}>
+            {email}
+          </a>
+        ))}
         {context.person?.linkedinUrl && (
-          <>
-            <dt>{t.linkedin}</dt>
-            <dd>
-              <a
-                href={context.person.linkedinUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {t.linkedinProfile}
-              </a>
-            </dd>
-          </>
+          <a
+            href={context.person.linkedinUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t.linkedinProfile}
+          </a>
         )}
-        <dt>{t.company}</dt>
-        <dd>
-          {context.company ? (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => onCompany(context.company?.id || "")}
-            >
-              {context.company.archivedAt
-                ? `${context.company.name} ${t.archivedSuffix}`
-                : context.company.name}
-              <ChevronRight size={12} />
-            </button>
-          ) : (
-            t.companyMissing
-          )}
-        </dd>
-        {context.company?.domain && (
-          <>
-            <dt>{t.domain}</dt>
-            <dd>{context.company.domain}</dd>
-          </>
+        {context.company && (
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => onCompany(context.company?.id ?? "")}
+          >
+            {context.company.name}
+            <ChevronRight size={12} />
+          </button>
         )}
-      </dl>
+      </div>
       {includeSummary &&
         context.person?.summary &&
         context.person.summary !== context.relationship.context && (

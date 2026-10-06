@@ -40,7 +40,9 @@ export function RecordDialogHost() {
         key={dialog.id ?? "new"}
         {...(company ? { company } : {})}
         onClose={close}
-        onCreated={(created) => crm.go(companyPath(created.id))}
+        onCreated={(created) =>
+          requestAnimationFrame(() => crm.go(companyPath(created.id)))
+        }
       />
     );
   }

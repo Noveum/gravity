@@ -193,7 +193,7 @@ describe("sending an approved touch", () => {
         name: `${t.touchVerbs.edit}: Amara Stone`,
       }),
     );
-    const drawer = await screen.findByRole("dialog", {
+    const drawer = await screen.findByRole("region", {
       name: t.draftEditorTitle.replace("{name}", "Amara Stone"),
     });
     fireEvent.click(

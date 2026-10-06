@@ -8,7 +8,7 @@ export function usePanelLayout(collapsed = false) {
   const frame = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1280);
   const [navigation, setNavigation] = useState(232);
-  const [inspector, setInspector] = useState(400);
+  const [inspector, setInspector] = useState(480);
   useEffect(() => {
     try {
       const left = Number(localStorage.getItem("gravity-navigation-width"));

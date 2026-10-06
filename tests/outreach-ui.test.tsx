@@ -218,7 +218,7 @@ describe("touch rows, the draft drawer and paused work", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: /^Noor Haddad, / }),
     );
-    const drawer = await screen.findByRole("dialog", {
+    const drawer = await screen.findByRole("region", {
       name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
     });
     expect(
@@ -702,14 +702,20 @@ describe("fix round 1", () => {
   test("the Edit draft, Mark sent and Skip row buttons open the drawer and their dialogs", async () => {
     await mountCrm(harness, "/outreach/today");
     fireEvent.click(await verbButton("edit", "Noor Haddad"));
-    const drawer = await screen.findByRole("dialog", {
+    const drawer = await screen.findByRole("region", {
       name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
     });
     expect(document.activeElement).toBe(
       within(drawer).getByLabelText(t.draftLabel),
     );
-    fireEvent(drawer, new Event("cancel"));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(within(drawer).getByRole("button", { name: t.close }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", {
+          name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
+        }),
+      ).toBeNull(),
+    );
     fireEvent.click(await verbButton("sent", "Noor Haddad"));
     const sent = await screen.findByRole("dialog", { name: t.markSentTitle });
     fireEvent.click(within(sent).getByRole("button", { name: t.cancel }));
@@ -752,7 +758,7 @@ describe("fix round 1", () => {
     );
     expect(row.textContent).not.toContain("{first name}");
     fireEvent.click(row);
-    const drawer = await screen.findByRole("dialog", {
+    const drawer = await screen.findByRole("region", {
       name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
     });
     expect(

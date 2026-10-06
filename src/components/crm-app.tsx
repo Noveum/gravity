@@ -12,7 +12,6 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
-import { ActionDialog } from "./action-dialog";
 import { setSidebarCollapsed, toggleTheme, useAppearance } from "./appearance";
 import { label } from "./client-api";
 import { Commands } from "./commands";
@@ -21,10 +20,8 @@ import { useActionVerbs } from "./crm/use-action-verbs";
 import { focusedRecord, navigableRecords } from "./keyboard-navigation";
 import { EnrollDialog } from "./outreach/enroll-dialog";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
-import { PersonDialog } from "./person-dialog";
 import { ProductDialog } from "./product-dialog";
 import { PeekPanel } from "./records/peek-panel";
-import { RecordDialogHost } from "./records/record-dialog-host";
 import {
   actionFilters,
   actionsPath,
@@ -96,6 +93,15 @@ export function CrmApp({
 function CrmShell({ children }: { children: ReactNode }) {
   const crm = useCrm();
   const { data, sourceData, route, peek, organizationId } = crm;
+  useEffect(() => {
+    const guard = (event: BeforeUnloadEvent) => {
+      if (!document.querySelector("[data-dirty='true']")) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, []);
   const appearance = useAppearance();
   const panels = usePanelLayout(appearance.sidebarCollapsed);
   const query = useSearchParams();
@@ -199,7 +205,10 @@ function CrmShell({ children }: { children: ReactNode }) {
     (!!peek.relationshipId ||
       !!peek.personId ||
       !!peek.companyId ||
-      !!peek.fileId);
+      !!peek.fileId ||
+      !!crm.recordDialog ||
+      !!crm.personDialog ||
+      !!crm.actionDialog);
   const personRelationships =
     section === "people" && recordId
       ? (sourceData?.relationships ?? []).filter(
@@ -307,7 +316,6 @@ function CrmShell({ children }: { children: ReactNode }) {
                 active: !crm.productId,
                 onSelect: () => {
                   crm.switchProduct("");
-                  goToSection("overview");
                 },
               },
               ...products.map((product) => ({
@@ -318,7 +326,6 @@ function CrmShell({ children }: { children: ReactNode }) {
                 active: crm.productId === product.id,
                 onSelect: () => {
                   crm.switchProduct(product.id);
-                  goToSection("overview");
                 },
               })),
             ]
@@ -408,10 +415,16 @@ function CrmShell({ children }: { children: ReactNode }) {
             : null;
         if (
           !(link instanceof HTMLAnchorElement) ||
+          link.hasAttribute("data-native-navigation") ||
           link.download ||
           (link.target && link.target !== "_self")
         )
           return;
+        if (!crm.canLeaveEditor()) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         if (crm.openRecord(link.href)) {
           event.preventDefault();
           event.stopPropagation();
@@ -696,44 +709,6 @@ function CrmShell({ children }: { children: ReactNode }) {
             onClose={() => setProductDialog("")}
           />
         )}
-        {crm.actionDialog && data && (
-          <ActionDialog
-            data={data}
-            organizationId={organizationId}
-            productId={crm.productId}
-            relationshipId={crm.actionDialogRelationship || peek.relationshipId}
-            userId={crm.userId}
-            onClose={() => crm.setActionDialog(false)}
-            onCreated={async (result) => {
-              if (crm.productId && crm.productId !== result.productId)
-                crm.switchProduct(result.productId);
-              await crm.refresh();
-              crm.go(homePath);
-              crm.openPerson(result.relationshipId, result.actionId, homePath);
-              crm.setTab("timeline");
-              crm.clearSearch();
-              crm.notify(t.scheduledAction, "success");
-            }}
-          />
-        )}
-        <RecordDialogHost />
-        {crm.personDialog && data && (
-          <PersonDialog
-            key={`${organizationId}-${crm.productId}`}
-            data={data}
-            organizationId={organizationId}
-            productId={crm.productId}
-            onClose={() => crm.setPersonDialog(false)}
-            onCreated={async (result) => {
-              if (crm.productId && crm.productId !== result.productId)
-                crm.switchProduct(result.productId);
-              await crm.refresh();
-              crm.openPerson(result.relationshipId);
-              crm.setTab("timeline");
-              crm.notify(t.updated, "success");
-            }}
-          />
-        )}
         {!data ? (
           <div className="workspace-state">
             {organizationId ? (
@@ -811,7 +786,7 @@ function CrmShell({ children }: { children: ReactNode }) {
                 max={panels.inspectorMax}
                 direction={-1}
                 onChange={panels.resizeInspector}
-                onReset={() => panels.resizeInspector(400)}
+                onReset={() => panels.resizeInspector(480)}
               />
             )}
             {showPeek && <PeekPanel />}

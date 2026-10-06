@@ -1,12 +1,22 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import { type ReactNode, useId, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { errorText } from "../client-api";
 import {
   submitOnSaveKey,
   useModalLifecycle,
   useReadyFocus,
 } from "../modal-lifecycle";
+
+export const RecordEditorMode = createContext(false);
 
 export function RecordDialog({
   title,
@@ -16,6 +26,7 @@ export function RecordDialog({
   children,
   loading = false,
   className = "",
+  inline = false,
 }: {
   title: string;
   submitLabel: string;
@@ -24,26 +35,30 @@ export function RecordDialog({
   children: ReactNode;
   loading?: boolean;
   className?: string;
+  inline?: boolean;
 }) {
+  const embedded = useContext(RecordEditorMode) || inline;
   const modal = useRef<HTMLDialogElement>(null);
+  const editor = useRef<HTMLElement>(null);
   const submitting = useRef(false);
   const titleId = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useModalLifecycle(modal);
+  useModalLifecycle(modal, !embedded);
   useReadyFocus(modal, loading);
-  return (
-    <dialog
-      ref={modal}
-      className={`dialog ${className}`}
-      aria-labelledby={titleId}
-      onCancel={(event) => {
-        if (busy) event.preventDefault();
-        else onClose();
-      }}
-    >
+  useEffect(() => {
+    if (embedded && !loading)
+      editor.current
+        ?.querySelector<HTMLElement>("[data-primary-field]")
+        ?.focus();
+  }, [embedded, loading]);
+  const [dirty, setDirty] = useState(false);
+  const content = (
+    <>
       <h2 id={titleId}>{title}</h2>
       <form
+        data-dirty={dirty || busy || undefined}
+        onChange={() => setDirty(true)}
         onKeyDown={submitOnSaveKey}
         onSubmit={async (event) => {
           event.preventDefault();
@@ -87,6 +102,42 @@ export function RecordDialog({
           </button>
         </div>
       </form>
+    </>
+  );
+  return embedded ? (
+    <section
+      ref={editor}
+      data-record-editor
+      className={`inline-record-editor ${className}`}
+      aria-labelledby={titleId}
+    >
+      {content}
+    </section>
+  ) : (
+    <dialog
+      ref={modal}
+      className={`dialog ${className}`}
+      aria-labelledby={titleId}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !busy) onClose();
+      }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget || dirty || busy) return;
+        const box = event.currentTarget.getBoundingClientRect();
+        if (
+          event.clientX < box.left ||
+          event.clientX > box.right ||
+          event.clientY < box.top ||
+          event.clientY > box.bottom
+        )
+          onClose();
+      }}
+      onCancel={(event) => {
+        if (busy) event.preventDefault();
+        else onClose();
+      }}
+    >
+      {content}
     </dialog>
   );
 }

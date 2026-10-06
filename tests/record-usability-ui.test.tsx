@@ -26,7 +26,7 @@ const inspector = () =>
 
 describe("browsing records", () => {
   test.each(["/companies", "/materials", `/people/${demoId(200)}`])(
-    "sidebar products open the overview from %s and clear the old record",
+    "sidebar products keep %s while changing product scope",
     async (path) => {
       await mountCrm(harness, path);
       const sidebar = document.getElementById("navigation-panel");
@@ -35,12 +35,8 @@ describe("browsing records", () => {
       );
       if (!product) throw new Error("missing product navigation");
       fireEvent.click(product);
-      expect(window.location.pathname).toBe("/overview");
-      expect(screen.getByRole("combobox", { name: t.product })).toHaveProperty(
-        "value",
-        demoId(10),
-      );
-      expect(document.querySelector(".record-page")).toBeNull();
+      expect(window.location.pathname).toBe(path);
+      expect(product.getAttribute("aria-pressed")).toBe("true");
       expect(
         screen.queryByRole("complementary", { name: t.recordDetails }),
       ).toBeNull();
@@ -49,11 +45,8 @@ describe("browsing records", () => {
       );
       if (!all) throw new Error("missing all-products navigation");
       fireEvent.click(all);
-      expect(window.location.pathname).toBe("/overview");
-      expect(screen.getByRole("combobox", { name: t.product })).toHaveProperty(
-        "value",
-        "",
-      );
+      expect(window.location.pathname).toBe(path);
+      expect(all.getAttribute("aria-pressed")).toBe("true");
     },
   );
   test("the toolbar product picker filters companies without navigating", async () => {
@@ -75,12 +68,9 @@ describe("browsing records", () => {
     expect(
       document.querySelector(".record-attributes .record-text"),
     ).toBeNull();
-    const details = notes.querySelector("details");
-    expect(details?.open).toBe(false);
-    expect(details?.querySelector("p")?.textContent).toBe(summary);
-    expect(
-      notes.querySelector(".record-text-preview")?.textContent?.length,
-    ).toBeLessThan(330);
+    const field = within(notes).getByRole("textbox", { name: t.personNotes });
+    expect(field).toHaveProperty("value", summary);
+    expect(field.getAttribute("rows")).toBe("3");
     const timeline = document.querySelector(".record-timeline");
     expect(timeline?.firstElementChild?.className).toBe("tabs");
   });
@@ -109,7 +99,7 @@ describe("browsing records", () => {
         name: `${t.editMeeting}: ${meeting.title}`,
       }),
     );
-    const dialog = await screen.findByRole("dialog", { name: t.editMeeting });
+    const dialog = await screen.findByRole("region", { name: t.editMeeting });
     expect(within(dialog).getByLabelText(t.summary)).toHaveProperty(
       "value",
       summary,
@@ -144,6 +134,12 @@ describe("browsing records", () => {
     fireEvent.click(
       await inspector().findByRole("button", { name: t.archive }),
     );
+    expect(
+      harness.posts.some((post) => post.operation === "person-archive"),
+    ).toBe(false);
+    fireEvent.click(
+      inspector().getByRole("button", { name: t.inlineEditing.confirmArchive }),
+    );
     await waitFor(() =>
       expect(
         screen.queryByRole("complementary", { name: t.recordDetails }),
@@ -164,17 +160,13 @@ describe("browsing records", () => {
       const name = entity === "person" ? "Jonah Reed" : "Northstar Labs";
       fireEvent.click(screen.getByRole("link", { name }));
       fireEvent.click(await inspector().findByRole("button", { name: t.edit }));
-      const title = entity === "person" ? t.editPerson : t.editCompany;
-      const dialog = await screen.findByRole("dialog", { name: title });
-      await waitFor(() =>
-        expect(within(dialog).getByLabelText(t.name)).toHaveProperty(
-          "value",
-          name,
-        ),
-      );
-      fireEvent.change(within(dialog).getByLabelText(t.name), {
-        target: { value: "Local edit" },
+      const field = await inspector().findByRole("textbox", {
+        name: t.name,
       });
+      expect(field).toHaveProperty("value", name);
+      const form = field.closest("form");
+      if (!form) throw new Error("Missing inline field");
+      fireEvent.change(field, { target: { value: "Local edit" } });
       const table = entity === "person" ? s.people : s.companies;
       await harness.local.db
         .update(table)
@@ -186,10 +178,12 @@ describe("browsing records", () => {
         { name: "External edit" },
         { timeout: 5000 },
       );
-      fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
-      expect(
-        (await within(dialog).findAllByText(t.errors.CONFLICT)).length,
-      ).toBeGreaterThan(0);
+      expect(field).toHaveProperty("value", "Local edit");
+      fireEvent.submit(form);
+      expect(await within(form).findByRole("alert")).toHaveProperty(
+        "textContent",
+        t.errors.CONFLICT,
+      );
       const [stored] = await harness.local.db
         .select()
         .from(table)
@@ -206,25 +200,24 @@ describe("browsing records", () => {
       .closest("summary");
     if (!estimate) throw new Error("missing estimate disclosure");
     fireEvent.click(estimate);
-    fireEvent.click(
-      inspector().getAllByRole("button", {
-        name: t.editDealSizeAndTags,
-      })[0] as HTMLElement,
-    );
-    const dialog = screen.getByRole("dialog", { name: t.editDealSizeAndTags });
-    fireEvent.change(within(dialog).getByLabelText(t.tags), {
-      target: { value: "Local" },
-    });
+    const disclosure = estimate.closest("details");
+    if (!disclosure) throw new Error("Missing estimate fields");
+    const field = within(disclosure).getByLabelText(t.tags);
+    const form = field.closest("form");
+    if (!form) throw new Error("Missing tag form");
+    fireEvent.change(field, { target: { value: "Local" } });
     await harness.local.db
       .update(s.people)
       .set({ tags: ["External"], version: 2 })
       .where(eq(s.people.id, demoId(201)));
     fireEvent.focus(window);
     await inspector().findByText("External", {}, { timeout: 5000 });
-    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
-    expect(
-      (await within(dialog).findAllByText(t.errors.CONFLICT)).length,
-    ).toBeGreaterThan(0);
+    expect(field).toHaveProperty("value", "Local");
+    fireEvent.submit(form);
+    expect(await within(form).findByRole("alert")).toHaveProperty(
+      "textContent",
+      t.errors.CONFLICT,
+    );
     const [person] = await harness.local.db
       .select()
       .from(s.people)
@@ -236,20 +229,19 @@ describe("browsing records", () => {
     await mountCrm(harness, "/people", { compact: true });
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
     await inspector().findByRole("heading", { name: "Jonah Reed" });
-    fireEvent.click(inspector().getByRole("button", { name: t.edit }));
-    const dialog = await screen.findByRole("dialog", { name: t.editPerson });
-    await waitFor(() =>
-      expect(within(dialog).getByLabelText(t.summary)).toHaveProperty(
-        "value",
-        "Requested API documentation; no purchase decision confirmed.",
-      ),
+    expect(
+      inspector().getByRole("textbox", { name: t.personNotes }),
+    ).toHaveProperty(
+      "value",
+      "Requested API documentation; no purchase decision confirmed.",
     );
-    fireEvent.change(within(dialog).getByLabelText(t.roleTitle), {
-      target: { value: "Founder and CEO" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
+    const field = inspector().getByLabelText(t.roleTitle);
+    const form = field.closest("form");
+    if (!form) throw new Error("Missing role form");
+    fireEvent.change(field, { target: { value: "Founder and CEO" } });
+    fireEvent.submit(form);
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: t.editPerson })).toBeNull(),
+      expect(form.querySelector("[role=status]")).toBeTruthy(),
     );
     const [person] = await harness.local.db
       .select()
@@ -284,9 +276,45 @@ describe("browsing records", () => {
     ).toBeTruthy();
     expect(
       inspector()
-        .getByRole("link", { name: t.openRecord })
+        .getByRole("link", { name: t.inlineEditing.openFullPage })
         .getAttribute("href"),
     ).toBe(`/companies/${demoId(100)}`);
+  });
+  test("a pending estimate uses the precision of a currency saved in the same inspector", async () => {
+    await mountCrm(harness, "/people");
+    fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
+    await inspector().findByRole("heading", { name: "Jonah Reed" });
+    const estimate = inspector()
+      .getByText(t.personDealSizeAndTags)
+      .closest("summary");
+    if (!estimate) throw new Error("Missing estimate disclosure");
+    fireEvent.click(estimate);
+    const disclosure = estimate.closest("details");
+    if (!disclosure) throw new Error("Missing estimate fields");
+    const amount = within(disclosure).getByLabelText(t.dealSize);
+    const currency = within(disclosure).getByLabelText(t.currency);
+    fireEvent.change(amount, { target: { value: "25000" } });
+    fireEvent.change(currency, { target: { value: "JPY" } });
+    const currencyForm = currency.closest("form"),
+      amountForm = amount.closest("form");
+    if (!currencyForm || !amountForm) throw new Error("Missing estimate forms");
+    fireEvent.submit(currencyForm);
+    await waitFor(() =>
+      expect(currencyForm.querySelector("[role=status]")).toBeTruthy(),
+    );
+    fireEvent.submit(amountForm);
+    await waitFor(() =>
+      expect(amountForm.querySelector("[role=status]")).toBeTruthy(),
+    );
+    const [stored] = await harness.local.db
+      .select()
+      .from(s.people)
+      .where(eq(s.people.id, demoId(201)));
+    expect(stored).toMatchObject({
+      amountMinor: 25000,
+      currency: "JPY",
+      version: 3,
+    });
   });
   test("inspector edits persist tags and deal size, and filters use them", async () => {
     await mountCrm(harness, "/people");
@@ -297,23 +325,22 @@ describe("browsing records", () => {
       .closest("summary");
     if (!estimate) throw new Error("missing estimate disclosure");
     fireEvent.click(estimate);
-    fireEvent.click(
-      inspector().getAllByRole("button", {
-        name: t.editDealSizeAndTags,
-      })[0] as HTMLElement,
-    );
-    const dialog = screen.getByRole("dialog", { name: t.editDealSizeAndTags });
-    fireEvent.change(within(dialog).getByLabelText(t.tags), {
-      target: { value: "Enterprise, Priority" },
-    });
-    fireEvent.change(within(dialog).getByLabelText(t.dealSize), {
-      target: { value: "25000" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
+    const disclosure = estimate.closest("details");
+    if (!disclosure) throw new Error("Missing estimate fields");
+    const tags = within(disclosure).getByLabelText(t.tags);
+    const amount = within(disclosure).getByLabelText(t.dealSize);
+    fireEvent.change(tags, { target: { value: "Enterprise, Priority" } });
+    fireEvent.change(amount, { target: { value: "25000" } });
+    const tagForm = tags.closest("form"),
+      amountForm = amount.closest("form");
+    if (!tagForm || !amountForm) throw new Error("Missing estimate forms");
+    fireEvent.submit(tagForm);
     await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: t.editDealSizeAndTags }),
-      ).toBeNull(),
+      expect(tagForm.querySelector("[role=status]")).toBeTruthy(),
+    );
+    fireEvent.submit(amountForm);
+    await waitFor(() =>
+      expect(amountForm.querySelector("[role=status]")).toBeTruthy(),
     );
     const [stored] = await harness.local.db
       .select()
@@ -323,7 +350,7 @@ describe("browsing records", () => {
       tags: ["Enterprise", "Priority"],
       amountMinor: 2500000,
       currency: "USD",
-      version: 2,
+      version: 3,
     });
     fireEvent.click(
       inspector().getByRole("button", { name: t.closeInspector }),

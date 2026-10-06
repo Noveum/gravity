@@ -13,6 +13,7 @@ import { useDraft } from "../crm/use-draft";
 import { PersonDetails, RelatedWork } from "../record-details";
 import { companyPath, personPath, sectionPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
+import { PersonFields } from "./contact-fields";
 import { MetadataSection } from "./metadata-section";
 import {
   ActionSummary,
@@ -22,7 +23,6 @@ import {
   RelationshipProperties,
 } from "./person-panels";
 import { ArchivedNotice, RecordActions } from "./record-actions";
-import { RecordText } from "./record-text";
 import { RelationshipContext } from "./relationship-context";
 
 export function PersonRecord({ personId }: { personId: string }) {
@@ -110,6 +110,7 @@ export function PersonRecord({ personId }: { personId: string }) {
     <div className="record-page" data-record={person.id}>
       <div className="record-attributes">
         <PersonProfile
+          person={context?.person ?? undefined}
           name={person.name}
           title={person.title}
           company={company}
@@ -117,6 +118,7 @@ export function PersonRecord({ personId }: { personId: string }) {
           recordHeading
         />
         <RecordActions
+          key={person.id}
           busy={crm.busy}
           onEdit={() => crm.openRecordDialog({ kind: "person", id: person.id })}
           onArchive={() => void archive.archive("person", person)}
@@ -162,13 +164,9 @@ export function PersonRecord({ personId }: { personId: string }) {
         {context ? (
           <>
             <PersonActivity context={context} action={action} draft={draft} />
-            {context.person?.summary &&
-              context.person.summary !== context.relationship.context && (
-                <section className="record-section" aria-label={t.personNotes}>
-                  <h3>{t.personNotes}</h3>
-                  <RecordText value={context.person.summary} />
-                </section>
-              )}
+            {context.person && (
+              <PersonFields person={context.person} notesOnly />
+            )}
             <RelationshipContext
               key={context.relationship.id}
               relationship={context.relationship}

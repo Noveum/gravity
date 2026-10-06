@@ -47,6 +47,10 @@ export function useTouchVerbs({
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const versionOf = (touch: Touch) =>
     Math.max(touch.version, versions.current.get(touch.id) ?? 0);
+  function openDrawer(touch: Touch, edit: boolean) {
+    if (drawer?.touch.id !== touch.id && !crm.canLeaveEditor()) return;
+    setDrawer({ touch, edit });
+  }
   function enqueue<T>(task: () => Promise<T>) {
     const next = queue.current.then(task, task);
     queue.current = next.catch(() => undefined);
@@ -229,8 +233,8 @@ export function useTouchVerbs({
     askSend: (touch: Touch) => setDialog({ kind: "send", touch }),
     closeDialog: () => setDialog(null),
     closeDrawer: () => setDrawer(null),
-    peek: (touch: Touch) => setDrawer({ touch, edit: false }),
-    edit: (touch: Touch) => setDrawer({ touch, edit: true }),
+    peek: (touch: Touch) => openDrawer(touch, false),
+    edit: (touch: Touch) => openDrawer(touch, true),
     approve,
     snooze,
     askSkip: (touch: Touch) => setDialog({ kind: "skip", touch }),
@@ -245,7 +249,7 @@ export function useTouchVerbs({
       "touch-snooze": onFocused(snooze),
       "touch-skip": onFocused((touch) => setDialog({ kind: "skip", touch })),
       "touch-sent": onFocused((touch) => setDialog({ kind: "sent", touch })),
-      "touch-edit": onFocused((touch) => setDrawer({ touch, edit: true })),
+      "touch-edit": onFocused((touch) => openDrawer(touch, true)),
       "touch-undo": undo,
     },
   };

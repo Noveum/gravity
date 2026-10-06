@@ -29,7 +29,7 @@ test("context editor saves readable notes, signals and each custom field type on
   fireEvent.click(
     await screen.findByRole("button", { name: t.contextFields.edit }),
   );
-  const dialog = screen.getByRole("dialog", { name: t.contextFields.edit });
+  const dialog = screen.getByRole("region", { name: t.contextFields.edit });
   const ui = within(dialog);
   fireEvent.change(ui.getByLabelText(t.summary), {
     target: { value: "A fictional evaluation with a clear next step." },
@@ -75,7 +75,7 @@ test("context editor saves readable notes, signals and each custom field type on
   await userEvent.setup().click(ui.getByRole("button", { name: t.save }));
   await waitFor(() =>
     expect(
-      screen.queryByRole("dialog", { name: t.contextFields.edit }),
+      screen.queryByRole("region", { name: t.contextFields.edit }),
     ).toBeNull(),
   );
   expect(await screen.findByText("New hiring plan")).toBeTruthy();
@@ -104,7 +104,7 @@ test("context editor saves readable notes, signals and each custom field type on
   );
   fireEvent.click(screen.getByRole("button", { name: t.contextFields.edit }));
   const reopened = within(
-    screen.getByRole("dialog", { name: t.contextFields.edit }),
+    screen.getByRole("region", { name: t.contextFields.edit }),
   );
   fireEvent.click(
     reopened.getByRole("button", { name: `${t.contextFields.removeSignal} 1` }),
@@ -115,7 +115,7 @@ test("context editor saves readable notes, signals and each custom field type on
   fireEvent.click(reopened.getByRole("button", { name: t.save }));
   await waitFor(() =>
     expect(
-      screen.queryByRole("dialog", { name: t.contextFields.edit }),
+      screen.queryByRole("region", { name: t.contextFields.edit }),
     ).toBeNull(),
   );
   expect(screen.queryByText("New hiring plan")).toBeNull();
@@ -153,7 +153,7 @@ test("legacy JSON is lazy readable source data, survives editing, and cannot cre
   expect(await screen.findByText("Fictional conversation")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: t.contextFields.edit }));
   const dialog = within(
-    screen.getByRole("dialog", { name: t.contextFields.edit }),
+    screen.getByRole("region", { name: t.contextFields.edit }),
   );
   expect(dialog.getByLabelText(t.summary)).toHaveProperty("value", "");
   fireEvent.change(dialog.getByLabelText(t.summary), {
@@ -162,7 +162,7 @@ test("legacy JSON is lazy readable source data, survives editing, and cannot cre
   fireEvent.click(dialog.getByRole("button", { name: t.save }));
   await waitFor(() =>
     expect(
-      screen.queryByRole("dialog", { name: t.contextFields.edit }),
+      screen.queryByRole("region", { name: t.contextFields.edit }),
     ).toBeNull(),
   );
   expect(await screen.findByText("Readable replacement")).toBeTruthy();
@@ -179,7 +179,7 @@ test("an agent edit while the dialog is open rejects a stale save and keeps the 
     await screen.findByRole("button", { name: t.contextFields.edit }),
   );
   const dialog = within(
-    screen.getByRole("dialog", { name: t.contextFields.edit }),
+    screen.getByRole("region", { name: t.contextFields.edit }),
   );
   fireEvent.change(dialog.getByLabelText(t.summary), {
     target: { value: "Unsaved user notes" },
@@ -246,4 +246,24 @@ test("all imported fields are reachable through bounded pages", async () => {
     screen.getByRole("button", { name: t.contextFields.previousFields }),
   );
   expect(await screen.findByText("Fictional value 30")).toBeTruthy();
+});
+
+test("the default summary field saves directly through the authorized outreach operation", async () => {
+  await mountCrm(harness, `/people/${demoId(200)}`);
+  const summary = await screen.findByRole("textbox", {
+    name: t.summary,
+  });
+  fireEvent.change(summary, {
+    target: { value: "Updated directly in the record." },
+  });
+  const form = summary.closest("form");
+  if (!form) throw new Error("Missing summary form");
+  fireEvent.submit(form);
+  await waitFor(() => expect(form.querySelector("[role=status]")).toBeTruthy());
+  const [stored] = await harness.local.db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, demoId(300)));
+  expect(stored.context).toBe("Updated directly in the record.");
+  expect(screen.queryByRole("dialog")).toBeNull();
 });

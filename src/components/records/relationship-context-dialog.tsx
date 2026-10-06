@@ -52,6 +52,7 @@ export function RelationshipContextDialog({
     );
   return (
     <RecordDialog
+      inline
       title={t.contextFields.edit}
       className="context-edit-dialog"
       submitLabel={t.save}

@@ -22,63 +22,77 @@ const harness = installCrmHarness();
 const pathname = () => window.location.pathname;
 
 describe("people", () => {
-  test("the edit dialog saves contact fields that show on the record", async () => {
+  test("contact fields are editable directly and each save persists on the record", async () => {
     await mountCrm(harness, `/people/${demoId(201)}`);
-    fireEvent.click(screen.getByRole("button", { name: t.edit }));
-    const dialog = screen.getByRole("dialog", { name: t.editPerson });
-    const user = userEvent.setup();
-    await user.type(within(dialog).getByLabelText(t.phone), "+1 555 0100");
-    await user.type(
-      within(dialog).getByLabelText(t.linkedinUrl),
+    const saveField = async (label: string, value: string) => {
+      const field = screen.getByLabelText(label);
+      fireEvent.change(field, { target: { value } });
+      const form = field.closest("form");
+      if (!form) throw new Error("Missing inline form");
+      fireEvent.submit(form);
+      await waitFor(() =>
+        expect(form.querySelector("[role=status]")).toBeTruthy(),
+      );
+      await waitFor(() =>
+        expect(
+          harness.posts
+            .filter((post) => post.operation === "person-update")
+            .at(-1),
+        ).toMatchObject({
+          version: harness.posts.filter(
+            (post) => post.operation === "person-update",
+          ).length,
+        }),
+      );
+      await waitFor(() => expect(field).toHaveProperty("disabled", false));
+    };
+    await saveField(t.phone, "+1 555 0100");
+    await saveField(
+      t.linkedinUrl,
       "https://www.linkedin.com/in/fictional-jonah",
     );
-    await user.type(
-      within(dialog).getByLabelText(t.otherEmails),
-      "jonah@home.example.test",
-    );
-    await user.selectOptions(
-      within(dialog).getByLabelText(t.company),
-      "Cedar Systems",
-    );
-    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: t.editPerson })).toBeNull(),
-    );
+    await saveField(t.otherEmails, "jonah@home.example.test");
+    await saveField(t.company, demoId(102));
     const link = await screen.findByRole("link", { name: t.linkedinProfile });
     expect(link.getAttribute("href")).toBe(
       "https://www.linkedin.com/in/fictional-jonah",
     );
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
     expect(screen.getByRole("link", { name: "+1 555 0100" })).toBeTruthy();
-    expect(
-      screen.getByRole("link", { name: "jonah@home.example.test" }),
-    ).toBeTruthy();
     const [stored] = await harness.local.db
       .select()
       .from(s.people)
       .where(eq(s.people.id, demoId(201)));
     expect(stored?.companyId).toBe(demoId(102));
+    expect(stored?.otherEmails).toEqual(["jonah@home.example.test"]);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  test("a refused edit keeps the dialog open with the reason", async () => {
+  test("a refused inline edit retains the draft and explains the reason", async () => {
     await mountCrm(harness, `/people/${demoId(201)}`);
-    fireEvent.click(screen.getByRole("button", { name: t.edit }));
-    const dialog = screen.getByRole("dialog", { name: t.editPerson });
-    const email = within(dialog).getByLabelText(t.email);
-    await userEvent.setup().clear(email);
-    await userEvent.setup().type(email, "person0@example.test");
-    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
-    const reason = await within(dialog).findByText(t.errors.PERSON_EXISTS);
-    expect(reason.getAttribute("role")).toBe("alert");
-    expect(screen.getByRole("dialog", { name: t.editPerson })).toBeTruthy();
+    const email = screen.getByLabelText(t.email);
+    fireEvent.change(email, { target: { value: "person0@example.test" } });
+    const form = email.closest("form");
+    if (!form) throw new Error("Missing inline form");
+    fireEvent.submit(form);
+    expect(await within(form).findByRole("alert")).toHaveProperty(
+      "textContent",
+      t.errors.PERSON_EXISTS,
+    );
+    expect(email).toHaveProperty("value", "person0@example.test");
   });
 
   test("archiving leaves the record for the list, hides the person and Undo restores them", async () => {
     await mountCrm(harness, "/people");
     fireEvent.click(screen.getByRole("link", { name: "Jonah Reed" }));
-    fireEvent.click(await screen.findByRole("link", { name: t.openRecord }));
-    expect(pathname()).toBe("/people");
+    fireEvent.click(
+      await screen.findByRole("link", { name: t.inlineEditing.openFullPage }),
+    );
+    expect(pathname()).toBe(`/people/${demoId(201)}`);
     fireEvent.click(await screen.findByRole("button", { name: t.archive }));
+    fireEvent.click(
+      screen.getByRole("button", { name: t.inlineEditing.confirmArchive }),
+    );
     await waitFor(() => expect(pathname()).toBe("/people"));
     await waitFor(() =>
       expect(
@@ -104,6 +118,9 @@ describe("people", () => {
   test("an archived person opens read-only from the archived list and restores in place", async () => {
     await mountCrm(harness, `/people/${demoId(204)}`);
     fireEvent.click(await screen.findByRole("button", { name: t.archive }));
+    fireEvent.click(
+      screen.getByRole("button", { name: t.inlineEditing.confirmArchive }),
+    );
     await waitFor(() => expect(pathname()).toBe("/people"));
     fireEvent.click(await screen.findByText(t.archivedRecords));
     fireEvent.click(screen.getByRole("link", { name: "Amara Stone" }));
@@ -133,19 +150,16 @@ describe("fix round 1", () => {
     await mountCrm(harness, `/people/${demoId(205)}`);
     const archivedName = `Vale Software ${t.archivedSuffix}`;
     expect(await screen.findAllByText(archivedName)).not.toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: t.edit }));
-    const dialog = screen.getByRole("dialog", { name: t.editPerson });
-    const company = within(dialog).getByLabelText(
-      t.company,
-    ) as HTMLSelectElement;
+    const company = screen.getByLabelText(t.company) as HTMLSelectElement;
     expect(company.value).toBe(demoId(105));
     expect(company.selectedOptions[0]?.textContent).toBe(archivedName);
-    expect(
-      within(dialog).getByLabelText(t.linkedinUrl).getAttribute("placeholder"),
-    ).toBe(t.linkedinPlaceholder);
-    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
+    const phone = screen.getByLabelText(t.phone);
+    fireEvent.change(phone, { target: { value: "+1 555 0199" } });
+    const form = phone.closest("form");
+    if (!form) throw new Error("Missing inline form");
+    fireEvent.submit(form);
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: t.editPerson })).toBeNull(),
+      expect(form.querySelector("[role=status]")).toBeTruthy(),
     );
     const post = harness.posts.find(
       (body) => body.operation === "person-update",
@@ -166,7 +180,7 @@ describe("fix round 1", () => {
     await mountCrm(harness, "/meetings");
     screen.getByRole("button", { name: "Leena Rao" }).focus();
     await userEvent.setup().keyboard("e");
-    const dialog = screen.getByRole("dialog", { name: t.editMeeting });
+    const dialog = screen.getByRole("region", { name: t.editMeeting });
     const starts = within(dialog).getByLabelText(
       t.startsAt,
     ) as HTMLInputElement;
@@ -190,7 +204,7 @@ describe("fix round 1", () => {
     await mountCrm(harness, "/opportunities");
     (document.activeElement as HTMLElement | null)?.blur();
     await userEvent.setup().keyboard("c");
-    const deal = screen.getByRole("dialog", { name: t.newOpportunity });
+    const deal = screen.getByRole("region", { name: t.newOpportunity });
     const user = userEvent.setup();
     await user.selectOptions(
       within(deal).getByLabelText(t.person),
@@ -216,7 +230,7 @@ describe("fix round 1", () => {
     ).toMatchObject({ amountMinor: 1250, currency: "JPY" });
     const card = screen
       .getByRole("button", { name: "Fictional yen deal" })
-      .closest("article") as HTMLElement;
+      .closest("tr") as HTMLElement;
     expect(card.textContent).toContain("¥1,250");
   });
 
@@ -230,11 +244,15 @@ describe("fix round 1", () => {
         : (respond?.(url, init) ?? Promise.resolve({})),
     );
     fireEvent.click(await screen.findByRole("button", { name: t.archive }));
-    (document.activeElement as HTMLElement | null)?.blur();
-    await userEvent.setup().keyboard("e");
-    const dialog = screen.getByRole("dialog", { name: t.editPerson });
-    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
-    expect(await within(dialog).findByText(t.stillSaving)).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: t.inlineEditing.confirmArchive }),
+    );
+    const phone = screen.getByLabelText(t.phone);
+    fireEvent.change(phone, { target: { value: "+1 555 0199" } });
+    const form = phone.closest("form");
+    if (!form) throw new Error("Missing inline form");
+    fireEvent.submit(form);
+    expect(await screen.findByText(t.stillSaving)).toBeTruthy();
   });
 });
 
@@ -268,14 +286,20 @@ describe("the actions list", () => {
 describe("companies", () => {
   test("a company is edited and archived from its record, then restored from the archive", async () => {
     await mountCrm(harness, `/companies/${demoId(103)}`);
-    fireEvent.click(await screen.findByRole("button", { name: t.edit }));
-    const dialog = screen.getByRole("dialog", { name: t.editCompany });
-    const domain = within(dialog).getByLabelText(t.domain);
-    await userEvent.setup().clear(domain);
-    await userEvent.setup().type(domain, "https://www.harbor.example.test/");
-    fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
-    expect(await screen.findByText("harbor.example.test")).toBeTruthy();
+    const domain = screen.getByLabelText(t.domain);
+    fireEvent.change(domain, {
+      target: { value: "https://www.harbor.example.test/" },
+    });
+    const form = domain.closest("form");
+    if (!form) throw new Error("Missing inline form");
+    fireEvent.submit(form);
+    await waitFor(() =>
+      expect(form.querySelector("[role=status]")).toBeTruthy(),
+    );
     fireEvent.click(screen.getByRole("button", { name: t.archive }));
+    fireEvent.click(
+      screen.getByRole("button", { name: t.inlineEditing.confirmArchive }),
+    );
     await waitFor(() => expect(pathname()).toBe("/companies"));
     fireEvent.click(await screen.findByText(t.archivedRecords));
     fireEvent.click(screen.getByRole("link", { name: "Horizon Studio" }));
@@ -293,7 +317,7 @@ describe("meetings and opportunities", () => {
     fireEvent.click(screen.getByRole("link", { name: t.meetings }));
     (document.activeElement as HTMLElement | null)?.blur();
     await userEvent.setup().keyboard("c");
-    const meeting = screen.getByRole("dialog", { name: t.newMeeting });
+    const meeting = screen.getByRole("region", { name: t.newMeeting });
     const user = userEvent.setup();
     await user.selectOptions(
       within(meeting).getByLabelText(t.person),
@@ -314,7 +338,7 @@ describe("meetings and opportunities", () => {
     await waitFor(() => expect(pathname()).toBe("/opportunities"));
     (document.activeElement as HTMLElement | null)?.blur();
     await userEvent.setup().keyboard("c");
-    const deal = screen.getByRole("dialog", { name: t.newOpportunity });
+    const deal = screen.getByRole("region", { name: t.newOpportunity });
     await user.selectOptions(
       within(deal).getByLabelText(t.person),
       "Jonah Reed · API Marketplace",
@@ -369,4 +393,39 @@ describe("signing out", () => {
     expect(assign).not.toHaveBeenCalled();
     assign.mockRestore();
   });
+});
+
+test("two dirty contact fields save in sequence without overwriting each other", async () => {
+  await mountCrm(harness, `/people/${demoId(201)}`);
+  const phone = screen.getByRole("textbox", { name: t.phone });
+  const notes = screen.getByRole("textbox", {
+    name: t.personNotes,
+  });
+  fireEvent.change(phone, { target: { value: "+1 555 0170" } });
+  fireEvent.change(notes, { target: { value: "My personal notes." } });
+  const notesForm = notes.closest("form"),
+    phoneForm = phone.closest("form");
+  if (!notesForm || !phoneForm) throw new Error("Missing contact fields");
+  fireEvent.submit(notesForm);
+  await waitFor(() =>
+    expect(notesForm.querySelector("[role=status]")).toBeTruthy(),
+  );
+  fireEvent.submit(phoneForm);
+  await waitFor(() =>
+    expect(phoneForm.querySelector("[role=status]")).toBeTruthy(),
+  );
+  const [stored] = await harness.local.db
+    .select()
+    .from(s.people)
+    .where(eq(s.people.id, demoId(201)));
+  expect(stored).toMatchObject({
+    phone: "+1 555 0170",
+    summary: "My personal notes.",
+    version: 3,
+  });
+  expect(
+    harness.posts
+      .filter((post) => post.operation === "person-update")
+      .map((post) => post.version),
+  ).toEqual([1, 2]);
 });

@@ -23,7 +23,9 @@ export function fileShortcut(event: {
   readonly key: string;
   readonly metaKey: boolean;
   readonly ctrlKey: boolean;
+  readonly altKey?: boolean;
 }): FileShortcut | null {
+  if (event.altKey) return null;
   if (event.metaKey && event.key === "Backspace") return "delete";
   if (event.metaKey || event.ctrlKey) {
     const commands: Readonly<Record<string, FileShortcut>> = {

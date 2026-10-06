@@ -40,7 +40,8 @@ export function submitOnSaveKey(event: React.KeyboardEvent<HTMLFormElement>) {
   const modified = event.metaKey || event.ctrlKey;
   if (
     !modified &&
-    (!event.currentTarget.closest("dialog") || !plainSaveAllowed(event.target))
+    (!event.currentTarget.closest("dialog, [data-record-editor]") ||
+      !plainSaveAllowed(event.target))
   )
     return;
   event.preventDefault();

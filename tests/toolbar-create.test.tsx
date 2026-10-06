@@ -17,12 +17,12 @@ test.each([
   ["/companies", t.newCompany],
   ["/meetings", t.newMeeting],
 ])(
-  "%s shows a toolbar button that opens its create dialog",
+  "%s shows a toolbar button that opens its inline editor",
   async (path, name) => {
     await mountCrm(harness, path);
     const button = screen.getByRole("button", { name });
     expect(button.getAttribute("aria-keyshortcuts")).toBe("C");
     fireEvent.click(button);
-    expect(await screen.findByRole("dialog", { name })).toBeTruthy();
+    expect(await screen.findByRole("region", { name })).toBeTruthy();
   },
 );

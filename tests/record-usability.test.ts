@@ -38,14 +38,12 @@ const metadata = (
 beforeAll(async () => {
   local = await createLocalDatabase();
   await seedDemo(local.db);
-  await local.db
-    .insert(s.folders)
-    .values({
-      id: demoId(9000),
-      ...scope,
-      productId: demoId(10),
-      name: "Fixture folder",
-    });
+  await local.db.insert(s.folders).values({
+    id: demoId(9000),
+    ...scope,
+    productId: demoId(10),
+    name: "Fixture folder",
+  });
   await local.db.insert(s.assets).values({
     id: demoId(9001),
     ...scope,

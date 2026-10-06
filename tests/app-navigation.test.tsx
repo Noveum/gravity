@@ -289,6 +289,8 @@ test("the routed Connections view loads the active scope, shows callback results
     demoId(1),
   );
   fireEvent.click(screen.getByRole("button", { name: "AI Platform" }));
+  expect(window.location.pathname).toBe("/overview");
+  fireEvent.click(screen.getByRole("link", { name: t.integrations }));
   await waitFor(() =>
     expect(integrationReads().at(-1)?.searchParams.get("productId")).toBe(
       demoId(10),

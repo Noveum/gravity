@@ -3,6 +3,7 @@ import t from "@crm/i18n/translations/en.json";
 import { useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useRef } from "react";
 import { useVerbs, useWorkspaceData } from "../crm/crm-context";
+import { DeliveryChecks, useDeliveryChecks } from "../outreach/delivery-checks";
 import {
   type PausedEnrollment,
   type QueueTouch,
@@ -13,6 +14,7 @@ import {
 import { OutreachTabs } from "../outreach/outreach-tabs";
 import { PausedRow } from "../outreach/paused-list";
 import { PipelineBoard } from "../outreach/pipeline-board";
+import { SendDialog } from "../outreach/send-dialog";
 import { SentRow } from "../outreach/sent-list";
 import { TouchActions } from "../outreach/touch-actions";
 import { MarkSentDialog, SkipDialog } from "../outreach/touch-dialogs";
@@ -53,6 +55,7 @@ export function OutreachView() {
   const outreach = useOutreachData();
   const { due, queue } = outreach;
   const send = useOutreachSend();
+  const deliveries = useDeliveryChecks(tab === "sent");
   const touches = new Map<string, Touch>(
     [
       ...(due?.groups.flatMap((group) => group.touches) ?? []),
@@ -165,15 +168,19 @@ export function OutreachView() {
         t.outreachTabs.approved,
         browser.rows.length,
       ),
-    sent: () =>
-      browser.rows.length ? (
-        <TouchGroup title={t.outreachTabs.sent} count={browser.rows.length}>
-          {browser.page.items.flatMap((touch) => {
-            const item = sent.find((row) => row.id === touch.id);
-            return item ? [<SentRow key={item.id} touch={item} />] : [];
-          })}
-        </TouchGroup>
-      ) : null,
+    sent: () => (
+      <>
+        <DeliveryChecks items={deliveries.items} reload={deliveries.reload} />
+        {browser.rows.length ? (
+          <TouchGroup title={t.outreachTabs.sent} count={browser.rows.length}>
+            {browser.page.items.flatMap((touch) => {
+              const item = sent.find((row) => row.id === touch.id);
+              return item ? [<SentRow key={item.id} touch={item} />] : [];
+            })}
+          </TouchGroup>
+        ) : null}
+      </>
+    ),
     paused: () =>
       pausedBrowser.rows.length ? (
         <TouchGroup
@@ -231,6 +238,24 @@ export function OutreachView() {
           }
         />
       )}
+      {verbs.dialog?.kind === "send" && (
+        <SendDialog
+          key={verbs.dialog.touch.id}
+          source={{
+            kind: "touch",
+            id: verbs.dialog.touch.id,
+            version: verbs.versionOf(verbs.dialog.touch),
+            channel: verbs.dialog.touch.channel,
+            name: verbs.dialog.touch.person.name,
+            relationshipId: verbs.dialog.touch.relationshipId,
+          }}
+          onClose={verbs.closeDialog}
+          onSent={() => {
+            verbs.closeDrawer();
+            void outreach.reload();
+          }}
+        />
+      )}
       {verbs.dialog?.kind === "skip" && (
         <SkipDialog
           name={verbs.dialog.touch.person.name}
@@ -269,7 +294,8 @@ export function OutreachView() {
             {listTab &&
               !(tab === "paused"
                 ? pausedBrowser.page.total
-                : browser.page.total) && (
+                : browser.page.total) &&
+              !(listTab === "sent" && deliveries.items.length) && (
                 <EmptyState
                   title={emptyCopy(listTab)}
                   description={t.outreachEmptyDetail}

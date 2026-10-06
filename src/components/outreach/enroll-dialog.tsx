@@ -35,7 +35,9 @@ export function EnrollDialog({
   const titleId = useId();
   const willId = useId();
   const skippedId = useId();
-  const sequences = crm.data?.sequences ?? [];
+  const sequences = (crm.data?.sequences ?? []).filter(
+    (sequence) => !sequence.archivedAt,
+  );
   const [sequenceId, setSequenceId] = useState(sequences[0]?.id ?? "");
   const [review, setReview] = useState<Enrollment | null>(null);
   const [busy, setBusy] = useState(false);

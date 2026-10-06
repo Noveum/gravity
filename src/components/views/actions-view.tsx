@@ -1,5 +1,6 @@
 "use client";
 import { dueToday, overdueDay } from "@crm/core/calendar";
+import { productColorToken } from "@crm/core/product-colors";
 import t from "@crm/i18n/translations/en.json";
 import { CircleHelp, Hourglass, UserRound } from "lucide-react";
 import Link from "next/link";
@@ -142,7 +143,11 @@ export function ActionsView() {
                     <span className="row-product">
                       <span
                         className="product-dot"
-                        style={{ background: product(action.productId)?.color }}
+                        style={{
+                          background: productColorToken(
+                            product(action.productId)?.colorKey ?? "",
+                          ),
+                        }}
                       />
                       {product(action.productId)?.name}
                     </span>

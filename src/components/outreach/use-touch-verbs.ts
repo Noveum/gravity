@@ -7,7 +7,7 @@ import { navigableRecords } from "../keyboard-navigation";
 import { type Touch, useOutreachSend } from "./outreach-data";
 
 type Saved = { id: string; version: number; status: string };
-export type TouchDialog = { kind: "sent" | "skip"; touch: Touch };
+export type TouchDialog = { kind: "sent" | "skip" | "send"; touch: Touch };
 export type TouchDrawer = { touch: Touch; edit: boolean };
 
 const warningText = (warnings: readonly string[]) =>
@@ -218,9 +218,15 @@ export function useTouchVerbs({
     pending.run();
     return true;
   }
+  const canSend = (touch: Touch) =>
+    touch.status === "approved" &&
+    touch.senderId === crm.userId &&
+    (touch.channel === "gmail" || touch.channel === "linkedin");
   return {
     dialog,
     drawer,
+    canSend,
+    askSend: (touch: Touch) => setDialog({ kind: "send", touch }),
     closeDialog: () => setDialog(null),
     closeDrawer: () => setDrawer(null),
     peek: (touch: Touch) => setDrawer({ touch, edit: false }),

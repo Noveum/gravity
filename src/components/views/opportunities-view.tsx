@@ -1,5 +1,6 @@
 "use client";
 import { money, totals } from "@crm/core/analytics";
+import { productColorToken } from "@crm/core/product-colors";
 import t from "@crm/i18n/translations/en.json";
 import { Pencil, Plus } from "lucide-react";
 import Link from "next/link";
@@ -163,7 +164,7 @@ export function OpportunitiesView() {
                 <h2 aria-label={`${product.name} / ${pipeline.name}`}>
                   <span
                     className="product-dot"
-                    style={{ background: product.color }}
+                    style={{ background: productColorToken(product.colorKey) }}
                   />
                   {product.name}
                   <span className="muted"> / {pipeline.name}</span>

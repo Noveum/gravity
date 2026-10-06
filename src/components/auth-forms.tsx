@@ -643,6 +643,26 @@ export function Authorization() {
     </AuthLayout>
   );
 }
+const consentLevels = [
+  {
+    key: "read",
+    scopes: ["crm:read"],
+    label: t.consentLevelRead,
+    description: t.consentReadOnly,
+  },
+  {
+    key: "write",
+    scopes: ["crm:read", "crm:write"],
+    label: t.consentLevelWrite,
+    description: t.consentReadWrite,
+  },
+  {
+    key: "send",
+    scopes: ["crm:read", "crm:write", "crm:send"],
+    label: t.consentLevelSend,
+    description: t.consentReadWriteSend,
+  },
+];
 export function Consent() {
   const query = useSearchParams();
   const signedQuery = query.toString();
@@ -661,6 +681,20 @@ export function Consent() {
     allProducts?: boolean;
   } | null>(null);
   const selectedGrant = grant?.query === signedQuery ? grant : null;
+  const requestedScopes = query.get("scope")?.split(" ").filter(Boolean) ?? [];
+  const accessLevels = consentLevels.filter((level) =>
+    level.scopes.every((scope) => requestedScopes.includes(scope)),
+  );
+  const [chosenLevel, setChosenLevel] = useState<string | null>(null);
+  const accessLevel =
+    accessLevels.find((level) => level.key === chosenLevel) ??
+    accessLevels.at(-1);
+  const acceptedScopes = accessLevel
+    ? requestedScopes.filter(
+        (scope) =>
+          !scope.startsWith("crm:") || accessLevel.scopes.includes(scope),
+      )
+    : requestedScopes;
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the explicit retry trigger.
   useEffect(() => {
     if (!hasFlow) return;
@@ -694,6 +728,7 @@ export function Consent() {
       const response = await authPost("/oauth2/consent", {
         accept,
         oauth_query: flow,
+        ...(accept && accessLevel ? { scope: acceptedScopes.join(" ") } : {}),
       });
       if (activeQuery.current === flow) navigateAuth(response.url);
     } catch (cause) {
@@ -723,19 +758,30 @@ export function Consent() {
               ? t.allProductsAndFuture
               : selectedGrant.products.join(", ")}
           </p>
-          <p>
-            {query.get("scope")?.split(" ").includes("crm:send")
-              ? t.consentReadWriteSend
-              : query.get("scope")?.split(" ").includes("crm:write")
-                ? t.consentReadWrite
-                : t.consentReadOnly}
-          </p>
         </div>
       ) : (
         !error && <p role="status">{t.authFlowLoading}</p>
       )}
+      {selectedGrant && accessLevel && (
+        <fieldset className="dialog-fields" disabled={busy}>
+          <legend>{t.consentAccess}</legend>
+          {accessLevels.map((level) => (
+            <label key={level.key} className="checkbox-label">
+              <input
+                type="radio"
+                name="consent-access"
+                value={level.key}
+                checked={level.key === accessLevel.key}
+                onChange={() => setChosenLevel(level.key)}
+              />
+              {level.label}
+            </label>
+          ))}
+          <p>{accessLevel.description}</p>
+        </fieldset>
+      )}
       <p>{t.scopes}</p>
-      <code>{query.get("scope") ?? "crm:read"}</code>
+      <code>{acceptedScopes.join(" ") || "crm:read"}</code>
       <button
         type="button"
         className="primary"

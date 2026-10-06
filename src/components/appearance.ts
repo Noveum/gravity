@@ -51,11 +51,22 @@ export function sidebarCollapsed() {
   return read(sidebarKey) === "collapsed";
 }
 
+function releaseAfterFrame(root: HTMLElement) {
+  getComputedStyle(document.body ?? root).getPropertyValue("color");
+  const release = () => root.removeAttribute("data-theme-switching");
+  if (typeof window.requestAnimationFrame === "function")
+    window.requestAnimationFrame(release);
+  else window.setTimeout(release, 16);
+}
+
 export function applyAppearance() {
   const root = document.documentElement;
   const dark = resolvedTheme() === "dark";
+  const switching = root.classList.contains("dark") !== dark;
+  if (switching) root.setAttribute("data-theme-switching", "");
   root.classList.toggle("dark", dark);
   root.style.colorScheme = dark ? "dark" : "light";
+  if (switching) releaseAfterFrame(root);
   root.dataset.density = density();
   root.dataset.sidebar = sidebarCollapsed() ? "collapsed" : "expanded";
 }

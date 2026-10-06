@@ -11,6 +11,7 @@ export function MaterialsView() {
       productId={crm.productId}
       refresh={crm.refresh}
       onNotice={(text) => crm.notify(text, "success")}
+      onError={(text) => crm.notify(text, "danger")}
       timeZone={crm.timeZone}
       registerCreate={crm.registerCreate}
     />

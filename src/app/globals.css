@@ -3636,6 +3636,17 @@ tbody tr[data-selected] td:first-child::before {
   gap: 12px;
   margin: 12px 0 16px;
 }
+.sequence-create-dialog {
+  width: 860px;
+}
+.sequence-editor-content {
+  display: grid;
+  gap: 12px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
 .sequence-name {
   max-width: 360px;
 }

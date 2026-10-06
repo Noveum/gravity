@@ -1,15 +1,17 @@
 "use client";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { Pencil } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { label } from "../client-api";
-import { useWorkspaceData } from "../crm/crm-context";
+import { useCreate, useWorkspaceData } from "../crm/crm-context";
 import { useOutreachSend } from "../outreach/outreach-data";
+import { SequenceDialog } from "../outreach/sequence-dialog";
 import { SequenceEditor } from "../outreach/sequence-editor";
 import { followUpLabel } from "../outreach/touch-labels";
 import { personPath } from "../routes";
+import { ShortcutHint } from "../ui/shortcut-hint";
 import { EmptyState } from "../ui/states";
 
 type Enrollment = ClientSnapshot["enrollments"][number];
@@ -19,6 +21,12 @@ export function SequencesView() {
   const { data, search, product, personFor } = crm;
   const send = useOutreachSend();
   const [editing, setEditing] = useState("");
+  const [creating, setCreating] = useState(false);
+  useCreate(() => {
+    if (!data.products.length) return false;
+    setCreating(true);
+    return true;
+  });
   const sequences = data.sequences
     .filter((sequence) =>
       [sequence.name, product(sequence.productId)?.name]
@@ -51,6 +59,22 @@ export function SequencesView() {
   }
   return (
     <div className="page-content sequences-page">
+      <div className="section-heading">
+        <p className="muted">{t.sequenceCreationHint}</p>
+        <button
+          type="button"
+          className="primary"
+          aria-label={t.newSequence}
+          aria-keyshortcuts="C"
+          disabled={!data.products.length}
+          onClick={() => setCreating(true)}
+        >
+          <Plus size={14} aria-hidden />
+          {t.newSequence}
+          <ShortcutHint id="create" />
+        </button>
+      </div>
+      {creating && <SequenceDialog onClose={() => setCreating(false)} />}
       {!sequences.length && <EmptyState title={t.noSequences} compact />}
       {sequences.map((sequence) => {
         const title = `${sequence.name} · ${product(sequence.productId)?.name ?? ""}`;

@@ -281,7 +281,7 @@ describe("palette, search, guide and create", () => {
     await press("c");
     expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy();
   });
-  test("C on a person record schedules for that person, and on a view without its own create adds a person", async () => {
+  test("C on a person record schedules for that person, and on Sequences creates a sequence", async () => {
     await mountCrm(harness, `/people/${demoId(202)}`);
     await press("c");
     const dialog = await screen.findByRole("dialog", {
@@ -301,7 +301,7 @@ describe("palette, search, guide and create", () => {
     await waitFor(() => expect(pathname()).toBe("/outreach/sequences"));
     (document.activeElement as HTMLElement | null)?.blur();
     await press("c");
-    expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: t.newSequence })).toBeTruthy();
   });
   test("C on materials opens the upload dialog", async () => {
     await mountCrm(harness, "/materials");
@@ -309,6 +309,18 @@ describe("palette, search, guide and create", () => {
     expect(
       screen.getByRole("heading", { name: t.upload, level: 2 }),
     ).toBeTruthy();
+  });
+  test("the Sequences command palette opens the same creation form", async () => {
+    await mountCrm(harness, "/outreach/sequences");
+    await press("{Meta>}k{/Meta}");
+    fireEvent.click(
+      await screen.findByRole("option", {
+        name: new RegExp(`^${t.newSequence}`),
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: t.newSequence });
+    expect(within(dialog).getByLabelText(t.product)).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: t.commands })).toBeNull();
   });
   test("Shift P opens product creation for an admin and Shift O starts a new workspace", async () => {
     binding("create-product");

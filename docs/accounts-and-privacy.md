@@ -16,6 +16,8 @@ MCP discovery now contains **64 current business operations (19 reads, 45 mutati
 
 Capabilities distinguish multiple-account support and thread sharing from features still absent: delegated shared-mailbox sending, Calendar event writes, message attachments and contract signing. An implemented operation is not proof that a particular provider account or assistant has completed authorization.
 
+The Sequences page also offers **New sequence** (keyboard **C**) with product selection, ordered steps, channels, delays and templates. It calls the same `create_sequence` business operation as MCP. Creating a sequence neither enrolls contacts nor sends messages. Failed saves retain the form; pending saves prevent duplicate submissions and dismissal.
+
 ## Research and product direction
 
 [Attio's account model](https://attio.com/help/reference/email-calendar/email-and-calendar-syncing) separates personal mailboxes from collaborative CRM history. Its [sharing controls](https://attio.com/help/reference/email-calendar/sharing-emails) illustrate why content visibility needs an explicit choice. Gravity defaults message threads to private and offers deliberate product-level sharing, while keeping credential access and sending tied to the owner. Per-person sharing, metadata-only views, exclusion rules and retention controls remain future work.
@@ -24,4 +26,4 @@ Capabilities distinguish multiple-account support and thread sharing from featur
 
 ## Verification boundaries
 
-Tests cover distinct accounts per owner, reconnect identity, cross-user/tenant/product isolation, private review filtering, owner-controlled sharing/revocation, live revision updates, generated MCP parity, confirmation behavior and tour keyboard interaction. Public production smoke checks exercise routes, content, metadata and assets. Browser screenshot and visual qualification require the in-app browser controls; they were unavailable during this review. Live outbound qualification requires the owner's provider consent and an explicitly authorized test recipient/message.
+Tests cover distinct accounts per owner, reconnect identity, cross-user/tenant/product isolation, private review filtering, owner-controlled sharing/revocation, live revision updates, generated MCP parity, confirmation behavior and tour keyboard interaction. Public production smoke checks exercise routes, content, metadata and assets. Following PR #22, in-app browser checks covered the landing tour, light/dark themes, a 390px mobile layout, signed-in login redirection, account controls, keyboard resizing, the command palette and workspace navigation. Screenshots remain local rather than committing production account data. Live outbound qualification requires the owner's provider consent and an explicitly authorized test recipient/message. Native assistant qualification also requires refreshed read/write/send OAuth consent; server protocol tests cannot substitute for that consent.

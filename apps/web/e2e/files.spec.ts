@@ -6,6 +6,8 @@ import {
   fileMutationSchema,
 } from '@gravity/shared/validators';
 import { expect, test } from '@playwright/test';
+import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 import { z } from 'zod';
 import { BASE } from './base-url.ts';
 import fileSamples from './file-samples.json' with { type: 'json' };
@@ -138,6 +140,7 @@ test('real binary uploads survive reload and download with identical bytes', asy
         await expect(page.frameLocator('iframe').locator('script')).toHaveCount(0);
       }
       if (upload.name === 'Presentation.pptx') {
+        await page.setViewportSize({ width: 950, height: 1138 });
         await expect(page.frameLocator('iframe').locator('script')).toHaveCount(0);
         await expect(
           page.frameLocator('iframe').getByText('Gravity file library: slide 1', { exact: false }),
@@ -146,9 +149,30 @@ test('real binary uploads survive reload and download with identical bytes', asy
         await expect(
           page.frameLocator('iframe').getByText('Gravity file library: slide 2', { exact: false }),
         ).toBeVisible();
+        const frame = await dialog.locator('iframe').boundingBox();
+        if (frame === null) throw new Error('Missing slide frame');
+        expect(frame.width / frame.height).toBeCloseTo(16 / 9, 1);
+        expect(frame.height).toBeLessThan(550);
+        await page.setViewportSize({ width: 375, height: 812 });
+        await expect(
+          page.frameLocator('iframe').getByText('Gravity file library: slide 2', { exact: false }),
+        ).toBeVisible();
+        const mobile = await dialog.locator('iframe').boundingBox();
+        if (mobile === null) throw new Error('Missing mobile slide frame');
+        expect(mobile.width).toBeLessThan(375);
+        expect(mobile.width / mobile.height).toBeCloseTo(16 / 9, 1);
+        await page.setViewportSize({ width: 950, height: 1138 });
       }
-      if (upload.name === 'Spreadsheet.xlsx')
+      if (upload.name === 'Spreadsheet.xlsx') {
         await expect(dialog.getByRole('cell', { name: 'Saved', exact: true })).toBeVisible();
+        await expect(
+          dialog.getByRole('button', { name: 'Previous rows', exact: true }),
+        ).toHaveCount(0);
+        const rowHeader = await dialog
+          .getByRole('columnheader', { name: 'Row number', exact: true })
+          .boundingBox();
+        expect(rowHeader?.width).toBeLessThan(65);
+      }
       if (upload.name === 'Report.pdf') {
         await expect(dialog.locator('canvas')).toHaveAttribute('data-rendered', 'true');
         await expect(dialog.getByText('Page 1 of 2')).toBeVisible();
@@ -174,7 +198,98 @@ test('real binary uploads survive reload and download with identical bytes', asy
       expect(await readFile(downloadPath ?? '')).toEqual(upload.buffer);
       await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
     }
+    const toolbar = await page.getByRole('toolbar', { name: 'File toolbar' }).boundingBox();
+    expect(toolbar?.height).toBeLessThan(60);
+    await expect(page.getByTestId('top-bar-search')).not.toBeVisible();
+    await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Navigation', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
     expect(browserErrors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('large workbooks stay responsive, page and jump across sheets, and retain the original', async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const page = await signIn(context, readFixture().ownerEmail);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const tall = workbook.addWorksheet('50,000 rows');
+    for (let row = 1; row <= 50_000; row += 1) tall.addRow([row, `Record ${row}`, 'Saved']);
+    const wide = workbook.addWorksheet('64 columns');
+    for (let row = 1; row <= 200; row += 1)
+      wide.addRow(Array.from({ length: 64 }, (_, column) => `Cell ${row},${column + 1}`));
+    workbook.addWorksheet('Empty');
+    const buffer = Buffer.from(new Uint8Array(await workbook.xlsx.writeBuffer()));
+    await page.goto(`${BASE}/files`);
+    await page.getByLabel('Upload files', { exact: true }).setInputFiles({
+      name: 'Large workbook.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer,
+    });
+    await expect(page.getByText('Uploaded', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Large workbook.xlsx', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await page.getByRole('button', { name: 'Large workbook.xlsx', exact: true }).click();
+    await expect(dialog.getByRole('cell', { name: 'Record 1', exact: true })).toBeVisible();
+    await expect(dialog.getByRole('table').locator('tbody tr')).toHaveCount(100);
+    expect(page.workers()).toHaveLength(1);
+    await dialog.getByRole('button', { name: 'Next rows', exact: true }).click();
+    await expect(dialog.getByRole('cell', { name: 'Record 101', exact: true })).toBeVisible();
+    await dialog.getByRole('textbox', { name: 'Go to cell', exact: true }).fill('B49990');
+    await dialog.getByRole('button', { name: 'Go', exact: true }).click();
+    await expect(dialog.getByRole('cell', { name: 'Record 50000', exact: true })).toBeVisible();
+    await expect(dialog.getByRole('table').locator('tbody tr')).toHaveCount(11);
+    await dialog.getByRole('button', { name: 'Previous rows', exact: true }).click();
+    await expect(dialog.getByRole('cell', { name: 'Record 49890', exact: true })).toBeVisible();
+    await dialog.getByLabel('Worksheet', { exact: true }).selectOption({ label: '64 columns' });
+    await expect(dialog.getByRole('table').locator('td')).toHaveCount(3000);
+    await dialog.getByRole('button', { name: 'Next columns', exact: true }).click();
+    await expect(dialog.getByRole('cell', { name: 'Cell 1,31', exact: true })).toBeVisible();
+    await dialog.getByRole('textbox', { name: 'Go to cell', exact: true }).fill('BL199');
+    await dialog.getByRole('button', { name: 'Go', exact: true }).click();
+    await expect(dialog.getByRole('cell', { name: 'Cell 200,64', exact: true })).toBeVisible();
+    await dialog.getByRole('textbox', { name: 'Go to cell', exact: true }).fill('XFD1048576');
+    await dialog.getByRole('button', { name: 'Go', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toContainText('Choose a cell within this worksheet');
+    await dialog.getByLabel('Worksheet', { exact: true }).selectOption({ label: 'Empty' });
+    await expect(dialog.getByRole('table').locator('tbody tr')).toHaveCount(1);
+    await dialog.getByLabel('Worksheet', { exact: true }).selectOption({ label: '50,000 rows' });
+    await expect(dialog.getByRole('cell', { name: 'Record 1', exact: true })).toBeVisible();
+    await page.screenshot({
+      path: path.resolve('test-results/file-visuals/large-workbook.png'),
+      fullPage: true,
+      caret: 'initial',
+    });
+    const downloading = page.waitForEvent('download');
+    await dialog.getByRole('link', { name: 'Download Large workbook.xlsx', exact: true }).click();
+    const download = await downloading;
+    expect(await readFile((await download.path()) ?? '')).toEqual(buffer);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect.poll(() => page.workers().length).toBe(0);
+    const zip = new JSZip();
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      '<worksheet><sheetData><row r="1048576"><c r="XFD1048576"><v>1</v></c></row></sheetData></worksheet>',
+    );
+    await page.getByLabel('Upload files', { exact: true }).setInputFiles({
+      name: 'Beyond preview.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: await zip.generateAsync({ type: 'nodebuffer' }),
+    });
+    await page.getByRole('button', { name: 'Beyond preview.xlsx', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toContainText('exceeds the preview limits');
+    await expect(
+      dialog.getByRole('link', { name: 'Download Beyond preview.xlsx', exact: true }),
+    ).toBeVisible();
+    expect(errors).toEqual([]);
   } finally {
     await context.close();
   }

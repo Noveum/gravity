@@ -74,16 +74,24 @@ export function validateArchive(data: ArrayBuffer): void {
   if (cursor !== end) throw new Error('This document archive is damaged.');
 }
 
-export async function localOfficeArchive(
+export async function validatedOfficeZip(
   data: ArrayBuffer,
-  xmlTools: OfficeXml = browserXml,
-): Promise<ArrayBuffer> {
+  maximum = MAX_ARCHIVE_BYTES,
+): Promise<JSZip> {
   validateArchive(data);
   const zip = await JSZip.loadAsync(data);
   let expanded = 0;
   for (const entry of Object.values(zip.files)) {
-    if (!entry.dir) expanded += await verifyExpandedSize(entry, MAX_ARCHIVE_BYTES - expanded);
+    if (!entry.dir) expanded += await verifyExpandedSize(entry, maximum - expanded);
   }
+  return zip;
+}
+
+export async function localOfficeArchive(
+  data: ArrayBuffer,
+  xmlTools: OfficeXml = browserXml,
+): Promise<ArrayBuffer> {
+  const zip = await validatedOfficeZip(data);
   let changed = false;
   for (const entry of Object.values(zip.files)) {
     if (entry.dir || !entry.name.toLowerCase().endsWith('.rels')) continue;

@@ -16,7 +16,7 @@
   "opportunities": "Opportunities",
   "materials": "Sales materials",
   "integrations": "Connections",
-  "settings": "Organization settings",
+  "settings": "Settings",
   "savedViews": "Saved views",
   "replies": "Replies to handle",
   "promises": "Promises we made",
@@ -1515,5 +1515,30 @@
   "inviteRoleAdmin": "an admin",
   "inviteRoleMember": "a member",
   "inviteEmailSubject": "You are invited to {workspace} on Gravity",
-  "inviteEmailBody": "You have been invited to join {workspace} on Gravity.\n\nAccept the invitation:\n{link}\n\nThe link works once and expires on {expires}. If you did not expect this invitation, you can ignore this email."
+  "inviteEmailBody": "You have been invited to join {workspace} on Gravity.\n\nAccept the invitation:\n{link}\n\nThe link works once and expires on {expires}. If you did not expect this invitation, you can ignore this email.",
+  "settingsNavigation": "Settings sections",
+  "settingsSections": {
+    "workspace": "Workspace",
+    "brands": "Products",
+    "pipelines": "Pipelines",
+    "members": "Members",
+    "outreach": "Outreach rules",
+    "connections": "Connections",
+    "sending": "Sending",
+    "assistants": "MCP access",
+    "preferences": "Preferences"
+  },
+  "settingsDescriptions": {
+    "workspace": "Name, time zone, address and who may join this workspace.",
+    "brands": "Products group people, sequences, pipelines and materials.",
+    "pipelines": "Stages for outreach and for each deal pipeline.",
+    "members": "Roles, product access and invitations.",
+    "outreach": "Limits every sender follows, and people who must never be contacted.",
+    "connections": "Mailboxes, calendars, LinkedIn and meeting notes.",
+    "sending": "Accounts that can send, and the product each connection files into.",
+    "assistants": "Assistants that act in this workspace through MCP.",
+    "preferences": "Appearance and row density for this browser."
+  },
+  "adminOnly": "Only workspace admins can change this. Ask an admin.",
+  "settingsLoadError": "This section could not be loaded."
 }

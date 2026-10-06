@@ -39,9 +39,7 @@ import { PersonRecord } from "../src/components/records/person-record";
 import { type Route, routeFor } from "../src/components/routes";
 import * as shellNavigation from "../src/components/shell/navigation";
 import { ActionsView } from "../src/components/views/actions-view";
-import { AssistantsView } from "../src/components/views/assistants-view";
 import { CompaniesView } from "../src/components/views/companies-view";
-import { ConnectionsView } from "../src/components/views/connections-view";
 import { MaterialsView } from "../src/components/views/materials-view";
 import { MeetingsView } from "../src/components/views/meetings-view";
 import { OpportunitiesView } from "../src/components/views/opportunities-view";
@@ -201,8 +199,8 @@ function page(route: Route | null): ReactNode {
     opportunities: OpportunitiesView,
     materials: MaterialsView,
     outreach: OutreachView,
-    integrations: ConnectionsView,
-    assistants: AssistantsView,
+    integrations: SettingsView,
+    assistants: SettingsView,
     settings: SettingsView,
   };
   const View = views[route.section];
@@ -274,7 +272,7 @@ test("the routed Connections view loads the active scope, shows callback results
         }
       : regular(url, init),
   );
-  mount("/connections?integration=connected", false);
+  mount("/settings/connections?integration=connected", false);
   expect(
     screen.getByText(t.integrationMessages.CONNECTION_CONNECTED),
   ).toBeTruthy();
@@ -582,11 +580,9 @@ test("a fresh workspace opens its first product and offers working contact and i
   );
   fireEvent.click(screen.getByRole("button", { name: t.cancel }));
   fireEvent.click(screen.getByRole("link", { name: t.connectTools }));
-  expect(window.location.pathname).toBe("/connections");
-  expect(heading(t.integrations)).toBeTruthy();
-  expect((screen.getByLabelText(t.mcpEndpoint) as HTMLInputElement).value).toBe(
-    "https://gravity.example.test/mcp",
-  );
+  expect(window.location.pathname).toBe("/settings/connections");
+  expect(heading(t.integrations, 2)).toBeTruthy();
+  expect(screen.queryByLabelText(t.mcpEndpoint)).toBeNull();
   expect(screen.getByRole("heading", { name: t.calendar })).toBeTruthy();
 });
 
@@ -598,7 +594,12 @@ test("the header theme toggle persists across a reload and agrees with preferenc
   expect(document.documentElement.classList.contains("dark")).toBe(true);
   expect(localStorage.getItem("gravity-theme")).toBe("dark");
   expect(toggle().getAttribute("aria-pressed")).toBe("true");
-  fireEvent.click(screen.getByRole("link", { name: t.settings }));
+  fireEvent.click(
+    document.querySelector('.sidebar [data-nav-item="settings"]') as Element,
+  );
+  fireEvent.click(
+    screen.getByRole("link", { name: t.settingsSections.preferences }),
+  );
   const preference = screen.getByRole("combobox", {
     name: t.appearance,
   }) as HTMLSelectElement;
@@ -612,7 +613,12 @@ test("the header theme toggle persists across a reload and agrees with preferenc
   fireEvent.click(toggle());
   expect(document.documentElement.classList.contains("dark")).toBe(false);
   expect(localStorage.getItem("gravity-theme")).toBe("light");
-  fireEvent.click(screen.getByRole("link", { name: t.settings }));
+  fireEvent.click(
+    document.querySelector('.sidebar [data-nav-item="settings"]') as Element,
+  );
+  fireEvent.click(
+    screen.getByRole("link", { name: t.settingsSections.preferences }),
+  );
   fireEvent.change(screen.getByRole("combobox", { name: t.appearance }), {
     target: { value: "system" },
   });
@@ -722,9 +728,9 @@ test("deep links render the view or record they name", async () => {
     ["/opportunities", "opportunities", t.opportunities],
     ["/materials", "materials", t.materials],
     ["/outreach", "outreach", t.outreach],
-    ["/connections", "integrations", t.integrations],
-    ["/assistants", "assistants", t.assistants],
-    ["/settings", "settings", t.settings],
+    ["/settings/connections", "integrations", t.settings],
+    ["/settings/assistants", "assistants", t.settings],
+    ["/settings/workspace", "settings", t.settings],
   ];
   mount("/actions");
   expect(
@@ -1389,7 +1395,9 @@ test("visible go-to hints include Outreach and the help button opens the map", a
   }
   fireEvent.keyDown(document.body, { key: "g" });
   fireEvent.keyDown(document.body, { key: "x" });
-  await waitFor(() => expect(window.location.pathname).toBe("/assistants"));
+  await waitFor(() =>
+    expect(window.location.pathname).toBe("/settings/assistants"),
+  );
   expect(screen.getByLabelText(t.mcpEndpoint)).toBeTruthy();
   fireEvent.keyDown(document.body, { key: "g" });
   fireEvent.keyDown(document.body, { key: "r" });

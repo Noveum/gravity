@@ -32,6 +32,7 @@ import {
   outreachTabFor,
   type Section,
   sectionPath,
+  settingsSectionFor,
 } from "./routes";
 import { SettingsForm } from "./settings-form";
 import {
@@ -231,6 +232,14 @@ function CrmShell({ children }: { children: ReactNode }) {
   const openCount =
     data?.actions.filter((action) => action.status !== "completed").length ?? 0;
   const outreachTab = section === "outreach" ? outreachTabFor(pathname) : null;
+  const settingsSection =
+    section === "settings" ? settingsSectionFor(pathname) : null;
+  const settingsOwner: Section =
+    settingsSection === "connections"
+      ? "integrations"
+      : settingsSection === "assistants"
+        ? "assistants"
+        : "settings";
   const pageItem = (id: Section): SidebarItem => {
     const href = sectionPath(id);
     return {
@@ -244,7 +253,9 @@ function CrmShell({ children }: { children: ReactNode }) {
           ? section === "sequences" || outreachTab === "sequences"
           : id === "outreach"
             ? section === "outreach" && outreachTab !== "sequences"
-            : section === id,
+            : section === "settings"
+              ? settingsOwner === id
+              : section === id,
       onSelect: () => leaveDrawer(href),
     };
   };
@@ -336,14 +347,18 @@ function CrmShell({ children }: { children: ReactNode }) {
     : undefined;
   const crumbs = breadcrumbsFor({
     view: label(section),
-    ...(recordId || outreachTab ? { viewHref: sectionPath(section) } : {}),
+    ...(recordId || outreachTab || settingsSection
+      ? { viewHref: sectionPath(section) }
+      : {}),
     ...(crm.currentOrg ? { workspace: crm.currentOrg.name } : {}),
     ...(productName ? { product: productName } : {}),
     ...(recordName
       ? { record: recordName }
       : outreachTab
         ? { record: t.outreachTabs[outreachTab] }
-        : {}),
+        : settingsSection
+          ? { record: t.settingsSections[settingsSection] }
+          : {}),
   });
   return (
     <div

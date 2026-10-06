@@ -1,8 +1,19 @@
-import t from "@crm/i18n/translations/en.json";
-import { ConnectionsView } from "@/components/views/connections-view";
-import { pageTitle } from "../page-title";
+import { redirect } from "next/navigation";
+import { settingsPath } from "@/components/routes";
 
-export const metadata = pageTitle(t.integrations);
-export default function Page() {
-  return <ConnectionsView />;
+const notices = ["integration", "integrationError"];
+
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = await searchParams;
+  const kept = new URLSearchParams();
+  for (const key of notices) {
+    const value = query[key];
+    if (typeof value === "string" && value) kept.set(key, value);
+  }
+  const path = settingsPath("connections");
+  redirect(kept.size ? `${path}?${kept}` : path);
 }

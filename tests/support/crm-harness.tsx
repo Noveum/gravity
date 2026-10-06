@@ -2,7 +2,6 @@ import { act, cleanup, render } from "@testing-library/react";
 import { eq } from "drizzle-orm";
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
-import { AssistantsView } from "@/components/views/assistants-view";
 import {
   actionChangeSchema,
   actionPlanSchema,
@@ -47,7 +46,6 @@ import { PersonRecord } from "../../src/components/records/person-record";
 import { type Route, routeFor } from "../../src/components/routes";
 import { ActionsView } from "../../src/components/views/actions-view";
 import { CompaniesView } from "../../src/components/views/companies-view";
-import { ConnectionsView } from "../../src/components/views/connections-view";
 import { MaterialsView } from "../../src/components/views/materials-view";
 import { MeetingsView } from "../../src/components/views/meetings-view";
 import { OpportunitiesView } from "../../src/components/views/opportunities-view";
@@ -94,8 +92,8 @@ function page(route: Route | null): ReactNode {
     opportunities: OpportunitiesView,
     materials: MaterialsView,
     outreach: OutreachView,
-    integrations: ConnectionsView,
-    assistants: AssistantsView,
+    integrations: SettingsView,
+    assistants: SettingsView,
     settings: SettingsView,
   };
   const View = views[route.section];

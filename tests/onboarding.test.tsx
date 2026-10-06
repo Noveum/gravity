@@ -13,7 +13,8 @@ import type { ClientSnapshot } from "../packages/core/dto";
 import t from "../packages/i18n/translations/en.json";
 import { Authorization, Consent, SignIn } from "../src/components/auth-forms";
 import { requestJson } from "../src/components/client-api";
-import { Connections } from "../src/components/connections";
+import { AssistantAccess } from "../src/components/connections";
+import { IntegrationCards } from "../src/components/integration-cards";
 import { WorkspaceSetup } from "../src/components/workspace-setup";
 
 let query = new URLSearchParams();
@@ -334,19 +335,15 @@ const connectionData = {
   products: [{ id: "p", name: "Product" }],
   grants: [{ id: "g", productIds: ["p"] }],
 } as unknown as ClientSnapshot;
-test("connections render a canonical endpoint on the server, disclose offline providers and copy with visible recovery", async () => {
+test("assistant access renders a canonical endpoint on the server and copies with visible recovery while offline providers stay disclosed", async () => {
   const endpoint = "https://gravity.example.test/mcp";
   const props = {
     data: connectionData,
-    organizationId: "11111111-1111-4111-8111-111111111111",
-    productId: "",
-    initialNotice: "",
-    onChanged: vi.fn(async () => {}),
     endpoint,
     demo: true,
     onRevoke: vi.fn(async () => true),
   };
-  expect(renderToString(<Connections {...props} />)).toContain(endpoint);
+  expect(renderToString(<AssistantAccess {...props} />)).toContain(endpoint);
   const writeText = vi
     .fn()
     .mockRejectedValueOnce(new Error("Clipboard unavailable"))
@@ -355,14 +352,7 @@ test("connections render a canonical endpoint on the server, disclose offline pr
     configurable: true,
     value: { writeText },
   });
-  render(<Connections {...props} />);
-  expect(
-    document
-      .querySelector(".integration-grid > :first-child")
-      ?.classList.contains("mcp-card"),
-  ).toBe(true);
-  expect(screen.getByRole("heading", { name: t.calendar })).toBeTruthy();
-  expect(screen.getAllByText(t.notConnected)).toHaveLength(4);
+  render(<AssistantAccess {...props} />);
   expect((screen.getByLabelText(t.mcpEndpoint) as HTMLInputElement).value).toBe(
     endpoint,
   );
@@ -377,18 +367,28 @@ test("connections render a canonical endpoint on the server, disclose offline pr
   );
   expect(writeText).toHaveBeenLastCalledWith(endpoint);
   expect(screen.queryByRole("alert")).toBeNull();
+  cleanup();
+  render(
+    <IntegrationCards
+      data={connectionData}
+      organizationId="11111111-1111-4111-8111-111111111111"
+      productId=""
+      demo
+      initialNotice=""
+      onChanged={async () => {}}
+    />,
+  );
+  expect(screen.getByRole("heading", { name: t.calendar })).toBeTruthy();
+  expect(screen.getAllByText(t.notConnected)).toHaveLength(4);
+  expect(screen.queryByLabelText(t.mcpEndpoint)).toBeNull();
 });
 
 test("assistant grant revocation is single-flight and releases its control after failure", async () => {
   const pending = deferred<boolean>();
   const onRevoke = vi.fn(() => pending.promise);
   render(
-    <Connections
+    <AssistantAccess
       data={connectionData}
-      organizationId="11111111-1111-4111-8111-111111111111"
-      productId=""
-      initialNotice=""
-      onChanged={async () => {}}
       endpoint="https://gravity.example.test/mcp"
       demo={false}
       onRevoke={onRevoke}

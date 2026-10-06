@@ -1,50 +1,37 @@
 "use client";
-import { productColorToken } from "@crm/core/product-colors";
-import t from "@crm/i18n/translations/en.json";
-import { label } from "../client-api";
-import { useWorkspaceData } from "../crm/crm-context";
-import { Preferences } from "../preferences";
-import { SettingsForm } from "../settings-form";
-import { ShortcutHint } from "../ui/shortcut-hint";
+import type { ComponentType } from "react";
+import { useCrm } from "../crm/crm-context";
+import {
+  type SettingsSection,
+  settingsSectionFor,
+  settingsSections,
+} from "../routes";
+import { AssistantSettings } from "../settings/assistant-settings";
+import { ConnectionSettings } from "../settings/connection-settings";
+import { PreferenceSettings } from "../settings/preference-settings";
+import { SettingsNav } from "../settings/settings-nav";
+import { WorkspaceSettings } from "../settings/workspace-settings";
+
+const panels: Partial<Record<SettingsSection, ComponentType>> = {
+  workspace: WorkspaceSettings,
+  connections: ConnectionSettings,
+  assistants: AssistantSettings,
+  preferences: PreferenceSettings,
+};
+const available = settingsSections.filter((section) => panels[section]);
 
 export function SettingsView() {
-  const crm = useWorkspaceData();
+  const { pathname } = useCrm();
+  const requested = settingsSectionFor(pathname);
+  const section =
+    requested && panels[requested] ? requested : ("workspace" as const);
+  const Panel = panels[section] ?? WorkspaceSettings;
   return (
-    <div className="page-content">
-      <section className="settings-section">
-        <h2>{t.preferences}</h2>
-        <p className="muted">{t.preferencesDetail}</p>
-        <Preferences labelled />
-      </section>
-      <p className="callout">{t.organizationIsolation}</p>
-      <a className="auth-link" href="/onboarding">
-        {t.createWorkspace} <ShortcutHint id="create-organization" />
-      </a>
-      <SettingsForm
-        organizationId={crm.organizationId}
-        canCreateProduct={crm.isAdmin}
-        mutate={crm.mutate}
-        onOrganizations={async () => {
-          await crm.reloadOrganizations();
-        }}
-      />
-      <h2 className="spaced">{t.products}</h2>
-      {crm.data.products.map((product) => (
-        <div className="setting-row" key={product.id}>
-          <span
-            className="product-dot"
-            style={{ background: productColorToken(product.colorKey) }}
-          />
-          {product.name}
-        </div>
-      ))}
-      <h2 className="spaced">{t.members}</h2>
-      {crm.data.members.map((member) => (
-        <div className="setting-row" key={member.id}>
-          <span>{member.name}</span>
-          <span className="badge">{label(member.role)}</span>
-        </div>
-      ))}
+    <div className="settings-layout">
+      <SettingsNav sections={available} current={section} />
+      <div className="settings-content">
+        <Panel />
+      </div>
     </div>
   );
 }

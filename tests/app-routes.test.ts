@@ -77,9 +77,9 @@ const listPages: Record<Section, [string, string]> = {
   opportunities: ["opportunities", "OpportunitiesView"],
   materials: ["materials", "MaterialsView"],
   outreach: ["outreach", "OutreachView"],
-  integrations: ["connections", "ConnectionsView"],
-  assistants: ["assistants", "AssistantsView"],
-  settings: ["settings", "SettingsView"],
+  integrations: ["settings/connections", "SettingsView"],
+  assistants: ["settings/assistants", "SettingsView"],
+  settings: ["settings/workspace", "SettingsView"],
 };
 const componentName = (element: unknown) => {
   if (!isValidElement(element)) return "";
@@ -91,7 +91,12 @@ describe("route table", () => {
   test("every view and record has a path that parses back to it", () => {
     for (const section of Object.keys(listPages) as Section[])
       expect(routeFor(sectionPath(section))).toEqual({
-        section: section === "sequences" ? "outreach" : section,
+        section:
+          section === "sequences"
+            ? "outreach"
+            : section === "integrations" || section === "assistants"
+              ? "settings"
+              : section,
         recordId: "",
       });
     expect(sectionPath("sequences")).toBe("/outreach/sequences");
@@ -99,7 +104,7 @@ describe("route table", () => {
       section: "sequences",
       recordId: "",
     });
-    expect(sectionPath("integrations")).toBe("/connections");
+    expect(sectionPath("integrations")).toBe("/settings/connections");
     expect(routeFor("/people/abc")).toEqual({
       section: "people",
       recordId: "abc",
@@ -136,7 +141,12 @@ describe("route table", () => {
 
   test("each route has a page file that renders its view", async () => {
     for (const [folder, name] of Object.values(listPages)) {
-      if (folder === "outreach" || folder === "sequences") continue;
+      if (
+        folder === "outreach" ||
+        folder === "sequences" ||
+        folder.startsWith("settings/")
+      )
+        continue;
       const path = `src/app/(crm)/${folder}/page.tsx`;
       expect(existsSync(path), path).toBe(true);
       const page = (await import(`../src/app/(crm)/${folder}/page.tsx`)) as {
@@ -233,7 +243,7 @@ describe("route table", () => {
       expect(result.searchParams.get("organizationId")).toBe(demoId(2));
       expect(result.searchParams.get("productId")).toBe(demoId(13));
       expect(result.searchParams.get("next")).toBe(
-        `/connections?integration=${integration}`,
+        `/settings/connections?integration=${integration}`,
       );
       expect(result.searchParams.has("code")).toBe(false);
     }
@@ -241,7 +251,7 @@ describe("route table", () => {
       view: "connections",
       integrationError: "PROVIDER_UNAVAILABLE",
     });
-    expect(failure.pathname).toBe("/connections");
+    expect(failure.pathname).toBe("/settings/connections");
     expect(failure.searchParams.get("integrationError")).toBe(
       "PROVIDER_UNAVAILABLE",
     );

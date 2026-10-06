@@ -1277,3 +1277,126 @@ test("send_touch and send_action refuse work in an archived product", async () =
     expect(dispatches(f.transport)).toBe(0);
   }
 });
+async function rewindToAccepted(f: Awaited<ReturnType<typeof fixture>>) {
+  if (!("touchId" in f.source)) throw new Error("fixture");
+  const [before] = await local.db
+    .select()
+    .from(s.touches)
+    .where(eq(s.touches.id, f.source.touchId));
+  if (!before) throw new Error("touch fixture");
+  const sent = await f.service.send(principal, f.input);
+  expect(sent.status).toBe("sent");
+  await local.db
+    .update(s.deliveries)
+    .set({ status: "accepted" })
+    .where(eq(s.deliveries.id, sent.id));
+  await local.db
+    .delete(s.touches)
+    .where(
+      and(
+        eq(s.touches.relationshipId, f.relationshipId),
+        eq(s.touches.status, "planned"),
+      ),
+    );
+  await local.db
+    .update(s.touches)
+    .set({
+      status: "approved",
+      sentAt: null,
+      sentBy: null,
+      externalMessageId: null,
+      closedAt: null,
+      version: before.version,
+      sentWarnings: [],
+    })
+    .where(eq(s.touches.id, f.source.touchId));
+  await local.db
+    .update(s.relationships)
+    .set({ lastOutboundAt: null, touchCount: 0 })
+    .where(eq(s.relationships.id, f.relationshipId));
+  const conversations = await local.db
+    .select({ id: s.conversations.id })
+    .from(s.conversations)
+    .where(eq(s.conversations.relationshipId, f.relationshipId));
+  for (const conversation of conversations) {
+    await local.db
+      .delete(s.messages)
+      .where(eq(s.messages.conversationId, conversation.id));
+    await local.db
+      .delete(s.conversations)
+      .where(eq(s.conversations.id, conversation.id));
+  }
+  return { delivery: sent, touchId: f.source.touchId };
+}
+test("resolve_delivery never writes off a provider-accepted delivery, so the touch sends exactly once", async () => {
+  const f = await fixture();
+  const { delivery } = await rewindToAccepted(f);
+  await expect(
+    resolveAt(now + 200000, {
+      deliveryId: delivery.id,
+      outcome: "failed",
+      reason: "absent_in_provider",
+      confirm: true,
+    }),
+  ).rejects.toMatchObject({ code: "DELIVERY_PROVIDER_ACCEPTED", status: 409 });
+  await expect(
+    f.service.send(principal, { ...f.input, idempotencyKey: randomUUID() }),
+  ).rejects.toMatchObject({ code: "DELIVERY_IN_PROGRESS" });
+  const sends = f.transport.mock.calls.filter(([url]) =>
+    String(url).includes("/messages/send"),
+  );
+  expect(sends).toHaveLength(1);
+  await local.db
+    .update(s.deliveries)
+    .set({ status: "unknown" })
+    .where(eq(s.deliveries.id, delivery.id));
+  await expect(
+    resolveAt(now + 200000, {
+      deliveryId: delivery.id,
+      outcome: "failed",
+      reason: "written_off",
+      confirm: true,
+    }),
+  ).rejects.toMatchObject({ code: "DELIVERY_PROVIDER_ACCEPTED" });
+});
+test("resolving a provider-accepted delivery as sent persists the receipt like a normal send", async () => {
+  const f = await fixture();
+  const { delivery, touchId } = await rewindToAccepted(f);
+  const resolved = await resolveAt(now + 200000, {
+    deliveryId: delivery.id,
+    outcome: "sent",
+    reason: "confirmed_in_provider",
+    confirm: true,
+  });
+  expect(resolved).toMatchObject({
+    status: "sent",
+    errorCode: "RESOLVED_CONFIRMED_IN_PROVIDER",
+  });
+  const [touch] = await local.db
+    .select()
+    .from(s.touches)
+    .where(eq(s.touches.id, touchId));
+  expect(touch).toMatchObject({
+    status: "sent",
+    externalMessageId: delivery.externalMessageId,
+  });
+  const [conversation] = await local.db
+    .select()
+    .from(s.conversations)
+    .where(eq(s.conversations.relationshipId, f.relationshipId));
+  expect(conversation?.externalThreadId).toBe(delivery.externalThreadId);
+  const messages = await local.db
+    .select()
+    .from(s.messages)
+    .where(eq(s.messages.conversationId, conversation?.id ?? ""));
+  expect(messages).toHaveLength(1);
+  expect(messages[0]).toMatchObject({
+    direction: "outbound",
+    providerMessageId: delivery.externalMessageId,
+  });
+  const [relationship] = await local.db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, f.relationshipId));
+  expect(relationship?.touchCount).toBe(1);
+});

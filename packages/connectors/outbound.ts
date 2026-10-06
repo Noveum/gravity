@@ -114,7 +114,9 @@ export function publicDelivery(row: Delivery, now = Date.now()) {
     createdAt: row.createdAt.toISOString(),
     sentAt: row.sentAt?.toISOString() ?? null,
     retrySafe: row.status === "failed",
-    providerAccepted: ["accepted", "sent"].includes(row.status),
+    providerAccepted:
+      ["accepted", "sent"].includes(row.status) ||
+      row.externalMessageId !== null,
   };
 }
 export class OutboundService {
@@ -853,66 +855,18 @@ export class OutboundService {
         !current.externalThreadId
       )
         return;
-      const messageId =
-        current.channel === "linkedin"
-          ? `${current.externalThreadId}:${current.externalMessageId}`
-          : current.externalMessageId;
-      const conflicted = await this.completeSource(tx, current, now, messageId);
-      const [inserted] = await tx
-        .insert(s.conversations)
-        .values({
-          organizationId: current.organizationId,
-          productId: current.productId,
-          relationshipId: current.relationshipId,
-          connectionId: current.connectionId,
-          externalThreadId: current.externalThreadId,
-          ownerId: current.ownerId,
-          visibility: "private",
-          channel: current.channel,
-        })
-        .onConflictDoNothing()
-        .returning();
-      const [conversation] = inserted
-        ? [inserted]
-        : await tx
-            .select()
-            .from(s.conversations)
-            .where(
-              and(
-                eq(s.conversations.connectionId, current.connectionId),
-                eq(s.conversations.externalThreadId, current.externalThreadId),
-              ),
-            );
-      const ownConversation =
-        conversation &&
-        conversation.relationshipId === current.relationshipId &&
-        conversation.ownerId === current.ownerId
-          ? conversation
-          : null;
-      if (ownConversation)
-        await tx
-          .insert(s.messages)
-          .values({
-            organizationId: current.organizationId,
-            productId: current.productId,
-            conversationId: ownConversation.id,
-            connectionId: current.connectionId,
-            providerMessageId: messageId,
-            direction: "outbound",
-            body: current.draft,
-            occurredAt: now,
-          })
-          .onConflictDoNothing();
+      const errorCode = await this.persistReceipt(
+        tx,
+        current,
+        {
+          messageId: current.externalMessageId,
+          threadId: current.externalThreadId,
+        },
+        now,
+      );
       await tx
         .update(s.deliveries)
-        .set({
-          status: "sent",
-          errorCode: !ownConversation
-            ? "THREAD_ALREADY_LINKED"
-            : conflicted
-              ? "SOURCE_CHANGED_DURING_DISPATCH"
-              : null,
-        })
+        .set({ status: "sent", errorCode })
         .where(eq(s.deliveries.id, current.id));
       await tx.insert(s.changeEvents).values({
         organizationId: current.organizationId,
@@ -923,6 +877,68 @@ export class OutboundService {
       });
     });
     await this.advanceAfterSend(delivery);
+  }
+  private async persistReceipt(
+    tx: Transaction,
+    current: Delivery,
+    receipt: { messageId: string; threadId: string },
+    now: Date,
+  ) {
+    const messageId =
+      current.channel === "linkedin"
+        ? `${receipt.threadId}:${receipt.messageId}`
+        : receipt.messageId;
+    const conflicted = await this.completeSource(tx, current, now, messageId);
+    const [inserted] = await tx
+      .insert(s.conversations)
+      .values({
+        organizationId: current.organizationId,
+        productId: current.productId,
+        relationshipId: current.relationshipId,
+        connectionId: current.connectionId,
+        externalThreadId: receipt.threadId,
+        ownerId: current.ownerId,
+        visibility: "private",
+        channel: current.channel,
+      })
+      .onConflictDoNothing()
+      .returning();
+    const [conversation] = inserted
+      ? [inserted]
+      : await tx
+          .select()
+          .from(s.conversations)
+          .where(
+            and(
+              eq(s.conversations.connectionId, current.connectionId),
+              eq(s.conversations.externalThreadId, receipt.threadId),
+            ),
+          );
+    const ownConversation =
+      conversation &&
+      conversation.relationshipId === current.relationshipId &&
+      conversation.ownerId === current.ownerId
+        ? conversation
+        : null;
+    if (ownConversation)
+      await tx
+        .insert(s.messages)
+        .values({
+          organizationId: current.organizationId,
+          productId: current.productId,
+          conversationId: ownConversation.id,
+          connectionId: current.connectionId,
+          providerMessageId: messageId,
+          direction: "outbound",
+          body: current.draft,
+          occurredAt: now,
+        })
+        .onConflictDoNothing();
+    return !ownConversation
+      ? "THREAD_ALREADY_LINKED"
+      : conflicted
+        ? "SOURCE_CHANGED_DURING_DISPATCH"
+        : null;
   }
   private async advanceAfterSend(delivery: Delivery) {
     // Planning only: advancing never dispatches the next touch.
@@ -1047,8 +1063,26 @@ export class OutboundService {
         now.getTime() - current.createdAt.getTime() < liveSendingWindow
       )
         throw new DomainError("DELIVERY_IN_PROGRESS", 409);
+      const providerAccepted =
+        current.status === "accepted" || current.externalMessageId !== null;
+      if (input.outcome === "failed" && providerAccepted)
+        throw new DomainError("DELIVERY_PROVIDER_ACCEPTED", 409);
       const sentAt = current.sentAt ?? now;
-      if (input.outcome === "sent")
+      if (
+        input.outcome === "sent" &&
+        current.externalMessageId &&
+        current.externalThreadId
+      )
+        await this.persistReceipt(
+          tx,
+          current,
+          {
+            messageId: current.externalMessageId,
+            threadId: current.externalThreadId,
+          },
+          sentAt,
+        );
+      else if (input.outcome === "sent")
         await this.completeSource(
           tx,
           current,

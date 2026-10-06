@@ -183,11 +183,16 @@ export function DeliveryChecks({
           <label>
             {t.resolveOutcome}
             <select name="outcome" defaultValue="sent" data-primary-field>
-              {outcomes.map((outcome) => (
-                <option key={outcome} value={outcome}>
-                  {t.resolveOutcomes[outcome]}
-                </option>
-              ))}
+              {outcomes
+                .filter(
+                  (outcome) =>
+                    outcome === "sent" || !settling.delivery.providerAccepted,
+                )
+                .map((outcome) => (
+                  <option key={outcome} value={outcome}>
+                    {t.resolveOutcomes[outcome]}
+                  </option>
+                ))}
             </select>
           </label>
           <label>

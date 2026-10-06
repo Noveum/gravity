@@ -294,7 +294,8 @@
     "SEQUENCE_ARCHIVED": "This sequence is archived. Restore it before enrolling, resuming, reopening or sending.",
     "SEQUENCE_ACTIVE": "This sequence is not archived.",
     "FOLDER_NOT_EMPTY": "This folder still holds files or other folders. Empty it before deleting it.",
-    "DELIVERY_NOT_RESOLVABLE": "This delivery is already settled."
+    "DELIVERY_NOT_RESOLVABLE": "This delivery is already settled.",
+    "DELIVERY_PROVIDER_ACCEPTED": "The provider accepted this message, so it cannot be marked failed. Resolve it as sent."
   },
   "consentAccess": "Access",
   "consentLevelRead": "Read",

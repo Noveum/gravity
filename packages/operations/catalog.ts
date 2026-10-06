@@ -302,7 +302,7 @@ export const operations: Operation[] = [
     name: "resolve_delivery",
     idempotent: false,
     description:
-      "Close a stuck delivery that is unknown, or abandoned while sending or accepted, as sent or failed with a reason. This never contacts the provider. Marking it failed lets the sender try again, so confirm first that nothing went out. Requires a human admin session and confirm=true; deliveries still inside the live sending window are refused.",
+      "Close a stuck delivery that is unknown, or abandoned while sending or accepted, as sent or failed with a reason. This never contacts the provider. Marking it failed lets the sender try again, so confirm first that nothing went out; a delivery the provider accepted (status accepted or a provider message ID) can only be resolved as sent, and failed returns DELIVERY_PROVIDER_ACCEPTED. Requires a human admin session and confirm=true; deliveries still inside the live sending window are refused.",
     schema: resolveDeliverySchema,
     run: (c, input) => new OutboundService(c.db).resolve(c.principal, input),
   }),

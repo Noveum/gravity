@@ -171,4 +171,23 @@ describe("deliveries that need a check", () => {
       await screen.findByRole("group", { name: `${t.deliveryChecks}: 1` }),
     ).toBeTruthy();
   });
+
+  test("a delivery the provider accepted can only be resolved as sent", async () => {
+    await harness.local.db
+      .update(s.deliveries)
+      .set({ status: "accepted", externalMessageId: "fixture-accepted" })
+      .where(eq(s.deliveries.id, teammates));
+    const group = await checks();
+    const theirs = personRow(group, "Sam Rivera");
+    fireEvent.click(within(theirs).getByRole("button", { name: /^Resolve/ }));
+    const dialog = await screen.findByRole("dialog", {
+      name: /^Resolve the send/,
+    });
+    const outcome = within(dialog).getByLabelText(
+      t.resolveOutcome,
+    ) as HTMLSelectElement;
+    expect([...outcome.options].map((option) => option.value)).toEqual([
+      "sent",
+    ]);
+  });
 });

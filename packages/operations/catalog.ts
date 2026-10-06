@@ -67,6 +67,14 @@ import {
   touchSkipSchema,
   touchSnoozeSchema,
 } from "../core/outreach";
+import {
+  archiveStageSchema,
+  createStageSchema,
+  PipelineService,
+  reorderStagesSchema,
+  updatePipelineSchema,
+  updateStageSchema,
+} from "../core/pipelines";
 import { authorize, DomainError, type Principal } from "../core/policy";
 import { productColorKeys } from "../core/product-colors";
 import {
@@ -155,6 +163,7 @@ const members = ({ db }: OperationContext) => new MemberService(db);
 const invitations = ({ db }: OperationContext) => new InvitationService(db);
 const workspace = ({ db }: OperationContext) => new WorkspaceService(db);
 const products = ({ db }: OperationContext) => new ProductService(db);
+const pipelines = ({ db }: OperationContext) => new PipelineService(db);
 const nameSchema = z.string().trim().min(1).max(100);
 const overviewSchema = scopeSchema.extend({
   days: z.coerce
@@ -500,6 +509,58 @@ export const operations: Operation[] = [
       "Restore an archived product. Paused enrollments stay paused until resumed. Requires admin membership and an all-products grant.",
     schema: restoreProductSchema,
     run: (c, input) => products(c).restore(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "stage",
+    name: "create_stage",
+    description:
+      "Add a stage at the end of a deal pipeline (pipeline deal with pipelineId) or a product's outreach pipeline (pipeline outreach). Category is open, won, lost or hold; deal stages cannot be hold. Requires admin membership and access to the product.",
+    schema: createStageSchema,
+    destructive: false,
+    run: (c, input) => pipelines(c).createStage(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "stage-update",
+    name: "update_stage",
+    description:
+      "Rename a stage or change its category. Changing a deal stage's category moves its deals to the matching outcome. Every pipeline keeps at least one open stage. Requires admin membership and access to the product.",
+    schema: updateStageSchema,
+    run: (c, input) => pipelines(c).updateStage(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "stage-order",
+    name: "reorder_stages",
+    description:
+      "Set the order of a pipeline's stages. stageIds must list every active stage of that pipeline exactly once. Requires admin membership and access to the product.",
+    schema: reorderStagesSchema,
+    idempotent: true,
+    run: (c, input) => pipelines(c).reorderStages(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "stage-archive",
+    name: "archive_stage",
+    description:
+      "Archive a stage and move its deals or outreach relationships, and its material links, to moveToStageId in the same pipeline in one transaction. Every pipeline keeps at least one open stage. Requires admin membership and access to the product.",
+    schema: archiveStageSchema,
+    run: (c, input) => pipelines(c).archiveStage(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "pipeline-update",
+    name: "update_pipeline",
+    description:
+      "Rename a deal pipeline. Names are unique per product. Requires admin membership and access to the product.",
+    schema: updatePipelineSchema,
+    run: (c, input) => pipelines(c).updatePipeline(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -1148,7 +1209,14 @@ const memberAdministration = [
   "resend_invitation",
   "revoke_invitation",
 ];
-const productAdministration = ["update_product"];
+const productAdministration = [
+  "update_product",
+  "create_stage",
+  "update_stage",
+  "reorder_stages",
+  "archive_stage",
+  "update_pipeline",
+];
 const workspaceAdministration = [
   "update_workspace",
   "archive_product",

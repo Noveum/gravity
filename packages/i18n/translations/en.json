@@ -285,7 +285,12 @@
     "SLUG_TAKEN": "Another workspace already uses this address. Choose a different one.",
     "PRODUCT_ARCHIVED": "This product is archived. Restore it before adding new records.",
     "PRODUCT_ACTIVE": "This product is not archived.",
-    "LAST_ACTIVE_PRODUCT": "The workspace needs at least one active product. Create or restore another product first."
+    "LAST_ACTIVE_PRODUCT": "The workspace needs at least one active product. Create or restore another product first.",
+    "STAGE_EXISTS": "A stage with this name already exists in this pipeline.",
+    "STAGE_CATEGORY_INVALID": "Deal stages must be open, won or lost.",
+    "LAST_OPEN_STAGE": "Every pipeline needs at least one open stage. Add or reopen another stage first.",
+    "STAGE_ORDER_INVALID": "List every active stage of this pipeline exactly once.",
+    "STAGE_TARGET_INVALID": "Choose another active stage in the same pipeline to move records to."
   },
   "consentReadOnly": "Read-only access. This assistant cannot send messages or approve drafts.",
   "addPerson": "Add person",

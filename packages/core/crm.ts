@@ -396,6 +396,7 @@ export class CrmService {
             eq(s.stages.organizationId, input.organizationId),
             eq(s.stages.productId, input.productId),
             eq(s.stages.pipeline, "outreach"),
+            eq(s.stages.category, "open"),
             isNull(s.stages.archivedAt),
           ),
         )

@@ -244,6 +244,28 @@ async function workspaceZone(db: Reader, organizationId: string) {
   return organization?.timezone ?? "UTC";
 }
 
+async function unblocksNow(
+  db: Reader,
+  organizationId: string,
+  now: number,
+  zones: { before: string | null; after: string | null },
+) {
+  const [rules, zone] = await Promise.all([
+    readContactRules(db, organizationId),
+    workspaceZone(db, organizationId),
+  ]);
+  const blocked = (timeZone: string | null) =>
+    contactViolations({
+      now,
+      doNotContact: false,
+      timeZone: timeZone ?? zone,
+      lastContactAt: null,
+      sentTodayBySender: 0,
+      rules,
+    }).length > 0;
+  return blocked(zones.before) && !blocked(zones.after);
+}
+
 async function lastContacts(
   db: Reader,
   organizationId: string,
@@ -2354,6 +2376,15 @@ export class OutreachService {
         principal.source === "mcp" &&
         person.doNotContact &&
         !input.doNotContact
+      )
+        throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
+      if (
+        principal.source === "mcp" &&
+        input.timeZone !== person.timeZone &&
+        (await unblocksNow(tx, input.organizationId, this.clock(), {
+          before: person.timeZone,
+          after: input.timeZone,
+        }))
       )
         throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
       const [updated] = await tx

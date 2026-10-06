@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { OutreachService } from "../packages/core/outreach";
 import type { Principal } from "../packages/core/policy";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
@@ -190,5 +191,78 @@ describe("create_organization", () => {
         timezone: "Nowhere/Land",
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe("agents cannot sidestep quiet hours through time zones", () => {
+  test("an agent cannot change the workspace time zone but can edit other settings", async () => {
+    const before = await organization();
+    const other =
+      before.timezone === "America/Los_Angeles"
+        ? "Europe/Berlin"
+        : "America/Los_Angeles";
+    await expect(
+      run("update_workspace", agent, { timezone: other }),
+    ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED", status: 403 });
+    expect((await organization()).timezone).toBe(before.timezone);
+    await expect(
+      run("update_workspace", agent, {
+        timezone: before.timezone,
+        name: "Renamed by an assistant",
+      }),
+    ).resolves.toMatchObject({ name: "Renamed by an assistant" });
+    await expect(
+      run("update_workspace", admin, { timezone: other }),
+    ).resolves.toMatchObject({ timezone: other });
+  });
+
+  test("an agent cannot move a person out of quiet hours by changing their time zone", async () => {
+    await local.db
+      .delete(s.contactRules)
+      .where(eq(s.contactRules.organizationId, org));
+    await local.db.insert(s.contactRules).values({
+      organizationId: org,
+      cooldownDays: 0,
+      dailyCapPerSender: 50,
+      quietHoursStart: 20,
+      quietHoursEnd: 8,
+    });
+    const outreach = new OutreachService(local.db, () =>
+      Date.parse("2026-10-05T23:00:00Z"),
+    );
+    const personId = demoId(200);
+    const current = async () => {
+      const [row] = await local.db
+        .select()
+        .from(s.people)
+        .where(eq(s.people.id, personId));
+      if (!row) throw new Error("person fixture");
+      return row;
+    };
+    const setZone = async (principal: Principal, timeZone: string | null) => {
+      const person = await current();
+      return outreach.setContactPreferences(principal, {
+        organizationId: org,
+        personId,
+        version: person.version,
+        doNotContact: person.doNotContact,
+        timeZone,
+      });
+    };
+    await setZone(admin, "UTC");
+    await expect(setZone(agent, "Asia/Kolkata")).resolves.toMatchObject({
+      timeZone: "Asia/Kolkata",
+    });
+    await expect(setZone(agent, "America/Los_Angeles")).rejects.toMatchObject({
+      code: "HUMAN_ACTION_REQUIRED",
+    });
+    expect((await current()).timeZone).toBe("Asia/Kolkata");
+    await setZone(admin, "Pacific/Auckland");
+    await expect(setZone(agent, "America/Los_Angeles")).resolves.toMatchObject({
+      timeZone: "America/Los_Angeles",
+    });
+    await expect(setZone(agent, "Asia/Kolkata")).resolves.toMatchObject({
+      timeZone: "Asia/Kolkata",
+    });
   });
 });

@@ -65,6 +65,15 @@ export class WorkspaceService {
     return this.db
       .transaction(async (tx) => {
         await authorizeAdministrator(tx, principal, input.organizationId);
+        if (principal.source === "mcp" && input.timezone !== undefined) {
+          const [current] = await tx
+            .select({ timezone: s.organizations.timezone })
+            .from(s.organizations)
+            .where(eq(s.organizations.id, input.organizationId))
+            .for("update");
+          if (current && current.timezone !== input.timezone)
+            throw new DomainError("HUMAN_ACTION_REQUIRED", 403);
+        }
         if (input.slug !== undefined) {
           const [taken] = await tx
             .select({ id: s.organizations.id })

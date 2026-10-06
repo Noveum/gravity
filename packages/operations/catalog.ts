@@ -545,7 +545,7 @@ export const operations: Operation[] = [
     operation: "workspace-settings",
     name: "update_workspace",
     description:
-      "Change the workspace name, IANA time zone, URL slug (unique, lowercase letters, digits and single hyphens) or email domain allowlist (lowercased and deduplicated; empty means no workspace restriction). Requires admin membership and an all-products grant.",
+      "Change the workspace name, IANA time zone, URL slug (unique, lowercase letters, digits and single hyphens) or email domain allowlist (lowercased and deduplicated; empty means no workspace restriction). Requires admin membership and an all-products grant. The time zone sets quiet hours, so assistants changing it get HUMAN_ACTION_REQUIRED.",
     schema: updateWorkspaceSchema,
     run: (c, input) => workspace(c).update(c.principal, input),
   }),
@@ -1068,7 +1068,7 @@ export const operations: Operation[] = [
     operation: "contact",
     name: "set_contact_preferences",
     description:
-      "Set do-not-contact and contact timezone with current person version. Respects cross-product visibility. Assistants can mark a person do-not-contact; clearing it returns HUMAN_ACTION_REQUIRED.",
+      "Set do-not-contact and contact timezone with current person version. Respects cross-product visibility. Assistants can mark a person do-not-contact; clearing it, or a time zone change that moves the person out of quiet hours right now, returns HUMAN_ACTION_REQUIRED.",
     schema: contactPreferencesSchema,
     run: (c, input) => outreach(c).setContactPreferences(c.principal, input),
   }),

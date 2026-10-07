@@ -8,13 +8,13 @@ import { useVerbs, useWorkspaceData } from "../crm/crm-context";
 import { focusedRecord } from "../keyboard-navigation";
 import { formatMoney } from "../money";
 import {
-  Pagination,
   RecordFilters,
   useRecordBrowser,
   useRecordIndex,
 } from "../records/list-browser";
 import { rowKeys } from "../records/peek-keys";
 import { RecordDialog } from "../records/record-dialog";
+import { StageCards } from "../records/stage-cards";
 import { personPath } from "../routes";
 import { initials } from "../shell/workspace-menu";
 import { EmptyState } from "../ui/states";
@@ -298,11 +298,11 @@ function Board({ productId }: { productId: string }) {
       <div
         className="pipeline-stages"
         style={{
-          gridTemplateColumns: `repeat(${pipeline.length}, minmax(184px, 1fr))`,
+          gridTemplateColumns: `repeat(${pipeline.length}, 280px)`,
         }}
       >
         {pipeline.map((stage) => {
-          const cards = browser.page.items.filter(
+          const cards = browser.rows.filter(
             (relationship) => stageOf(relationship)?.id === stage.id,
           );
           return (
@@ -339,86 +339,97 @@ function Board({ productId }: { productId: string }) {
                   }
                 </span>
               </div>
-              {cards.map((relationship) => {
-                const name = nameOf(relationship);
-                const owner = crm.member(relationship.ownerId);
-                const person = crm.personFor(relationship.id);
-                const due = relationship.nextStepDueAt;
-                return (
-                  <article
-                    key={relationship.id}
-                    className="deal-card relationship-card"
-                    data-dragging={
-                      dragging === relationship.id ? "" : undefined
-                    }
-                    draggable
-                    onDragStart={(event) => {
-                      setDragging(relationship.id);
-                      event.dataTransfer?.setData(dragType, relationship.id);
-                      if (event.dataTransfer)
-                        event.dataTransfer.effectAllowed = "move";
-                    }}
-                    onDragEnd={() => {
-                      setDragging("");
-                      setTarget("");
-                    }}
-                  >
-                    <div className="deal-card-head">
-                      <button
-                        type="button"
-                        className="text-button"
-                        data-nav-record={relationship.id}
-                        aria-keyshortcuts="Space Enter Shift+ArrowLeft Shift+ArrowRight M"
-                        onClick={() => crm.openPerson(relationship.id)}
-                        onKeyDown={rowKeys({
-                          peek: () => crm.openPerson(relationship.id),
-                          open: () => {
-                            if (person)
-                              crm.go(
-                                personPath(person.id, {
-                                  relationshipId: relationship.id,
-                                }),
-                              );
-                          },
-                        })}
+              <StageCards
+                rows={cards}
+                scope={`${crm.organizationId}:${crm.productId}:${stage.id}:${crm.listFilterKey}:${crm.search}:${JSON.stringify(browser.filters)}`}
+              >
+                {(stageRows) =>
+                  stageRows.map((relationship) => {
+                    const name = nameOf(relationship);
+                    const owner = crm.member(relationship.ownerId);
+                    const person = crm.personFor(relationship.id);
+                    const due = relationship.nextStepDueAt;
+                    return (
+                      <article
+                        key={relationship.id}
+                        className="deal-card relationship-card"
+                        data-dragging={
+                          dragging === relationship.id ? "" : undefined
+                        }
+                        draggable
+                        onDragStart={(event) => {
+                          setDragging(relationship.id);
+                          event.dataTransfer?.setData(
+                            dragType,
+                            relationship.id,
+                          );
+                          if (event.dataTransfer)
+                            event.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragEnd={() => {
+                          setDragging("");
+                          setTarget("");
+                        }}
                       >
-                        {name}
-                      </button>
-                      <span
-                        className="row-owner"
-                        title={t.ownedBy.replace("{name}", owner)}
-                      >
-                        <span aria-hidden>{initials(owner)}</span>
-                        <span className="sr-only">
-                          {t.ownedBy.replace("{name}", owner)}
-                        </span>
-                      </span>
-                    </div>
-                    <p className={relationship.nextStep ? "" : "muted"}>
-                      {relationship.nextStep || t.noNextStepShort}
-                    </p>
-                    <small>
-                      {t.dealSize}:{" "}
-                      {formatMoney(
-                        index.facts(relationship.id).amountMinor ?? null,
-                        index.facts(relationship.id).currency ?? "USD",
-                      )}
-                    </small>
-                    {due && (
-                      <small
-                        className={`relationship-due${overdueDay(due, now, crm.timeZone) ? " overdue" : ""}`}
-                      >
-                        {dateLabel(due, crm.timeZone)}
-                      </small>
-                    )}
-                  </article>
-                );
-              })}
+                        <div className="deal-card-head">
+                          <button
+                            type="button"
+                            className="text-button"
+                            data-nav-record={relationship.id}
+                            aria-keyshortcuts="Space Enter Shift+ArrowLeft Shift+ArrowRight M"
+                            onClick={() => crm.openPerson(relationship.id)}
+                            onKeyDown={rowKeys({
+                              peek: () => crm.openPerson(relationship.id),
+                              open: () => {
+                                if (person)
+                                  crm.go(
+                                    personPath(person.id, {
+                                      relationshipId: relationship.id,
+                                    }),
+                                  );
+                              },
+                            })}
+                          >
+                            {name}
+                          </button>
+                          <span
+                            className="row-owner"
+                            title={t.ownedBy.replace("{name}", owner)}
+                          >
+                            <span aria-hidden>{initials(owner)}</span>
+                            <span className="sr-only">
+                              {t.ownedBy.replace("{name}", owner)}
+                            </span>
+                          </span>
+                        </div>
+                        <p className={relationship.nextStep ? "" : "muted"}>
+                          {relationship.nextStep || t.noNextStepShort}
+                        </p>
+                        {index.facts(relationship.id).amountMinor != null && (
+                          <small>
+                            {t.dealSize}:{" "}
+                            {formatMoney(
+                              index.facts(relationship.id).amountMinor ?? null,
+                              index.facts(relationship.id).currency ?? "USD",
+                            )}
+                          </small>
+                        )}
+                        {due && (
+                          <small
+                            className={`relationship-due${overdueDay(due, now, crm.timeZone) ? " overdue" : ""}`}
+                          >
+                            {dateLabel(due, crm.timeZone)}
+                          </small>
+                        )}
+                      </article>
+                    );
+                  })
+                }
+              </StageCards>
             </section>
           );
         })}
       </div>
-      <Pagination page={browser.page} />
       {menu && (
         <StageMenu
           label={t.moveToMenu.replace("{name}", nameOf(menu.relationship))}
@@ -435,6 +446,7 @@ function Board({ productId }: { productId: string }) {
       )}
       {closing && (
         <RecordDialog
+          inline
           title={t.closeStageTitle
             .replace("{name}", nameOf(closing.relationship))
             .replace("{stage}", closing.stage.name)}

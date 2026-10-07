@@ -11,14 +11,16 @@ declaration is not proof of original authorship. When a member's assistant submi
 contacts through verified OAuth MCP, the member, transport, verified client ID and
 grant ID come from authentication. Caller-supplied actor claims cannot override them.
 
-Open **Import attribution** in a contact record or inspector to read the original
+Open **Details → Import attribution** in a contact record or inspector to read the original
 recorded creator visible in the selected product, most recent recorded editor and
 paginated contribution history.
-**Record import source** adds a reviewed declaration to a known contact. People
+**Record import source** opens an inline form for a reviewed declaration on a
+known contact. People
 filters distinguish **Submitted by**, **Declared source**, coverage and multiple
 contributors independently of current ownership. Multiple contributors means more
 than one distinct recorded actor or declared source across visible submissions.
-Edits do not count as imports. Filters respect the selected product.
+Edits do not count as imports. Filters respect the selected product. Archived
+contact records retain readable attribution, with new declarations disabled.
 
 Existing contacts without recorded provenance remain **Unknown**. The migrations
 add tables and constraints without rewriting people, relationships, notes, owners

@@ -34,12 +34,7 @@ import {
   useRecordBrowser,
   useRecordIndex,
 } from "../records/list-browser";
-import {
-  type OutreachTab,
-  outreachPath,
-  outreachTabFor,
-  personPath,
-} from "../routes";
+import { type OutreachTab, outreachPath, outreachTabFor } from "../routes";
 import { EmptyState, ErrorState, LoadingState } from "../ui/states";
 import { SequencesView } from "./sequences-view";
 
@@ -109,10 +104,7 @@ export function OutreachView() {
     (enrollment) => enrollment.person.name,
   );
   if (!tab) return null;
-  const open = (touch: Touch) =>
-    crm.go(
-      personPath(touch.person.id, { relationshipId: touch.relationshipId }),
-    );
+  const open = (touch: Touch) => crm.openPerson(touch.relationshipId);
   const row = (touch: Touch) => (
     <TouchRow
       key={touch.id}
@@ -218,15 +210,6 @@ export function OutreachView() {
           paused: counts.paused,
         }}
       />
-      {drawerTouch && verbs.drawer && (
-        <TouchDrawer
-          key={drawerTouch.id}
-          touch={drawerTouch}
-          edit={verbs.drawer.edit}
-          verbs={verbs}
-          onClose={verbs.closeDrawer}
-        />
-      )}
       {verbs.dialog?.kind === "sent" && (
         <MarkSentDialog
           name={verbs.dialog.touch.person.name}
@@ -267,44 +250,58 @@ export function OutreachView() {
           }
         />
       )}
-      <section
-        aria-label={`${t.outreach}: ${t.outreachTabs[tab]}`}
-        className="outreach-panel"
+      <div
+        className="outreach-workspace"
+        data-editor-open={drawerTouch ? "" : undefined}
       >
-        {outreach.failed && !due && !queue ? (
-          <ErrorState
-            title={t.outreachLoadError}
-            onRetry={() => void outreach.reload()}
-          />
-        ) : loading ? (
-          <LoadingState />
-        ) : (
-          <>
-            {listTab && (
-              <RecordFilters
-                browser={tab === "paused" ? pausedBrowser : browser}
-              />
-            )}
-            {content[tab]()}
-            {listTab && (
-              <Pagination
-                page={tab === "paused" ? pausedBrowser.page : browser.page}
-              />
-            )}
-            {listTab &&
-              !(tab === "paused"
-                ? pausedBrowser.page.total
-                : browser.page.total) &&
-              !(listTab === "sent" && deliveries.items.length) && (
-                <EmptyState
-                  title={emptyCopy(listTab)}
-                  description={t.outreachEmptyDetail}
-                  compact
+        <section
+          aria-label={`${t.outreach}: ${t.outreachTabs[tab]}`}
+          className="outreach-panel"
+        >
+          {outreach.failed && !due && !queue ? (
+            <ErrorState
+              title={t.outreachLoadError}
+              onRetry={() => void outreach.reload()}
+            />
+          ) : loading ? (
+            <LoadingState />
+          ) : (
+            <>
+              {listTab && (
+                <RecordFilters
+                  browser={tab === "paused" ? pausedBrowser : browser}
                 />
               )}
-          </>
+              {content[tab]()}
+              {listTab && (
+                <Pagination
+                  page={tab === "paused" ? pausedBrowser.page : browser.page}
+                />
+              )}
+              {listTab &&
+                !(tab === "paused"
+                  ? pausedBrowser.page.total
+                  : browser.page.total) &&
+                !(listTab === "sent" && deliveries.items.length) && (
+                  <EmptyState
+                    title={emptyCopy(listTab)}
+                    description={t.outreachEmptyDetail}
+                    compact
+                  />
+                )}
+            </>
+          )}
+        </section>
+        {drawerTouch && verbs.drawer && (
+          <TouchDrawer
+            key={drawerTouch.id}
+            touch={drawerTouch}
+            edit={verbs.drawer.edit}
+            verbs={verbs}
+            onClose={verbs.closeDrawer}
+          />
         )}
-      </section>
+      </div>
     </>
   );
 }

@@ -49,6 +49,7 @@ import { OverviewView } from "../src/components/views/overview-view";
 import { PeopleView } from "../src/components/views/people-view";
 import { SequencesView } from "../src/components/views/sequences-view";
 import { SettingsView } from "../src/components/views/settings-view";
+import { contactTab } from "./support/contact-workspace";
 import { usePathname, visit } from "./support/memory-router";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
@@ -297,8 +298,7 @@ test("the routed Connections view loads the active scope, shows callback results
     demoId(1),
   );
   fireEvent.click(screen.getByRole("button", { name: "AI Platform" }));
-  expect(window.location.pathname).toBe("/overview");
-  fireEvent.click(screen.getByRole("link", { name: t.integrations }));
+  expect(window.location.pathname).toBe("/settings/connections");
   await waitFor(() =>
     expect(integrationReads().at(-1)?.searchParams.get("productId")).toBe(
       demoId(10),
@@ -506,7 +506,7 @@ test("creating a person for another product refreshes the full snapshot before o
     target: { value: demoId(10) },
   });
   fireEvent.keyDown(document.body, { key: "c" });
-  const dialog = within(screen.getByRole("dialog", { name: t.addPerson }));
+  const dialog = within(screen.getByRole("region", { name: t.addPerson }));
   await waitFor(() =>
     expect(dialog.getByLabelText(t.name).matches(":disabled")).toBe(false),
   );
@@ -530,9 +530,17 @@ test("creating a person for another product refreshes the full snapshot before o
     key: "Enter",
     ctrlKey: true,
   });
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: t.addPerson })).toBeNull(),
+  );
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("combobox", { name: t.product }) as HTMLSelectElement)
+        .value,
+    ).toBe(demoId(12)),
+  );
   expect(
-    screen.getByRole("link", {
+    await screen.findByRole("link", {
       name: "Fictional cross-product keyboard buyer",
     }),
   ).toBeTruthy();
@@ -583,7 +591,7 @@ test("a fresh workspace opens its first product and offers working contact and i
   expect(screen.getByRole("heading", { name: t.workspaceReady })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: t.addPerson }));
   await waitFor(() =>
-    expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy(),
+    expect(screen.getByRole("region", { name: t.addPerson })).toBeTruthy(),
   );
   await waitFor(() =>
     expect(screen.getByLabelText(t.name).matches(":disabled")).toBe(false),
@@ -827,11 +835,13 @@ test("a reload on a record page keeps the record, its relationship and the revie
   mount(`/people/${demoId(200)}?relationship=${demoId(306)}`);
   const relationship = () =>
     screen.getByRole("button", { name: /API Marketplace/, pressed: true });
+  await contactTab(t.contactWorkspace.details);
   await waitFor(() => expect(relationship()).toBeTruthy());
   cleanup();
   mount();
   expect(window.location.search).toBe(`?relationship=${demoId(306)}`);
   expect(heading("Mira Chen", 2)).toBeTruthy();
+  await contactTab(t.contactWorkspace.details);
   await waitFor(() => expect(relationship()).toBeTruthy());
   cleanup();
   mount(
@@ -855,7 +865,7 @@ test("a reload on a record page keeps the record, its relationship and the revie
     ).value,
   ).toBe(saved?.draft);
   expect(
-    screen.getByRole("button", { name: t.draft }).getAttribute("aria-pressed"),
+    screen.getByRole("tab", { name: t.draft }).getAttribute("aria-selected"),
   ).toBe("true");
   expect(screen.getByRole("heading", { name: saved?.title })).toBeTruthy();
 });
@@ -870,7 +880,13 @@ test("Enter on an action opens its person draft in the inspector", async () => {
   const peek = await screen.findByRole("complementary", {
     name: t.recordDetails,
   });
-  expect(within(peek).queryByRole("link", { name: t.openRecord })).toBeNull();
+  expect(
+    within(peek)
+      .getByRole("link", { name: t.inlineEditing.openFullPage })
+      .getAttribute("href"),
+  ).toBe(
+    `/people/${demoId(200)}?relationship=${demoId(300)}&action=${demoId(600)}`,
+  );
   expect(window.location.pathname).toBe("/actions");
   row.focus();
   fireEvent.keyDown(row, { key: "Enter" });
@@ -940,21 +956,19 @@ test("switching workspace remembers its slug and leaves a record of the old work
   expect(document.cookie).toContain(`gravity-brand=${demoId(13)}`);
 });
 
-test("related work on a record page reveals the meeting in its own view", async () => {
+test("related work opens an editor beside the current record without changing routes", async () => {
   mount(`/people/${demoId(200)}`);
   fireEvent.click(
     await screen.findByRole("button", { name: /Evaluation review/ }),
   );
-  expect(window.location.pathname).toBe("/meetings");
-  const meeting = screen
-    .getByRole("heading", { name: "Evaluation review" })
-    .closest("article");
-  expect(meeting?.classList.contains("record-highlight")).toBe(true);
-  await waitFor(() => expect(document.activeElement).toBe(meeting));
-  act(() => window.history.back());
-  await waitFor(() =>
-    expect(window.location.pathname).toBe(`/people/${demoId(200)}`),
+  expect(window.location.pathname).toBe(`/people/${demoId(200)}`);
+  const editor = await screen.findByRole("region", { name: t.editMeeting });
+  expect(within(editor).getByLabelText(t.meetingTitle)).toHaveProperty(
+    "value",
+    "Evaluation review",
   );
+  fireEvent.click(within(editor).getByRole("button", { name: t.cancel }));
+  expect(window.location.pathname).toBe(`/people/${demoId(200)}`);
 });
 
 test("the workspace menu opens above a collapsed sidebar and still switches organization", async () => {
@@ -1077,6 +1091,7 @@ test("under a remembered brand a person's company opens in the inspector", async
   act(() => visit(`/people/${demoId(200)}`));
   expect(heading("Mira Chen", 2)).toBeTruthy();
   const main = within(screen.getByRole("main"));
+  await contactTab(t.contactWorkspace.details);
   expect(
     await main.findByRole("button", { name: /AI Platform/, pressed: true }),
   ).toBeTruthy();
@@ -1242,7 +1257,7 @@ test("the record page saves, approves and reworks drafts through the same comman
     `/people/${demoId(202)}?relationship=${demoId(302)}&action=${demoId(602)}`,
   );
   persistWrites();
-  fireEvent.click(await screen.findByRole("button", { name: t.draft }));
+  fireEvent.click(await screen.findByRole("tab", { name: t.draft }));
   fireEvent.change(screen.getByRole("textbox", { name: t.draftLabel }), {
     target: { value: "Fictional record page proposal" },
   });
@@ -1345,8 +1360,9 @@ test("a company record stacks its people and opportunities as sibling sections w
     ".record-attributes",
   ) as HTMLElement;
   expect(attributes.querySelector(".related-work")).toBeNull();
-  const sections = [...attributes.children].filter((child) =>
-    child.classList.contains("record-section"),
+  const sections = [...attributes.children].filter(
+    (child) =>
+      child.classList.contains("record-section") && child.querySelector("h3"),
   );
   expect(
     sections.map((section) => section.querySelector("h3")?.textContent),
@@ -1360,7 +1376,7 @@ test("product creation is reachable from sidebar, toolbar, keyboard and commands
   for (const button of buttons) {
     expect(button.textContent).toContain(shortcutLabel("create-product"));
     fireEvent.click(button);
-    const dialog = screen.getByRole("dialog", { name: t.newProduct });
+    const dialog = screen.getByRole("region", { name: t.newProduct });
     expect(within(dialog).getByText(organizations[0].name)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: t.cancel }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1369,17 +1385,19 @@ test("product creation is reachable from sidebar, toolbar, keyboard and commands
   fireEvent.keyDown(search, { key: "P", shiftKey: true });
   expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.keyDown(document.body, { key: "P", shiftKey: true });
-  expect(screen.getByRole("dialog", { name: t.newProduct })).toBeTruthy();
-  fireEvent(
-    screen.getByRole("dialog"),
-    new Event("cancel", { cancelable: true }),
+  expect(screen.getByRole("region", { name: t.newProduct })).toBeTruthy();
+  fireEvent.click(
+    within(screen.getByRole("region", { name: t.newProduct })).getByRole(
+      "button",
+      { name: t.cancel },
+    ),
   );
   fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
   const palette = screen.getByRole("dialog", { name: t.commands });
   fireEvent.click(
     within(palette).getByRole("option", { name: new RegExp(t.newProduct) }),
   );
-  expect(screen.getByRole("dialog", { name: t.newProduct })).toBeTruthy();
+  expect(screen.getByRole("region", { name: t.newProduct })).toBeTruthy();
   const regular = request.getMockImplementation();
   if (!regular) throw new Error("Missing request implementation");
   request.mockImplementation(async (url, init) => {
@@ -1495,16 +1513,16 @@ test("Overview metrics drill into real deals and message history with keyboard n
   fireEvent.click(
     screen.getByRole("button", { name: new RegExp(`^${t.pipelineValue}`) }),
   );
-  const drawer = screen.getByRole("dialog", { name: t.openPipeline });
+  const drawer = screen.getByRole("region", {
+    name: new RegExp(`^${t.openPipeline}`),
+  });
   fireEvent.click(
     within(drawer).getByRole("button", { name: /Cedar workflow pilot/ }),
   );
-  await waitFor(() =>
-    expect(window.location.search).toContain(`deal=${demoId(1100)}`),
-  );
-  expect(screen.getByRole("dialog", { name: t.editOpportunity })).toBeTruthy();
+  await waitFor(() => expect(window.location.pathname).toBe("/overview"));
+  expect(screen.getByRole("region", { name: t.editOpportunity })).toBeTruthy();
   fireEvent.click(
-    within(screen.getByRole("dialog", { name: t.editOpportunity })).getByRole(
+    within(screen.getByRole("region", { name: t.editOpportunity })).getByRole(
       "button",
       { name: t.cancel },
     ),
@@ -1517,7 +1535,9 @@ test("Overview metrics drill into real deals and message history with keyboard n
       name: new RegExp(`^${t.messagesSent}`),
     }),
   );
-  const messages = screen.getByRole("dialog", { name: t.messagesSent });
+  const messages = screen.getByRole("region", {
+    name: new RegExp(`^${t.messagesSent}`),
+  });
   await within(messages).findByRole("button", {
     name: /evaluation workflow we discussed/,
   });
@@ -1543,7 +1563,7 @@ test("deal form retains typed value when currency changes and saves all fields w
       : regular(url, init),
   );
   mount(`/opportunities?deal=${demoId(1100)}`);
-  const dialog = screen.getByRole("dialog", { name: t.editOpportunity });
+  const dialog = screen.getByRole("region", { name: t.editOpportunity });
   const amount = within(dialog).getByLabelText(t.amount);
   await waitFor(() => expect(amount.hasAttribute("disabled")).toBe(false));
   await waitFor(() =>
@@ -1566,7 +1586,7 @@ test("deal form retains typed value when currency changes and saves all fields w
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   await waitFor(() =>
     expect(
-      screen.queryByRole("dialog", { name: t.editOpportunity }),
+      screen.queryByRole("region", { name: t.editOpportunity }),
     ).toBeNull(),
   );
   const saved = (
@@ -1597,13 +1617,13 @@ test("pipeline form creates a second pipeline and refreshes the board", async ()
   );
   mount("/opportunities");
   fireEvent.click(screen.getByRole("button", { name: t.newPipeline }));
-  const dialog = screen.getByRole("dialog", { name: t.newPipeline });
+  const dialog = screen.getByRole("region", { name: t.newPipeline });
   fireEvent.change(within(dialog).getByLabelText(t.name), {
     target: { value: "Fictional enterprise sales" },
   });
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   await waitFor(() =>
-    expect(screen.queryByRole("dialog", { name: t.newPipeline })).toBeNull(),
+    expect(screen.queryByRole("region", { name: t.newPipeline })).toBeNull(),
   );
   expect(
     screen.getByRole("option", { name: /Fictional enterprise sales/ }),

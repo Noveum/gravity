@@ -13,7 +13,8 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { dateLabel, errorText, requestJson } from "./client-api";
-import { submitOnSaveKey, useModalLifecycle } from "./modal-lifecycle";
+import { submitOnSaveKey } from "./modal-lifecycle";
+import { InlineRecordFrame } from "./records/inline-record-frame";
 import { Pagination, useListPage } from "./records/list-browser";
 import { RecordDialog, text } from "./records/record-dialog";
 import { EmptyState } from "./ui/states";
@@ -27,6 +28,7 @@ export function Materials({
   onError,
   timeZone,
   registerCreate,
+  canLeaveEditor,
 }: {
   data: ClientSnapshot;
   organizationId: string;
@@ -36,6 +38,7 @@ export function Materials({
   onError?: (text: string) => void;
   timeZone: string;
   registerCreate?: (run: () => boolean) => () => void;
+  canLeaveEditor?: () => boolean;
 }) {
   const [folderId, setFolderId] = useState("");
   const [stageId, setStageId] = useState("");
@@ -43,8 +46,6 @@ export function Materials({
   const [folderDialog, setFolderDialog] = useState<"rename" | "delete" | null>(
     null,
   );
-  const modal = useRef<HTMLDialogElement>(null);
-  useModalLifecycle(modal, !!dialog);
   const [formProduct, setFormProduct] = useState(
     productId || data.products[0]?.id || "",
   );
@@ -68,6 +69,8 @@ export function Materials({
     `${organizationId}/${productId}/${folderId}/${stageId}`,
   );
   function open(value: typeof dialog) {
+    if (canLeaveEditor && !canLeaveEditor()) return;
+    setFolderDialog(null);
     setFormProduct(productId || data.products[0]?.id || "");
     setError("");
     setDialog(value);
@@ -216,7 +219,12 @@ export function Materials({
               <button
                 type="button"
                 className="ghost"
-                onClick={() => setFolderDialog("rename")}
+                onClick={() => {
+                  if (!canLeaveEditor || canLeaveEditor()) {
+                    setDialog(null);
+                    setFolderDialog("rename");
+                  }
+                }}
               >
                 <Pencil size={14} aria-hidden />
                 {t.renameFolder}
@@ -226,7 +234,12 @@ export function Materials({
                 className="ghost"
                 disabled={!selectedFolderEmpty}
                 title={selectedFolderEmpty ? undefined : t.folderNotEmptyHint}
-                onClick={() => setFolderDialog("delete")}
+                onClick={() => {
+                  if (!canLeaveEditor || canLeaveEditor()) {
+                    setDialog(null);
+                    setFolderDialog("delete");
+                  }
+                }}
               >
                 <Trash2 size={14} aria-hidden />
                 {t.deleteFolder}
@@ -389,6 +402,7 @@ export function Materials({
       </div>
       {folderDialog === "rename" && selectedFolder && (
         <RecordDialog
+          inline
           title={t.renameFolder}
           submitLabel={t.save}
           onClose={() => setFolderDialog(null)}
@@ -408,6 +422,7 @@ export function Materials({
       )}
       {folderDialog === "delete" && selectedFolder && (
         <RecordDialog
+          inline
           title={t.deleteFolder}
           submitLabel={t.delete}
           onClose={() => setFolderDialog(null)}
@@ -419,14 +434,11 @@ export function Materials({
         </RecordDialog>
       )}
       {dialog && (
-        <dialog
-          ref={modal}
-          className="dialog"
-          aria-labelledby="material-dialog-title"
-          onCancel={(event) => {
-            if (busy) event.preventDefault();
-            else setDialog(null);
-          }}
+        <InlineRecordFrame
+          key={dialog}
+          titleId="material-dialog-title"
+          loading={false}
+          busy={busy}
         >
           <div className="section-heading">
             <h2 id="material-dialog-title">
@@ -464,7 +476,12 @@ export function Materials({
                 <>
                   <label>
                     {t.folderName}
-                    <input name="name" required maxLength={100} />
+                    <input
+                      name="name"
+                      data-primary-field
+                      required
+                      maxLength={100}
+                    />
                   </label>
                   <label>
                     {t.parentFolder}
@@ -559,7 +576,7 @@ export function Materials({
               </button>
             </div>
           </form>
-        </dialog>
+        </InlineRecordFrame>
       )}
     </div>
   );

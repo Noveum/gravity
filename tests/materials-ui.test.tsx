@@ -60,7 +60,7 @@ describe("material folders", () => {
     await mountCrm(harness, "/materials");
     await openFolder("Proof & case studies");
     fireEvent.click(screen.getByRole("button", { name: t.renameFolder }));
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("region", {
       name: t.renameFolder,
     });
     const field = within(dialog).getByLabelText(t.folderName);
@@ -78,7 +78,7 @@ describe("material folders", () => {
     await mountCrm(harness, "/materials");
     await openFolder("Proof & case studies");
     fireEvent.click(screen.getByRole("button", { name: t.deleteFolder }));
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("region", {
       name: t.deleteFolder,
     });
     expect(dialog.textContent).toContain(

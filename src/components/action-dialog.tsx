@@ -4,11 +4,8 @@ import t from "@crm/i18n/translations/en.json";
 import { useRef, useState } from "react";
 import { errorText, label, requestJson } from "./client-api";
 import { useDialogSnapshot } from "./dialog-snapshot";
-import {
-  submitOnSaveKey,
-  useModalLifecycle,
-  useReadyFocus,
-} from "./modal-lifecycle";
+import { submitOnSaveKey } from "./modal-lifecycle";
+import { InlineRecordFrame } from "./records/inline-record-frame";
 import { ShortcutHint } from "./ui/shortcut-hint";
 import { LoadingState } from "./ui/states";
 
@@ -33,7 +30,6 @@ export function ActionDialog({
     productId: string;
   }) => Promise<void>;
 }) {
-  const modal = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
   const {
     data,
@@ -49,17 +45,11 @@ export function ActionDialog({
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useModalLifecycle(modal);
-  useReadyFocus(modal, loading);
   return (
-    <dialog
-      ref={modal}
-      className="dialog action-dialog"
-      aria-labelledby="action-dialog-title"
-      onCancel={(e) => {
-        if (busy) e.preventDefault();
-        else onClose();
-      }}
+    <InlineRecordFrame
+      titleId="action-dialog-title"
+      loading={loading}
+      busy={busy}
     >
       <h2 id="action-dialog-title">{t.scheduleAction}</h2>
       <form
@@ -68,7 +58,8 @@ export function ActionDialog({
           e.preventDefault();
           if (submitting.current || loading || loadError) return;
           submitting.current = true;
-          const fields = new FormData(e.currentTarget);
+          const form = e.currentTarget;
+          const fields = new FormData(form);
           setBusy(true);
           setError("");
           try {
@@ -93,8 +84,9 @@ export function ActionDialog({
                 dueAt: new Date(String(fields.get("dueAt"))).toISOString(),
               }),
             });
-            await onCreated(result);
+            form.closest("[data-record-editor]")?.removeAttribute("data-dirty");
             onClose();
+            await onCreated(result);
           } catch (error) {
             setError(errorText(error));
           } finally {
@@ -256,6 +248,6 @@ export function ActionDialog({
           </button>
         </div>
       </form>
-    </dialog>
+    </InlineRecordFrame>
   );
 }

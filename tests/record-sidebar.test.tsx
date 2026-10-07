@@ -18,7 +18,7 @@ const panel = () =>
   within(screen.getByRole("complementary", { name: t.recordDetails }));
 
 describe("records stay in the inspector", () => {
-  test("outreach Enter opens the person while Space opens the touch editor", async () => {
+  test("outreach Enter opens the person while Space opens the inline touch editor", async () => {
     await mountCrm(harness, "/outreach/today");
     const row = await screen.findByRole("button", { name: /^Noor Haddad,/ });
     fireEvent.keyDown(row, { key: "Enter" });
@@ -26,9 +26,10 @@ describe("records stay in the inspector", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(window.location.pathname).toBe("/outreach/today");
     fireEvent.keyDown(row, { key: " " });
-    await screen.findByRole("dialog", {
+    await screen.findByRole("region", {
       name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
     });
+    expect(window.location.pathname).toBe("/outreach/today");
   });
   test("company activity includes completed work and opens its person in place", async () => {
     await mountCrm(harness, "/companies");
@@ -70,11 +71,9 @@ describe("records stay in the inspector", () => {
     await panel().findByRole("heading", { name: "Jonah Reed" });
     expect(screen.getByRole("table")).toBe(list);
     expect(navigations.length).toBe(before);
-    expect(panel().queryByRole("link", { name: t.openRecord })).toBeNull();
-    fireEvent.click(panel().getByRole("button", { name: t.expandInspector }));
-    expect(document.querySelector(".inspector-expanded")).toBeTruthy();
-    fireEvent.click(panel().getByRole("button", { name: t.collapseInspector }));
-    expect(document.querySelector(".inspector-expanded")).toBeNull();
+    expect(
+      panel().getByRole("link", { name: t.inlineEditing.openFullPage }),
+    ).toBeTruthy();
     expect(window.location.pathname).toBe("/people");
     expect(navigations.length).toBe(before);
     expect(

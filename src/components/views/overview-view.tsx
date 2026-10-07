@@ -18,8 +18,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { dateLabel, errorText, requestJson } from "../client-api";
 import { useWorkspaceData } from "../crm/crm-context";
-import { useModalLifecycle } from "../modal-lifecycle";
 import { followUpLabel } from "../outreach/touch-labels";
+import { Pagination, useListPage } from "../records/list-browser";
 
 interface Drill {
   title: string;
@@ -167,10 +167,14 @@ export function OverviewView() {
             <option value="gmail">{t.gmail}</option>
             <option value="linkedin">{t.linkedin}</option>
           </select>
-          <Link className="button primary" href="/opportunities?deal=new">
+          <button
+            type="button"
+            className="primary"
+            onClick={() => crm.openRecordDialog({ kind: "opportunity" })}
+          >
             <Plus size={14} aria-hidden />
             {t.newDeal}
-          </Link>
+          </button>
         </div>
       </div>
       <p className="overview-scope muted">{t.overviewScopeNote}</p>
@@ -192,6 +196,16 @@ export function OverviewView() {
           </button>
         ))}
       </div>
+      {drill && (
+        <ReportDrawer
+          key={`${crm.organizationId}:${crm.productId}:${drill.title}`}
+          drill={drill}
+          from={report.from}
+          through={report.through}
+          channel={channel}
+          onClose={() => setDrill(null)}
+        />
+      )}
       <p className="muted report-note forecast-explanation">
         {t.forecastCoverage
           .replace(
@@ -298,7 +312,15 @@ export function OverviewView() {
             </Link>
           </div>
           {crm.data.pipelines
-            .filter((p) => !crm.productId || p.productId === crm.productId)
+            .filter(
+              (p) =>
+                (!crm.productId || p.productId === crm.productId) &&
+                report.deals.some(
+                  (deal) =>
+                    crm.data.stages.find((stage) => stage.id === deal.stageId)
+                      ?.pipelineId === p.id,
+                ),
+            )
             .map((pipeline) => {
               const deals = report.open.filter(
                 (d) =>
@@ -307,9 +329,16 @@ export function OverviewView() {
               );
               return (
                 <div className="overview-pipeline" key={pipeline.id}>
-                  <Link
+                  <button
+                    type="button"
                     className="pipeline-heading"
-                    href={`/opportunities?pipeline=${pipeline.id}${ownerId ? `&owner=${ownerId}` : ""}`}
+                    onClick={() =>
+                      open(
+                        `${crm.product(pipeline.productId)?.name} / ${pipeline.name}`,
+                        "deals",
+                        deals,
+                      )
+                    }
                   >
                     <span
                       className="product-dot"
@@ -324,7 +353,7 @@ export function OverviewView() {
                     {pipeline.name}
                     <strong>{values(totals(deals))}</strong>
                     <ArrowUpRight size={13} aria-hidden />
-                  </Link>
+                  </button>
                   <div className="stage-chart">
                     {crm.data.stages
                       .filter((s) => s.pipelineId === pipeline.id)
@@ -361,7 +390,7 @@ export function OverviewView() {
                 </div>
               );
             })}
-          {!crm.data.pipelines.length && (
+          {!report.deals.length && (
             <Link href="/opportunities" className="text-button">
               {t.noDealsDescription}
             </Link>
@@ -596,16 +625,6 @@ export function OverviewView() {
           {!report.overdue.length && <p className="muted">{t.noReportRows}</p>}
         </section>
       </div>
-      {drill && (
-        <ReportDrawer
-          key={`${crm.organizationId}:${crm.productId}:${drill.title}`}
-          drill={drill}
-          from={report.from}
-          through={report.through}
-          channel={channel}
-          onClose={() => setDrill(null)}
-        />
-      )}
     </div>
   );
 }
@@ -632,13 +651,16 @@ function ReportDrawer({
   onClose: () => void;
 }) {
   const crm = useWorkspaceData();
-  const modal = useRef<HTMLDialogElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const [page, setPage] = useState(0);
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [more, setMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  useModalLifecycle(modal);
+  useEffect(() => {
+    heading.current?.focus({ preventScroll: true });
+    heading.current?.scrollIntoView({ block: "nearest" });
+  }, []);
   useEffect(() => {
     if (drill.kind !== "messages") return;
     const controller = new AbortController();
@@ -651,7 +673,6 @@ function ReportDrawer({
       from: drill.day ?? from,
       through: drill.day ?? through,
       page: String(page),
-      // Refresh open message reports when the live workspace snapshot changes.
       _snapshot: crm.data.asOf,
     });
     if (crm.productId) q.set("productId", crm.productId);
@@ -695,15 +716,16 @@ function ReportDrawer({
           : drill.kind === "touches"
             ? crm.data.touchStats.filter((r) => ids.has(r.id))
             : [];
+  const rowPage = useListPage<(typeof rows)[number]>(rows, drill.title);
   return (
-    <dialog
-      ref={modal}
-      className="dialog analytics-drawer"
-      aria-labelledby="report-title"
-      onCancel={onClose}
-    >
+    <section className="inline-report" aria-labelledby="report-title">
       <div className="section-heading">
-        <h2 id="report-title">{drill.title}</h2>
+        <h2 ref={heading} tabIndex={-1} id="report-title">
+          {drill.title}{" "}
+          <span className="muted">
+            {drill.kind === "messages" ? "" : rows.length}
+          </span>
+        </h2>
         <button type="button" aria-label={t.close} onClick={onClose}>
           <X size={16} aria-hidden />
         </button>
@@ -717,7 +739,6 @@ function ReportDrawer({
               className="drill-row"
               key={message.id}
               onClick={() => {
-                onClose();
                 crm.openPerson(message.relationshipId);
               }}
             >
@@ -732,22 +753,19 @@ function ReportDrawer({
               </small>
             </button>
           ))
-        : rows.map((row) => (
+        : rowPage.items.map((row) => (
             <button
               type="button"
               className="drill-row"
               key={row.id}
               onClick={() => {
-                onClose();
                 if (drill.kind === "deals")
-                  crm.go(`/opportunities?deal=${row.id}`);
+                  crm.openRecordDialog({ kind: "opportunity", id: row.id });
                 else if (drill.kind === "touches" && "status" in row)
-                  crm.go(
-                    `/outreach/${row.status === "sent" ? "sent" : "today"}?touch=${row.id}`,
-                  );
+                  crm.openPerson(row.relationshipId);
                 else if (drill.kind === "actions")
                   crm.openPerson(row.relationshipId, row.id);
-                else crm.reveal("meetings", row.id);
+                else crm.openRecordDialog({ kind: "meeting", id: row.id });
               }}
             >
               <strong>
@@ -764,7 +782,7 @@ function ReportDrawer({
               <small>
                 {"amountMinor" in row
                   ? row.amountMinor === null
-                    ? t.amountUnknown
+                    ? ""
                     : money(row.amountMinor, row.currency)
                   : "dueAt" in row
                     ? dateLabel(row.dueAt, crm.timeZone)
@@ -777,6 +795,9 @@ function ReportDrawer({
         !(drill.kind === "messages" ? messages.length : rows.length) && (
           <p className="muted">{t.noReportRows}</p>
         )}
+      {drill.kind !== "messages" && rows.length > rowPage.size && (
+        <Pagination page={rowPage} />
+      )}
       {drill.kind === "messages" && (
         <div className="dialog-actions">
           <button
@@ -795,6 +816,6 @@ function ReportDrawer({
           </button>
         </div>
       )}
-    </dialog>
+    </section>
   );
 }

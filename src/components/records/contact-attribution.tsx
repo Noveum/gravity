@@ -153,15 +153,18 @@ export function ContactAttribution({ context }: { context: ClientContext }) {
             )}
           </>
         )}
-        {!context.person?.archivedAt && (
-          <button
-            type="button"
-            disabled={crm.busy}
-            onClick={() => setEditing(true)}
-          >
-            {copy.recordSource}
-          </button>
-        )}
+        {!context.person?.archivedAt &&
+          crm.sourceData?.products.some(
+            (product) => product.id === productId && !product.archivedAt,
+          ) && (
+            <button
+              type="button"
+              disabled={crm.busy}
+              onClick={() => setEditing(true)}
+            >
+              {copy.recordSource}
+            </button>
+          )}
       </details>
       {editing && context.person && (
         <AttributionDialog
@@ -191,6 +194,7 @@ function AttributionDialog({
   return (
     <RecordDialog
       title={copy.recordSource}
+      inline
       submitLabel={t.save}
       onClose={onClose}
       onSubmit={async (fields) => {
@@ -238,7 +242,7 @@ function AttributionDialog({
       <p className="coverage-note">{copy.sourceNote}</p>
       <label>
         {copy.batchLabel}
-        <input name="label" required maxLength={150} />
+        <input name="label" data-primary-field required maxLength={150} />
       </label>
       <label>
         {copy.sourceKind}

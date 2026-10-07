@@ -1,7 +1,7 @@
 # CRM request audit · 7 October 2026
 
 This review checks contact-attribution PR #66 against the preceding CRM requests.
-The branch includes merged PRs #61 and #64; the attribution feature remains
+The branch includes merged PRs #61, #64 and #65; the attribution feature remains
 unmerged and its production migrations have not been applied. This is a source,
 local regression and CI review, not a fresh live-production write qualification.
 
@@ -34,9 +34,19 @@ tests remain part of the full suite. The earlier provider-label and People looku
 review fixes remain present. The tenant lock serializes batch creation; a suggested
 extra conflict fallback is unnecessary while that lock remains in place.
 
+## Latest-main integration
+
+PR #65 landed while this review was underway. Its shared contact workspace and
+inline editing replace the older person/inspector layout. Attribution now lives in
+**Details → Import attribution** in that shared workspace, and its source form stays
+inline. Both transports and all provenance remain unchanged. UI regressions cover
+this placement and the source form after a partial failure. Archived contact
+records also retain readable provenance; new declarations are disabled for
+archived people and products.
+
 ## Validation of this review
 
-The final Node 22 local run passes all 110 test files: 934 tests passed and two
+The pre-merge Node 22 local run passes all 110 test files: 934 tests passed and two
 environment-dependent PostgreSQL tests skipped. TypeScript, Biome and the production
 build pass. The GitHub PostgreSQL job separately exercises the production driver.
 Local browser review confirms toolbar filtering retains Companies, sidebar product

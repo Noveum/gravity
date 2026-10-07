@@ -45,7 +45,7 @@ test("records and files share a persistent resizable inspector", async ({
   await page.getByRole("link", { name: "Mira Chen", exact: true }).click();
   const panel = page.locator("#record-inspector");
   await expect(
-    panel.getByRole("heading", { name: "Mira Chen", exact: true }),
+    panel.getByRole("textbox", { name: "Name", exact: true }),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/people$/);
   const resize = page.getByRole("separator", { name: "Resize detail panel" });
@@ -65,7 +65,7 @@ test("records and files share a persistent resizable inspector", async ({
     .getByRole("link", { name: "Jonah Reed", exact: true })
     .press("Enter");
   await expect(
-    panel.getByRole("heading", { name: "Jonah Reed", exact: true }),
+    panel.getByRole("textbox", { name: "Name", exact: true }),
   ).toBeVisible();
   await expect(list).toHaveAttribute("data-preserved", "true");
   expect((await panel.boundingBox())?.width).toBe(width);
@@ -79,7 +79,7 @@ test("records and files share a persistent resizable inspector", async ({
   await expect(page).toHaveURL(/\/people$/);
   await panel.getByRole("button", { name: /Jonah Reed/ }).click();
   await expect(
-    panel.getByRole("heading", { name: "Jonah Reed", exact: true }),
+    panel.getByRole("textbox", { name: "Name", exact: true }),
   ).toBeVisible();
   await panel.getByRole("button", { name: "Expand detail panel" }).click();
   await expect(page.locator(".workspace-content")).toHaveClass(
@@ -123,7 +123,7 @@ test("records and files share a persistent resizable inspector", async ({
   ).toBeVisible();
   await panel.getByRole("link", { name: "Person", exact: true }).click();
   await expect(
-    panel.getByRole("heading", { name: "Mira Chen", exact: true }),
+    panel.getByRole("textbox", { name: "Name", exact: true }),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/files$/);
   await panel.getByRole("button", { name: "Back to previous record" }).click();
@@ -132,7 +132,7 @@ test("records and files share a persistent resizable inspector", async ({
   ).toBeVisible();
   await panel.getByRole("button", { name: "Edit Markdown" }).click();
   await panel.getByLabel("Markdown source").fill("# Saved in the panel");
-  await panel.getByRole("button", { name: "Save", exact: true }).click();
+  await panel.getByLabel("Markdown source").press("ControlOrMeta+Enter");
   await expect(
     panel.getByRole("heading", { name: "Saved in the panel" }),
   ).toBeVisible();
@@ -146,7 +146,7 @@ test("the inspector stays on the right and resizes on a narrow screen", async ({
   await page.getByRole("link", { name: "Mira Chen", exact: true }).click();
   const panel = page.locator("#record-inspector");
   await expect(
-    panel.getByRole("heading", { name: "Mira Chen", exact: true }),
+    panel.getByRole("textbox", { name: "Name", exact: true }),
   ).toBeVisible();
   const box = await panel.boundingBox();
   if (!box) throw new Error("Inspector missing");

@@ -193,7 +193,7 @@ describe("sending an approved touch", () => {
         name: `${t.touchVerbs.edit}: Amara Stone`,
       }),
     );
-    const drawer = await screen.findByRole("dialog", {
+    const drawer = await screen.findByRole("region", {
       name: t.draftEditorTitle.replace("{name}", "Amara Stone"),
     });
     fireEvent.click(
@@ -285,7 +285,7 @@ describe("sending an approved follow-up", () => {
         `/people/${demoId(202)}?relationship=${demoId(302)}&action=${demoId(602)}`,
         { demo: false },
       );
-      fireEvent.click(await screen.findByRole("button", { name: t.draft }));
+      fireEvent.click(await screen.findByRole("tab", { name: t.draft }));
       expect(
         await screen.findByText(t.errors.SOURCE_NOT_SENDABLE),
       ).toBeTruthy();
@@ -312,7 +312,7 @@ describe("sending an approved follow-up", () => {
       `/people/${demoId(202)}?relationship=${demoId(302)}&action=${demoId(602)}`,
       { demo: false },
     );
-    fireEvent.click(await screen.findByRole("button", { name: t.draft }));
+    fireEvent.click(await screen.findByRole("tab", { name: t.draft }));
     fireEvent.click(
       await screen.findByRole("button", { name: t.touchVerbs.send }),
     );

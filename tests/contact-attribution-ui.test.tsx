@@ -6,12 +6,15 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { eq } from "drizzle-orm";
 import { expect, test, vi } from "vitest";
+import { personSchema } from "../packages/core/crm";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { requestJson } from "../src/components/client-api";
-import { installCrmHarness, mountCrm } from "./support/crm-harness";
+import { contactTab } from "./support/contact-workspace";
+import { installCrmHarness, mountCrm, principal } from "./support/crm-harness";
 import { visit } from "./support/memory-router";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
@@ -24,6 +27,7 @@ const harness = installCrmHarness();
 
 test("recording a declared source preserves unknown creator and owner, and filters independently of ownership", async () => {
   await mountCrm(harness, `/people/${demoId(200)}`);
+  await contactTab(t.contactWorkspace.details);
   const section = await screen.findByRole("region", {
     name: t.attribution.title,
   });
@@ -36,7 +40,7 @@ test("recording a declared source preserves unknown creator and owner, and filte
   fireEvent.click(
     within(section).getByRole("button", { name: t.attribution.recordSource }),
   );
-  const dialog = await screen.findByRole("dialog", {
+  const dialog = await screen.findByRole("region", {
     name: t.attribution.recordSource,
   });
   fireEvent.change(within(dialog).getByLabelText(t.attribution.batchLabel), {
@@ -50,7 +54,11 @@ test("recording a declared source preserves unknown creator and owner, and filte
     { target: { value: "row-7" } },
   );
   fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("region", { name: t.attribution.recordSource }),
+    ).toBeNull(),
+  );
   await screen.findByText("Reviewed fictional list");
   const [event] = await harness.local.db.select().from(s.contactContributions);
   expect(event).toMatchObject({
@@ -111,6 +119,7 @@ test("paginated history appends once and switching product discards the old page
     },
   ]);
   await mountCrm(harness, `/people/${demoId(200)}`);
+  await contactTab(t.contactWorkspace.details);
   const section = await screen.findByRole("region", {
     name: t.attribution.title,
   });
@@ -129,6 +138,7 @@ test("paginated history appends once and switching product discards the old page
   fireEvent.click(
     screen.getByRole("button", { name: "API Marketplace · Buyer" }),
   );
+  await contactTab(t.contactWorkspace.details);
   const changed = await screen.findByRole("region", {
     name: t.attribution.title,
   });
@@ -139,6 +149,7 @@ test("paginated history appends once and switching product discards the old page
 
 test("partial failures keep exact retry keys but allow corrected batch details", async () => {
   await mountCrm(harness, `/people/${demoId(200)}`);
+  await contactTab(t.contactWorkspace.details);
   const section = await screen.findByRole("region", {
     name: t.attribution.title,
   });
@@ -146,7 +157,7 @@ test("partial failures keep exact retry keys but allow corrected batch details",
   fireEvent.click(
     within(section).getByRole("button", { name: t.attribution.recordSource }),
   );
-  const dialog = await screen.findByRole("dialog", {
+  const dialog = await screen.findByRole("region", {
     name: t.attribution.recordSource,
   });
   const ui = within(dialog);
@@ -204,9 +215,39 @@ test("partial failures keep exact retry keys but allow corrected batch details",
     target: { value: "Corrected fictional list" },
   });
   fireEvent.click(ui.getByRole("button", { name: t.save }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("region", { name: t.attribution.recordSource }),
+    ).toBeNull(),
+  );
   expect(keys[2]).not.toBe(keys[0]);
   expect(await screen.findByText("Corrected fictional list")).toBeTruthy();
   const events = await harness.local.db.select().from(s.contactContributions);
   expect(events).toHaveLength(1);
+});
+
+test("archived contact records retain readable provenance without an import editor", async () => {
+  const contact = await harness.service.createPerson(
+    principal,
+    personSchema.parse({
+      organizationId: demoId(1),
+      productId: demoId(10),
+      name: "Archived fictional import",
+      review: false,
+    }),
+  );
+  await harness.local.db
+    .update(s.people)
+    .set({ archivedAt: new Date() })
+    .where(eq(s.people.id, contact.personId));
+  await mountCrm(harness, `/people/${contact.personId}`);
+  const section = await screen.findByRole("region", {
+    name: t.attribution.title,
+  });
+  fireEvent.click(within(section).getByText(t.attribution.title));
+  await within(section).findByText(t.attribution.created);
+  expect(within(section).getAllByText("Alex Morgan").length).toBeGreaterThan(0);
+  expect(
+    within(section).queryByRole("button", { name: t.attribution.recordSource }),
+  ).toBeNull();
 });

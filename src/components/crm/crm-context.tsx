@@ -27,9 +27,15 @@ import {
 import { useToasts } from "../ui/toaster";
 import { rememberBrand, rememberWorkspace } from "../workspace-preference";
 import { DraftBuffersProvider, useDraftBufferActions } from "./draft-buffers";
+import { LocalRecordVersions } from "./local-record-versions";
 import { isAccessError, useLiveSnapshot } from "./use-live-snapshot";
 
-export type RecordTab = "timeline" | "evidence" | "draft";
+export type RecordTab =
+  | "timeline"
+  | "evidence"
+  | "draft"
+  | "context"
+  | "details";
 export interface Peek {
   relationshipId: string;
   personId: string;
@@ -125,7 +131,7 @@ function useCrmState({
   const [tab, setTab] = useState<RecordTab>("timeline");
   const [expanded, setExpanded] = useState(false);
   const [searchState, setSearchState] = useState({ path: pathname, text: "" });
-  const [personDialog, setPersonDialog] = useState(false);
+  const [personDialog, setPersonDialogState] = useState(false);
   const [recordDialog, setRecordDialog] = useState<RecordDialogState | null>(
     null,
   );
@@ -143,8 +149,8 @@ function useCrmState({
   const origin = useRef<Origin | null>(null);
   const rowFocus = useRef("");
   const [busy, setBusy] = useState(false);
-  const [focusedRecord, setFocusedRecord] = useState({ path: "", id: "" });
   const mutating = useRef(false);
+  const localVersions = useRef(new LocalRecordVersions());
   const returnFocus = useRef<HTMLElement | null>(null);
   const titleFocus = useRef("");
   const draftBuffers = useDraftBufferActions();
@@ -154,6 +160,7 @@ function useCrmState({
     setPeekState((current) => ({ ...current, ...noPeek }));
     setRecordHistory([]);
     clearDrafts();
+    localVersions.current.clear();
     contextCache.current.clear();
   }, [clearDrafts]);
   const live = useLiveSnapshot({
@@ -186,8 +193,14 @@ function useCrmState({
       : emptySelection;
   const setSelection = (next: SelectionState) =>
     setSelectionState({ path: pathname, selection: next });
-  const setActionDialog = (open: boolean, relationshipId = "") =>
+  const setActionDialog = (open: boolean, relationshipId = "") => {
+    if (open && !canLeaveEditor()) return;
     setActionDialogState({ open, relationshipId: open ? relationshipId : "" });
+  };
+  const setPersonDialog = (open: boolean) => {
+    if (open && !canLeaveEditor()) return;
+    setPersonDialogState(open);
+  };
   const setSearch = (text: string) => setSearchState({ path: pathname, text });
   const currentOrg =
     sourceData?.organization?.id === organizationId
@@ -202,7 +215,21 @@ function useCrmState({
   );
   const timeZone = currentOrg?.timezone || "UTC";
 
+  function canLeaveEditor() {
+    const dirty = document.querySelector<HTMLElement>("[data-dirty='true']");
+    if (!dirty) return true;
+    dirty.querySelector<HTMLElement>("input, textarea, select")?.focus();
+    notify(t.inlineEditing.finishEditing, "neutral");
+    return false;
+  }
   function showPeek(next: Peek, path = pathname) {
+    if (
+      Object.keys(noPeek).some(
+        (key) => next[key as keyof Peek] !== peek[key as keyof Peek],
+      ) &&
+      !canLeaveEditor()
+    )
+      return;
     if (path !== peekState.path) setExpanded(false);
     setPeekState({ path, ...next });
   }
@@ -265,12 +292,15 @@ function useCrmState({
     }
     return false;
   }
+  const navigation = useRef<(href: string) => void>(() => {});
   function go(href: string) {
+    if (!canLeaveEditor()) return;
     if (openRecord(href)) return;
     rememberOrigin(href);
     titleFocus.current = href.split("?")[0] ?? href;
     router.push(href);
   }
+  navigation.current = go;
   function leaveRecord() {
     if (!route?.recordId) return false;
     const back =
@@ -317,9 +347,11 @@ function useCrmState({
     go(sectionPath(section));
   }
   function switchOrganization(id: string) {
+    if (!canLeaveEditor()) return;
     resetRecordState();
     fetchGeneration.current++;
     draftBuffers.clear();
+    localVersions.current.clear();
     contextCache.current.clear();
     setOrganizationId(id);
     setProductId("");
@@ -336,6 +368,7 @@ function useCrmState({
     }
   }
   function switchProduct(id: string) {
+    if (!canLeaveEditor()) return;
     resetRecordState();
     setProductId(id);
     rememberBrand(id);
@@ -345,6 +378,7 @@ function useCrmState({
       setRecordHistory((history) => [...history.slice(-19), peek]);
   }
   function openPerson(relationshipId: string, actionId = "", path = pathname) {
+    if (!canLeaveEditor()) return;
     if (
       path === pathname &&
       (relationshipId !== peek.relationshipId ||
@@ -368,6 +402,7 @@ function useCrmState({
     relationshipId = "",
     actionId = "",
   ) {
+    if (!canLeaveEditor()) return;
     const relationships =
       sourceData?.relationships.filter((item) => item.personId === personId) ??
       [];
@@ -393,6 +428,7 @@ function useCrmState({
     }
   }
   function openCompany(companyId: string) {
+    if (!canLeaveEditor()) return;
     if (
       peek.companyId !== companyId ||
       peek.relationshipId ||
@@ -403,6 +439,7 @@ function useCrmState({
     showPeek({ ...noPeek, companyId });
   }
   function openFile(fileId: string, fileProductId: string) {
+    if (!canLeaveEditor()) return;
     if (peek.fileId !== fileId || peek.fileProductId !== fileProductId)
       rememberRecord();
     showPeek({
@@ -413,21 +450,60 @@ function useCrmState({
   }
   function previousRecord() {
     const previous = recordHistory.at(-1);
-    if (!previous) return;
+    if (!previous || !canLeaveEditor()) return;
     setRecordHistory(recordHistory.slice(0, -1));
     showPeek(previous);
     setTab("timeline");
   }
-  function closePeek() {
+  function closePeek(force = false) {
+    if (
+      !force &&
+      document.querySelector("#record-inspector [data-dirty='true']")
+    ) {
+      document
+        .querySelector<HTMLElement>(
+          "#record-inspector [data-dirty='true'] input, #record-inspector [data-dirty='true'] textarea",
+        )
+        ?.focus();
+      notify(t.inlineEditing.finishEditing, "neutral");
+      return;
+    }
+    setRecordDialog(null);
+    setPersonDialog(false);
+    setActionDialog(false);
     returnFocus.current?.focus();
     setPeekState((current) => ({ ...current, ...noPeek }));
     setRecordHistory([]);
     setExpanded(false);
   }
+  function openRecordDialog(next: RecordDialogState) {
+    if (!canLeaveEditor()) return false;
+    if (next.kind === "person" && next.id) {
+      openPersonRecord(next.id);
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLElement>("#record-inspector [data-inline-field]")
+          ?.focus(),
+      );
+      return true;
+    }
+    if (next.kind === "company" && next.id) {
+      openCompany(next.id);
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLElement>("#record-inspector [data-inline-field]")
+          ?.focus(),
+      );
+      return true;
+    }
+    setRecordDialog(next);
+    return true;
+  }
   function reveal(section: "meetings" | "opportunities", id: string) {
-    const path = sectionPath(section);
-    setFocusedRecord({ path, id });
-    router.push(path);
+    openRecordDialog({
+      kind: section === "meetings" ? "meeting" : "opportunity",
+      id,
+    });
   }
   async function mutate(body: object) {
     return (await send(body)).ok;
@@ -461,7 +537,31 @@ function useCrmState({
       if (activeOrganization.current !== submittedOrganization)
         return { ok: true, result };
       fetchGeneration.current++;
-      const changed = body as { operation?: string; actionId?: string };
+      const changed = body as {
+        operation?: string;
+        actionId?: string;
+        version?: number;
+      };
+      if (
+        typeof changed.version === "number" &&
+        [
+          "person-update",
+          "company",
+          "record-metadata",
+          "relationship",
+        ].includes(changed.operation ?? "")
+      ) {
+        const record = (
+          changed.operation === "record-metadata"
+            ? (result as { record: { id: string; version: number } }).record
+            : result
+        ) as { id: string; version: number };
+        localVersions.current.remember(
+          submittedOrganization,
+          changed.version,
+          record,
+        );
+      }
       if (changed.operation === "plan") {
         const updated = result as Action[];
         for (const action of updated)
@@ -627,11 +727,11 @@ function useCrmState({
     personDialog,
     setPersonDialog,
     recordDialog,
-    openRecordDialog: (next: RecordDialogState) => {
-      setRecordDialog(next);
-      return true;
-    },
+    openRecordDialog,
     closeRecordDialog: () => setRecordDialog(null),
+    currentRecord: <T extends { id: string; version: number }>(record: T) =>
+      localVersions.current.current(organizationId, record),
+    canLeaveEditor,
     actionDialog: actionDialog.open,
     actionDialogRelationship: actionDialog.relationshipId,
     setActionDialog,
@@ -647,9 +747,9 @@ function useCrmState({
     leaveRecord,
     rememberOrigin,
     rowFocus,
-    focusedRecord: focusedRecord.path === pathname ? focusedRecord.id : "",
+    focusedRecord: "",
     reveal,
-    go,
+    go: (href: string) => navigation.current(href),
     goToSection,
     titleFocus,
     returnFocus: returnFocus as RefObject<HTMLElement | null>,

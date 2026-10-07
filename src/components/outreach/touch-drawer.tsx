@@ -6,8 +6,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { dateLabel, errorText, requestJson } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { usePersonContext } from "../crm/record-context";
-import { submitOnSaveKey, useModalLifecycle } from "../modal-lifecycle";
-import { personPath } from "../routes";
+import { submitOnSaveKey } from "../modal-lifecycle";
 import { hasMergeFields, mergeParts } from "./merge-fields";
 import { type Touch, useOutreachSend } from "./outreach-data";
 import { followUpLabel, gateReason, mergePerson } from "./touch-labels";
@@ -15,7 +14,6 @@ import type { useTouchVerbs } from "./use-touch-verbs";
 
 type Context = JsonValue<TouchContext>;
 type Saved = { id: string; version: number; status: string };
-const unsaved = new Map<string, string>();
 
 function useTouchContext(touchId: string, version: number) {
   const { organizationId, notify, timeZone } = useCrm();
@@ -51,15 +49,22 @@ export function TouchDrawer({
 }) {
   const crm = useCrm();
   const send = useOutreachSend();
-  const modal = useRef<HTMLDialogElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const titleId = useId();
-  const [draft, setDraft] = useState(
-    () => unsaved.get(touch.id) ?? touch.draft,
-  );
+  const [editing, setEditing] = useState<{
+    text: string;
+    version: number;
+  } | null>(null);
+  const [accepted, setAccepted] = useState<{
+    text: string;
+    version: number;
+  } | null>(null);
+  const submitting = useRef(false);
+  const current =
+    accepted && accepted.version > touch.version ? accepted.text : touch.draft;
+  const draft = editing?.text ?? current;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  useModalLifecycle(modal);
   useEffect(() => {
     if (edit) field.current?.focus();
   }, [edit]);
@@ -74,40 +79,46 @@ export function TouchDrawer({
   const earlier = (context?.history ?? []).filter(
     (item) => item.id !== touch.id && item.stepNumber < touch.stepNumber,
   );
-  const changed = draft !== touch.draft;
+  const changed = editing !== null;
   const name = touch.person.name;
   async function save() {
-    if (saving || !changed) return;
+    if (submitting.current || !editing) return;
+    submitting.current = true;
     setSaving(true);
     setError("");
-    const result = await verbs.enqueue(() =>
-      send<Saved>({
-        operation: "draft",
-        touchId: touch.id,
-        version: verbs.versionOf(touch),
-        draft,
-      }),
-    );
-    setSaving(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
+    try {
+      const result = await verbs.enqueue(() =>
+        send<Saved>({
+          operation: "draft",
+          touchId: touch.id,
+          version: editing.version,
+          draft: editing.text,
+        }),
+      );
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      verbs.remember(touch, result.result.version);
+      setAccepted({ text: editing.text, version: result.result.version });
+      setEditing(null);
+      crm.notify(
+        touch.status === "approved" && result.result.status !== "approved"
+          ? t.draftSavedApprovalCleared
+          : t.draftSaved,
+        "success",
+      );
+    } finally {
+      submitting.current = false;
+      setSaving(false);
     }
-    verbs.remember(touch, result.result.version);
-    unsaved.delete(touch.id);
-    crm.notify(
-      touch.status === "approved" && result.result.status !== "approved"
-        ? t.draftSavedApprovalCleared
-        : t.draftSaved,
-      "success",
-    );
   }
   return (
-    <dialog
-      ref={modal}
-      className="dialog touch-drawer"
+    <section
+      className="touch-drawer inline-touch-editor"
+      data-record-editor
+      data-dirty={changed || saving || undefined}
       aria-labelledby={titleId}
-      onCancel={onClose}
     >
       <div className="touch-drawer-main">
         <header className="touch-drawer-head">
@@ -143,9 +154,15 @@ export function TouchDrawer({
               ref={field}
               rows={9}
               value={draft}
+              disabled={saving}
+              maxLength={20000}
               onChange={(event) => {
-                setDraft(event.target.value);
-                unsaved.set(touch.id, event.target.value);
+                const text = event.target.value;
+                setEditing((previous) => ({
+                  text,
+                  version: previous?.version ?? verbs.versionOf(touch),
+                }));
+                setError("");
               }}
             />
           </label>
@@ -176,6 +193,18 @@ export function TouchDrawer({
           {error && <p role="alert">{error}</p>}
           <div className="dialog-actions touch-draft-actions">
             <span className="muted field-hint">{t.draftSaveHint}</span>
+            {changed && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  setEditing(null);
+                  setError("");
+                }}
+              >
+                {t.cancel}
+              </button>
+            )}
             <button
               type="submit"
               className="primary"
@@ -203,30 +232,44 @@ export function TouchDrawer({
               {t.touchVerbs.send}
             </button>
           )}
-          <button type="button" onClick={() => verbs.askSent(touch)}>
+          <button
+            type="button"
+            disabled={changed || saving}
+            onClick={() => verbs.askSent(touch)}
+          >
             {t.touchVerbs.sent}
           </button>
-          <button type="button" onClick={() => verbs.askSkip(touch)}>
+          <button
+            type="button"
+            disabled={changed || saving}
+            onClick={() => verbs.askSkip(touch)}
+          >
             {t.touchVerbs.skip}
           </button>
-          <button type="button" onClick={() => verbs.snooze(touch)}>
+          <button
+            type="button"
+            disabled={changed || saving}
+            onClick={() => verbs.snooze(touch)}
+          >
             {t.touchVerbs.snooze}
           </button>
           <button
             type="button"
             className="ghost"
             onClick={() => {
+              if (!crm.canLeaveEditor()) return;
               onClose();
-              crm.go(
-                personPath(touch.person.id, {
-                  relationshipId: touch.relationshipId,
-                }),
-              );
+              crm.openPerson(touch.relationshipId);
             }}
           >
             {t.openPerson}
           </button>
-          <button type="button" className="ghost" onClick={onClose}>
+          <button
+            type="button"
+            className="ghost"
+            disabled={saving}
+            onClick={onClose}
+          >
             {t.close}
           </button>
         </div>
@@ -282,6 +325,6 @@ export function TouchDrawer({
           </>
         )}
       </aside>
-    </dialog>
+    </section>
   );
 }

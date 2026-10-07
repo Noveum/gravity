@@ -98,6 +98,19 @@ export function ActionsView() {
                   type="button"
                   key={action.id}
                   className="action-row"
+                  aria-label={[
+                    isSelected ? t.selected : "",
+                    person?.name,
+                    companyFor(person?.id ?? "")?.name,
+                    action.title,
+                    product(action.productId)?.name,
+                    label(action.kind),
+                    member(action.ownerId),
+                    label(action.owedBy),
+                    dateLabel(action.dueAt, crm.timeZone),
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                   data-nav-record={action.id}
                   data-action-id={action.id}
                   data-selected={isSelected || undefined}
@@ -125,19 +138,27 @@ export function ActionsView() {
                   <span className="row-avatar" aria-hidden>
                     {initials(person?.name ?? "?")}
                   </span>
-                  <span className="row-name">{person?.name}</span>
-                  <span className="row-company">
-                    {companyFor(person?.id ?? "")?.name}
+                  <span className="row-main">
+                    <span className="row-action" title={action.title}>
+                      {action.title}
+                    </span>
+                    <span className="row-subtitle">
+                      <span className="row-name">{person?.name}</span>
+                      <span className="row-company">
+                        {companyFor(person?.id ?? "")?.name}
+                      </span>
+                      {action.status === "blocked" && (
+                        <span className="badge warning">{t.blocked}</span>
+                      )}
+                    </span>
                   </span>
-                  <span className="row-action">{action.title}</span>
-                  <span className="row-deal-size">
-                    {formatMoney(
-                      index.facts(action.relationshipId).amountMinor ?? null,
-                      index.facts(action.relationshipId).currency ?? "USD",
-                    )}
-                  </span>
-                  {action.status === "blocked" && (
-                    <span className="badge warning">{t.blocked}</span>
+                  {index.facts(action.relationshipId).amountMinor != null && (
+                    <span className="row-deal-size">
+                      {formatMoney(
+                        index.facts(action.relationshipId).amountMinor ?? null,
+                        index.facts(action.relationshipId).currency ?? "USD",
+                      )}
+                    </span>
                   )}
                   <span className="row-meta">
                     <span className="row-product">

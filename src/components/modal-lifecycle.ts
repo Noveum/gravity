@@ -14,8 +14,44 @@ export function useModalLifecycle(
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
+    let edited = false;
+    const markEdited = (event: Event) => {
+      const field = event.target;
+      if (
+        (field instanceof HTMLInputElement &&
+          field.type !== "search" &&
+          !field.readOnly) ||
+        (field instanceof HTMLTextAreaElement && !field.readOnly) ||
+        field instanceof HTMLSelectElement
+      )
+        edited = true;
+    };
+    const backdrop = (event: MouseEvent) => {
+      if (
+        event.target !== dialog ||
+        edited ||
+        dialog.matches("[data-dirty='true']") ||
+        dialog.querySelector("[data-dirty='true']")
+      )
+        return;
+      const box = dialog.getBoundingClientRect();
+      if (
+        event.clientX >= box.left &&
+        event.clientX <= box.right &&
+        event.clientY >= box.top &&
+        event.clientY <= box.bottom
+      )
+        return;
+      dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
+    };
+    dialog.addEventListener("input", markEdited);
+    dialog.addEventListener("change", markEdited);
+    dialog.addEventListener("click", backdrop);
     if (!dialog.open) dialog.showModal();
     return () => {
+      dialog.removeEventListener("input", markEdited);
+      dialog.removeEventListener("change", markEdited);
+      dialog.removeEventListener("click", backdrop);
       if (dialog.open) dialog.close();
       if (previous?.isConnected && !document.querySelector("dialog[open]"))
         previous.focus();
@@ -40,7 +76,8 @@ export function submitOnSaveKey(event: React.KeyboardEvent<HTMLFormElement>) {
   const modified = event.metaKey || event.ctrlKey;
   if (
     !modified &&
-    (!event.currentTarget.closest("dialog") || !plainSaveAllowed(event.target))
+    (!event.currentTarget.closest("dialog, [data-record-editor]") ||
+      !plainSaveAllowed(event.target))
   )
     return;
   event.preventDefault();

@@ -4,11 +4,8 @@ import t from "@crm/i18n/translations/en.json";
 import { useRef, useState } from "react";
 import { errorText, requestJson } from "./client-api";
 import { useDialogSnapshot } from "./dialog-snapshot";
-import {
-  submitOnSaveKey,
-  useModalLifecycle,
-  useReadyFocus,
-} from "./modal-lifecycle";
+import { submitOnSaveKey } from "./modal-lifecycle";
+import { InlineRecordFrame } from "./records/inline-record-frame";
 import { ShortcutHint } from "./ui/shortcut-hint";
 import { LoadingState } from "./ui/states";
 
@@ -28,7 +25,6 @@ export function PersonDialog({
     productId: string;
   }) => Promise<void>;
 }) {
-  const modal = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
   const {
     data,
@@ -39,17 +35,11 @@ export function PersonDialog({
   const [existing, setExisting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useModalLifecycle(modal);
-  useReadyFocus(modal, loading);
   return (
-    <dialog
-      ref={modal}
-      className="dialog"
-      aria-labelledby="person-dialog-title"
-      onCancel={(event) => {
-        if (busy) event.preventDefault();
-        else onClose();
-      }}
+    <InlineRecordFrame
+      titleId="person-dialog-title"
+      loading={loading}
+      busy={busy}
     >
       <h2 id="person-dialog-title">{t.addPerson}</h2>
       <div className="tabs">
@@ -83,7 +73,8 @@ export function PersonDialog({
           event.preventDefault();
           if (submitting.current || loading || loadError) return;
           submitting.current = true;
-          const fields = new FormData(event.currentTarget);
+          const form = event.currentTarget;
+          const fields = new FormData(form);
           setBusy(true);
           setError("");
           try {
@@ -111,8 +102,9 @@ export function PersonDialog({
                 channel: fields.get("channel"),
               }),
             });
-            await onCreated(result);
+            form.closest("[data-record-editor]")?.removeAttribute("data-dirty");
             onClose();
+            await onCreated(result);
           } catch (error) {
             setError(errorText(error));
           } finally {
@@ -242,6 +234,6 @@ export function PersonDialog({
           </button>
         </div>
       </form>
-    </dialog>
+    </InlineRecordFrame>
   );
 }

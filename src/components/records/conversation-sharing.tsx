@@ -2,9 +2,9 @@
 import type { ClientContext } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { LockKeyhole, Share2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { label } from "../client-api";
-import { submitOnSaveKey, useModalLifecycle } from "../modal-lifecycle";
+import { RecordDialog } from "./record-dialog";
 
 type Conversation = ClientContext["conversations"][number];
 export function ConversationSharing({
@@ -21,7 +21,7 @@ export function ConversationSharing({
   onChange: (
     source: Conversation,
     visibility: "private" | "product",
-  ) => Promise<boolean>;
+  ) => Promise<string | null>;
 }) {
   const [selected, setSelected] = useState<Conversation | null>(null);
   const owned = conversations.filter((source) => source.ownerId === userId);
@@ -49,7 +49,7 @@ export function ConversationSharing({
           </div>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || !!selected}
             onClick={() => setSelected(source)}
           >
             {source.visibility === "private" ? (
@@ -88,63 +88,24 @@ function SharingDialog({
   onChange: (
     source: Conversation,
     visibility: "private" | "product",
-  ) => Promise<boolean>;
+  ) => Promise<string | null>;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const pending = useRef(false);
-  const [submitting, setSubmitting] = useState(false);
-  useModalLifecycle(dialog);
   const sharing = source.visibility === "private";
-  const disabled = busy || submitting;
   return (
-    <dialog
-      ref={dialog}
-      aria-labelledby="thread-sharing-title"
-      aria-describedby="thread-sharing-description"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!disabled) onClose();
-      }}
+    <RecordDialog
+      inline
+      title={sharing ? t.shareThread : t.unshareThread}
+      submitLabel={sharing ? t.shareThread : t.unshareThread}
+      loading={busy}
+      onClose={onClose}
+      onSubmit={() => onChange(source, sharing ? "product" : "private")}
     >
-      <form
-        onKeyDown={submitOnSaveKey}
-        onSubmit={async (event) => {
-          event.preventDefault();
-          if (pending.current || busy) return;
-          pending.current = true;
-          setSubmitting(true);
-          try {
-            if (await onChange(source, sharing ? "product" : "private"))
-              onClose();
-          } finally {
-            pending.current = false;
-            setSubmitting(false);
-          }
-        }}
-      >
-        <h2 id="thread-sharing-title">
-          {sharing ? t.shareThread : t.unshareThread}
-        </h2>
-        <p id="thread-sharing-description">
-          {(sharing
-            ? t.shareThreadDescription
-            : t.unshareThreadDescription
-          ).replace("{product}", productName)}
-        </p>
-        <div className="button-row">
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={onClose}
-            data-modal-cancel
-          >
-            {t.cancel}
-          </button>
-          <button type="submit" disabled={disabled} className="primary">
-            {sharing ? t.shareThread : t.unshareThread}
-          </button>
-        </div>
-      </form>
-    </dialog>
+      <p>
+        {(sharing
+          ? t.shareThreadDescription
+          : t.unshareThreadDescription
+        ).replace("{product}", productName)}
+      </p>
+    </RecordDialog>
   );
 }

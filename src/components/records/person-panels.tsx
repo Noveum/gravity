@@ -2,7 +2,7 @@
 import type { ClientContext, ClientSnapshot } from "@crm/core/dto";
 import { shortcutFor } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
-import { ArrowUpRight } from "lucide-react";
+import { Check } from "lucide-react";
 import { useState } from "react";
 import { dateLabel, label } from "../client-api";
 import { type RecordTab, useCrm } from "../crm/crm-context";
@@ -11,6 +11,8 @@ import { keyInput } from "../keyboard-navigation";
 import { SendDialog } from "../outreach/send-dialog";
 import { initials } from "../shell/workspace-menu";
 import { ShortcutHint } from "../ui/shortcut-hint";
+import { PersonFields } from "./contact-fields";
+import { ConversationHistory } from "./conversation-history";
 import { ConversationSharing } from "./conversation-sharing";
 import { RecordText } from "./record-text";
 import { RelationshipContext } from "./relationship-context";
@@ -37,24 +39,27 @@ export function PersonProfile({
   company,
   onCompany,
   recordHeading = false,
+  person,
 }: {
   name: string;
   title: string | null;
   company: { id: string; name: string } | null | undefined;
   onCompany: (companyId: string) => void;
   recordHeading?: boolean;
+  person?: NonNullable<ClientContext["person"]>;
 }) {
   return (
     <div className="profile">
       <span className="profile-avatar">{initials(name)}</span>
       <div>
         <h2
+          className={person ? "sr-only" : undefined}
           tabIndex={recordHeading ? -1 : undefined}
           data-record-heading={recordHeading ? "" : undefined}
         >
           {name}
         </h2>
-        <p>{title}</p>
+        {person ? <PersonFields person={person} profile /> : <p>{title}</p>}
         <small>
           {company && (
             <button
@@ -113,86 +118,70 @@ export function PersonActivity({
   context,
   action,
   draft,
+  hideTabs = false,
+  mode,
 }: {
   context: ClientContext;
   action: Action | undefined;
   draft: DraftState;
+  hideTabs?: boolean;
+  mode?: RecordTab;
 }) {
-  const {
-    tab,
-    setTab,
-    timeZone,
-    userId,
-    product,
-    mutate,
-    busy,
-    organizationId,
-  } = useCrm();
+  const { tab, setTab, timeZone, userId, product, send, busy, organizationId } =
+    useCrm();
   const tabs: RecordTab[] = [
     "timeline",
     "evidence",
     ...(action ? ["draft" as const] : []),
   ];
-  const current = tab === "draft" && !action ? "timeline" : tab;
+  const current =
+    (mode ?? tab) === "draft" && !action ? "timeline" : (mode ?? tab);
   return (
     <>
-      <div className="tabs">
-        {tabs.map((value) => (
-          <button
-            type="button"
-            key={value}
-            data-inspector-tab={value}
-            aria-keyshortcuts={String(tabs.indexOf(value) + 1)}
-            aria-pressed={current === value}
-            onClick={() => setTab(value)}
-          >
-            {label(value)}
-            <ShortcutHint id={value} />
-          </button>
-        ))}
-      </div>
+      {!hideTabs && (
+        <div className="tabs">
+          {tabs.map((value) => (
+            <button
+              type="button"
+              key={value}
+              data-inspector-tab={value}
+              aria-keyshortcuts={String(tabs.indexOf(value) + 1)}
+              aria-pressed={current === value}
+              onClick={() => setTab(value)}
+            >
+              {label(value)}
+              <ShortcutHint id={value as "timeline" | "evidence" | "draft"} />
+            </button>
+          ))}
+        </div>
+      )}
       {current === "timeline" && (
-        <>
-          <div className="timeline">
-            {context.messages.length ? (
-              context.messages.map((message) => (
-                <article className="timeline-event" key={message.id}>
-                  <span className={`event-dot ${message.direction}`} />
-                  <div className="event-title">
-                    {message.direction === "inbound" ? t.incoming : t.outgoing}
-                    <small>
-                      {label(message.channel)} ·{" "}
-                      {dateLabel(message.occurredAt, timeZone)}
-                    </small>
-                  </div>
-                  <p>{message.body}</p>
-                </article>
-              ))
-            ) : (
-              <p className="muted">{t.noMessages}</p>
-            )}
-          </div>
-          <p className="coverage-note">{t.partialHistory}</p>
-          <ConversationSharing
-            conversations={context.conversations ?? []}
-            userId={userId}
-            productName={
-              product(context.relationship.productId)?.name ?? t.product
-            }
-            busy={busy}
-            onChange={async (source, visibility) => {
-              const result = await mutate({
+        <ConversationHistory context={context} timeZone={timeZone} />
+      )}
+      {current === "details" && (
+        <ConversationSharing
+          conversations={context.conversations ?? []}
+          userId={userId}
+          productName={
+            product(context.relationship.productId)?.name ?? t.product
+          }
+          busy={busy}
+          onChange={async (source, visibility) => {
+            const result = await send(
+              {
                 operation: "conversation-sharing",
                 organizationId,
                 productId: context.relationship.productId,
                 conversationId: source.id,
                 expectedVisibility: source.visibility,
                 visibility,
-              });
-              return result;
-            }}
-          />
-        </>
+              },
+              false,
+              false,
+            );
+            return result.ok ? null : (result.error ?? t.errors.INTERNAL_ERROR);
+          }}
+        />
       )}
       {current === "evidence" && (
         <>
@@ -243,6 +232,7 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
     });
   return (
     <div className="draft-panel">
+      <h3>{action.title}</h3>
       {action.status === "blocked" && (
         <p className="callout warning-text">{t.blockedDetail}</p>
       )}
@@ -362,11 +352,14 @@ export function ActionSummary({
   action: Action;
   version: number;
 }) {
-  const { busy, mutate, organizationId } = useCrm();
+  const { busy, mutate, organizationId, timeZone } = useCrm();
   return (
     <div className="action-summary">
-      <span className="eyebrow">{t.actions}</span>
       <h3>{action.title}</h3>
+      <p className="muted action-due">
+        {label(action.kind)} · {label(action.status)} ·{" "}
+        {dateLabel(action.dueAt, timeZone)}
+      </p>
       <RecordText value={action.reason} />
       <button
         type="button"
@@ -384,7 +377,7 @@ export function ActionSummary({
         }
       >
         {t.markDone}
-        <ArrowUpRight size={13} />
+        <Check size={13} />
       </button>
     </div>
   );

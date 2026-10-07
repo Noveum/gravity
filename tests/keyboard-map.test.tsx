@@ -300,7 +300,7 @@ describe("palette, search, guide and create", () => {
     row(/Leena Rao.*Prepare the pilot proposal/).focus();
     await press(" ");
     await waitFor(() => expect(peek()).toBeTruthy());
-    await screen.findByRole("button", { name: label("draft") });
+    await screen.findByRole("tab", { name: label("draft") });
     guide = await openGuide();
     expect(within(guide).getByText(t.shortcutLabels.draft)).toBeTruthy();
   });
@@ -308,26 +308,28 @@ describe("palette, search, guide and create", () => {
     binding("create");
     await mountCrm(harness);
     await press("c");
-    expect(screen.getByRole("dialog", { name: t.scheduleAction })).toBeTruthy();
-    fireEvent(
-      screen.getByRole("dialog", { name: t.scheduleAction }),
-      new Event("cancel"),
+    expect(screen.getByRole("region", { name: t.scheduleAction })).toBeTruthy();
+    fireEvent.click(
+      within(screen.getByRole("region", { name: t.scheduleAction })).getByRole(
+        "button",
+        { name: t.cancel },
+      ),
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: t.scheduleAction }),
+        screen.queryByRole("region", { name: t.scheduleAction }),
       ).toBeNull(),
     );
     fireEvent.click(screen.getByRole("link", { name: t.people }));
     await waitFor(() => expect(pathname()).toBe("/people"));
     (document.activeElement as HTMLElement | null)?.blur();
     await press("c");
-    expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy();
+    expect(screen.getByRole("region", { name: t.addPerson })).toBeTruthy();
   });
   test("C on a person record schedules for that person, on Sequences creates a sequence, and on a view without its own create adds a person", async () => {
     await mountCrm(harness, `/people/${demoId(202)}`);
     await press("c");
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("region", {
       name: t.scheduleAction,
     });
     await waitFor(() =>
@@ -339,13 +341,15 @@ describe("palette, search, guide and create", () => {
         ).value,
       ).toBe(demoId(302)),
     );
-    fireEvent(dialog, new Event("cancel"));
+    fireEvent.click(within(dialog).getByRole("button", { name: t.cancel }));
     fireEvent.click(screen.getByRole("link", { name: t.sequences }));
     await waitFor(() => expect(pathname()).toBe("/outreach/sequences"));
     (document.activeElement as HTMLElement | null)?.blur();
     await press("c");
-    const sequenceDialog = screen.getByRole("dialog", { name: t.newSequence });
-    fireEvent(sequenceDialog, new Event("cancel"));
+    const sequenceDialog = screen.getByRole("region", { name: t.newSequence });
+    fireEvent.click(
+      within(sequenceDialog).getByRole("button", { name: t.cancel }),
+    );
     fireEvent.click(
       within(
         screen.getByRole("navigation", { name: t.outreachTabsLabel }),
@@ -354,7 +358,7 @@ describe("palette, search, guide and create", () => {
     await waitFor(() => expect(pathname()).toBe("/outreach/today"));
     (document.activeElement as HTMLElement | null)?.blur();
     await press("c");
-    expect(screen.getByRole("dialog", { name: t.addPerson })).toBeTruthy();
+    expect(screen.getByRole("region", { name: t.addPerson })).toBeTruthy();
   });
   test("C on materials opens the upload dialog", async () => {
     await mountCrm(harness, "/materials");
@@ -371,7 +375,7 @@ describe("palette, search, guide and create", () => {
         name: new RegExp(`^${t.newSequence}`),
       }),
     );
-    const dialog = await screen.findByRole("dialog", { name: t.newSequence });
+    const dialog = await screen.findByRole("region", { name: t.newSequence });
     expect(within(dialog).getByLabelText(t.product)).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: t.commands })).toBeNull();
   });
@@ -380,7 +384,7 @@ describe("palette, search, guide and create", () => {
     binding("create-organization");
     await mountCrm(harness, "/companies");
     await press("{Shift>}P{/Shift}");
-    const dialog = screen.getByRole("dialog", { name: t.newProduct });
+    const dialog = screen.getByRole("region", { name: t.newProduct });
     expect(within(dialog).getByText(organizations[0]?.name ?? "")).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: t.cancel }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -391,7 +395,7 @@ describe("palette, search, guide and create", () => {
     binding("schedule");
     await mountCrm(harness, "/companies");
     await press("n");
-    expect(screen.getByRole("dialog", { name: t.scheduleAction })).toBeTruthy();
+    expect(screen.getByRole("region", { name: t.scheduleAction })).toBeTruthy();
   });
 });
 
@@ -733,7 +737,7 @@ describe("outreach verbs", () => {
     expect((await touch(1307)).status).toBe("approved");
     (await touchRow("Noor Haddad")).focus();
     await press("e");
-    const editor = await screen.findByRole("dialog", {
+    const editor = await screen.findByRole("region", {
       name: t.draftEditorTitle.replace("{name}", "Noor Haddad"),
     });
     expect(within(editor).getByText(t.approvalClearsOnEdit)).toBeTruthy();
@@ -757,7 +761,7 @@ describe("outreach verbs", () => {
       await mountCrm(harness, "/outreach/today");
       (await touchRow("Amara Stone")).focus();
       await press("d");
-      const dialog = await screen.findByRole("dialog", {
+      const dialog = await screen.findByRole("region", {
         name: t.markSentTitle,
       });
       await userEvent
@@ -798,7 +802,7 @@ describe("outreach verbs", () => {
       );
       (await touchRow("Noor Haddad")).focus();
       await press("d");
-      const again = await screen.findByRole("dialog", {
+      const again = await screen.findByRole("region", {
         name: t.markSentTitle,
       });
       await press("{Meta>}{Enter}{/Meta}");
@@ -825,7 +829,7 @@ describe("outreach verbs", () => {
     await mountCrm(harness, "/outreach/today");
     (await touchRow("Ellis Park")).focus();
     await press("{Shift>}S{/Shift}");
-    const dialog = await screen.findByRole("dialog", { name: t.skipTitle });
+    const dialog = await screen.findByRole("region", { name: t.skipTitle });
     await userEvent
       .setup()
       .type(within(dialog).getByLabelText(t.skipReason), "Met at an event");
@@ -942,7 +946,7 @@ describe("outreach pipeline", () => {
         name: new RegExp(`^${t.outreachStages.won}`),
       }),
     );
-    const confirm = await screen.findByRole("dialog", {
+    const confirm = await screen.findByRole("region", {
       name: t.closeStageTitle
         .replace("{name}", "Amara Stone")
         .replace("{stage}", t.outreachStages.won),
@@ -1001,7 +1005,7 @@ describe("outreach pipeline", () => {
     fireEvent.dragStart(article);
     fireEvent.dragOver(stage(t.outreachStages.lost));
     fireEvent.drop(stage(t.outreachStages.lost));
-    const confirm = await screen.findByRole("dialog", {
+    const confirm = await screen.findByRole("region", {
       name: t.closeStageTitle
         .replace("{name}", "Noor Haddad")
         .replace("{stage}", t.outreachStages.lost),
@@ -1038,7 +1042,7 @@ describe("detail bindings", () => {
     row(/Leena Rao.*Prepare the pilot proposal/).focus();
     await press(" ");
     await waitFor(() => expect(peek()).toBeTruthy());
-    await screen.findByRole("button", { name: label("draft") });
+    await screen.findByRole("tab", { name: label("draft") });
     await press("e");
     expect(document.querySelector(".inspector-expanded")).toBeTruthy();
     await press("e");
@@ -1110,7 +1114,7 @@ describe("dialogs and safety", () => {
     await press(" ");
     await waitFor(() => expect(peek()).toBeTruthy());
     const fill = async (text: string) => {
-      const dialog = await screen.findByRole("dialog", {
+      const dialog = await screen.findByRole("region", {
         name: t.scheduleAction,
       });
       const title = within(dialog).getByRole("textbox", {
@@ -1138,7 +1142,7 @@ describe("dialogs and safety", () => {
     await press("e");
     await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
     expect(harness.posts).toHaveLength(0);
-    expect(screen.getByRole("dialog", { name: t.scheduleAction })).toBeTruthy();
+    expect(screen.getByRole("region", { name: t.scheduleAction })).toBeTruthy();
     first.dialog
       .querySelector<HTMLButtonElement>("button[type='submit']")
       ?.focus();
@@ -1150,7 +1154,7 @@ describe("dialogs and safety", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: t.scheduleAction }),
+        screen.queryByRole("region", { name: t.scheduleAction }),
       ).toBeNull(),
     );
     await waitFor(() => expect(peek()).toBeTruthy());
@@ -1221,28 +1225,33 @@ describe("record editing keys", () => {
     harness.posts.filter((post) => post.operation === "opportunity-change") as {
       stageId?: string;
     }[];
-  test("E edits the open person record and the save key stores it", async () => {
+  test("E focuses the open person's inline fields and the save key stores it", async () => {
     binding("edit");
     await mountCrm(harness, `/people/${demoId(200)}`);
     (document.activeElement as HTMLElement | null)?.blur();
     await press("e");
-    const dialog = screen.getByRole("dialog", { name: t.editPerson });
-    const title = within(dialog).getByLabelText(t.roleTitle);
+    const inspector = await screen.findByRole("complementary", {
+      name: t.recordDetails,
+    });
+    const title = await within(inspector).findByLabelText(t.roleTitle);
     await userEvent.setup().clear(title);
     await userEvent.setup().type(title, "Head of AI");
     await press("{Meta>}{Enter}{/Meta}");
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: t.editPerson })).toBeNull(),
+      expect(
+        harness.posts.find((post) => post.operation === "person-update"),
+      ).toMatchObject({ personId: demoId(200), title: "Head of AI" }),
     );
-    expect(
-      harness.posts.find((post) => post.operation === "person-update"),
-    ).toMatchObject({ personId: demoId(200), title: "Head of AI" });
-    await waitFor(() => expect(screen.getByText("Head of AI")).toBeTruthy());
+    expect(pathname()).toBe(`/people/${demoId(200)}`);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
   test("Shift arrows move the focused deal through open stages, never into won, and Undo moves it back", async () => {
     binding("move-next");
     binding("move-previous");
     await mountCrm(harness, "/opportunities");
+    fireEvent.click(
+      screen.getByRole("button", { name: t.inlineEditing.board }),
+    );
     const name = "Northstar evaluation project";
     card(name).focus();
     await press("{Shift>}{ArrowRight}{/Shift}");
@@ -1280,6 +1289,9 @@ describe("record editing keys", () => {
   });
   test("a won deal does not move by arrow key, E edits the focused deal and a drag closes it", async () => {
     await mountCrm(harness, "/opportunities");
+    fireEvent.click(
+      screen.getByRole("button", { name: t.inlineEditing.board }),
+    );
     const name = "Cedar workflow pilot";
     const article = card(name).closest("article") as HTMLElement;
     fireEvent.dragStart(article);
@@ -1304,7 +1316,7 @@ describe("record editing keys", () => {
     expect(changes()).toHaveLength(1);
     card(name).focus();
     await press("e");
-    const dialog = screen.getByRole("dialog", { name: t.editOpportunity });
+    const dialog = screen.getByRole("region", { name: t.editOpportunity });
     expect(
       (within(dialog).getByLabelText(t.stage) as HTMLSelectElement).value,
     ).toBe(demoId(823));
@@ -1312,7 +1324,7 @@ describe("record editing keys", () => {
   test("C creates a company that opens in the inspector, and C and E create and edit meetings", async () => {
     await mountCrm(harness, "/companies");
     await press("c");
-    const company = screen.getByRole("dialog", { name: t.newCompany });
+    const company = screen.getByRole("region", { name: t.newCompany });
     await userEvent
       .setup()
       .type(within(company).getByLabelText(t.name), "Fictional Keyboard Co");
@@ -1326,17 +1338,19 @@ describe("record editing keys", () => {
     await waitFor(() => expect(pathname()).toBe("/meetings"));
     (document.activeElement as HTMLElement | null)?.blur();
     await press("c");
-    expect(screen.getByRole("dialog", { name: t.newMeeting })).toBeTruthy();
-    fireEvent(
-      screen.getByRole("dialog", { name: t.newMeeting }),
-      new Event("cancel"),
+    expect(screen.getByRole("region", { name: t.newMeeting })).toBeTruthy();
+    fireEvent.click(
+      within(screen.getByRole("region", { name: t.newMeeting })).getByRole(
+        "button",
+        { name: t.cancel },
+      ),
     );
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: t.newMeeting })).toBeNull(),
+      expect(screen.queryByRole("region", { name: t.newMeeting })).toBeNull(),
     );
     screen.getByRole("button", { name: "Leena Rao" }).focus();
     await press("e");
-    const meeting = screen.getByRole("dialog", { name: t.editMeeting });
+    const meeting = screen.getByRole("region", { name: t.editMeeting });
     expect(
       (within(meeting).getByLabelText(t.meetingTitle) as HTMLInputElement)
         .value,

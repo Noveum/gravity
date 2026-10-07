@@ -15,7 +15,7 @@ This review covers the record surfaces, product navigation, long imported conten
 
 ## Navigation and reporting checks
 
-- Sidebar products and All products open their overview and clear the prior record. Toolbar product selection retains the current list.
+- Sidebar products, All products and toolbar product selection retain the current list and clear the prior record. See the October 7 UI usability audit for the inline editing changes.
 - Incompatible pipeline/stage URL filters are cleared on the opportunities board after a product switch.
 - Contact, company, and relationship estimates are distinct from opportunities, preventing duplicate revenue counting.
 - Forecasts include only open opportunities with both amount and probability. Unknown values differ from zero; currencies stay separate.

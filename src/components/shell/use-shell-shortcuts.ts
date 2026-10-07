@@ -107,7 +107,7 @@ export function useShellShortcuts({
     const button = document.querySelector<HTMLButtonElement>(
       `[data-inspector-tab="${tab}"]`,
     );
-    if (!button) return false;
+    if (!button || !crm.canLeaveEditor()) return false;
     crm.setTab(tab);
     button.focus();
     return true;

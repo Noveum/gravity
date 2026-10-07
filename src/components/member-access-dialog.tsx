@@ -95,9 +95,16 @@ export function MemberAccessDialog({
   const [emailStatus, setEmailStatus] = useState<EmailStatus>("not_configured");
   const [copied, setCopied] = useState(false);
   useModalLifecycle(modal);
+  const initialProducts =
+    member?.productIds ?? crm.sourceData.products.map((product) => product.id);
+  const dirty =
+    email !== "" ||
+    role !== (member?.role ?? "member") ||
+    [...productIds].sort().join(",") !== [...initialProducts].sort().join(",");
   return (
     <dialog
       ref={modal}
+      data-dirty={dirty || busy || undefined}
       className="dialog member-dialog"
       aria-labelledby="member-dialog-title"
       aria-describedby="member-dialog-detail"

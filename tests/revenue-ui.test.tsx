@@ -20,7 +20,7 @@ test("a contact's deal opens directly, previews weighted revenue and persists al
   fireEvent.click(
     await screen.findByRole("button", { name: /Northstar evaluation project/ }),
   );
-  const dialog = screen.getByRole("dialog", { name: t.editOpportunity });
+  const dialog = screen.getByRole("region", { name: t.editOpportunity });
   fireEvent.change(within(dialog).getByLabelText(t.amount), {
     target: { value: "1234.56" },
   });
@@ -40,7 +40,9 @@ test("a contact's deal opens directly, previews weighted revenue and persists al
     within(dialog).getByRole("status", { name: t.expectedRevenue }).textContent,
   ).toContain("$617.28");
   fireEvent.click(within(dialog).getByRole("button", { name: t.save }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: /opportunity/ })).toBeNull(),
+  );
   expect(harness.posts.find((post) => post.operation === "deal")).toMatchObject(
     {
       amountMinor: 123456,
@@ -54,14 +56,21 @@ test("a contact's deal opens directly, previews weighted revenue and persists al
   const row = await screen.findByRole("button", {
     name: /Northstar evaluation project/,
   });
-  await waitFor(() => expect(row.textContent).toContain("$1,234.56"));
-  expect(row.textContent).toContain("$617.28");
+  const card = row.closest("article");
+  if (!card) throw new Error("Missing opportunity card");
+  await waitFor(() =>
+    expect(within(card).getByLabelText(t.dealSize)).toHaveProperty(
+      "value",
+      "1234.56",
+    ),
+  );
+  expect(screen.getByText("$617.28")).toBeTruthy();
 });
 
 test("creating a deal from a relationship preselects its person, product, pipeline and owner", async () => {
   await mountCrm(harness, `/people/${demoId(201)}`);
   fireEvent.click(await screen.findByRole("button", { name: t.newDeal }));
-  const dialog = screen.getByRole("dialog", { name: t.newOpportunity });
+  const dialog = screen.getByRole("region", { name: t.newOpportunity });
   expect(within(dialog).getByLabelText(t.person)).toHaveProperty(
     "value",
     demoId(301),
@@ -80,7 +89,9 @@ test("creating a deal from a relationship preselects its person, product, pipeli
     within(dialog).getByRole("status", { name: t.expectedRevenue }).textContent,
   ).toContain("$2,000.00");
   fireEvent.click(within(dialog).getByRole("button", { name: t.create }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: /opportunity/ })).toBeNull(),
+  );
   expect(harness.posts.find((post) => post.operation === "deal")).toMatchObject(
     {
       productId: demoId(11),
@@ -95,10 +106,10 @@ test("invalid currency has an input error; unknown, zero, won and lost forecasts
   await mountCrm(harness, "/opportunities");
   fireEvent.click(
     screen.getByRole("button", {
-      name: `${t.editOpportunity}: Northstar evaluation project`,
+      name: "Northstar evaluation project",
     }),
   );
-  const dialog = screen.getByRole("dialog", { name: t.editOpportunity });
+  const dialog = screen.getByRole("region", { name: t.editOpportunity });
   expect(
     within(dialog).getByRole("status", { name: t.expectedRevenue }).textContent,
   ).toContain(t.forecastUnknown);
@@ -164,9 +175,8 @@ test("switching products clears an incompatible pipeline and stage instead of hi
     "value",
     "",
   );
-  expect(
-    screen.getByRole("heading", { name: "API Marketplace / Sales pipeline" }),
-  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: t.inlineEditing.board }));
+  expect(screen.getByText(t.inlineEditing.noOpportunities)).toBeTruthy();
 });
 
 test("overview forecasts use deals, exclude contact estimates and disclose incomplete coverage", async () => {

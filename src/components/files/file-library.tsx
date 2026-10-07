@@ -35,13 +35,14 @@ import { useSearchParams } from "next/navigation";
 import {
   type DragEvent,
   type ReactNode,
+  useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
 import { errorText } from "../client-api";
 import { useWorkspaceData } from "../crm/crm-context";
-import { useModalLifecycle } from "../modal-lifecycle";
+import { submitOnSaveKey } from "../modal-lifecycle";
 import {
   command,
   detail,
@@ -188,10 +189,17 @@ function Browser({
     ids: string[];
     operation: "copy" | "move";
   } | null>(null);
-  const [dialog, setDialog] = useState<{
+  const [dialog, setDialogState] = useState<{
     kind: "folder" | "markdown" | "rename" | "share" | "delete";
     entry?: FileEntry;
   } | null>(null);
+  const setDialog = useCallback(
+    (next: typeof dialog) => {
+      if (next && !crm.canLeaveEditor()) return;
+      setDialogState(next);
+    },
+    [crm.canLeaveEditor],
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -246,7 +254,7 @@ function Browser({
         setDialog({ kind: "folder" });
         return true;
       }),
-    [crm.registerCreate],
+    [crm.registerCreate, setDialog],
   );
   const entries = listing.data?.entries ?? [];
   const visible = entries.filter((entry) =>
@@ -263,6 +271,7 @@ function Browser({
     selected.length > 0 &&
     selected.every((entry) => entry.ownerId === crm.userId && entry.canEdit);
   function navigate(id: string | null) {
+    if (!crm.canLeaveEditor()) return;
     window.history.pushState(null, "", id ? `/files?folder=${id}` : "/files");
     root.current?.focus();
   }
@@ -540,6 +549,12 @@ function Browser({
       }}
       onKeyDown={(event) => {
         if (isFileInput(event.target) || dialog || busy) return;
+        if (event.altKey && (event.key === "ArrowUp" || event.key === "Home")) {
+          event.preventDefault();
+          event.stopPropagation();
+          navigate(event.key === "Home" ? null : (current?.parentId ?? null));
+          return;
+        }
         const shortcut = fileShortcut(event);
         if (!shortcut) return;
         event.stopPropagation();
@@ -579,6 +594,8 @@ function Browser({
           type="button"
           className="icon-button"
           aria-label={labels.parent}
+          title={`${labels.parent} (Alt+↑)`}
+          aria-keyshortcuts="Alt+ArrowUp"
           disabled={!parentId}
           onClick={() => navigate(current?.parentId ?? null)}
         >
@@ -587,6 +604,8 @@ function Browser({
         <nav aria-label={labels.path}>
           <button
             type="button"
+            title={`${labels.title} (Alt+Home)`}
+            aria-keyshortcuts="Alt+Home"
             onClick={() => navigate(null)}
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => drop(event, null)}
@@ -685,6 +704,20 @@ function Browser({
             </button>
           </details>
         </div>
+      </div>
+      {dialog && (
+        <EntryDialog
+          key={`${dialog.kind}:${dialog.entry?.id ?? "new"}`}
+          dialog={dialog}
+          parentId={parentId}
+          selected={selection}
+          members={crm.data.members}
+          run={run}
+          close={() => setDialog(null)}
+          busy={busy}
+        />
+      )}
+      <div hidden>
         <input
           ref={input}
           type="file"
@@ -823,17 +856,6 @@ function Browser({
       </footer>
       {dragging && writable && (
         <div className="library-drop-overlay">{labels.dropUpload}</div>
-      )}
-      {dialog && (
-        <EntryDialog
-          dialog={dialog}
-          parentId={parentId}
-          selected={selection}
-          members={crm.data.members}
-          run={run}
-          close={() => setDialog(null)}
-          busy={busy}
-        />
       )}
     </section>
   );
@@ -1383,7 +1405,7 @@ function Column({
     </div>
   );
 }
-function Modal({
+function EntryEditor({
   title,
   subtitle,
   actions,
@@ -1400,16 +1422,29 @@ function Modal({
   wide?: boolean;
   busy?: boolean;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useModalLifecycle(ref);
+  const ref = useRef<HTMLElement>(null);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    const field = ref.current?.querySelector<HTMLElement>(
+      "input, textarea, select",
+    );
+    field?.focus();
+    ref.current?.scrollIntoView({ block: "nearest" });
+  }, []);
   return (
-    <dialog
+    <section
       ref={ref}
-      className={`dialog library-dialog ${wide ? "library-preview-dialog" : ""}`}
+      data-record-editor
+      data-dirty={dirty || busy || undefined}
+      className={`library-dialog inline-library-editor ${wide ? "library-preview-dialog" : ""}`}
       aria-labelledby="library-dialog-title"
-      onCancel={(event) => {
-        if (busy) event.preventDefault();
-        else close();
+      onChange={() => setDirty(true)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !dirty && !busy) {
+          event.preventDefault();
+          event.stopPropagation();
+          close();
+        }
       }}
     >
       <header>
@@ -1429,7 +1464,7 @@ function Modal({
         </button>
       </header>
       {children}
-    </dialog>
+    </section>
   );
 }
 function EntryDialog({
@@ -1468,9 +1503,10 @@ function EntryDialog({
         ? labels.newDocument
         : labels[dialog.kind];
   return (
-    <Modal title={title} close={close} busy={busy}>
+    <EntryEditor title={title} close={close} busy={busy}>
       <form
         className="dialog-fields"
+        onKeyDown={submitOnSaveKey}
         onSubmit={async (event) => {
           event.preventDefault();
           setError("");
@@ -1639,7 +1675,7 @@ function EntryDialog({
           </button>
         </div>
       </form>
-    </Modal>
+    </EntryEditor>
   );
 }
 export function FileInspector({
@@ -1779,12 +1815,34 @@ function Preview({
               current && (
                 <>
                   {editing ? (
-                    <>
+                    <form
+                      data-record-editor
+                      data-dirty={
+                        draft !== query.data?.body || busy || undefined
+                      }
+                      onKeyDown={submitOnSaveKey}
+                      onSubmit={async (event) => {
+                        event.preventDefault();
+                        if (busy) return;
+                        setError("");
+                        try {
+                          await run("update", {
+                            id: entry.id,
+                            body: draft,
+                            expectedSyncId: version,
+                          });
+                          setEditing(false);
+                        } catch (failure) {
+                          setError(errorText(failure));
+                        }
+                      }}
+                    >
                       <div className="library-markdown-editor">
                         <textarea
                           aria-label={labels.source}
                           maxLength={1_000_000}
                           value={draft}
+                          disabled={busy}
                           onChange={(event) => setDraft(event.target.value)}
                         />
                         <MarkdownPreview
@@ -1793,30 +1851,25 @@ function Preview({
                         />
                       </div>
                       <div className="dialog-actions">
-                        <button type="button" onClick={() => setEditing(false)}>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            setEditing(false);
+                            setError("");
+                          }}
+                        >
                           {t.cancel}
                         </button>
                         <button
-                          type="button"
+                          type="submit"
                           className="primary"
                           disabled={busy}
-                          onClick={async () => {
-                            try {
-                              await run("update", {
-                                id: entry.id,
-                                body: draft,
-                                expectedSyncId: version,
-                              });
-                              setEditing(false);
-                            } catch (failure) {
-                              setError(errorText(failure));
-                            }
-                          }}
                         >
                           {t.save}
                         </button>
                       </div>
-                    </>
+                    </form>
                   ) : (
                     <>
                       <MarkdownPreview
@@ -1827,6 +1880,7 @@ function Preview({
                         <button
                           type="button"
                           onClick={() => {
+                            setError("");
                             setDraft(query.data?.body ?? "");
                             setVersion(current.syncId);
                             setEditing(true);

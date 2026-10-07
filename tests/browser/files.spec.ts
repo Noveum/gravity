@@ -165,11 +165,11 @@ test("persistent native uploads, nested navigation, transfers and every preview"
   await page.getByRole("treeitem").locator("summary").click();
   await page.getByRole("button", { name: "Rename", exact: true }).click();
   await page
-    .getByRole("dialog")
+    .getByRole("region", { name: "Rename", exact: true })
     .getByLabel("Name", { exact: true })
     .fill("Copied notes.txt");
   await page
-    .getByRole("dialog")
+    .getByRole("region", { name: "Rename", exact: true })
     .getByRole("button", { name: "Save", exact: true })
     .click();
   await page

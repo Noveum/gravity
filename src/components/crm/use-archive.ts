@@ -1,5 +1,6 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
+import { useRef } from "react";
 import { companyPath, personPath } from "../routes";
 import { useCrm } from "./crm-context";
 
@@ -17,6 +18,8 @@ const operations = {
 
 export function useArchive() {
   const crm = useCrm();
+  const current = useRef(crm);
+  current.current = crm;
   async function change(kind: Kind, record: Archivable, archived: boolean) {
     const { operation, key } = operations[kind];
     const { ok, result } = await crm.send(
@@ -42,9 +45,10 @@ export function useArchive() {
     return !!restored;
   }
   async function archive(kind: Kind, record: Archivable) {
-    const archived = await change(kind, record, true);
+    if (!crm.canLeaveEditor()) return false;
+    const archived = await change(kind, crm.currentRecord(record), true);
     if (!archived) return false;
-    crm.closePeek();
+    crm.closePeek(true);
     crm.leaveRecord();
     crm.notify(
       (kind === "person" ? t.personArchived : t.companyArchived).replace(
@@ -57,7 +61,8 @@ export function useArchive() {
         run: () => {
           void restore(kind, { ...record, version: archived.version }).then(
             (ok) => {
-              if (ok) crm.go(recordPath(kind, record.id));
+              if (ok && current.current.organizationId === crm.organizationId)
+                current.current.go(recordPath(kind, record.id));
             },
           );
         },

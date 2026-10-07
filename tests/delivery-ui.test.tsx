@@ -123,7 +123,7 @@ describe("deliveries that need a check", () => {
         name: `${t.reconcile}: Amara Stone`,
       }),
     );
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("region", {
       name: t.reconcileTitle.replace("{name}", "Amara Stone"),
     });
     expect(within(dialog).queryByLabelText(t.reconcileMessageId)).toBe(null);
@@ -142,7 +142,7 @@ describe("deliveries that need a check", () => {
     const group = await checks();
     const theirs = personRow(group, "Sam Rivera");
     fireEvent.click(within(theirs).getByRole("button", { name: /^Resolve/ }));
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("region", {
       name: /^Resolve the send/,
     });
     fireEvent.change(within(dialog).getByLabelText(t.resolveOutcome), {
@@ -153,7 +153,7 @@ describe("deliveries that need a check", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: t.resolve }));
     expect(
-      screen.getByRole("dialog", { name: /^Resolve the send/ }),
+      screen.getByRole("region", { name: /^Resolve the send/ }),
     ).toBeTruthy();
     fireEvent.click(within(dialog).getByLabelText(t.resolveConfirm));
     fireEvent.click(within(dialog).getByRole("button", { name: t.resolve }));
@@ -180,7 +180,7 @@ describe("deliveries that need a check", () => {
     const group = await checks();
     const theirs = personRow(group, "Sam Rivera");
     fireEvent.click(within(theirs).getByRole("button", { name: /^Resolve/ }));
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("region", {
       name: /^Resolve the send/,
     });
     const outcome = within(dialog).getByLabelText(

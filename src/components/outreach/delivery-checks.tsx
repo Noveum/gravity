@@ -125,6 +125,7 @@ export function DeliveryChecks({
                       className="ghost"
                       aria-label={`${t.reconcile}: ${name}`}
                       onClick={() =>
+                        crm.canLeaveEditor() &&
                         setSettling({ kind: "reconcile", delivery })
                       }
                     >
@@ -136,7 +137,10 @@ export function DeliveryChecks({
                       type="button"
                       className="ghost"
                       aria-label={`${t.resolve}: ${name}`}
-                      onClick={() => setSettling({ kind: "resolve", delivery })}
+                      onClick={() => {
+                        if (crm.canLeaveEditor())
+                          setSettling({ kind: "resolve", delivery });
+                      }}
                     >
                       {t.resolve}
                     </button>
@@ -149,6 +153,7 @@ export function DeliveryChecks({
       </TouchGroup>
       {settling?.kind === "reconcile" && (
         <RecordDialog
+          inline
           title={t.reconcileTitle.replace("{name}", nameOf(settling.delivery))}
           submitLabel={t.reconcile}
           onClose={() => setSettling(null)}
@@ -174,6 +179,7 @@ export function DeliveryChecks({
       )}
       {settling?.kind === "resolve" && (
         <RecordDialog
+          inline
           title={t.resolveTitle.replace("{name}", nameOf(settling.delivery))}
           submitLabel={t.resolve}
           onClose={() => setSettling(null)}

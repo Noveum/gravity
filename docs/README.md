@@ -44,6 +44,7 @@ the state at that date; newer records and the roadmap supersede them.
 - [Foundation release review, 3 October 2026](release-review.md) and [verification](verification.md)
 - [Full-flow review, 4 October 2026](flow-review-2026-10-04.md)
 - [CRM usability and field review, 6 October 2026](crm-usability-review.md)
+- [CRM request audit and attribution review, 7 October 2026](crm-request-audit-2026-10-07.md)
 - [Public site and MCP qualification, 4 October 2026](public-site-review-2026-10-04.md)
 - [Positioning research, 4 October 2026](positioning-2026-10-04.md)
 - [Provider connections, 5 October 2026](integration-review-2026-10-05.md)

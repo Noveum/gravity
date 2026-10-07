@@ -10,6 +10,7 @@ import { expect, test, vi } from "vitest";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { requestJson } from "../src/components/client-api";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 import { visit } from "./support/memory-router";
 
@@ -134,4 +135,78 @@ test("paginated history appends once and switching product discards the old page
   await within(changed).findByText("other-product-row");
   expect(changed.querySelectorAll(".attribution-event")).toHaveLength(1);
   expect(changed.textContent).not.toContain("fixture-row-");
+});
+
+test("partial failures keep exact retry keys but allow corrected batch details", async () => {
+  await mountCrm(harness, `/people/${demoId(200)}`);
+  const section = await screen.findByRole("region", {
+    name: t.attribution.title,
+  });
+  fireEvent.click(within(section).getByText(t.attribution.title));
+  fireEvent.click(
+    within(section).getByRole("button", { name: t.attribution.recordSource }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: t.attribution.recordSource,
+  });
+  const ui = within(dialog);
+  fireEvent.change(ui.getByLabelText(t.attribution.batchLabel), {
+    target: { value: "Original fictional list" },
+  });
+  fireEvent.change(ui.getByLabelText(t.attribution.sourceRecordId), {
+    target: { value: "row-9" },
+  });
+  const request = vi.mocked(requestJson);
+  const regular = request.getMockImplementation();
+  if (!regular) throw new Error("Missing request mock");
+  const keys: string[] = [];
+  let failedRow = false;
+  request.mockImplementation(async (url, init) => {
+    const body = init?.method === "POST" ? JSON.parse(String(init.body)) : null;
+    if (body?.operation === "import-batch") {
+      keys.push(body.submissionKey);
+      const result = await regular(url, init);
+      // The first response is lost after the batch has committed.
+      if (keys.length === 1) throw new Error("NETWORK_ERROR");
+      return result;
+    }
+    if (body?.operation === "contact-import" && !failedRow) {
+      failedRow = true;
+      throw new Error("NETWORK_ERROR");
+    }
+    return regular(url, init);
+  });
+  fireEvent.click(ui.getByRole("button", { name: t.save }));
+  await waitFor(() =>
+    expect(dialog.querySelector("form > p[role=alert]")?.textContent).toBe(
+      t.errors.NETWORK_ERROR,
+    ),
+  );
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: t.save }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(ui.getByRole("button", { name: t.save }));
+  await waitFor(() => expect(failedRow).toBe(true));
+  await waitFor(() =>
+    expect(dialog.querySelector("form > p[role=alert]")?.textContent).toBe(
+      t.errors.NETWORK_ERROR,
+    ),
+  );
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: t.save }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  expect(keys[1]).toBe(keys[0]);
+  fireEvent.change(ui.getByLabelText(t.attribution.batchLabel), {
+    target: { value: "Corrected fictional list" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: t.save }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(keys[2]).not.toBe(keys[0]);
+  expect(await screen.findByText("Corrected fictional list")).toBeTruthy();
+  const events = await harness.local.db.select().from(s.contactContributions);
+  expect(events).toHaveLength(1);
 });

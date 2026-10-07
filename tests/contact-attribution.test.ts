@@ -68,6 +68,22 @@ const history = (actor: Principal, personId: string, extra: object = {}) =>
   service.list(actor, { organizationId: org, personId, ...extra });
 
 describe("trusted contact attribution", () => {
+  test("simultaneous batch retries return one batch and reject different metadata", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => batch(alex, "concurrent-batch")),
+    );
+    expect(new Set(results.map((row) => row.id)).size).toBe(1);
+    const conflicting = await Promise.allSettled([
+      batch(alex, "concurrent-conflict", { label: "First declaration" }),
+      batch(alex, "concurrent-conflict", { label: "Different declaration" }),
+    ]);
+    expect(
+      conflicting.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    expect(
+      conflicting.find((result) => result.status === "rejected"),
+    ).toMatchObject({ reason: { code: "IMPORT_SOURCE_CONFLICT" } });
+  });
   test("transport parity assigns the real submitter and declared source separately; retries retain one immutable batch", async () => {
     const operation = apiOperation("crm", "POST", "import-batch");
     const input = {

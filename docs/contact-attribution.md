@@ -12,7 +12,8 @@ contacts through verified OAuth MCP, the member, transport, verified client ID a
 grant ID come from authentication. Caller-supplied actor claims cannot override them.
 
 Open **Import attribution** in a contact record or inspector to read the original
-recorded creator, most recent recorded editor and paginated contribution history.
+recorded creator visible in the selected product, most recent recorded editor and
+paginated contribution history.
 **Record import source** adds a reviewed declaration to a known contact. People
 filters distinguish **Submitted by**, **Declared source**, coverage and multiple
 contributors independently of current ownership. Multiple contributors means more
@@ -23,8 +24,9 @@ Existing contacts without recorded provenance remain **Unknown**. The migrations
 add tables and constraints without rewriting people, relationships, notes, owners
 or versions. Historical owner and creation timestamps are insufficient to infer an
 importer. Deactivated members retain their recorded names; they lose permission to
-submit new data. This is recorded history from this feature onward, not a complete
-reconstruction of older activity.
+submit new data. Names come from the stored member profile; immutable member IDs
+retain identity if a profile is renamed. This is recorded history from this feature
+onward, not a complete reconstruction of older activity.
 
 ## MCP and HTTP import workflow
 
@@ -48,8 +50,10 @@ The shared operation registry maps these to `/api/crm`: POST `import-batch`, POS
 `contact-import`, GET `contact-attribution`. Both transports enforce the same
 membership, grants, product, version and retry rules. A batch belongs to its
 authenticated submitter; another member cannot reuse it. Stable keys identify
-retries, not authorization. No general CSV parser or new bulk upload UI is included;
-agents can submit parsed rows using these operations.
+retries, not authorization. The source form retains retry keys for unchanged
+declarations after a partial failure. Correcting the batch label, kind or declared source creates a new batch;
+existing batches remain immutable. No general CSV parser or new bulk upload UI is
+included; agents can submit parsed rows using these operations.
 
 ## Provider sources and privacy
 

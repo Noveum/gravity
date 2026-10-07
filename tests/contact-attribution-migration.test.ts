@@ -7,7 +7,7 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import { expect, test } from "vitest";
 import { demoId } from "../packages/database/seed";
 
-test("0023 preserves populated contacts, owners, versions and notes without inventing attribution", async () => {
+test("0023/0024 preserve populated records and enforce import isolation without inventing attribution", async () => {
   const folder = await mkdtemp(join(tmpdir(), "gravity-attribution-"));
   const client = new PGlite();
   try {
@@ -52,6 +52,63 @@ test("0023 preserves populated contacts, owners, versions and notes without inve
     expect(
       (await client.query("SELECT * FROM contact_import_batches")).rows,
     ).toEqual([]);
+    await client.exec(`
+      INSERT INTO organizations (id, name, slug) VALUES ('${demoId(2)}', 'Other fictional tenant', 'other-fictional');
+      INSERT INTO memberships (organization_id, user_id, role) VALUES ('${demoId(2)}', 'fixture-owner', 'admin');
+      INSERT INTO products (id, organization_id, name) VALUES ('${demoId(11)}', '${demoId(2)}', 'Other tenant product'), ('${demoId(13)}', '${demoId(1)}', 'Second product');
+      INSERT INTO people (id, organization_id, name) VALUES ('${demoId(201)}', '${demoId(2)}', 'Other tenant contact');
+      INSERT INTO connections (id, organization_id, owner_id, product_id, provider, external_account_id) VALUES ('${demoId(900)}', '${demoId(2)}', 'fixture-owner', '${demoId(11)}', 'gmail', 'fictional-private-account');
+      INSERT INTO contact_import_batches (id, organization_id, product_id, submitted_by, source_kind, label, submission_key, transport) VALUES ('${demoId(700)}', '${demoId(1)}', '${demoId(10)}', 'fixture-owner', 'file', 'Fictional batch', 'fixture-key', 'session');
+    `);
+    const contribution = (values: string, columns = "") =>
+      client.exec(`
+      INSERT INTO contact_contributions (organization_id, person_id, product_id, kind, transport${columns})
+      VALUES (${values})
+    `);
+    await expect(
+      contribution(
+        `'${demoId(1)}', '${demoId(201)}', '${demoId(10)}', 'submitted', 'session'`,
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+    await expect(
+      contribution(
+        `'${demoId(1)}', '${demoId(200)}', '${demoId(11)}', 'submitted', 'session'`,
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+    await expect(
+      contribution(
+        `'${demoId(1)}', '${demoId(200)}', '${demoId(13)}', 'submitted', 'session', '${demoId(700)}', 'row-1', 'fixture-hash'`,
+        ", batch_id, source_record_id, request_hash",
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+    await expect(
+      contribution(
+        `'${demoId(1)}', '${demoId(200)}', '${demoId(10)}', 'submitted', 'session', '${demoId(700)}', 'row-1'`,
+        ", batch_id, source_record_id",
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
+    await expect(
+      contribution(
+        `'${demoId(1)}', '${demoId(200)}', '${demoId(10)}', 'provider_import', 'system', '${demoId(900)}', 'provider-row'`,
+        ", connection_id, source_record_id",
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+    const valid = `'${demoId(1)}', '${demoId(200)}', '${demoId(10)}', 'submitted', 'session', '${demoId(700)}', 'row-1', 'fixture-hash'`;
+    const sourceColumns = ", batch_id, source_record_id, request_hash";
+    await contribution(valid, sourceColumns);
+    await expect(contribution(valid, sourceColumns)).rejects.toMatchObject({
+      code: "23505",
+    });
+    expect(
+      (
+        await client.query("SELECT * FROM people WHERE organization_id = $1", [
+          demoId(1),
+        ])
+      ).rows,
+    ).toEqual(beforePeople);
+    expect((await client.query("SELECT * FROM relationships")).rows).toEqual(
+      beforeRelationships,
+    );
   } finally {
     await client.close();
     await rm(folder, { recursive: true, force: true });

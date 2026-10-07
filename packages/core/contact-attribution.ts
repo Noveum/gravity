@@ -46,11 +46,11 @@ export const attributionListSchema = scope.extend({
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 
+/** Hash parsed operation input; hashes identify exact retries, never access rights. */
 export const attributionHash = (input: object) =>
   createHash("sha256").update(JSON.stringify(input)).digest("hex");
 
-// Connections are private even when their contacts are shared. Only attribution
-// whose product AND source account are readable can participate in a read/filter.
+/** Restrict history and filters to readable products and the private source account owner. */
 export function readableAttribution(
   principal: Principal,
   organizationId: string,
@@ -72,6 +72,7 @@ export function readableAttribution(
   );
 }
 
+/** Resolve the actor-owned batch and reject a source row reused with different input. */
 export async function importSubmission(
   db: Database,
   principal: Principal,
@@ -109,6 +110,7 @@ export async function importSubmission(
   return { batch, previous };
 }
 
+/** Append trusted actor identity separately from the batch's declared source. */
 export async function recordContactSubmission(
   db: Database,
   principal: Principal,
@@ -143,6 +145,7 @@ export async function recordContactSubmission(
   return row;
 }
 
+/** Deduplicate provider receipts without attributing background sync to a human. */
 export async function recordProviderContribution(
   db: Database,
   connection: typeof s.connections.$inferSelect,
@@ -202,9 +205,11 @@ export async function recordProviderContribution(
   }
 }
 
+/** Authorized import declarations and scoped, append-only contact history. */
 export class ContactAttributionService {
   constructor(private db: Database) {}
 
+  /** Create an immutable declaration or return its exact retry under the tenant lock. */
   async createBatch(
     principal: Principal,
     supplied: z.input<typeof importBatchSchema>,
@@ -267,6 +272,7 @@ export class ContactAttributionService {
     });
   }
 
+  /** Attribute an explicitly confirmed existing contact without changing its owner or creator. */
   async recordImport(
     principal: Principal,
     supplied: z.input<typeof contactImportSchema>,
@@ -347,6 +353,7 @@ export class ContactAttributionService {
     });
   }
 
+  /** Page readable history; unavailable historical provenance remains unknown. */
   async list(
     principal: Principal,
     supplied: z.input<typeof attributionListSchema>,
@@ -406,6 +413,7 @@ export class ContactAttributionService {
     };
   }
 
+  /** Return active-contact contributor identifiers after the caller establishes product access. */
   async summaries(principal: Principal, organizationId: string, ids: string[]) {
     // Compact identifiers for list filters; private source identifiers are never
     // included in snapshots. Product authorization is established by the caller.
@@ -430,6 +438,7 @@ export class ContactAttributionService {
       );
   }
 
+  /** Enrich a bounded history page with current stored names and batch metadata. */
   private async rows(where: SQL | undefined, limit: number, offset: number) {
     const rows = await this.db
       .select({

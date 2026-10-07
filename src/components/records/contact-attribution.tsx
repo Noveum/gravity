@@ -2,7 +2,7 @@
 import type { ContactAttributionService } from "@crm/core/contact-attribution";
 import type { ClientContext, JsonValue } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { dateLabel, requestJson } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { RecordDialog, text } from "./record-dialog";
@@ -187,13 +187,26 @@ function AttributionDialog({
 }) {
   const crm = useCrm();
   const [original] = useState(context);
-  const [submissionKey] = useState(() => crypto.randomUUID());
+  const submissionKeys = useRef(new Map<string, string>());
   return (
     <RecordDialog
       title={copy.recordSource}
       submitLabel={t.save}
       onClose={onClose}
       onSubmit={async (fields) => {
+        const declaration = {
+          label: text(fields, "label"),
+          sourceKind: text(fields, "sourceKind"),
+          sourceMemberId: text(fields, "sourceMemberId") || null,
+        };
+        // Exact retries retain their key, even after a lost response. Correcting
+        // batch metadata starts a new declaration rather than mutating a batch.
+        const identity = JSON.stringify(declaration);
+        let submissionKey = submissionKeys.current.get(identity);
+        if (!submissionKey) {
+          submissionKey = crypto.randomUUID();
+          submissionKeys.current.set(identity, submissionKey);
+        }
         const batch = await requestJson<{ id: string }>("/api/crm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -202,9 +215,7 @@ function AttributionDialog({
             organizationId: original.relationship.organizationId,
             productId: original.relationship.productId,
             submissionKey,
-            label: text(fields, "label"),
-            sourceKind: text(fields, "sourceKind"),
-            sourceMemberId: text(fields, "sourceMemberId") || null,
+            ...declaration,
           }),
         });
         await requestJson("/api/crm", {

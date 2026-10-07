@@ -46,9 +46,9 @@ archived people and products.
 
 ## Validation of this review
 
-The pre-merge Node 22 local run passes all 110 test files: 934 tests passed and two
-environment-dependent PostgreSQL tests skipped. TypeScript, Biome and the production
-build pass. The GitHub PostgreSQL job separately exercises the production driver.
+After integrating main at ec9fb92, the Node 22 local run passes all 116 test files:
+957 tests passed and two environment-dependent PostgreSQL tests skipped. TypeScript,
+Biome and the production build pass. The GitHub PostgreSQL job separately exercises the production driver.
 Local browser review confirms toolbar filtering retains Companies, sidebar product
 selection opens Overview, contributor filtering returns the expected fictional
 contact, and the contact view exposes bounded notes and probability-weighted revenue.

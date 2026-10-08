@@ -5,6 +5,7 @@ import { useId } from "react";
 import { type RecordTab, useWorkspaceData } from "../crm/crm-context";
 import type { useDraft } from "../crm/use-draft";
 import { PersonDetails, RelatedWork } from "../record-details";
+import { ContactAttribution } from "./contact-attribution";
 import { PersonFields } from "./contact-fields";
 import { MetadataSection } from "./metadata-section";
 import {
@@ -141,6 +142,10 @@ export function ContactWorkspace({
               context={context}
               action={action}
               includeContext={false}
+            />
+            <ContactAttribution
+              key={`${context.person?.id}/${context.relationship.productId}`}
+              context={context}
             />
             {context.person && (
               <MetadataSection entity="person" record={context.person} />

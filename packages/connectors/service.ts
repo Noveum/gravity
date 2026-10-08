@@ -14,6 +14,7 @@ import {
 import { z } from "zod";
 import { appUrl } from "../auth/options";
 import { publishChange } from "../core/changes";
+import { recordProviderContribution } from "../core/contact-attribution";
 import { pauseForReply, peopleByEmail } from "../core/outreach";
 import { authorize, DomainError, type Principal } from "../core/policy";
 import { assertProductActive } from "../core/products";
@@ -863,6 +864,7 @@ export class IntegrationService {
     item: typeof s.integrationItems.$inferSelect,
     relationshipId: string,
     linkedByMember = false,
+    linkedBy?: Principal,
   ) {
     const [relationship] = await this.db
       .select()
@@ -927,6 +929,14 @@ export class IntegrationService {
               );
         if (stored.relationshipId !== relationshipId)
           throw new DomainError("THREAD_ALREADY_LINKED", 409);
+        await recordProviderContribution(tx, connection, {
+          personId: relationship.personId,
+          productId: relationship.productId,
+          sourceRecordId: `message:${record.externalId}`,
+          sourceConversationId: stored.id,
+          linkedByMember,
+          linkedBy,
+        });
         await ingestReply(tx, {
           provider: connection.provider === "unipile" ? "unipile" : "gmail",
           accountId: connection.externalAccountId,
@@ -1008,6 +1018,13 @@ export class IntegrationService {
               .where(eq(s.meetings.id, locked.entityId))
               .returning()
           : await tx.insert(s.meetings).values(values).returning();
+        await recordProviderContribution(tx, connection, {
+          personId: relationship.personId,
+          productId: relationship.productId,
+          sourceRecordId: item.id,
+          linkedByMember,
+          linkedBy,
+        });
         await tx
           .update(s.integrationItems)
           .set({
@@ -1074,16 +1091,29 @@ export class IntegrationService {
       relationship.productId,
       true,
     );
-    await this.materializeThread(connection, item, relationshipId, true);
+    await this.materializeThread(
+      connection,
+      item,
+      relationshipId,
+      true,
+      principal,
+    );
   }
   private async materializeThread(
     connection: typeof s.connections.$inferSelect,
     item: typeof s.integrationItems.$inferSelect,
     relationshipId: string,
     linkedByMember: boolean,
+    linkedBy?: Principal,
   ) {
     if (item.record.kind !== "message" || !item.record.threadId)
-      return this.materialize(connection, item, relationshipId, linkedByMember);
+      return this.materialize(
+        connection,
+        item,
+        relationshipId,
+        linkedByMember,
+        linkedBy,
+      );
     const threadItems = await this.db
       .select()
       .from(s.integrationItems)
@@ -1101,6 +1131,7 @@ export class IntegrationService {
         member,
         relationshipId,
         linkedByMember,
+        linkedBy,
       );
   }
   async updateConnection(

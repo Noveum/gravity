@@ -1,6 +1,7 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
+import { useMemo } from "react";
 import { label } from "../client-api";
 import {
   useCreate,
@@ -36,10 +37,30 @@ export function PeopleView() {
     matches(person.name, person.title, companyFor(person.id)?.name),
   );
   const index = useRecordIndex();
+  const attributionByPerson = useMemo(() => {
+    const result = new Map<
+      string,
+      { submitterIds: string[]; sourceMemberIds: string[] }
+    >();
+    for (const row of data.contactAttribution ?? []) {
+      const value = result.get(row.personId) ?? {
+        submitterIds: [],
+        sourceMemberIds: [],
+      };
+      if (row.actorId) value.submitterIds.push(row.actorId);
+      if (row.sourceMemberId) value.sourceMemberIds.push(row.sourceMemberId);
+      result.set(row.personId, value);
+    }
+    return result;
+  }, [data.contactAttribution]);
   const browser = useRecordBrowser(
     people,
     (person) => ({
       ...person,
+      attribution: true,
+      submitterIds: attributionByPerson.get(person.id)?.submitterIds ?? [],
+      sourceMemberIds:
+        attributionByPerson.get(person.id)?.sourceMemberIds ?? [],
       ownerIds: (index.byPerson.get(person.id) ?? []).map(
         (relationship) => relationship.ownerId,
       ),

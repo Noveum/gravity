@@ -19,6 +19,7 @@ import {
   test,
   vi,
 } from "vitest";
+import { ContactAttributionService } from "../packages/core/contact-attribution";
 import {
   CrmService,
   messageActivitySchema,
@@ -154,6 +155,15 @@ beforeEach(() => {
     const params = new URL(url, "http://localhost").searchParams;
     const organizationId = params.get("organizationId") || demoId(1);
     if (params.get("operation") === "invitations") return [];
+    if (params.get("operation") === "contact-attribution")
+      return serialize(
+        await new ContactAttributionService(local.db).list(principal, {
+          organizationId,
+          personId: params.get("personId") ?? "",
+          productId: params.get("productId") ?? undefined,
+          offset: params.get("offset") ?? 0,
+        }),
+      );
     if (
       params.get("operation") === "context" &&
       missingContexts.has(params.get("relationshipId") ?? "")

@@ -311,7 +311,40 @@ test("review links a whole private thread, routes subsequent replies, and expose
   await expect(
     service.link(another, scope.organizationId, item?.id ?? "", demoId(300)),
   ).rejects.toMatchObject({ code: "NOT_FOUND" });
-  await service.link(admin, scope.organizationId, item?.id ?? "", demoId(300));
+  const linkingAgent: Principal = {
+    ...admin,
+    source: "mcp",
+    readOnly: false,
+    organizationId: scope.organizationId,
+    clientId: "verified-link-client",
+    grantId: demoId(987),
+  };
+  await service.link(
+    linkingAgent,
+    scope.organizationId,
+    item?.id ?? "",
+    demoId(300),
+  );
+  const contributions = await local.db
+    .select()
+    .from(s.contactContributions)
+    .where(eq(s.contactContributions.connectionId, connection.id));
+  expect(
+    contributions.filter((row) =>
+      row.sourceRecordId?.startsWith("message:thread-message-"),
+    ),
+  ).toHaveLength(2);
+  expect(
+    contributions.find(
+      (row) => row.sourceRecordId === "message:thread-message-1",
+    ),
+  ).toMatchObject({
+    actorId: demoUser,
+    sourceMemberId: demoUser,
+    transport: "mcp",
+    clientId: "verified-link-client",
+    grantId: demoId(987),
+  });
   const crm = new CrmService(local.db);
   const owner = await crm.context(admin, scope.organizationId, demoId(300));
   expect(owner.messages.some((m) => m.body === record.body)).toBe(true);

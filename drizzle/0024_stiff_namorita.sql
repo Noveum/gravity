@@ -1,0 +1,8 @@
+ALTER TABLE "contact_contributions" DROP CONSTRAINT "contact_contribution_batch_row";--> statement-breakpoint
+ALTER TABLE "contact_contributions" DROP CONSTRAINT "contact_contributions_connection_id_connections_id_fk";
+--> statement-breakpoint
+ALTER TABLE "contact_contributions" DROP CONSTRAINT "contact_contributions_source_conversation_id_conversations_id_fk";
+--> statement-breakpoint
+ALTER TABLE "contact_contributions" ADD CONSTRAINT "contact_contributions_organization_id_connection_id_connections_organization_id_id_fk" FOREIGN KEY ("organization_id","connection_id") REFERENCES "public"."connections"("organization_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "contact_contributions" ADD CONSTRAINT "contact_contributions_organization_id_product_id_source_conversation_id_conversations_organization_id_product_id_id_fk" FOREIGN KEY ("organization_id","product_id","source_conversation_id") REFERENCES "public"."conversations"("organization_id","product_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "contact_contributions" ADD CONSTRAINT "contact_contribution_batch_row" CHECK ((("contact_contributions"."batch_id" IS NULL) = ("contact_contributions"."request_hash" IS NULL)) AND ("contact_contributions"."batch_id" IS NULL OR ("contact_contributions"."product_id" IS NOT NULL AND "contact_contributions"."source_record_id" IS NOT NULL)));

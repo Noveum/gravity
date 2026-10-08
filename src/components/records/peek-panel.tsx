@@ -29,6 +29,7 @@ import {
 import { companyPath, personPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
 import { CompanyActivity } from "./company-activity";
+import { ContactAttribution } from "./contact-attribution";
 import { CompanyFields, PersonFields } from "./contact-fields";
 import { ContactWorkspace } from "./contact-workspace";
 import { ConversationHistory } from "./conversation-history";
@@ -128,6 +129,7 @@ function ArchivedPersonPeek() {
         onPerson={() => {}}
         includeSummary={false}
       />
+      <ContactAttribution context={context} />
       <PersonFields person={context.person} notesOnly />
       <ConversationHistory person={context.person} timeZone={crm.timeZone} />
     </>

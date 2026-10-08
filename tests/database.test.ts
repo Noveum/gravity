@@ -20,12 +20,12 @@ test("all CRM and authentication tables have RLS with only the trusted server po
     SELECT relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'r'
   `);
-  expect(tables.rows).toHaveLength(47);
+  expect(tables.rows).toHaveLength(49);
   expect(tables.rows.every((table) => table.relrowsecurity)).toBe(true);
   const policies = await local.client.query<{ roles: string[] }>(`
     SELECT roles FROM pg_policies WHERE schemaname = 'public'
   `);
-  expect(policies.rows).toHaveLength(47);
+  expect(policies.rows).toHaveLength(49);
   expect(
     policies.rows.every((policy) => policy.roles.join() === "gravity_app"),
   ).toBe(true);
@@ -41,6 +41,8 @@ test("browser roles cannot read CRM, sessions, or signing keys even if table gra
       "invitations",
       "file_entry",
       "file_upload",
+      "contact_import_batches",
+      "contact_contributions",
     ]) {
       await local.client.exec(
         `GRANT SELECT, INSERT ON public.${table} TO ${role}`,
@@ -80,7 +82,7 @@ test("runtime role holds read and write grants on every public table", async () 
       WHERE n.nspname = 'public' AND c.relkind = 'r'
       ORDER BY c.relname
     `);
-    expect(tables.rows).toHaveLength(47);
+    expect(tables.rows).toHaveLength(49);
     expect(
       tables.rows
         .filter((table) => !table.granted)
@@ -149,7 +151,7 @@ test("managed database connections verify certificates and bound serverless conn
   );
 });
 
-test("file migration removes inherited browser and bypass-RLS service grants", async () => {
+test("file and attribution migrations remove inherited browser and bypass-RLS service grants", async () => {
   const { PGlite } = await import("@electric-sql/pglite");
   const { drizzle } = await import("drizzle-orm/pglite");
   const { migrate } = await import("drizzle-orm/pglite/migrator");
@@ -163,7 +165,12 @@ test("file migration removes inherited browser and bypass-RLS service grants", a
     `);
     await migrate(drizzle(client), { migrationsFolder: "drizzle" });
     for (const role of ["anon", "authenticated", "service_role"])
-      for (const table of ["file_entry", "file_upload"]) {
+      for (const table of [
+        "file_entry",
+        "file_upload",
+        "contact_import_batches",
+        "contact_contributions",
+      ]) {
         const result = await client.query<{ allowed: boolean }>(
           "SELECT has_table_privilege($1, $2, 'SELECT,INSERT,UPDATE,DELETE') AS allowed",
           [role, `public.${table}`],

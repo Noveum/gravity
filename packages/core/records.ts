@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
+import { recordContactSubmission } from "./contact-attribution";
 import { scopeSchema } from "./crm";
 import { authorize, DomainError, type Principal } from "./policy";
 import { assertProductActive } from "./products";
@@ -290,6 +291,11 @@ export class RecordService {
         )
         .returning();
       if (!updated) throw new DomainError("CONFLICT", 409);
+      await recordContactSubmission(tx, principal, {
+        organizationId: input.organizationId,
+        personId: person.id,
+        kind: "updated",
+      });
       await tx.insert(s.changeEvents).values({
         organizationId: input.organizationId,
         actorId: principal.userId,
@@ -410,6 +416,11 @@ export class RecordService {
         )
         .returning();
       if (!updated) throw new DomainError("CONFLICT", 409);
+      await recordContactSubmission(tx, principal, {
+        organizationId: input.organizationId,
+        personId: person.id,
+        kind: "updated",
+      });
       await tx.insert(s.changeEvents).values({
         organizationId: input.organizationId,
         actorId: principal.userId,

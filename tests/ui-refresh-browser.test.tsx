@@ -22,6 +22,7 @@ test("rapid minimum and maximum edits combine without losing the other field or 
     .set({ amountMinor: 300000, probability: 40 })
     .where(eq(s.opportunities.id, demoId(1101)));
   await mountCrm(harness, "/opportunities?layout=list&sort=name_desc");
+  fireEvent.click(screen.getByRole("button", { name: t.uiRefresh.dealValue }));
   const minimum = screen.getByLabelText(t.minimumDealSize);
   const maximum = screen.getByLabelText(t.maximumDealSize);
   act(() => {
@@ -97,6 +98,7 @@ test("an active owner stays editable when a board search has no matches", async 
 
 test("a layout click immediately after an amount edit retains the amount filter", async () => {
   await mountCrm(harness, "/opportunities");
+  fireEvent.click(screen.getByRole("button", { name: t.uiRefresh.dealValue }));
   act(() => {
     fireEvent.change(screen.getByLabelText(t.minimumDealSize), {
       target: { value: "1000" },
@@ -109,4 +111,68 @@ test("a layout click immediately after an amount edit retains the amount filter"
     minimum: "1000",
     layout: "list",
   });
+});
+
+test("slider updates preserve scope and sorting, and its full range restores unpriced deals", async () => {
+  await mountCrm(
+    harness,
+    `/opportunities?owner=${demoUser}&sort=name_desc&layout=board`,
+  );
+  fireEvent.click(screen.getByRole("button", { name: t.uiRefresh.dealValue }));
+  const minimum = screen.getByRole("slider", {
+    name: t.uiRefresh.minimumSlider,
+  });
+  fireEvent.keyDown(minimum, { key: "ArrowRight" });
+  expect(
+    Object.fromEntries(new URLSearchParams(window.location.search)),
+  ).toEqual({
+    owner: demoUser,
+    sort: "name_desc",
+    layout: "board",
+    minimum: "50.00",
+  });
+  expect(
+    screen.getByRole("button", { name: "Cedar workflow pilot" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Northstar evaluation project" }),
+  ).toBeNull();
+  fireEvent.keyDown(minimum, { key: "Home" });
+  expect(
+    Object.fromEntries(new URLSearchParams(window.location.search)),
+  ).toEqual({
+    owner: demoUser,
+    sort: "name_desc",
+    layout: "board",
+  });
+  expect(
+    screen.getByRole("button", { name: "Northstar evaluation project" }),
+  ).toBeTruthy();
+});
+
+test("hiding the bar preserves active filters and clear remains available", async () => {
+  await mountCrm(harness, "/opportunities?minimum=1000");
+  fireEvent.click(
+    screen.getByRole("button", { name: t.uiRefresh.hideFilters }),
+  );
+  expect(
+    screen.queryByRole("button", { name: t.uiRefresh.dealValue }),
+  ).toBeNull();
+  expect(new URLSearchParams(window.location.search).get("minimum")).toBe(
+    "1000",
+  );
+  expect(
+    screen.queryByRole("button", { name: "Northstar evaluation project" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: t.clearFilters }));
+  expect(window.location.search).toBe("");
+  expect(
+    screen.getByRole("button", { name: "Northstar evaluation project" }),
+  ).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: t.uiRefresh.showFilters }),
+  );
+  expect(
+    screen.getByRole("button", { name: t.uiRefresh.dealValue }),
+  ).toBeTruthy();
 });

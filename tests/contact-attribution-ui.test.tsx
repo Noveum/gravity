@@ -77,6 +77,9 @@ test("recording a declared source preserves unknown creator and owner, and filte
     attribution.getAllByText(t.attribution.unknown).length,
   ).toBeGreaterThan(0);
   act(() => visit("/people"));
+  fireEvent.click(
+    await screen.findByRole("button", { name: t.uiRefresh.attributionFilters }),
+  );
   const source = await screen.findByRole("combobox", {
     name: t.attribution.sourceMember,
   });

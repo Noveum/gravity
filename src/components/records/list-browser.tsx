@@ -2,13 +2,16 @@
 import { parseMoney } from "@crm/core/analytics";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { type ReactNode, useId, useMemo, useState } from "react";
 import { useWorkspaceData } from "../crm/crm-context";
+import { useFilterVisibility } from "../filter-visibility";
 import { minorStep } from "../money";
+import { FilterPopover } from "../ui/filter-popover";
 import { Select } from "../ui/select";
 import { currentViewQuery, replaceViewQuery } from "../view-query";
+import { ValueFilter } from "./value-filter";
 
 export interface RecordFacts {
   tags?: readonly string[];
@@ -206,14 +209,18 @@ export function useRecordBrowser<T>(
     ]),
   ) as typeof emptyFilters;
   const replace = replaceViewQuery;
-  const update = (key: keyof typeof emptyFilters, value: string) => {
+  const updateMany = (values: Partial<typeof emptyFilters>) => {
     const next = currentViewQuery();
-    const parameter = key === "ownerId" ? "owner" : key;
-    if (value && !(key === "sort" && value === "default"))
-      next.set(parameter, value);
-    else next.delete(parameter);
+    for (const [key, value] of Object.entries(values)) {
+      const parameter = key === "ownerId" ? "owner" : key;
+      if (value && !(key === "sort" && value === "default"))
+        next.set(parameter, value);
+      else next.delete(parameter);
+    }
     replace(next);
   };
+  const update = (key: keyof typeof emptyFilters, value: string) =>
+    updateMany({ [key]: value });
   const clear = () => {
     const next = currentViewQuery();
     for (const key of Object.keys(emptyFilters))
@@ -324,6 +331,7 @@ export function useRecordBrowser<T>(
     rows: filtered.map(({ row }) => row),
     filters,
     update,
+    updateMany,
     clear,
     amountMaximum:
       Math.max(
@@ -387,6 +395,7 @@ export function useRecordBrowser<T>(
         `${t.attribution.memberId}: ${id}`,
     })),
     userId: crm.userId,
+    organizationId: crm.organizationId,
     members: crm.data.members,
   };
 }
@@ -427,6 +436,7 @@ export function RecordFilters({
   hiddenFields?: readonly (keyof typeof emptyFilters)[];
 }) {
   const { filters, update } = browser;
+  const { visible, setVisible } = useFilterVisibility(browser);
   const id = useId();
   const active = Object.entries(filters).filter(
     ([key, value]) => value && !(key === "sort" && value === "default"),
@@ -435,137 +445,161 @@ export function RecordFilters({
     key: keyof typeof emptyFilters,
     label: string,
     options: readonly { value: string; label: string }[],
+    compact = true,
   ) =>
     hiddenFields.includes(key) ? null : (
       <label className={`filter-field filter-${key}`} htmlFor={`${id}-${key}`}>
-        <span>{label}</span>
+        <span className={compact ? "sr-only" : undefined}>{label}</span>
         <Select
           id={`${id}-${key}`}
           label={label}
           value={filters[key]}
           onChange={(value) => update(key, value)}
           options={options}
+          displayValue={
+            !filters[key] && (key === "qualification" || key === "status")
+              ? label
+              : undefined
+          }
+          className={filters[key] ? "filter-active" : ""}
         />
       </label>
     );
   return (
     <section className="record-filters" aria-label={t.filters}>
-      <div className="record-filter-heading">
-        <span className="filter-heading-label">
-          <SlidersHorizontal size={14} aria-hidden />
-          {t.filters}
-          {active > 0 && <span className="filter-count">{active}</span>}
-        </span>
+      <div className="record-filter-row">
         <button
           type="button"
-          className="ghost"
-          onClick={browser.clear}
-          disabled={!active}
+          className="filter-toggle ghost"
+          onClick={() => setVisible(!visible)}
+          aria-expanded={visible}
+          aria-controls={`${id}-controls`}
+          aria-describedby={active > 0 ? `${id}-active` : undefined}
+          aria-label={
+            visible ? t.uiRefresh.hideFilters : t.uiRefresh.showFilters
+          }
+          title={visible ? t.uiRefresh.hideFilters : t.uiRefresh.showFilters}
         >
-          {t.clearFilters}
+          <SlidersHorizontal size={14} aria-hidden />
+          <span>{t.filters}</span>
+          {active > 0 && (
+            <>
+              <span className="filter-count" aria-hidden>
+                {active}
+              </span>
+              <span id={`${id}-active`} className="sr-only">
+                {t.uiRefresh.activeFilters.replace("{count}", String(active))}
+              </span>
+            </>
+          )}
         </button>
+        {visible && (
+          <div className="record-filter-controls" id={`${id}-controls`}>
+            {(browser.hasOwner || !!filters.ownerId) &&
+              field("ownerId", t.owner, [
+                { value: "", label: t.everyone },
+                ...browser.members.map((member) => ({
+                  value: member.id,
+                  label: member.name,
+                })),
+              ])}
+            {(!!browser.tags.length || !!filters.tag) &&
+              field("tag", t.tags, [
+                { value: "", label: t.allTags },
+                ...browser.tags.map(([value, label]) => ({ value, label })),
+              ])}
+            <ValueFilter
+              filters={filters}
+              amountMaximum={browser.amountMaximum}
+              currencies={browser.currencies}
+              invalid={browser.invalid}
+              onChange={browser.updateMany}
+            />
+            {(!!browser.qualifications.length || !!filters.qualification) &&
+              field("qualification", t.qualification, [
+                { value: "", label: t.allQualifications },
+                ...browser.qualifications.map((value) => ({
+                  value,
+                  label: value.replaceAll("_", " "),
+                })),
+              ])}
+            {(!!browser.statuses.length || !!filters.status) &&
+              field("status", t.status, [
+                { value: "", label: t.allStatuses },
+                ...browser.statuses.map((value) => ({ value, label: value })),
+              ])}
+            {(browser.hasAttribution ||
+              !!filters.submittedBy ||
+              !!filters.sourceMemberId ||
+              !!filters.attribution) && (
+              <FilterPopover
+                label={t.uiRefresh.attributionFilters}
+                summary={t.attribution.title}
+                active={
+                  !!(
+                    filters.submittedBy ||
+                    filters.sourceMemberId ||
+                    filters.attribution
+                  )
+                }
+              >
+                <div className="attribution-filter-fields">
+                  {field(
+                    "submittedBy",
+                    t.attribution.submittedBy,
+                    [
+                      { value: "", label: t.attribution.allSubmitters },
+                      {
+                        value: browser.userId,
+                        label: t.attribution.submittedByMe,
+                      },
+                      ...browser.attributionMembers
+                        .filter((m) => m.id !== browser.userId)
+                        .map((m) => ({ value: m.id, label: m.name })),
+                    ],
+                    false,
+                  )}
+                  {field(
+                    "sourceMemberId",
+                    t.attribution.sourceMember,
+                    [
+                      { value: "", label: t.attribution.allSources },
+                      ...browser.attributionMembers.map((m) => ({
+                        value: m.id,
+                        label: m.name,
+                      })),
+                    ],
+                    false,
+                  )}
+                  {field(
+                    "attribution",
+                    t.attribution.title,
+                    [
+                      { value: "", label: t.attribution.allCoverage },
+                      { value: "recorded", label: t.attribution.recorded },
+                      { value: "unknown", label: t.attribution.unknownFilter },
+                      { value: "shared", label: t.attribution.shared },
+                    ],
+                    false,
+                  )}
+                </div>
+              </FilterPopover>
+            )}
+          </div>
+        )}
+        {active > 0 && (
+          <button
+            type="button"
+            className="ghost filter-clear"
+            onClick={browser.clear}
+            aria-label={t.clearFilters}
+            title={t.clearFilters}
+          >
+            <X size={14} aria-hidden />
+          </button>
+        )}
         {!hideSort && <RecordSort browser={browser} />}
       </div>
-      <div className="record-filter-fields">
-        {(browser.hasOwner || !!filters.ownerId) &&
-          field("ownerId", t.owner, [
-            { value: "", label: t.everyone },
-            ...browser.members.map((member) => ({
-              value: member.id,
-              label: member.name,
-            })),
-          ])}
-        {field("tag", t.tags, [
-          { value: "", label: t.allTags },
-          ...browser.tags.map(([value, label]) => ({ value, label })),
-        ])}
-        {field("size", t.dealSize, [
-          { value: "", label: t.anyDealSize },
-          { value: "known", label: t.knownDealSize },
-          { value: "unknown", label: t.amountUnknown },
-        ])}
-        {field("currency", t.currency, [
-          { value: "", label: t.allCurrencies },
-          ...[...new Set(["USD", ...browser.currencies])].map((value) => ({
-            value,
-            label: value,
-          })),
-        ])}
-        <div
-          className="filter-amount-range"
-          aria-describedby="deal-range-currency"
-        >
-          <label className="filter-amount-field">
-            <span>{t.minimumDealSize}</span>
-            <input
-              className="filter-amount-input"
-              type="number"
-              min="0"
-              step={minorStep(filters.currency || "USD")}
-              placeholder="0"
-              value={filters.minimum}
-              onChange={(event) => update("minimum", event.target.value)}
-              aria-invalid={browser.invalid}
-            />
-          </label>
-          <span className="range-separator" aria-hidden>
-            –
-          </span>
-          <label className="filter-amount-field">
-            <span>{t.maximumDealSize}</span>
-            <input
-              className="filter-amount-input"
-              type="number"
-              min="0"
-              step={minorStep(filters.currency || "USD")}
-              placeholder={String(browser.amountMaximum || 10000)}
-              value={filters.maximum}
-              onChange={(event) => update("maximum", event.target.value)}
-              aria-invalid={browser.invalid}
-            />
-          </label>
-        </div>
-        {(!!browser.qualifications.length || !!filters.qualification) &&
-          field("qualification", t.qualification, [
-            { value: "", label: t.allQualifications },
-            ...browser.qualifications.map((value) => ({
-              value,
-              label: value.replaceAll("_", " "),
-            })),
-          ])}
-        {(!!browser.statuses.length || !!filters.status) &&
-          field("status", t.status, [
-            { value: "", label: t.allStatuses },
-            ...browser.statuses.map((value) => ({ value, label: value })),
-          ])}
-        {browser.hasAttribution && (
-          <>
-            {field("submittedBy", t.attribution.submittedBy, [
-              { value: "", label: t.attribution.allSubmitters },
-              { value: browser.userId, label: t.attribution.submittedByMe },
-              ...browser.attributionMembers
-                .filter((m) => m.id !== browser.userId)
-                .map((m) => ({ value: m.id, label: m.name })),
-            ])}
-            {field("sourceMemberId", t.attribution.sourceMember, [
-              { value: "", label: t.attribution.allSources },
-              ...browser.attributionMembers.map((m) => ({
-                value: m.id,
-                label: m.name,
-              })),
-            ])}
-            {field("attribution", t.attribution.title, [
-              { value: "", label: t.attribution.allCoverage },
-              { value: "recorded", label: t.attribution.recorded },
-              { value: "unknown", label: t.attribution.unknownFilter },
-              { value: "shared", label: t.attribution.shared },
-            ])}
-          </>
-        )}
-      </div>
-      <small id="deal-range-currency" className="filter-range-note">
-        {t.dealFilterCurrency.replace("{currency}", filters.currency || "USD")}
-      </small>
       {browser.invalid && (
         <p className="filter-error" role="alert">
           {t.invalidDealRange}

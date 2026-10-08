@@ -1471,6 +1471,41 @@ test("non-admins have no product creation buttons, shortcut or advertised creati
   expect(screen.getByRole("dialog", { name: t.commands })).toBeTruthy();
 });
 
+test("opportunities follows Overview in Work and keeps its go-to shortcut", async () => {
+  mount("/overview");
+  const work = document.querySelector<HTMLElement>('[data-section="work"]');
+  const records = document.querySelector<HTMLElement>(
+    '[data-section="records"]',
+  );
+  if (!work || !records) throw new Error("Missing navigation groups");
+  expect(
+    within(work)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("data-nav-item")),
+  ).toEqual(["overview", "opportunities", "actions", "meetings"]);
+  expect(
+    within(records).queryByRole("link", { name: t.opportunities }),
+  ).toBeNull();
+  const toggle = within(work).getByRole("button", { name: t.navWork });
+  fireEvent.click(toggle);
+  expect(
+    within(work).queryByRole("link", { name: t.opportunities }),
+  ).toBeNull();
+  fireEvent.click(toggle);
+  fireEvent.click(within(work).getByRole("link", { name: t.opportunities }));
+  await waitFor(() => expect(window.location.pathname).toBe("/opportunities"));
+  fireEvent.click(within(work).getByRole("link", { name: t.overview }));
+  fireEvent.keyDown(document.body, { key: "g" });
+  fireEvent.keyDown(document.body, { key: "o" });
+  await waitFor(() => expect(window.location.pathname).toBe("/opportunities"));
+  expect(heading(t.opportunities)).toBeTruthy();
+  expect(
+    within(work)
+      .getByRole("link", { name: t.opportunities })
+      .getAttribute("aria-current"),
+  ).toBe("page");
+});
+
 test("visible go-to hints include Outreach and the help button opens the map", async () => {
   mount();
   const sidebar = document.getElementById("navigation-panel") as HTMLElement;

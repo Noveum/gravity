@@ -32,13 +32,19 @@ export function fromMinor(amountMinor: number | null, currency: string) {
     : String(amountMinor / 10 ** minorDigits(currency));
 }
 
-export function formatMoney(amountMinor: number | null, currency: string) {
+export function formatMoney(
+  amountMinor: number | null,
+  currency: string,
+  notation?: Intl.NumberFormatOptions["notation"],
+) {
   if (amountMinor === null) return t.amountUnknown;
   const amount = amountMinor / 10 ** minorDigits(currency);
   try {
     return new Intl.NumberFormat("en", {
       style: "currency",
       currency,
+      notation,
+      minimumFractionDigits: notation === "compact" ? 0 : minorDigits(currency),
       maximumFractionDigits: minorDigits(currency),
     }).format(amount);
   } catch {

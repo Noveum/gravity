@@ -13,6 +13,7 @@ export function Select({
   id,
   title,
   className = "",
+  displayValue,
   "aria-keyshortcuts": keyshortcuts,
 }: {
   label: string;
@@ -24,6 +25,7 @@ export function Select({
   id?: string;
   title?: string;
   className?: string;
+  displayValue?: string;
   "aria-keyshortcuts"?: ComponentProps<"button">["aria-keyshortcuts"];
 }) {
   const visibleOptions =
@@ -39,8 +41,10 @@ export function Select({
       value={value || emptyValue}
       onValueChange={(next) => onChange(next === emptyValue ? "" : next)}
       disabled={disabled}
-      name={name}
     >
+      {name && (
+        <input type="hidden" name={name} value={value} disabled={disabled} />
+      )}
       <SelectPrimitive.Trigger
         ref={setTrigger}
         id={id}
@@ -52,7 +56,7 @@ export function Select({
           visibleOptions.find((option) => option.value === value)?.label
         }
       >
-        <SelectPrimitive.Value />
+        <SelectPrimitive.Value>{displayValue}</SelectPrimitive.Value>
         <SelectPrimitive.Icon asChild>
           <ChevronDown size={14} aria-hidden />
         </SelectPrimitive.Icon>

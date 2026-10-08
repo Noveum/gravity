@@ -105,6 +105,10 @@
   margin: 0 0 4px;
   font-size: var(--text-dense);
   font-weight: 600;
+  height: auto;
+}
+.opportunity-column-head .group-title > span:first-child {
+  color: inherit;
 }
 
 .opportunity-column-count {
@@ -120,13 +124,15 @@
 .opportunity-column-head .stage-value {
   display: block;
   margin: 0;
+  padding: 0;
   font-size: var(--text-xs);
   color: var(--gravity-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .opportunity-workspace .opportunity-card {
-  padding: 12px;
+  padding: 10px;
+  gap: 4px;
   margin: 8px;
   border-radius: 8px;
   box-shadow: 0 1px 2px rgb(0 0 0 / 3%);
@@ -143,7 +149,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   font-size: var(--text-2xs);
   color: var(--gravity-muted);
 }
@@ -154,7 +160,7 @@
 }
 
 .opportunity-card .opportunity-person {
-  margin: 5px 0 12px;
+  margin: 2px 0 4px;
   overflow-wrap: anywhere;
 }
 
@@ -185,7 +191,7 @@
 }
 
 .opportunity-card-owner {
-  margin-top: 6px;
+  margin-top: 2px;
   font-size: var(--text-2xs);
   color: var(--gravity-muted);
 }
@@ -194,7 +200,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  margin-top: 7px;
+  margin-top: 2px;
   color: var(--gravity-muted);
 }
 
@@ -202,7 +208,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 9px;
+  margin-top: 4px;
 }
 
 .opportunity-card .record-tags .badge {
@@ -212,8 +218,8 @@
 }
 
 .opportunity-card .deal-context {
-  margin-top: 10px;
-  padding-top: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
   border-top: 1px solid var(--gravity-border-subtle);
 }
 

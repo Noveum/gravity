@@ -67,13 +67,13 @@ const repeatable = { repeatable: true };
 
 const definitions = {
   "go-overview": goTo("v", "overview"),
+  "go-opportunities": goTo("o", "opportunities"),
   "go-actions": goTo("a", "actions"),
   "go-meetings": goTo("m", "meetings"),
   "go-outreach": goTo("r", "outreach"),
   "go-sequences": goTo("s", "sequences"),
   "go-people": goTo("p", "people"),
   "go-companies": goTo("c", "companies"),
-  "go-opportunities": goTo("o", "opportunities"),
   "go-materials": goTo("f", "materials"),
   "go-integrations": goTo("i", "integrations"),
   "go-assistants": goTo("x", "assistants"),

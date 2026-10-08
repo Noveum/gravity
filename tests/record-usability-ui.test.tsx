@@ -359,6 +359,9 @@ describe("browsing records", () => {
       inspector().getByRole("button", { name: t.closeInspector }),
     );
     await chooseSelect(screen.getByLabelText(t.tags), "Enterprise");
+    fireEvent.click(
+      screen.getByRole("button", { name: t.uiRefresh.dealValue }),
+    );
     fireEvent.change(screen.getByLabelText(t.minimumDealSize), {
       target: { value: "20000" },
     });

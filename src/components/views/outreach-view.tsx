@@ -1,7 +1,7 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import { useRouter, useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useVerbs, useWorkspaceData } from "../crm/crm-context";
 import { DeliveryChecks, useDeliveryChecks } from "../outreach/delivery-checks";
 import {
@@ -16,6 +16,7 @@ import { PausedRow } from "../outreach/paused-list";
 import { PipelineBoard } from "../outreach/pipeline-board";
 import { SendDialog } from "../outreach/send-dialog";
 import { SentRow } from "../outreach/sent-list";
+import { StopEnrollmentDialog } from "../outreach/sequence-dialog";
 import { TouchActions } from "../outreach/touch-actions";
 import { MarkSentDialog, SkipDialog } from "../outreach/touch-dialogs";
 import { TouchDrawer } from "../outreach/touch-drawer";
@@ -50,6 +51,7 @@ export function OutreachView() {
   const outreach = useOutreachData();
   const { due, queue } = outreach;
   const send = useOutreachSend();
+  const [stopping, setStopping] = useState<PausedEnrollment | null>(null);
   const deliveries = useDeliveryChecks(tab === "sent");
   const touches = new Map<string, Touch>(
     [
@@ -126,6 +128,21 @@ export function OutreachView() {
     crm.notify(t.resumed.replace("{name}", enrollment.person.name), "success");
     await outreach.reload();
   }
+  async function stop(enrollment: PausedEnrollment) {
+    const result = await send<{ version: number }>({
+      operation: "enrollment",
+      enrollmentId: enrollment.id,
+      version: enrollment.version,
+      command: "stop",
+    });
+    if (!result.ok) return result.error;
+    crm.notify(
+      t.enrollmentStopped.replace("{name}", enrollment.person.name),
+      "success",
+    );
+    await outreach.reload();
+    return null;
+  }
   const drawerTouch =
     verbs.drawer && (touches.get(verbs.drawer.touch.id) ?? verbs.drawer.touch);
   const flat = (
@@ -184,6 +201,9 @@ export function OutreachView() {
               key={enrollment.id}
               enrollment={enrollment}
               onResume={resume}
+              onStop={(target) => {
+                if (crm.canLeaveEditor()) setStopping(target);
+              }}
             />
           ))}
         </TouchGroup>
@@ -248,6 +268,14 @@ export function OutreachView() {
               ? verbs.skip(verbs.dialog.touch, reason)
               : Promise.resolve(null)
           }
+        />
+      )}
+      {stopping && (
+        <StopEnrollmentDialog
+          name={stopping.person.name}
+          sequenceName={stopping.sequenceName}
+          onClose={() => setStopping(null)}
+          onSubmit={() => stop(stopping)}
         />
       )}
       <div

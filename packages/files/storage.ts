@@ -51,7 +51,7 @@ export async function readLocalObject(key: string) {
 let connection:
   | { client: S3Client; bucket: string; fingerprint: string }
   | undefined;
-function storageConnection() {
+export function storageConnection() {
   const {
     S3_BUCKET,
     S3_ACCESS_KEY_ID,
@@ -90,11 +90,13 @@ function storageConnection() {
     };
   return connection;
 }
-export function objectStorage(): FileStorage {
+export function objectStorage(
+  endpoint: "files" | "materials" = "files",
+): FileStorage {
   if (isDemoMode())
     return {
       uploadUrl: async (key) =>
-        `/api/files?operation=upload-bytes&uploadId=${key.split("/").at(-1)}`,
+        `/api/${endpoint}?operation=upload-bytes&uploadId=${key.split("/").at(-1)}`,
       sealUpload: async (source, target, size) => {
         const bytes = await readLocalObject(source);
         if (bytes.length !== size) throw new DomainError("FILE_SIZE", 413);

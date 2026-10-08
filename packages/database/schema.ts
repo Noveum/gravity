@@ -898,7 +898,7 @@ export const assets = pgTable(
       columns: [t.organizationId, t.uploadedBy],
       foreignColumns: [memberships.organizationId, memberships.userId],
     }),
-    check("asset_size_valid", sql`${t.size} > 0 AND ${t.size} <= 10485760`),
+    check("asset_size_valid", sql`${t.size} > 0 AND ${t.size} <= 104857600`),
   ],
 ).enableRLS();
 export const assetStages = pgTable(
@@ -920,6 +920,40 @@ export const assetStages = pgTable(
       columns: [t.organizationId, t.productId, t.stageId],
       foreignColumns: [stages.organizationId, stages.productId, stages.id],
     }),
+  ],
+).enableRLS();
+export const assetUpload = pgTable(
+  "asset_upload",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    folderId: uuid("folder_id").notNull(),
+    stageIds: jsonb("stage_ids").$type<string[]>().notNull().default([]),
+    name: text("name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    storageKey: text("storage_key").notNull(),
+    sha256: text("sha256"),
+    uploadedBy: text("uploaded_by").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.uploadedBy],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.folderId],
+      foreignColumns: [folders.organizationId, folders.productId, folders.id],
+    }).onDelete("cascade"),
+    check("asset_upload_size", sql`${t.size} > 0 AND ${t.size} <= 104857600`),
   ],
 ).enableRLS();
 export const evidence = pgTable(

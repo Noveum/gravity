@@ -290,6 +290,7 @@
     "LAST_ACTIVE_PRODUCT": "The workspace needs at least one active product. Create or restore another product first.",
     "STAGE_EXISTS": "A stage with this name already exists in this pipeline.",
     "STAGE_CATEGORY_INVALID": "Deal stages must be open, won or lost.",
+    "STAGE_REQUIRED": "Choose an active stage with the deal's original outcome before restoring it.",
     "LAST_OPEN_STAGE": "Every pipeline needs at least one open stage. Add or reopen another stage first.",
     "STAGE_ORDER_INVALID": "List every active stage of this pipeline exactly once.",
     "STAGE_TARGET_INVALID": "Choose another active stage in the same pipeline to move records to.",
@@ -2243,7 +2244,7 @@
   },
   "fieldFilters": {
     "field": "Custom field",
-    "allFields": "Any custom field",
+    "allFields": "Choose a custom field",
     "operator": "Field comparison",
     "value": "Field value",
     "hint": "Fields with the same name and type are matched across the selected products. Values must match within one relationship.",
@@ -2256,6 +2257,22 @@
     "lte": "At most",
     "exists": "Is present",
     "missing": "Is missing"
+  },
+  "archiveDeal": "Archive deal",
+  "archiveDealConfirm": "Archive this deal? You can restore it from Archived deals.",
+  "archivedDeals": "Archived deals",
+  "dealArchived": "{name} was archived.",
+  "failedReceipts": {
+    "heading": "Failed provider receipts",
+    "hint": "Review failed receipts before outreach. Discarding keeps the original receipt and audit trail and requires fresh approval for related messages.",
+    "empty": "No failed receipts need review.",
+    "attempts": "Processing attempts: {count}",
+    "discard": "Review discard",
+    "confirm": "Discard this receipt",
+    "confirmation": "Discard this receipt without importing it? Related approvals will be cleared. Review the conversation before approving outreach again.",
+    "processing": "A worker is processing this receipt. Review it after processing finishes.",
+    "previous": "Previous failed receipts",
+    "next": "Next failed receipts"
   },
   "internalTasks": {
     "heading": "Internal tasks",

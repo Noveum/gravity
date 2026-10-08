@@ -8,6 +8,7 @@ import { and, asc, desc, eq, gt, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { appUrl } from "../auth/options";
 import { publishChange } from "../core/changes";
+import { lockContactDirectory } from "../core/contact-history";
 import { preciseOffsetInstantSchema } from "../core/datetime";
 import { authorize, DomainError, type Principal } from "../core/policy";
 import type { Database } from "../database/client";
@@ -99,7 +100,20 @@ async function manageProduct(
   principal: Principal,
   input: z.infer<typeof yoduScopeSchema>,
 ) {
-  const permission = await authorize(
+  let permission = await authorize(
+    db,
+    principal,
+    input.organizationId,
+    input.productId,
+    true,
+  );
+  if (permission.membership.role !== "admin")
+    throw new DomainError("FORBIDDEN", 403);
+  // Membership and product-grant changes take the organization update lock.
+  // Acquire its shared lock before waiting on product/source rows, then refresh
+  // authority: a revocation may have committed since the preliminary check.
+  await lockContactDirectory(db, input.organizationId);
+  permission = await authorize(
     db,
     principal,
     input.organizationId,

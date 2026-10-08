@@ -146,6 +146,8 @@ import {
   meetingSchema,
   opportunityChangeSchema,
   opportunityCreateSchema,
+  opportunityRemovalSchema,
+  opportunityRestoreSchema,
   personArchiveSchema,
   personUpdateSchema,
   RecordService,
@@ -1006,6 +1008,28 @@ export const operations: Operation[] = [
   operation({
     api: "crm",
     method: "POST",
+    operation: "opportunity-delete",
+    name: "delete_deal",
+    description:
+      "Reversibly remove a duplicate or unwanted deal with its current opportunityId/version. Archives the record and removes it from active lists, boards and forecasts while retaining its amount, currency, outcome, history and audit trail. Restore with restore_deal. Requires current organization/product write access.",
+    schema: opportunityRemovalSchema,
+    run: (c, input) =>
+      records(c).archiveOpportunity(c.principal, { ...input, archived: true }),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "opportunity-restore",
+    name: "restore_deal",
+    description:
+      "Restore a removed deal with its current opportunityId/version from get_workspace.archivedOpportunities. Retains its original outcome and history. If its old stage was retired or changed category, explicitly provide an active same-product stageId with the original outcome category. Requires current write access and an active product/contact.",
+    schema: opportunityRestoreSchema,
+    run: (c, input) =>
+      records(c).archiveOpportunity(c.principal, { ...input, archived: false }),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
     operation: "pipeline",
     name: "create_pipeline",
     description:
@@ -1167,7 +1191,7 @@ export const operations: Operation[] = [
     operation: "person-update",
     name: "update_person",
     description:
-      "Edit contact fields, company and summary with optimistic version checking. Email/channel edits invalidate affected approvals. Assistants cannot change the email addresses or LinkedIn profile of a do-not-contact person; that returns HUMAN_ACTION_REQUIRED. An email or LinkedIn profile that already belongs to another person in the organization returns PERSON_EXISTS.",
+      "Edit contact fields, company and summary with optimistic version checking. Omitted summary is preserved; an explicit empty summary clears it. Email/channel edits invalidate affected approvals. Assistants cannot change the email addresses or LinkedIn profile of a do-not-contact person; that returns HUMAN_ACTION_REQUIRED. An email or LinkedIn profile that already belongs to another person in the organization returns PERSON_EXISTS.",
     schema: personUpdateSchema,
     run: (c, input) => records(c).updatePerson(c.principal, input),
   }),
@@ -1491,7 +1515,7 @@ export const operations: Operation[] = [
     operation: "overview",
     name: "get_integrations",
     description:
-      "Read the acting user's authorized connections and paged import-review items. Provider secrets are never returned.",
+      "Read the acting user's authorized connections, paged import-review items and owner-private failedReceipts. Follow nextFailedReceiptCursor as failedReceiptCursor; explicitly discard a failed receipt with ignore_import only after review. Provider secrets and raw failed payloads are never returned.",
     schema: integrationOverviewInput,
     publish: false,
     run: (c, input) => integrations(c).overview(c.principal, input),
@@ -1590,7 +1614,7 @@ export const operations: Operation[] = [
     operation: "ignore",
     name: "ignore_import",
     description:
-      "Ignore an owned import-review item without attaching it as product context.",
+      "Ignore an owned import-review item, or explicitly discard an owned failed receipt from get_integrations.failedReceipts by its itemId. Discard retains the original receipt and audit trail, requires no active worker lease, and invalidates related approvals. Never sends a message.",
     schema: integrationScope.extend({ itemId: z.uuid() }),
     run: (c, input) =>
       integrations(c).link(c.principal, input.organizationId, input.itemId),

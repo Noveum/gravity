@@ -42,6 +42,8 @@ export function YoduSettings({
   const [createId, setCreateId] = useState("");
   const alive = useRef(false);
   const generation = useRef(0);
+  const credentialScope = useRef("");
+  const credentialGeneration = useRef(0);
   const pending = useRef(false);
   const canManage = overview?.canManage ?? false;
   const relationships = data.relationships.filter(
@@ -62,15 +64,17 @@ export function YoduSettings({
       const scope = { organizationId, productId: selectedProduct };
       try {
         const [sources, events] = await Promise.all([
-          requestJson<Sources>(
-            `/api/integrations?${new URLSearchParams({ ...scope, operation: "yodu-sources" })}`,
-          ),
+          cursor
+            ? Promise.resolve(null)
+            : requestJson<Sources>(
+                `/api/integrations?${new URLSearchParams({ ...scope, operation: "yodu-sources" })}`,
+              ),
           requestJson<EventPage>(
             `/api/integrations?${new URLSearchParams({ ...scope, operation: "yodu-events", unmatched: filter, ...(cursor ? { cursor } : {}) })}`,
           ),
         ]);
         if (alive.current && generation.current === current) {
-          setOverview(sources);
+          if (sources) setOverview(sources);
           setPage((prior) =>
             cursor && prior
               ? { ...events, events: [...prior.events, ...events.events] }
@@ -125,13 +129,19 @@ export function YoduSettings({
     }
   }
   useEffect(() => {
+    const scope = `${organizationId}:${selectedProduct}`;
+    if (credentialScope.current === scope) return;
+    credentialScope.current = scope;
+    credentialGeneration.current++;
+    setSecret(null);
+    setCreateId(crypto.randomUUID());
+  }, [organizationId, selectedProduct]);
+  useEffect(() => {
     alive.current = true;
     setOverview(null);
     setPage(null);
-    setSecret(null);
     setError("");
     setLoading(false);
-    setCreateId(crypto.randomUUID());
     void load();
     return () => {
       alive.current = false;
@@ -143,7 +153,7 @@ export function YoduSettings({
     pending.current = true;
     setBusy(true);
     setError("");
-    const scopeGeneration = generation.current;
+    const scopeGeneration = credentialGeneration.current;
     try {
       const result = await requestJson<{ id?: string; signingSecret?: string }>(
         "/api/integrations",
@@ -158,14 +168,15 @@ export function YoduSettings({
           }),
         },
       );
-      if (!alive.current || generation.current !== scopeGeneration) return;
+      if (!alive.current || credentialGeneration.current !== scopeGeneration)
+        return;
       if (result.signingSecret && result.id)
         setSecret({ sourceId: result.id, value: result.signingSecret });
       if (operation === "yodu-create-source") setCreateId(crypto.randomUUID());
       await load();
       await onChanged();
     } catch (cause) {
-      if (alive.current && generation.current === scopeGeneration)
+      if (alive.current && credentialGeneration.current === scopeGeneration)
         setError(errorText(cause, timeZone));
     } finally {
       pending.current = false;

@@ -1,6 +1,7 @@
 import { and, eq, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { publishChange } from "../core/changes";
+import { lockContactDirectory } from "../core/contact-history";
 import { authorize, DomainError } from "../core/policy";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
@@ -30,6 +31,7 @@ export async function saveReceipt(
   )
     throw new DomainError("CONNECTION_UNAVAILABLE", 422);
   await db.transaction(async (tx) => {
+    await lockContactDirectory(tx, connection.organizationId);
     const [active] = await tx
       .select()
       .from(s.connections)
@@ -141,6 +143,14 @@ export async function processReceipts(
       return claimed;
     });
     if (!receipt) break;
+    const ownsClaim = and(
+      eq(s.integrationReceipts.id, receipt.id),
+      isNull(s.integrationReceipts.processedAt),
+      eq(s.integrationReceipts.attempts, receipt.attempts),
+      receipt.leaseUntil
+        ? eq(s.integrationReceipts.leaseUntil, receipt.leaseUntil)
+        : isNull(s.integrationReceipts.leaseUntil),
+    );
     try {
       const [connection] = await db
         .select()
@@ -151,6 +161,7 @@ export async function processReceipts(
             eq(s.connections.organizationId, receipt.organizationId),
           ),
         );
+      let record: ImportRecord | null = null;
       if (
         connection?.status === "connected" &&
         connection.productId &&
@@ -163,7 +174,6 @@ export async function processReceipts(
           connection.productId,
           true,
         );
-        let record: ImportRecord | null;
         if (receipt.provider === "unipile")
           record = normalizeLinkedIn(receipt.payload);
         else {
@@ -184,21 +194,52 @@ export async function processReceipts(
             throw new DomainError("FORBIDDEN", 403);
           record = normalizeFireflies(result.transcript);
         }
-        if (record)
-          await new IntegrationService(db, transport).importRecord(
-            connection,
+      }
+      const completed = await db.transaction(async (tx) => {
+        // Stabilize organization authority before connection/receipt locks.
+        await lockContactDirectory(tx, receipt.organizationId);
+        // An expired worker must
+        // not import after an explicit discard or another worker's newer claim.
+        const [active] = await tx
+          .select()
+          .from(s.connections)
+          .where(
+            and(
+              eq(s.connections.id, receipt.connectionId),
+              eq(s.connections.organizationId, receipt.organizationId),
+            ),
+          )
+          .for("update");
+        const [claimed] = await tx
+          .select({ id: s.integrationReceipts.id })
+          .from(s.integrationReceipts)
+          .where(ownsClaim)
+          .for("update");
+        if (!claimed) return false;
+        if (
+          record &&
+          active?.status === "connected" &&
+          active.productId &&
+          active.encryptedCredentials &&
+          active.externalAccountId === connection?.externalAccountId
+        )
+          await new IntegrationService(tx, transport).importRecord(
+            active,
             record,
           );
-        publishChange(connection.organizationId);
+        // Disconnects intentionally discard pending deliveries instead of reactivating access.
+        await tx
+          .update(s.integrationReceipts)
+          .set({ processedAt: new Date(), leaseUntil: null, errorCode: null })
+          .where(ownsClaim);
+        return true;
+      });
+      if (completed) {
+        publishChange(receipt.organizationId);
+        processed++;
       }
-      // Disconnects intentionally discard pending deliveries instead of reactivating access.
-      await db
-        .update(s.integrationReceipts)
-        .set({ processedAt: new Date(), leaseUntil: null, errorCode: null })
-        .where(eq(s.integrationReceipts.id, receipt.id));
-      processed++;
     } catch (error) {
-      await db
+      const [updated] = await db
         .update(s.integrationReceipts)
         .set({
           leaseUntil: null,
@@ -210,8 +251,9 @@ export async function processReceipts(
               ? error.code
               : "PROVIDER_RESPONSE_INVALID",
         })
-        .where(eq(s.integrationReceipts.id, receipt.id));
-      failed++;
+        .where(ownsClaim)
+        .returning({ id: s.integrationReceipts.id });
+      if (updated) failed++;
     }
   }
   return { processed, failed };

@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { eq } from "drizzle-orm";
 import { expect, test, vi } from "vitest";
 import { OutreachService } from "../packages/core/outreach";
+import { emptyRelationshipDetails } from "../packages/core/relationship-context";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
@@ -24,6 +25,62 @@ vi.mock("../src/components/client-api", async (importOriginal) => ({
   requestJson: vi.fn(),
 }));
 const harness = installCrmHarness();
+
+test("editing notes preserves existing signal timestamp precision and datetime instants", async () => {
+  const observedAt = "2026-11-01T06:30:18.123456Z";
+  const fieldValue = "2026-11-01T06:30:18.125Z";
+  await harness.local.db
+    .update(s.relationships)
+    .set({
+      contextDetails: {
+        ...emptyRelationshipDetails(),
+        signals: [
+          {
+            id: demoId(8980),
+            title: "Fictional existing signal",
+            description: "Existing precision remains source data.",
+            kind: "other",
+            classification: "fact",
+            sourceUrl: null,
+            observedAt,
+          },
+        ],
+        fields: [
+          {
+            id: demoId(8981),
+            label: "Fictional existing timestamp",
+            type: "datetime",
+            value: fieldValue,
+          },
+        ],
+      },
+    })
+    .where(eq(s.relationships.id, demoId(300)));
+  await mountCrm(harness, `/people/${demoId(200)}`);
+  await contactTab(t.contactWorkspace.context);
+  fireEvent.click(
+    await screen.findByRole("button", { name: t.contextFields.edit }),
+  );
+  const editor = within(
+    screen.getByRole("region", { name: t.contextFields.edit }),
+  );
+  fireEvent.change(editor.getByLabelText(t.contextFields.sections.needs), {
+    target: { value: "Fictional updated notes" },
+  });
+  fireEvent.click(editor.getByRole("button", { name: t.save }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("region", { name: t.contextFields.edit }),
+    ).toBeNull(),
+  );
+  const [stored] = await harness.local.db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, demoId(300)));
+  expect(stored.contextDetails.needs).toBe("Fictional updated notes");
+  expect(stored.contextDetails.signals[0]?.observedAt).toBe(observedAt);
+  expect(stored.contextDetails.fields[0]?.value).toBe(fieldValue);
+});
 
 test("context editor saves readable notes, signals and each custom field type on the full person record", async () => {
   await mountCrm(harness, `/people/${demoId(200)}`);

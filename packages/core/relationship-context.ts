@@ -49,7 +49,9 @@ export const relationshipSignalSchema = z.strictObject({
   kind: z.enum(signalKinds),
   classification: z.enum(["fact", "hypothesis"]),
   sourceUrl: sourceUrl.nullable(),
-  observedAt: preciseInstantSchema.nullable(),
+  // Existing signal timestamps were accepted at arbitrary ISO precision and are
+  // stored verbatim in JSON. Editing other context must preserve those values.
+  observedAt: z.iso.datetime().nullable(),
 });
 const fieldBase = { id: z.uuid(), label: z.string().trim().min(1).max(100) };
 export const relationshipFieldSchema = z.discriminatedUnion("type", [

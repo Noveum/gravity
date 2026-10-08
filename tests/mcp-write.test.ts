@@ -105,6 +105,8 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
       "update_yodu_source",
       "bind_yodu_subject",
       "list_yodu_events",
+      "delete_deal",
+      "restore_deal",
     ]),
   );
   expect(
@@ -135,6 +137,7 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
   const capabilities = await call("get_capabilities");
   expect(capabilities.operations).toHaveLength(operations.length);
   expect(capabilities.sendMessages).toBe(false);
+  expect(capabilities.typedRelationshipFields).toContain("datetime");
   expect(capabilities.contractSigningWorkflow).toBe(false);
   expect(capabilities.workspaceInvitations).toEqual({
     list: true,
@@ -154,6 +157,142 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
     revoke: false,
     create: false,
   });
+});
+test("update_person preserves omitted summary and permits an explicit replacement or clear", async () => {
+  const created = await call("create_person", {
+    productId: demoId(10),
+    name: "Fictional summary preservation",
+    review: false,
+  });
+  const original = await call("get_person", { personId: created.personId });
+  const saved = await call("update_person", {
+    personId: created.personId,
+    version: original.person.version,
+    name: "Fictional summary preservation",
+    summary: "Fictional notes to preserve.",
+  });
+  const renamed = await call("update_person", {
+    personId: created.personId,
+    version: saved.version,
+    name: "Fictional renamed contact",
+  });
+  expect(renamed.summary).toBe("Fictional notes to preserve.");
+  const replaced = await call("update_person", {
+    personId: created.personId,
+    version: renamed.version,
+    name: renamed.name,
+    summary: "Fictional replacement notes.",
+  });
+  expect(replaced.summary).toBe("Fictional replacement notes.");
+  const cleared = await call("update_person", {
+    personId: created.personId,
+    version: replaced.version,
+    name: renamed.name,
+    summary: "",
+  });
+  expect(cleared.summary).toBe("");
+});
+test("MCP removes duplicate deals from active forecasts and restores their original values", async () => {
+  const product = await call("create_product", {
+    name: "Fictional duplicate removal",
+  });
+  const person = await call("create_person", {
+    productId: product.id,
+    name: "Fictional deal customer",
+    review: false,
+  });
+  const workspace = await call("get_workspace", { productId: product.id });
+  const stage = workspace.stages.find(
+    (row: { category: string }) => row.category === "open",
+  );
+  const deal = await call("save_deal", {
+    productId: product.id,
+    relationshipId: person.relationshipId,
+    stageId: stage.id,
+    name: "Fictional duplicate deal",
+    ownerId: demoUser,
+    amountMinor: 10000,
+    currency: "USD",
+    probability: 50,
+    description: "Fictional retained deal history",
+  });
+  expect(
+    (await call("get_overview", { productId: product.id })).weightedValue,
+  ).toEqual([{ currency: "USD", amountMinor: 5000, count: 1 }]);
+  const removed = await call("delete_deal", {
+    productId: product.id,
+    opportunityId: deal.id,
+    version: deal.version,
+  });
+  expect(removed.archivedAt).toBeTruthy();
+  expect(removed).toMatchObject({
+    name: deal.name,
+    amountMinor: deal.amountMinor,
+    currency: deal.currency,
+    probability: deal.probability,
+    status: deal.status,
+    stageId: deal.stageId,
+    description: deal.description,
+    version: deal.version + 1,
+  });
+  const archived = await call("get_workspace", { productId: product.id });
+  expect(archived.opportunities).toHaveLength(0);
+  expect(
+    archived.archivedOpportunities.map((row: { id: string }) => row.id),
+  ).toEqual([deal.id]);
+  expect(
+    (
+      await call("list_records", {
+        productId: product.id,
+        entity: "opportunities",
+      })
+    ).total,
+  ).toBe(0);
+  expect(
+    (await call("get_overview", { productId: product.id })).weightedValue,
+  ).toEqual([]);
+  expect(
+    (
+      await call("get_person_context", {
+        relationshipId: person.relationshipId,
+      })
+    ).opportunities,
+  ).toHaveLength(0);
+  expect(
+    (
+      await call(
+        "get_workspace",
+        { productId: product.id },
+        { ...writable, readOnly: true },
+      )
+    ).archivedOpportunities,
+  ).toEqual([]);
+  expect(
+    (
+      await call("delete_deal", {
+        productId: product.id,
+        opportunityId: deal.id,
+        version: deal.version,
+      })
+    ).error,
+  ).toContain("CONFLICT");
+  const restored = await call("restore_deal", {
+    productId: product.id,
+    opportunityId: deal.id,
+    version: removed.version,
+  });
+  expect(restored).toMatchObject({
+    archivedAt: null,
+    status: "open",
+    stageId: deal.stageId,
+    amountMinor: 10000,
+    probability: 50,
+    description: deal.description,
+    version: removed.version + 1,
+  });
+  expect(
+    (await call("get_overview", { productId: product.id })).weightedValue,
+  ).toEqual([{ currency: "USD", amountMinor: 5000, count: 1 }]);
 });
 test("MCP publishes instructions, workflow prompts and an effective operation permission audit", async () => {
   const initialized = await rpc("initialize", {

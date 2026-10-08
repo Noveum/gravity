@@ -13,6 +13,7 @@ import {
   useState,
 } from "react";
 import { useCreate, useEdit, useWorkspaceData } from "../crm/crm-context";
+import { useArchive } from "../crm/use-archive";
 import { useRevealedRecord } from "../crm/use-revealed-record";
 import { pipelineStages, useStageMoves } from "../crm/use-stage-moves";
 import { PipelineDialog } from "../deal-dialog";
@@ -21,9 +22,11 @@ import { formatMoney } from "../money";
 import {
   Pagination,
   RecordFilters,
+  useListPage,
   useRecordBrowser,
   useRecordIndex,
 } from "../records/list-browser";
+import { RecordActions } from "../records/record-actions";
 import { RecordText } from "../records/record-text";
 import { StageCards } from "../records/stage-cards";
 import { EmptyState } from "../ui/states";
@@ -32,6 +35,7 @@ const dragType = "application/x-gravity-opportunity";
 
 export function OpportunitiesView() {
   const crm = useWorkspaceData();
+  const archive = useArchive();
   const { data, search, productId, personFor } = crm;
   const query = useSearchParams();
   const router = useRouter();
@@ -258,6 +262,9 @@ export function OpportunitiesView() {
                 <th>{t.stage}</th>
                 <th>{t.dealSize}</th>
                 <th>{t.owner}</th>
+                <th>
+                  <span className="sr-only">{t.contactWorkspace.more}</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -310,6 +317,23 @@ export function OpportunitiesView() {
                           ?.ownerId ??
                         "",
                     )}
+                  </td>
+                  <td>
+                    <RecordActions
+                      busy={crm.busy}
+                      inlineEditing
+                      archiveLabel={t.archiveDeal}
+                      archiveConfirm={t.archiveDealConfirm}
+                      onEdit={() =>
+                        crm.openRecordDialog({
+                          kind: "opportunity",
+                          id: opportunity.id,
+                        })
+                      }
+                      onArchive={() =>
+                        void archive.archive("opportunity", opportunity)
+                      }
+                    />
                   </td>
                 </tr>
               ))}
@@ -483,6 +507,24 @@ export function OpportunitiesView() {
                                       >
                                         <Pencil size={12} aria-hidden />
                                       </button>
+                                      <RecordActions
+                                        busy={crm.busy}
+                                        inlineEditing
+                                        archiveLabel={t.archiveDeal}
+                                        archiveConfirm={t.archiveDealConfirm}
+                                        onEdit={() =>
+                                          crm.openRecordDialog({
+                                            kind: "opportunity",
+                                            id: opportunity.id,
+                                          })
+                                        }
+                                        onArchive={() =>
+                                          void archive.archive(
+                                            "opportunity",
+                                            opportunity,
+                                          )
+                                        }
+                                      />
                                     </div>
                                     <p>
                                       {
@@ -574,6 +616,98 @@ export function OpportunitiesView() {
       {layout === "list" && browser.rows.length > 0 && (
         <Pagination page={browser.page} />
       )}
+      <ArchivedDeals />
     </>
+  );
+}
+
+function ArchivedDeals() {
+  const crm = useWorkspaceData();
+  const archive = useArchive();
+  const records = crm.data.archivedOpportunities;
+  const [replacementStages, setReplacementStages] = useState<
+    Record<string, string>
+  >({});
+  const page = useListPage(
+    records,
+    records.map((record) => record.id).join("/"),
+  );
+  if (!records.length) return null;
+  return (
+    <details className="archived-list page-content">
+      <summary>
+        {t.archivedDeals}
+        <span>{records.length}</span>
+      </summary>
+      <ul>
+        {page.items.map((record) => {
+          const stages = crm.data.stages.filter(
+            (stage) =>
+              stage.productId === record.productId &&
+              stage.pipeline === "deal" &&
+              !stage.archivedAt &&
+              (record.status === "open"
+                ? stage.category === "open" || stage.category === "hold"
+                : stage.category === record.status),
+          );
+          const originalAvailable = stages.some(
+            (stage) => stage.id === record.stageId,
+          );
+          const stageId = originalAvailable
+            ? undefined
+            : replacementStages[record.id];
+          return (
+            <li key={record.id}>
+              <span>{record.name}</span>
+              <small>
+                {crm.product(record.productId)?.name} ·{" "}
+                {crm.personFor(record.relationshipId)?.name}
+              </small>
+              {!originalAvailable && (
+                <label>
+                  {t.stage}
+                  <select
+                    aria-label={`${t.stage}: ${record.name}`}
+                    value={stageId ?? ""}
+                    disabled={crm.busy}
+                    onChange={(event) =>
+                      setReplacementStages((current) => ({
+                        ...current,
+                        [record.id]: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">{t.unspecified}</option>
+                    {stages.map((stage) => (
+                      <option key={stage.id} value={stage.id}>
+                        {stage.name}
+                      </option>
+                    ))}
+                  </select>
+                  {!stages.length && (
+                    <small role="alert">{t.errors.STAGE_REQUIRED}</small>
+                  )}
+                </label>
+              )}
+              <button
+                type="button"
+                aria-label={`${t.restore}: ${record.name}`}
+                disabled={
+                  crm.busy ||
+                  (!originalAvailable &&
+                    !stages.some((stage) => stage.id === stageId))
+                }
+                onClick={() =>
+                  void archive.restore("opportunity", record, stageId)
+                }
+              >
+                {t.restore}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <Pagination page={page} />
+    </details>
   );
 }

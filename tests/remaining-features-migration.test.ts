@@ -32,6 +32,8 @@ test("the generated upgrade preserves populated actions/provider history and is 
       INSERT INTO products (id,organization_id,name) VALUES ('10000000-0000-4000-8000-000000000010','10000000-0000-4000-8000-000000000001','Fictional product');
       INSERT INTO people (id,organization_id,name) VALUES ('10000000-0000-4000-8000-000000000200','10000000-0000-4000-8000-000000000001','Fictional person');
       INSERT INTO relationships (id,organization_id,product_id,person_id,owner_id) VALUES ('10000000-0000-4000-8000-000000000300','10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000010','10000000-0000-4000-8000-000000000200','fictional-upgrade-owner');
+      INSERT INTO stages (id,organization_id,product_id,pipeline,name,position,category) VALUES ('10000000-0000-4000-8000-000000000803','10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000010','deal','Fictional won',1,'won');
+      INSERT INTO opportunities (id,organization_id,product_id,relationship_id,stage_id,name,amount_minor,currency,status,probability,closed_at,description,owner_id,version) VALUES ('10000000-0000-4000-8000-000000001100','10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000010','10000000-0000-4000-8000-000000000300','10000000-0000-4000-8000-000000000803','Fictional unchanged deal',500000,'USD','won',100,'2026-10-01T12:34:56.123Z','Fictional historical outcome','fictional-upgrade-owner',7);
       INSERT INTO actions (organization_id,product_id,relationship_id,owner_id,kind,title,reason,owed_by,channel,due_at,draft,version) VALUES ('10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000010','10000000-0000-4000-8000-000000000300','fictional-upgrade-owner','review','Fictional review','{"legacy":"Fictional unchanged source"}','us','research','2026-10-01T12:34:56.123Z','Fictional unchanged draft',7);
       INSERT INTO connections (id,organization_id,owner_id,provider,external_account_id,display_name) VALUES ('10000000-0000-4000-8000-000000000700','10000000-0000-4000-8000-000000000001','fictional-upgrade-owner','gmail','fictional-upgrade-account','Fictional account');
       INSERT INTO conversations (id,organization_id,product_id,relationship_id,connection_id,external_thread_id,owner_id,channel) VALUES ('10000000-0000-4000-8000-000000000710','10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000010','10000000-0000-4000-8000-000000000300','10000000-0000-4000-8000-000000000700','fictional-upgrade-thread','fictional-upgrade-owner','gmail');
@@ -52,12 +54,31 @@ test("the generated upgrade preserves populated actions/provider history and is 
         "SELECT id, reason, draft, version, status, due_at FROM actions ORDER BY id",
       )
     ).rows;
+    const beforeDeals = (
+      await client.query(
+        "SELECT to_jsonb(opportunities) - 'archived_at' AS record FROM opportunities ORDER BY id",
+      )
+    ).rows;
     const beforeMessages = (
       await client.query("SELECT * FROM messages ORDER BY id")
     ).rows;
     await writeFile(journalPath, JSON.stringify(journal));
     await migrate(db, { migrationsFolder: folder });
     await migrate(db, { migrationsFolder: folder });
+    expect(
+      (
+        await client.query(
+          "SELECT to_jsonb(opportunities) - 'archived_at' AS record FROM opportunities ORDER BY id",
+        )
+      ).rows,
+    ).toEqual(beforeDeals);
+    expect(
+      (
+        await client.query<{ archived_at: unknown }>(
+          "SELECT archived_at FROM opportunities",
+        )
+      ).rows.every((row) => row.archived_at === null),
+    ).toBe(true);
     expect(
       (await client.query("SELECT * FROM contact_contributions ORDER BY id"))
         .rows,

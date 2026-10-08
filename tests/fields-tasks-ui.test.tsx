@@ -7,6 +7,10 @@ import {
   createInternalTaskSchema,
   InternalTaskService,
 } from "../packages/core/internal-tasks";
+import {
+  RecordListService,
+  recordListSchema,
+} from "../packages/core/record-list";
 import { emptyRelationshipDetails } from "../packages/core/relationship-context";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
@@ -103,6 +107,76 @@ test("product-wide custom field filters preserve false, zero and exact milliseco
     target: { value: "gt" },
   });
   expect(screen.getByRole("link", { name: "Mira Chen" })).toBeTruthy();
+});
+
+test("UTC datetime filters reach an exact second occurrence in a repeated workspace hour", async () => {
+  const instant = "2026-11-01T06:30:18.125Z";
+  await harness.local.db
+    .update(s.organizations)
+    .set({ timezone: "America/New_York" })
+    .where(eq(s.organizations.id, scope.organizationId));
+  await harness.local.db
+    .update(s.relationships)
+    .set({
+      contextDetails: {
+        ...emptyRelationshipDetails(),
+        fields: [
+          {
+            id: demoId(8953),
+            label: "Review time",
+            type: "datetime",
+            value: instant,
+          },
+        ],
+      },
+    })
+    .where(eq(s.relationships.id, demoId(300)));
+  await mountCrm(harness, "/people", { compact: true });
+  fireEvent.click(screen.getByText(t.filters));
+  fireEvent.click(
+    screen.getByRole("button", { name: t.contextFields.addField }),
+  );
+  const filter = within(
+    screen.getByRole("group", { name: `${t.fieldFilters.field} 1` }),
+  );
+  fireEvent.change(filter.getByLabelText(t.fieldFilters.field), {
+    target: { value: "datetime:review time" },
+  });
+  expect(filter.getByLabelText(t.timezone)).toHaveProperty(
+    "value",
+    "America/New_York",
+  );
+  fireEvent.change(filter.getByLabelText(t.fieldFilters.value), {
+    target: { value: "2026-11-01T01:30:18.125" },
+  });
+  expect(screen.queryByRole("link", { name: "Mira Chen" })).toBeNull();
+  fireEvent.change(filter.getByLabelText(t.timezone), {
+    target: { value: "UTC" },
+  });
+  fireEvent.change(filter.getByLabelText(t.fieldFilters.value), {
+    target: { value: "2026-11-01T06:30:18.125" },
+  });
+  expect(screen.getByRole("link", { name: "Mira Chen" })).toBeTruthy();
+  const page = await new RecordListService(harness.local.db).page(
+    principal,
+    recordListSchema.parse({
+      ...scope,
+      entity: "people",
+      fieldFilters: [
+        {
+          label: "Review time",
+          type: "datetime",
+          operator: "eq",
+          value: instant,
+        },
+      ],
+    }),
+  );
+  expect(page.items.map((person) => person.id)).toEqual([demoId(200)]);
+  fireEvent.change(filter.getByLabelText(t.fieldFilters.value), {
+    target: { value: "2026-11-01T06:30:18.124" },
+  });
+  expect(screen.queryByRole("link", { name: "Mira Chen" })).toBeNull();
 });
 
 test("internal tasks create and complete precise calendar occurrences through the registry without dispatch", async () => {

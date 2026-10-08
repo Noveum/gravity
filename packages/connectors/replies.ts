@@ -125,25 +125,34 @@ export function normalizeUnipileV2(
 }
 export async function ingestReply(db: Database, input: ReplyEvent) {
   let event = replySchema.parse(input);
+  const matchesAccount = and(
+    eq(s.connections.provider, event.provider),
+    eq(s.connections.externalAccountId, event.accountId),
+    event.connectionId ? eq(s.connections.id, event.connectionId) : undefined,
+  );
+  const found = await db
+    .select({ organizationId: s.connections.organizationId })
+    .from(s.connections)
+    .where(matchesAccount)
+    .limit(2);
+  if (found.length !== 1) throw new DomainError("CONNECTION_UNAVAILABLE", 422);
   return db.transaction(async (tx) => {
+    // Discover the account before locking, then stabilize its organization
+    // before taking connection/contact locks, as membership changes do.
+    await lockContactDirectory(tx, found[0].organizationId);
     const candidates = await tx
       .select()
       .from(s.connections)
-      .where(
-        and(
-          eq(s.connections.provider, event.provider),
-          eq(s.connections.externalAccountId, event.accountId),
-          event.connectionId
-            ? eq(s.connections.id, event.connectionId)
-            : undefined,
-        ),
-      )
+      .where(matchesAccount)
       .limit(2)
       .for("update");
     const connection = candidates.length === 1 ? candidates[0] : undefined;
-    if (!connection || !["connected", "demo"].includes(connection.status))
+    if (
+      !connection ||
+      connection.organizationId !== found[0].organizationId ||
+      !["connected", "demo"].includes(connection.status)
+    )
       throw new DomainError("CONNECTION_UNAVAILABLE", 422);
-    await lockContactDirectory(tx, connection.organizationId);
     const [receipt] = await tx
       .insert(s.connectorEvents)
       .values({

@@ -587,7 +587,16 @@ function useCrmState({
         );
       if (["action", "action-details"].includes(changed.operation ?? "")) {
         const updatedAction = result as Snapshot["actions"][number];
-        draftBuffers.drop(updatedAction.id, changed.actionId ?? "");
+        if (
+          changed.operation === "action-details" &&
+          typeof changed.version === "number"
+        )
+          draftBuffers.rebase(
+            updatedAction.id,
+            changed.version,
+            updatedAction.version,
+          );
+        else draftBuffers.drop(updatedAction.id, changed.actionId ?? "");
         setData((previous) =>
           previous
             ? {
@@ -887,6 +896,23 @@ export function patchRecords(
         result as Snapshot["meetings"][number],
       ),
     };
+  if (
+    operation === "opportunity-delete" ||
+    operation === "opportunity-restore"
+  ) {
+    const deal = result as Snapshot["opportunities"][number];
+    return {
+      ...snapshot,
+      opportunities: deal.archivedAt
+        ? snapshot.opportunities.filter((row) => row.id !== deal.id)
+        : upsert(snapshot.opportunities, deal),
+      archivedOpportunities: deal.archivedAt
+        ? upsert(snapshot.archivedOpportunities ?? [], deal)
+        : (snapshot.archivedOpportunities ?? []).filter(
+            (row) => row.id !== deal.id,
+          ),
+    };
+  }
   if (
     operation === "deal" ||
     operation === "opportunity" ||

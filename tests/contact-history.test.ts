@@ -195,3 +195,62 @@ test("pending history matches aliases on the complete identity and preserves own
     messages: [],
   });
 });
+
+test("participant-free pending messages use the linked thread's product rather than the account default", async () => {
+  const f = await fixture();
+  await local.db
+    .delete(s.messages)
+    .where(eq(s.messages.conversationId, f.conversation.id));
+  const [connection] = await local.db
+    .insert(s.connections)
+    .values({
+      organizationId: org,
+      productId: f.firstProduct.id,
+      ownerId: owner.userId,
+      provider: "unipile",
+      externalAccountId: randomUUID(),
+      status: "connected",
+    })
+    .returning();
+  await local.db
+    .update(s.conversations)
+    .set({
+      connectionId: connection.id,
+      provenance: "provider",
+      ownerId: owner.userId,
+    })
+    .where(eq(s.conversations.id, f.conversation.id));
+  await local.db.insert(s.integrationItems).values({
+    organizationId: org,
+    productId: f.firstProduct.id,
+    connectionId: connection.id,
+    externalId: randomUUID(),
+    record: {
+      externalId: "fictional-pending-linked-message",
+      threadId: f.conversation.externalThreadId,
+      kind: "message",
+      title: "Fictional pending poll",
+      body: "Pending private contents must not leak",
+      occurredAt: "2026-10-01T00:00:00Z",
+      direction: "inbound",
+      participants: [],
+    },
+  });
+  expect(
+    await contactHistoryChecks(local.db, owner, org, f.person, [
+      f.firstProduct.id,
+    ]),
+  ).toMatchObject({
+    blockedBy: "PRIVATE_HISTORY_REVIEW_REQUIRED",
+    messages: [],
+  });
+  expect(
+    await contactHistoryChecks(local.db, owner, org, f.person, [
+      f.firstProduct.id,
+      f.secondProduct.id,
+    ]),
+  ).toMatchObject({
+    blockedBy: "PENDING_HISTORY_REVIEW_REQUIRED",
+    messages: [],
+  });
+});

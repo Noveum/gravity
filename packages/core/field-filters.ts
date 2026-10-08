@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { preciseInstantSchema } from "./datetime";
+import { fieldTextCaseSources, fieldTextCaseTargets } from "./field-text-case";
 import { fieldKinds, type RelationshipField } from "./relationship-context";
 
 export const fieldOperators = [
@@ -72,11 +73,19 @@ export type FieldFilter = z.infer<typeof fieldFilterSchema>;
 // Match String.trim() when filtering older stored labels that were not normalized.
 export const fieldLabelWhitespace =
   " \t\n\r\f\v\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
-// PostgreSQL lower uses individual character mappings. Whole-string JS lower
-// instead chooses contextual Greek sigma and expands dotted capital I.
+const lowerCharacters = Array.from(fieldTextCaseTargets);
+const fieldTextCaseMap = new Map(
+  Array.from(fieldTextCaseSources, (character, index) => [
+    character,
+    lowerCharacters[index] ?? character,
+  ]),
+);
+// Use the same fixed character mapping as SQL translate, including supplementary
+// characters, without contextual sigma or dotted-I expansion.
 export const normalizeFieldText = (value: string) =>
-  Array.from(value, (character) =>
-    character === "İ" ? "i" : character.toLowerCase(),
+  Array.from(
+    value,
+    (character) => fieldTextCaseMap.get(character) ?? character,
   ).join("");
 export const normalizeFieldLabel = (value: string) =>
   normalizeFieldText(value.trim());

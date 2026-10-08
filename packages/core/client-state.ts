@@ -60,6 +60,7 @@ export function productSnapshot(
     stages: scoped(snapshot.stages),
     meetings: scoped(snapshot.meetings),
     opportunities: scoped(snapshot.opportunities),
+    archivedOpportunities: scoped(snapshot.archivedOpportunities ?? []),
     pipelines: scoped(snapshot.pipelines),
     messageStats: scoped(snapshot.messageStats),
     touchStats: scoped(snapshot.touchStats),

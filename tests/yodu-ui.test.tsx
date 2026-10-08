@@ -19,7 +19,7 @@ import { type JsonValue, serialize } from "../packages/core/dto";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
-import { requestJson } from "../src/components/client-api";
+import { RequestError, requestJson } from "../src/components/client-api";
 import { YoduLifecyclePanel } from "../src/components/records/yodu-lifecycle";
 import { YoduSettings } from "../src/components/yodu-settings";
 import { installCrmHarness, principal } from "./support/crm-harness";
@@ -205,6 +205,72 @@ test("current member access leaves source evidence readable and removes administ
   expect(harness.posts).toEqual([]);
 });
 
+test("event filters, display time zone and reopening preserve the once-shown signing secret until a scope change", async () => {
+  const { rerender, changed, data } = await settings("");
+  fireEvent.click(await screen.findByRole("button", { name: t.yodu.create }));
+  const secret = (
+    (await screen.findByLabelText(t.signingSecret)) as HTMLInputElement
+  ).value;
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+  fireEvent.change(screen.getByRole("combobox", { name: t.yodu.events }), {
+    target: { value: "true" },
+  });
+  await screen.findByRole("button", { name: t.yodu.create });
+  expect(
+    (screen.getByLabelText(t.signingSecret) as HTMLInputElement).value,
+  ).toBe(secret);
+  rerender(
+    <YoduSettings
+      data={data}
+      organizationId={scope.organizationId}
+      productId=""
+      demo={false}
+      onChanged={changed}
+      timeZone="Asia/Kolkata"
+    />,
+  );
+  await screen.findByRole("button", { name: t.yodu.create });
+  expect(
+    (screen.getByLabelText(t.signingSecret) as HTMLInputElement).value,
+  ).toBe(secret);
+  fireEvent.click(screen.getByRole("button", { name: t.close }));
+  fireEvent.click(screen.getByRole("button", { name: t.connectionSetup }));
+  await screen.findByRole("button", { name: t.yodu.create });
+  expect(
+    (screen.getByLabelText(t.signingSecret) as HTMLInputElement).value,
+  ).toBe(secret);
+  fireEvent.change(screen.getByLabelText(t.product), {
+    target: { value: demoId(11) },
+  });
+  await screen.findByRole("button", { name: t.yodu.create });
+  expect(screen.queryByLabelText(t.signingSecret)).toBeNull();
+});
+
+test("changing event filters preserves the stable source ID when retrying an ambiguous creation", async () => {
+  const request = vi.mocked(requestJson).getMockImplementation();
+  if (!request) throw new Error("Missing fixture request adapter");
+  let ambiguous = true;
+  vi.mocked(requestJson).mockImplementation(async (url, init) => {
+    const result = await request(url, init);
+    if (init?.method === "POST" && ambiguous) {
+      ambiguous = false;
+      throw new RequestError("INTERNAL_ERROR");
+    }
+    return result;
+  });
+  await settings();
+  fireEvent.click(await screen.findByRole("button", { name: t.yodu.create }));
+  await screen.findByRole("alert");
+  const firstId = harness.posts.at(-1)?.sourceId;
+  fireEvent.change(screen.getByRole("combobox", { name: t.yodu.events }), {
+    target: { value: "true" },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: t.yodu.create }));
+  await waitFor(() => expect(harness.posts).toHaveLength(2));
+  await waitFor(() => expect(harness.posts.at(-1)?.sourceId).toBe(firstId));
+  expect(await harness.local.db.select().from(s.yoduSources)).toHaveLength(1);
+});
+
 test("a customer association beyond the first 200 remains editable in Connections without event receipts", async () => {
   const saved = await new YoduService(harness.local.db).createSource(
     principal,
@@ -261,6 +327,57 @@ test("a customer association beyond the first 200 remains editable in Connection
       );
     expect(binding).toMatchObject({ version: 2, relationshipId: demoId(304) });
   });
+});
+
+test("loading more event receipts preserves customer associations already loaded beyond 200", async () => {
+  const saved = await new YoduService(harness.local.db).createSource(
+    principal,
+    {
+      ...scope,
+      sourceId: crypto.randomUUID(),
+      label: "Fictional paged backend",
+    },
+  );
+  await harness.local.db.insert(s.yoduBindings).values(
+    Array.from({ length: 201 }, (_, index) => ({
+      ...scope,
+      sourceId: saved.id,
+      externalSubjectId: `fictional-ui-paging-${String(index).padStart(3, "0")}`,
+      relationshipId: demoId(300),
+      createdBy: demoUser,
+    })),
+  );
+  const request = vi.mocked(requestJson).getMockImplementation();
+  if (!request) throw new Error("Missing fixture request adapter");
+  vi.mocked(requestJson).mockImplementation((url, init) => {
+    const query = new URL(String(url), "http://localhost").searchParams;
+    if (query.get("operation") !== "yodu-events") return request(url, init);
+    const result = page(
+      query.has("cursor")
+        ? "Fictional older receipt"
+        : "Fictional latest receipt",
+    );
+    if (query.has("cursor")) result.events[0].id = demoId(1002);
+    else result.nextCursor = "fictional-event-cursor";
+    return Promise.resolve(result);
+  });
+  await settings();
+  fireEvent.click(
+    await screen.findByRole("button", { name: t.yodu.loadMoreBindings }),
+  );
+  expect(
+    await screen.findByText(
+      "Fictional paged backend · fictional-ui-paging-200",
+    ),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: t.yodu.more }));
+  expect(await screen.findByText("Fictional older receipt")).toBeTruthy();
+  expect(
+    screen.getByText("Fictional paged backend · fictional-ui-paging-200"),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: t.yodu.loadMoreBindings }),
+  ).toBeNull();
 });
 
 function deferred<T>() {

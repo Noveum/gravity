@@ -201,6 +201,7 @@ interface FieldFilterDraft {
   key: string;
   operator: string;
   value: string;
+  timeZone: string;
 }
 export function useRecordBrowser<T>(
   rows: readonly T[],
@@ -256,7 +257,10 @@ export function useRecordBrowser<T>(
                   : field?.type === "boolean"
                     ? draft.value === "true"
                     : field?.type === "datetime"
-                      ? instantFromZonedInput(draft.value, crm.timeZone)
+                      ? instantFromZonedInput(
+                          draft.value,
+                          draft.timeZone || crm.timeZone,
+                        )
                       : draft.value,
             }
           : {}),
@@ -364,7 +368,13 @@ export function useRecordBrowser<T>(
         filters,
         fields: [
           ...fieldDrafts,
-          { id: crypto.randomUUID(), key: "", operator: "eq", value: "" },
+          {
+            id: crypto.randomUUID(),
+            key: "",
+            operator: "eq",
+            value: "",
+            timeZone: "",
+          },
         ],
       }),
     updateFieldFilter: (index: number, patch: Partial<FieldFilterDraft>) =>
@@ -430,6 +440,7 @@ export function useRecordBrowser<T>(
         `${t.attribution.memberId}: ${id}`,
     })),
     userId: crm.userId,
+    timeZone: crm.timeZone,
     members: crm.data.members,
   };
 }
@@ -507,52 +518,78 @@ export function RecordFilters({
                         </select>
                       </label>
                       {!["exists", "missing"].includes(draft.operator) && (
-                        <label htmlFor={`field-filter-value-${draft.id}`}>
-                          {t.fieldFilters.value}
-                          {field.type === "boolean" ? (
-                            <select
-                              id={`field-filter-value-${draft.id}`}
-                              value={draft.value || "false"}
-                              onChange={(event) =>
-                                browser.updateFieldFilter(index, {
-                                  value: event.target.value,
-                                })
-                              }
-                            >
-                              <option value="true">
-                                {t.contextFields.yes}
-                              </option>
-                              <option value="false">
-                                {t.contextFields.no}
-                              </option>
-                            </select>
-                          ) : (
-                            <input
-                              id={`field-filter-value-${draft.id}`}
-                              type={
-                                field.type === "datetime"
-                                  ? "datetime-local"
-                                  : field.type === "number" ||
-                                      field.type === "date"
-                                    ? field.type
-                                    : "text"
-                              }
-                              step={
-                                field.type === "number"
-                                  ? "any"
-                                  : field.type === "datetime"
-                                    ? "0.001"
-                                    : undefined
-                              }
-                              value={draft.value}
-                              onChange={(event) =>
-                                browser.updateFieldFilter(index, {
-                                  value: event.target.value,
-                                })
-                              }
-                            />
+                        <>
+                          {field.type === "datetime" && (
+                            <label>
+                              {t.timezone}
+                              <select
+                                value={draft.timeZone || browser.timeZone}
+                                onChange={(event) =>
+                                  browser.updateFieldFilter(index, {
+                                    timeZone:
+                                      event.target.value === browser.timeZone
+                                        ? ""
+                                        : event.target.value,
+                                  })
+                                }
+                              >
+                                {[...new Set([browser.timeZone, "UTC"])].map(
+                                  (zone) => (
+                                    <option key={zone} value={zone}>
+                                      {zone}
+                                    </option>
+                                  ),
+                                )}
+                              </select>
+                            </label>
                           )}
-                        </label>
+                          <label htmlFor={`field-filter-value-${draft.id}`}>
+                            {t.fieldFilters.value}
+                            {field.type === "boolean" ? (
+                              <select
+                                id={`field-filter-value-${draft.id}`}
+                                value={draft.value || "false"}
+                                onChange={(event) =>
+                                  browser.updateFieldFilter(index, {
+                                    value: event.target.value,
+                                  })
+                                }
+                              >
+                                <option value="true">
+                                  {t.contextFields.yes}
+                                </option>
+                                <option value="false">
+                                  {t.contextFields.no}
+                                </option>
+                              </select>
+                            ) : (
+                              <input
+                                id={`field-filter-value-${draft.id}`}
+                                type={
+                                  field.type === "datetime"
+                                    ? "datetime-local"
+                                    : field.type === "number" ||
+                                        field.type === "date"
+                                      ? field.type
+                                      : "text"
+                                }
+                                step={
+                                  field.type === "number"
+                                    ? "any"
+                                    : field.type === "datetime"
+                                      ? "0.001"
+                                      : undefined
+                                }
+                                value={draft.value}
+                                onChange={(event) =>
+                                  browser.updateFieldFilter(index, {
+                                    value: event.target.value,
+                                  })
+                                }
+                              />
+                            )}
+                          </label>
+                        </>
                       )}
                     </>
                   )}

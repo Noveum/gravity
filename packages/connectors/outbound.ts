@@ -529,7 +529,9 @@ export class OutboundService {
       checks: {
         exclusions: !source.person.doNotContact && !source.identityOptedOut,
         crossChannel:
-          source.gate.allowed && blockedBy !== "DELIVERY_IN_PROGRESS",
+          source.history.blockedBy === null &&
+          source.gate.allowed &&
+          blockedBy !== "DELIVERY_IN_PROGRESS",
         history: source.history.blockedBy === null,
       },
     };

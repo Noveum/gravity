@@ -966,7 +966,11 @@ export class CrmService {
       stages: stages.filter((stage) => stage.pipeline === "deal"),
       outreachStages: stages.filter((stage) => stage.pipeline === "outreach"),
       meetings: active(meetings),
-      opportunities: active(opportunities),
+      opportunities: active(opportunities).filter((deal) => !deal.archivedAt),
+      archivedOpportunities:
+        principal.source === "mcp" && principal.readOnly !== false
+          ? []
+          : active(opportunities).filter((deal) => deal.archivedAt),
       pipelines,
       messageStats,
       touchStats: active(touchStats),
@@ -1131,6 +1135,7 @@ export class CrmService {
           and(
             eq(s.opportunities.organizationId, organizationId),
             eq(s.opportunities.relationshipId, relationshipId),
+            isNull(s.opportunities.archivedAt),
           ),
         ),
     ]);
@@ -1844,6 +1849,14 @@ export class CrmService {
         input.productId,
         true,
       );
+      await lockContactDirectory(tx, input.organizationId);
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
       if (!input.id)
         await assertProductActive(tx, input.organizationId, input.productId);
       const [relationship] = await tx
@@ -1906,6 +1919,7 @@ export class CrmService {
         throw new DomainError("FORBIDDEN", 403);
       if (existing && existing.version !== input.version)
         throw new DomainError("CONFLICT", 409);
+      if (existing?.archivedAt) throw new DomainError("RECORD_ARCHIVED", 409);
       const { id, version: _version, ...values } = input;
       const now = new Date();
       const fields = {

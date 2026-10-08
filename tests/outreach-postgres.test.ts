@@ -1,15 +1,24 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle as localDrizzle } from "drizzle-orm/pglite";
 import { drizzle as postgresDrizzle } from "drizzle-orm/postgres-js";
 import { migrate as postgresMigrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { ingestReply } from "../packages/connectors/replies";
-import { CrmService } from "../packages/core/crm";
+import { YoduService } from "../packages/connectors/yodu";
+import { CrmService, opportunitySchema } from "../packages/core/crm";
+import {
+  createInternalTaskSchema,
+  InternalTaskService,
+} from "../packages/core/internal-tasks";
 import { OutreachService } from "../packages/core/outreach";
 import type { Principal } from "../packages/core/policy";
+import {
+  opportunityArchiveSchema,
+  RecordService,
+} from "../packages/core/records";
 import {
   createLocalDatabase,
   type Database,
@@ -173,6 +182,291 @@ describe.skipIf(!usableServer)("outreach on the production driver", () => {
     if (createdRole) await server.unsafe("DROP ROLE IF EXISTS gravity_app");
     await server.end();
   }, 60000);
+
+  async function waitForManagementLock(blockerPid: number) {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const rows = await client`
+        SELECT pid, query FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> ${blockerPid}
+          AND wait_event_type = 'Lock'
+          AND (query LIKE '%"organizations"%' OR query LIKE '%"products"%')
+      `;
+      if (rows.length) return rows[0];
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(
+      "Management operation did not reach its database lock wait",
+    );
+  }
+
+  test("Yodu creation loses administrator authority while a separate transaction holds its locks", async () => {
+    vi.stubEnv("INTEGRATION_ENCRYPTION_KEY", "cd".repeat(32));
+    const db = postgresDrizzle(client, { schema: s });
+    const sourceId = randomUUID();
+    let pending: Promise<PromiseSettledResult<unknown>> | undefined;
+    try {
+      await client.begin(async (blocker) => {
+        const [backend] = await blocker`SELECT pg_backend_pid() AS pid`;
+        await blocker`SELECT id FROM organizations WHERE id = ${org} FOR UPDATE`;
+        await blocker`SELECT id FROM products WHERE id = ${demoId(10)} FOR UPDATE`;
+        pending = new YoduService(db)
+          .createSource(
+            {
+              ...admin,
+              source: "mcp",
+              organizationId: org,
+              productIds: [demoId(10)],
+              readOnly: false,
+            },
+            {
+              organizationId: org,
+              productId: demoId(10),
+              sourceId,
+              label: "Fictional blocked source",
+            },
+          )
+          .then(
+            (value) => ({ status: "fulfilled" as const, value }),
+            (reason) => ({ status: "rejected" as const, reason }),
+          );
+        expect(await waitForManagementLock(backend.pid)).toBeDefined();
+        // Keep product access so only the freshly demoted administrator role
+        // denies the operation after the blocker commits.
+        await blocker`INSERT INTO product_memberships (organization_id, product_id, user_id) VALUES (${org}, ${demoId(10)}, ${demoUser}) ON CONFLICT DO NOTHING`;
+        await blocker`UPDATE memberships SET role = 'member' WHERE organization_id = ${org} AND user_id = ${demoUser}`;
+      });
+      expect(await pending).toMatchObject({
+        status: "rejected",
+        reason: { code: "FORBIDDEN" },
+      });
+      expect(
+        await db
+          .select()
+          .from(s.yoduSources)
+          .where(eq(s.yoduSources.id, sourceId)),
+      ).toEqual([]);
+      expect(
+        await db
+          .select()
+          .from(s.changeEvents)
+          .where(eq(s.changeEvents.entityId, sourceId)),
+      ).toEqual([]);
+    } finally {
+      await pending;
+      await db
+        .update(s.memberships)
+        .set({ role: "admin", active: true })
+        .where(
+          and(
+            eq(s.memberships.organizationId, org),
+            eq(s.memberships.userId, demoUser),
+          ),
+        );
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("internal task creation loses its product grant while a separate transaction holds its locks", async () => {
+    const db = postgresDrizzle(client, { schema: s });
+    const title = `Fictional blocked task ${randomUUID()}`;
+    let pending: Promise<PromiseSettledResult<unknown>> | undefined;
+    await db
+      .insert(s.productMemberships)
+      .values({ organizationId: org, productId: demoId(10), userId: demoUser })
+      .onConflictDoNothing();
+    await db
+      .update(s.memberships)
+      .set({ role: "member" })
+      .where(
+        and(
+          eq(s.memberships.organizationId, org),
+          eq(s.memberships.userId, demoUser),
+        ),
+      );
+    try {
+      await client.begin(async (blocker) => {
+        const [backend] = await blocker`SELECT pg_backend_pid() AS pid`;
+        await blocker`SELECT id FROM organizations WHERE id = ${org} FOR UPDATE`;
+        await blocker`SELECT id FROM products WHERE id = ${demoId(10)} FOR UPDATE`;
+        pending = new InternalTaskService(db)
+          .create(
+            admin,
+            createInternalTaskSchema.parse({
+              organizationId: org,
+              productId: demoId(10),
+              ownerId: demoUser,
+              title,
+              dueAt: "2026-10-08T12:00:00Z",
+              timeZone: "UTC",
+            }),
+          )
+          .then(
+            (value) => ({ status: "fulfilled" as const, value }),
+            (reason) => ({ status: "rejected" as const, reason }),
+          );
+        expect(await waitForManagementLock(backend.pid)).toBeDefined();
+        await blocker`DELETE FROM product_memberships WHERE organization_id = ${org} AND product_id = ${demoId(10)} AND user_id = ${demoUser}`;
+      });
+      expect(await pending).toMatchObject({
+        status: "rejected",
+        reason: { code: "FORBIDDEN" },
+      });
+      expect(
+        await db
+          .select()
+          .from(s.internalTasks)
+          .where(eq(s.internalTasks.title, title)),
+      ).toEqual([]);
+    } finally {
+      await pending;
+      await db
+        .update(s.memberships)
+        .set({ role: "admin", active: true })
+        .where(
+          and(
+            eq(s.memberships.organizationId, org),
+            eq(s.memberships.userId, demoUser),
+          ),
+        );
+    }
+  });
+
+  test.each(["archive", "full save"])(
+    "deal %s loses actor membership while a separate transaction holds its locks",
+    async (operation) => {
+      const db = postgresDrizzle(client, { schema: s });
+      const crm = new CrmService(db);
+      const deal = await crm.saveOpportunity(
+        admin,
+        opportunitySchema.parse({
+          organizationId: org,
+          productId: demoId(10),
+          relationshipId: demoId(300),
+          stageId: demoId(800),
+          name: `Fictional blocked deal ${randomUUID()}`,
+          ownerId: demoUser,
+          amountMinor: 12000,
+          currency: "USD",
+          probability: 50,
+          description: "Fictional deal retained after access revocation",
+        }),
+      );
+      const actor: Principal = {
+        userId: "demo-teammate",
+        source: "session",
+      };
+      let pending: Promise<PromiseSettledResult<unknown>> | undefined;
+      try {
+        await client.begin(async (blocker) => {
+          const [backend] = await blocker`SELECT pg_backend_pid() AS pid`;
+          await blocker`SELECT id FROM organizations WHERE id = ${org} FOR UPDATE`;
+          await blocker`SELECT id FROM products WHERE id = ${demoId(10)} FOR UPDATE`;
+          const mutation =
+            operation === "archive"
+              ? new RecordService(db).archiveOpportunity(
+                  actor,
+                  opportunityArchiveSchema.parse({
+                    organizationId: org,
+                    productId: deal.productId,
+                    opportunityId: deal.id,
+                    version: deal.version,
+                    archived: true,
+                  }),
+                )
+              : crm.saveOpportunity(
+                  actor,
+                  opportunitySchema.parse({
+                    ...deal,
+                    name: "Fictional revoked full save",
+                  }),
+                );
+          pending = mutation.then(
+            (value) => ({ status: "fulfilled" as const, value }),
+            (reason) => ({ status: "rejected" as const, reason }),
+          );
+          const waiting = await waitForManagementLock(backend.pid);
+          expect(waiting?.query).toContain('"organizations"');
+          await blocker`UPDATE memberships SET active = false WHERE organization_id = ${org} AND user_id = ${actor.userId}`;
+        });
+        expect(await pending).toMatchObject({
+          status: "rejected",
+          reason: { code: "FORBIDDEN" },
+        });
+        expect(
+          await db
+            .select()
+            .from(s.opportunities)
+            .where(eq(s.opportunities.id, deal.id)),
+        ).toEqual([deal]);
+        expect(
+          await db
+            .select({ type: s.changeEvents.type })
+            .from(s.changeEvents)
+            .where(eq(s.changeEvents.entityId, deal.id)),
+        ).toEqual([{ type: "opportunity.created" }]);
+      } finally {
+        await pending;
+        await db
+          .update(s.memberships)
+          .set({ active: true })
+          .where(
+            and(
+              eq(s.memberships.organizationId, org),
+              eq(s.memberships.userId, actor.userId),
+            ),
+          );
+      }
+    },
+  );
+
+  test("reply ingestion waits for the organization before locking an account needed by a concurrent update", async () => {
+    const db = postgresDrizzle(client, { schema: s });
+    const messageId = `fictional-lock-order-${randomUUID()}`;
+    let pending: Promise<PromiseSettledResult<unknown>> | undefined;
+    try {
+      await client.begin(async (blocker) => {
+        await blocker`SET LOCAL lock_timeout = '1500ms'`;
+        const [backend] = await blocker`SELECT pg_backend_pid() AS pid`;
+        await blocker`SELECT id FROM organizations WHERE id = ${org} FOR UPDATE`;
+        pending = ingestReply(db, {
+          provider: "gmail",
+          accountId: "demo-gmail",
+          connectionId: demoId(700),
+          messageId,
+          threadId: `fictional-unmatched-${randomUUID()}`,
+          direction: "inbound",
+          channel: "gmail",
+          body: "Fictional reply retained while account settings change",
+          occurredAt: repliedAt,
+          from: "fictional-unmatched@example.test",
+        }).then(
+          (value) => ({ status: "fulfilled" as const, value }),
+          (reason) => ({ status: "rejected" as const, reason }),
+        );
+        const waiting = await waitForManagementLock(backend.pid);
+        expect(waiting?.query).toContain('"organizations"');
+        // An account-first ingestion lock would now form a real deadlock:
+        // this writer owns the organization and needs ingestion's account.
+        await blocker`SELECT id FROM connections WHERE id = ${demoId(700)} FOR UPDATE`;
+        await blocker`UPDATE connections SET display_name = 'Fictional concurrently updated account' WHERE id = ${demoId(700)}`;
+      });
+      expect(await pending).toMatchObject({
+        status: "fulfilled",
+        value: { matched: false },
+      });
+      const [receipt] = await db
+        .select()
+        .from(s.connectorEvents)
+        .where(eq(s.connectorEvents.providerEventId, messageId));
+      expect(receipt).toMatchObject({
+        organizationId: org,
+        connectionId: demoId(700),
+      });
+    } finally {
+      await pending;
+    }
+  });
 
   test("markSent and a matched reply record contact times through postgres-js", async () => {
     expectRecorded(

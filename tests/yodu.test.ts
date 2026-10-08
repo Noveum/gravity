@@ -24,6 +24,7 @@ import {
   operationRequirements,
   operations,
 } from "../packages/operations/catalog";
+import { databaseWithLockInterleave } from "./support/lock-interleave";
 
 let db: Database;
 let demo = false;
@@ -594,6 +595,70 @@ test("source management and reads recheck current membership and immutable MCP o
       );
   }
 });
+
+test.each([
+  ["create", "demoted"],
+  ["create", "removed"],
+  ["rotate", "demoted"],
+  ["rotate", "removed"],
+  ["bind", "demoted"],
+  ["bind", "removed"],
+] as const)(
+  "%s rechecks administrator authority after a %s membership wins the lock wait",
+  async (operation, change) => {
+    const saved = await source();
+    const beforeSources = await db.select().from(s.yoduSources);
+    const beforeBindings = await db.select().from(s.yoduBindings);
+    const beforeChanges = await db.select().from(s.changeEvents);
+    let lockSql = "";
+    const barrier = databaseWithLockInterleave(db, async (tx, sql) => {
+      lockSql = sql;
+      await tx
+        .update(s.memberships)
+        .set(change === "demoted" ? { role: "member" } : { active: false })
+        .where(
+          and(
+            eq(s.memberships.organizationId, org),
+            eq(s.memberships.userId, demoUser),
+          ),
+        );
+      // Demotion retains product access, so the fresh role check must also deny.
+      if (change === "demoted")
+        await tx
+          .insert(s.productMemberships)
+          .values({ ...scope, userId: demoUser })
+          .onConflictDoNothing();
+    });
+    const guarded = new YoduService(barrier.database, () => now);
+    const run =
+      operation === "create"
+        ? guarded.createSource(human, {
+            ...scope,
+            sourceId: randomUUID(),
+            label: "Fictional revoked administrator source",
+          })
+        : operation === "rotate"
+          ? guarded.updateSource(writer, {
+              ...scope,
+              sourceId: saved.id,
+              version: saved.version,
+              rotateSecret: true,
+            })
+          : guarded.bindSubject(human, {
+              ...scope,
+              sourceId: saved.id,
+              externalSubjectId: "fictional-revoked-administrator-subject",
+              relationshipId: demoId(300),
+            });
+    await expect(run).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(barrier.didInterleave()).toBe(true);
+    expect(lockSql).toContain('from "organizations"');
+    expect(lockSql).toContain("for share");
+    expect(await db.select().from(s.yoduSources)).toEqual(beforeSources);
+    expect(await db.select().from(s.yoduBindings)).toEqual(beforeBindings);
+    expect(await db.select().from(s.changeEvents)).toEqual(beforeChanges);
+  },
+);
 
 test("rotation, disable and product archival close ingress without erasing previously authenticated facts", async () => {
   const saved = await source();

@@ -32,6 +32,7 @@ import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import {
+  executeMcpOperation,
   operationRequirements,
   operations,
 } from "../packages/operations/catalog";
@@ -1155,6 +1156,392 @@ test("accepted LinkedIn webhooks materialize linked history before cron and fail
     .where(eq(s.actions.id, "actionId" in f.source ? f.source.actionId : ""));
   expect(action.approvedHash).toBeNull();
 });
+
+test("a pending poll on a linked LinkedIn chat blocks sends even without participant identifiers", async () => {
+  const f = await fixture("linkedin", true);
+  const [connection] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.id, f.connectionId));
+  const threadId = `fictional-pending-poll-${randomUUID()}`;
+  await local.db.insert(s.conversations).values({
+    organizationId: org,
+    productId: f.productId,
+    relationshipId: f.relationshipId,
+    connectionId: connection.id,
+    ownerId: demoUser,
+    externalThreadId: threadId,
+    channel: "linkedin",
+  });
+  const integration = new IntegrationService(local.db, f.transport);
+  const materialize = vi
+    .spyOn(integration, "materialize")
+    .mockRejectedValue(new DomainError("PROVIDER_RESPONSE_INVALID", 502));
+  try {
+    await expect(
+      integration.importRecord(connection, {
+        externalId: `${threadId}:fictional-message`,
+        threadId,
+        kind: "message",
+        title: "Fictional LinkedIn poll",
+        body: "A newly polled message has not been materialized",
+        occurredAt: "2026-10-01T00:00:00Z",
+        direction: "inbound",
+        participants: [],
+      }),
+    ).rejects.toMatchObject({ code: "PROVIDER_RESPONSE_INVALID" });
+    expect(await f.service.readiness(principal, f.input)).toMatchObject({
+      ready: false,
+      blockedBy: "PENDING_HISTORY_REVIEW_REQUIRED",
+      checks: { history: false, crossChannel: false },
+    });
+    await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
+      code: "PENDING_HISTORY_REVIEW_REQUIRED",
+    });
+    expect(f.transport).not.toHaveBeenCalled();
+  } finally {
+    materialize.mockRestore();
+  }
+});
+
+test("only the current authorized owner can explicitly discard a failed signed receipt, retaining its payload and requiring fresh approval", async () => {
+  const { processReceipts, saveReceipt } = await import(
+    "../packages/connectors/receipts"
+  );
+  const f = await fixture("linkedin", true);
+  const [connection] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.id, f.connectionId));
+  const threadId = `fictional-discard-thread-${randomUUID()}`;
+  const [conversation] = await local.db
+    .insert(s.conversations)
+    .values({
+      organizationId: org,
+      productId: f.productId,
+      relationshipId: f.relationshipId,
+      connectionId: connection.id,
+      ownerId: demoUser,
+      externalThreadId: threadId,
+      channel: "linkedin",
+    })
+    .returning();
+  const externalId = `fictional-discard-receipt-${randomUUID()}`;
+  const payload = {
+    chat_id: threadId,
+    text: "Fictional malformed private data",
+  };
+  await saveReceipt(local.db, connection, externalId, "unipile", payload);
+  const integration = new IntegrationService(local.db, f.transport);
+  const scope = { organizationId: org, productId: f.productId };
+  const overview = await integration.overview(principal, scope);
+  const receipt = overview.failedReceipts.find(
+    (item) => item.externalId === externalId,
+  );
+  expect(receipt).toMatchObject({
+    connectionId: connection.id,
+    productId: f.productId,
+    conversationId: conversation.id,
+    threadId,
+    errorCode: "PROVIDER_RESPONSE_INVALID",
+    canDiscard: true,
+  });
+  expect(JSON.stringify(receipt)).not.toContain(payload.text);
+  expect(overview.failedReceiptTotal).toBe(1);
+  expect(await f.service.readiness(principal, f.input)).toMatchObject({
+    ready: false,
+    blockedBy: "PENDING_HISTORY_REVIEW_REQUIRED",
+  });
+  if (!receipt) throw new Error("fixture");
+  await expect(
+    integration.link(
+      { userId: "demo-teammate", source: "session" },
+      org,
+      receipt.id,
+    ),
+  ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  await expect(
+    integration.link({ ...principal, readOnly: true }, org, receipt.id),
+  ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  await expect(
+    integration.link(
+      { ...principal, productIds: [demoId(10)] },
+      org,
+      receipt.id,
+    ),
+  ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  await expect(
+    integration.link(principal, demoId(2), receipt.id),
+  ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  await expect(
+    integration.link(principal, org, receipt.id, f.relationshipId),
+  ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  await local.db
+    .update(s.integrationReceipts)
+    .set({ leaseUntil: new Date(Date.now() + 60000) })
+    .where(eq(s.integrationReceipts.id, receipt.id));
+  expect(
+    (await integration.overview(principal, scope)).failedReceipts[0].canDiscard,
+  ).toBe(false);
+  await expect(
+    integration.link(principal, org, receipt.id),
+  ).rejects.toMatchObject({
+    code: "SYNC_IN_PROGRESS",
+  });
+  await local.db
+    .update(s.integrationReceipts)
+    .set({ leaseUntil: null })
+    .where(eq(s.integrationReceipts.id, receipt.id));
+  const ignore = operations.find(
+    (operation) => operation.name === "ignore_import",
+  );
+  if (!ignore) throw new Error("registry");
+  await executeMcpOperation(ignore, { db: local.db, principal }, org, {
+    productId: f.productId,
+    itemId: receipt.id,
+  });
+  await integration.link(principal, org, receipt.id);
+  const [retained] = await local.db
+    .select()
+    .from(s.integrationReceipts)
+    .where(eq(s.integrationReceipts.id, receipt.id));
+  expect(retained.payload).toEqual(payload);
+  expect(retained.processedAt).not.toBeNull();
+  expect((await integration.overview(principal, scope)).failedReceipts).toEqual(
+    [],
+  );
+  await processReceipts(local.db);
+  await saveReceipt(local.db, connection, externalId, "unipile", {
+    ...payload,
+    text: "A changed retry cannot restore a discarded source",
+  });
+  const [afterRetry] = await local.db
+    .select()
+    .from(s.integrationReceipts)
+    .where(eq(s.integrationReceipts.id, receipt.id));
+  expect(afterRetry.payload).toEqual(payload);
+  expect(afterRetry.processedAt).toEqual(retained.processedAt);
+  expect(afterRetry.attempts).toBe(retained.attempts);
+  const [action] = await local.db
+    .select()
+    .from(s.actions)
+    .where(eq(s.actions.id, "actionId" in f.source ? f.source.actionId : ""));
+  expect(action.approvedHash).toBeNull();
+  expect(action.version).toBe(f.input.version + 1);
+  const reapproved = await f.crm.changeAction(principal, {
+    organizationId: org,
+    actionId: action.id,
+    version: action.version,
+    command: "approve",
+  });
+  expect(
+    await f.service.readiness(principal, {
+      ...f.input,
+      version: reapproved.version,
+    }),
+  ).toMatchObject({ ready: true });
+  const audit = await local.db
+    .select()
+    .from(s.changeEvents)
+    .where(
+      and(
+        eq(s.changeEvents.entityId, receipt.id),
+        eq(s.changeEvents.type, "provider_receipt.discarded"),
+      ),
+    );
+  expect(audit).toHaveLength(1);
+  expect(audit[0]).toMatchObject({
+    actorId: demoUser,
+    sourceConversationId: conversation.id,
+  });
+  expect(f.transport).not.toHaveBeenCalled();
+});
+
+test.each([true, false])(
+  "an expired receipt worker cannot import or overwrite an explicitly discarded source (valid=%s)",
+  async (valid) => {
+    const { processReceipts } = await import("../packages/connectors/receipts");
+    const f = await fixture("linkedin", true);
+    const threadId = `fictional-expired-worker-${randomUUID()}`;
+    const [conversation] = await local.db
+      .insert(s.conversations)
+      .values({
+        organizationId: org,
+        productId: f.productId,
+        relationshipId: f.relationshipId,
+        connectionId: f.connectionId,
+        ownerId: demoUser,
+        externalThreadId: threadId,
+        channel: "linkedin",
+      })
+      .returning();
+    const payload = {
+      chat_id: threadId,
+      ...(valid
+        ? {
+            id: randomUUID(),
+            is_sender: false,
+            is_event: false,
+            timestamp: "2026-10-01T00:00:00Z",
+          }
+        : {}),
+      text: "A fictional expired worker must not import this discarded source",
+    };
+    const [receipt] = await local.db
+      .insert(s.integrationReceipts)
+      .values({
+        organizationId: org,
+        connectionId: f.connectionId,
+        externalId: randomUUID(),
+        provider: "unipile",
+        payload,
+        errorCode: "PROVIDER_UNAVAILABLE",
+      })
+      .returning();
+    const integration = new IntegrationService(local.db, f.transport);
+    const query = local.client.query.bind(local.client);
+    let discarded = false;
+    const barrier = vi.spyOn(local.client, "query").mockImplementation((async (
+      ...args: Parameters<typeof local.client.query>
+    ) => {
+      if (
+        !discarded &&
+        args[0].includes('from "connections"') &&
+        !args[0].includes("for update") &&
+        args[1]?.includes(f.connectionId)
+      ) {
+        discarded = true;
+        await local.db
+          .update(s.integrationReceipts)
+          .set({ leaseUntil: new Date(Date.now() - 1000) })
+          .where(eq(s.integrationReceipts.id, receipt.id));
+        await integration.link(principal, org, receipt.id);
+      }
+      return Reflect.apply(query, local.client, args);
+    }) as typeof local.client.query);
+    try {
+      expect(await processReceipts(local.db)).toEqual({
+        processed: 0,
+        failed: 0,
+      });
+      expect(discarded).toBe(true);
+    } finally {
+      barrier.mockRestore();
+    }
+    const [retained] = await local.db
+      .select()
+      .from(s.integrationReceipts)
+      .where(eq(s.integrationReceipts.id, receipt.id));
+    expect(retained.processedAt).not.toBeNull();
+    expect(retained.errorCode).toBe("PROVIDER_UNAVAILABLE");
+    expect(retained.payload).toEqual(payload);
+    expect(
+      await local.db
+        .select()
+        .from(s.messages)
+        .where(eq(s.messages.conversationId, conversation.id)),
+    ).toEqual([]);
+    expect(f.transport).not.toHaveBeenCalled();
+  },
+);
+
+test("readiness with private history never reveals whether a private outbound message is recent", async () => {
+  const f = await fixture("gmail", true);
+  const [conversation] = await local.db
+    .insert(s.conversations)
+    .values({
+      organizationId: org,
+      productId: f.productId,
+      relationshipId: f.relationshipId,
+      ownerId: "demo-teammate",
+      provenance: "native",
+      externalThreadId: randomUUID(),
+      channel: "linkedin",
+    })
+    .returning();
+  const [message] = await local.db
+    .insert(s.messages)
+    .values({
+      organizationId: org,
+      productId: f.productId,
+      conversationId: conversation.id,
+      providerMessageId: randomUUID(),
+      direction: "outbound",
+      body: "Fictional private contents",
+      occurredAt: new Date(now - 3600000),
+    })
+    .returning();
+  const recent = await f.service.readiness(principal, f.input);
+  await local.db
+    .update(s.messages)
+    .set({ occurredAt: new Date(now - 30 * 86400000) })
+    .where(eq(s.messages.id, message.id));
+  const old = await f.service.readiness(principal, f.input);
+  for (const readiness of [recent, old]) {
+    expect(readiness).toMatchObject({
+      blockedBy: "PRIVATE_HISTORY_REVIEW_REQUIRED",
+      checks: { history: false, crossChannel: false },
+      policy: { allowed: false, sendAfter: null, reasons: [] },
+      history: { messages: [] },
+    });
+  }
+});
+
+test("an action confirmed sent on a later day consumes that day's sending cap", async () => {
+  const previous = await fixture("gmail", true);
+  const candidate = await fixture("gmail", true);
+  const claimAt = now + 6 * 86400000;
+  const sentAt = now + 7 * 86400000;
+  const unknownTransport = vi.fn<typeof fetch>(async () => {
+    throw new Error("Fictional ambiguous provider outcome");
+  });
+  const delivery = await new OutboundService(
+    local.db,
+    unknownTransport,
+    () => claimAt,
+  ).send(principal, previous.input);
+  expect(delivery.status).toBe("unknown");
+  await new OutboundService(local.db, previous.transport, () => sentAt).resolve(
+    human,
+    {
+      organizationId: org,
+      deliveryId: delivery.id,
+      confirm: true,
+      outcome: "sent",
+      reason: "recipient_confirmed",
+    },
+  );
+  const rules = await candidate.outreach.contactRules(principal, org);
+  await candidate.outreach.updateContactRules(human, {
+    organizationId: org,
+    ...rules,
+    dailyCapPerSender: 1,
+  });
+  try {
+    const service = new OutboundService(
+      local.db,
+      candidate.transport,
+      () => sentAt,
+    );
+    expect(await service.readiness(principal, candidate.input)).toMatchObject({
+      ready: false,
+      blockedBy: "CONTACT_POLICY_BLOCKED",
+    });
+    await expect(
+      service.send(principal, candidate.input),
+    ).rejects.toMatchObject({
+      code: "CONTACT_POLICY_BLOCKED",
+    });
+    expect(candidate.transport).not.toHaveBeenCalled();
+  } finally {
+    await candidate.outreach.updateContactRules(human, {
+      organizationId: org,
+      ...rules,
+      version: rules.version + 1,
+    });
+  }
+});
+
 test("unknown sends reserve the canonical person across products and channels", async () => {
   const original = await fixture();
   const alternative = await fixture("linkedin");

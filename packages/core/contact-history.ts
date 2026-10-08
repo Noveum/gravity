@@ -242,26 +242,38 @@ export async function contactHistoryChecks(
     participantMatches.push(
       sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(${s.integrationItems.record}->'participants') AS participant(value) WHERE ${linkedinKey(sql`participant.value`)} = ${linkedinKey(sql`${profile}`)})`,
     );
-  const pending = participantMatches.length
-    ? await db
-        .select({
-          ownerId: s.connections.ownerId,
-          productId: s.integrationItems.productId,
-        })
-        .from(s.integrationItems)
-        .innerJoin(
-          s.connections,
-          eq(s.connections.id, s.integrationItems.connectionId),
-        )
-        .where(
-          and(
-            eq(s.integrationItems.organizationId, organizationId),
-            eq(s.integrationItems.status, "unmatched"),
-            sql`${s.integrationItems.record}->>'kind' = 'message'`,
-            or(...participantMatches),
-          ),
-        )
-    : [];
+  // LinkedIn polls omit participants. A committed item on a linked thread is
+  // still relevant history while its separate materialization is pending.
+  // The linked product remains authoritative if the account's default differs.
+  const pending = await db
+    .select({
+      ownerId: s.connections.ownerId,
+      productId: sql<string>`coalesce(${s.conversations.productId}, ${s.integrationItems.productId})`,
+    })
+    .from(s.integrationItems)
+    .innerJoin(
+      s.connections,
+      eq(s.connections.id, s.integrationItems.connectionId),
+    )
+    .leftJoin(
+      s.conversations,
+      and(
+        eq(s.conversations.organizationId, organizationId),
+        eq(s.conversations.connectionId, s.integrationItems.connectionId),
+        sql`${s.conversations.externalThreadId} = ${s.integrationItems.record}->>'threadId'`,
+      ),
+    )
+    .where(
+      and(
+        eq(s.integrationItems.organizationId, organizationId),
+        eq(s.integrationItems.status, "unmatched"),
+        sql`${s.integrationItems.record}->>'kind' = 'message'`,
+        or(
+          inArray(s.conversations.relationshipId, relationshipIds),
+          ...participantMatches,
+        ),
+      ),
+    );
   const rawPending = await db
     .select({
       ownerId: s.conversations.ownerId,

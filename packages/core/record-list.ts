@@ -26,7 +26,14 @@ import {
   normalizeFieldLabel,
   normalizeFieldText,
 } from "./field-filters";
+import { fieldTextCaseSources, fieldTextCaseTargets } from "./field-text-case";
 import { authorize, type Principal } from "./policy";
+
+function normalizedFieldSql(value: SQL) {
+  // Most labels and prose are ASCII. Avoid scanning the full Unicode mapping
+  // for those strings while keeping both branches independent of DB locale.
+  return sql`CASE WHEN octet_length(${value}) = char_length(${value}) THEN translate(${value}, ${fieldTextCaseSources.slice(0, 26)}, ${fieldTextCaseTargets.slice(0, 26)}) ELSE translate(${value}, ${fieldTextCaseSources}, ${fieldTextCaseTargets}) END`;
+}
 
 export const recordListSchema = scopeSchema
   .extend({
@@ -118,6 +125,8 @@ export class RecordListService {
     const conditions: (SQL | undefined)[] = [
       eq(table.organizationId, input.organizationId),
     ];
+    if (input.entity === "opportunities")
+      conditions.push(isNull(s.opportunities.archivedAt));
     const personRelationships = (personId: typeof s.people.id) =>
       this.db
         .select({ id: s.relationships.id })
@@ -269,7 +278,7 @@ export class RecordListService {
         eq(filteredRelationship.organizationId, input.organizationId),
         inArray(filteredRelationship.productId, ids),
         ...input.fieldFilters.map((filter: FieldFilter) => {
-          const matchingName = sql`lower(btrim(field.value->>'label', ${fieldLabelWhitespace})) = ${normalizeFieldLabel(filter.label)} AND field.value->>'type' = ${filter.type}`;
+          const matchingName = sql`${normalizedFieldSql(sql`btrim(field.value->>'label', ${fieldLabelWhitespace})`)} = ${normalizeFieldLabel(filter.label)} AND field.value->>'type' = ${filter.type}`;
           let comparison: SQL | undefined;
           const value = filter.value;
           const stored =
@@ -277,7 +286,9 @@ export class RecordListService {
               ? sql`CASE WHEN jsonb_typeof(field.value->'value') = 'number' THEN (field.value->>'value')::numeric END`
               : filter.type === "datetime"
                 ? sql`CASE WHEN field.value->>'type' = 'datetime' THEN (field.value->>'value')::timestamptz END`
-                : sql`lower(field.value->>'value')`;
+                : filter.type === "text" || filter.type === "url"
+                  ? normalizedFieldSql(sql`field.value->>'value'`)
+                  : sql`field.value->>'value'`;
           const expected =
             typeof value === "string"
               ? normalizeFieldText(value)

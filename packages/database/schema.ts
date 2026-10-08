@@ -1150,6 +1150,7 @@ export const opportunities = pgTable(
     closedAt: timestamp("closed_at", { withTimezone: true }),
     description: text("description").notNull().default(""),
     lostReason: text("lost_reason").notNull().default(""),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }),
     version: version(),

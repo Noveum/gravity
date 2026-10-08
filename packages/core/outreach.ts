@@ -357,11 +357,18 @@ async function sentOnDay(
         eq(s.deliveries.organizationId, organizationId),
         eq(s.deliveries.ownerId, senderId),
         or(
-          inArray(s.deliveries.status, ["sending", "unknown", "accepted"]),
-          and(eq(s.deliveries.status, "sent"), isNull(s.deliveries.touchId)),
+          and(
+            inArray(s.deliveries.status, ["sending", "unknown", "accepted"]),
+            gte(s.deliveries.createdAt, new Date(start)),
+            lt(s.deliveries.createdAt, new Date(end)),
+          ),
+          and(
+            eq(s.deliveries.status, "sent"),
+            isNull(s.deliveries.touchId),
+            gte(s.deliveries.sentAt, new Date(start)),
+            lt(s.deliveries.sentAt, new Date(end)),
+          ),
         ),
-        gte(s.deliveries.createdAt, new Date(start)),
-        lt(s.deliveries.createdAt, new Date(end)),
       ),
     );
   const [observed] = await db

@@ -2,7 +2,8 @@ import { and, asc, eq, exists, inArray, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
-import { wallClock, zonedInstant } from "./calendar";
+import { utcCalendarInstant, wallClock, zonedInstant } from "./calendar";
+import { lockContactDirectory } from "./contact-history";
 import { preciseInstantSchema } from "./datetime";
 import { authorize, DomainError, type Principal } from "./policy";
 import { assertProductActive } from "./products";
@@ -71,8 +72,8 @@ export function nextInternalTaskDue(
 ) {
   const start = wallClock(dueAt.getTime(), timeZone);
   const now = wallClock(Math.max(completedAt, dueAt.getTime()), timeZone);
-  const startDay = Date.UTC(start.year, start.month - 1, start.day);
-  const nowDay = Date.UTC(now.year, now.month - 1, now.day);
+  const startDay = utcCalendarInstant(start.year, start.month, start.day);
+  const nowDay = utcCalendarInstant(now.year, now.month, now.day);
   const months = (now.year - start.year) * 12 + now.month - start.month;
   const span =
     recurrence.interval * (recurrence.frequency === "weekly" ? 7 : 1);
@@ -80,18 +81,24 @@ export function nextInternalTaskDue(
     recurrence.frequency === "monthly"
       ? Math.max(1, Math.floor(months / span))
       : Math.max(1, Math.floor((nowDay - startDay) / 86400000 / span));
-  const precision = dueAt.getUTCSeconds() * 1000 + dueAt.getUTCMilliseconds();
+  const precision = dueAt.getUTCMilliseconds();
   for (;;) {
     const target =
       recurrence.frequency === "monthly"
-        ? new Date(Date.UTC(start.year, start.month - 1 + occurrence * span, 1))
+        ? new Date(
+            utcCalendarInstant(start.year, start.month + occurrence * span, 1),
+          )
         : new Date(startDay + occurrence * span * 86400000);
     const date =
       recurrence.frequency === "monthly"
         ? Math.min(
             recurrence.anchorDay,
             new Date(
-              Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+              utcCalendarInstant(
+                target.getUTCFullYear(),
+                target.getUTCMonth() + 2,
+                0,
+              ),
             ).getUTCDate(),
           )
         : target.getUTCDate();
@@ -103,6 +110,7 @@ export function nextInternalTaskDue(
         start.hour,
         timeZone,
         start.minute,
+        start.second,
       ) + precision;
     const actual = wallClock(next, timeZone);
     // A nonexistent local time is skipped, retaining the recurring wall clock.
@@ -113,7 +121,8 @@ export function nextInternalTaskDue(
       actual.month === target.getUTCMonth() + 1 &&
       actual.day === date &&
       actual.hour === start.hour &&
-      actual.minute === start.minute
+      actual.minute === start.minute &&
+      actual.second === start.second
     )
       return new Date(next);
     occurrence += 1;
@@ -227,6 +236,16 @@ export class InternalTaskService {
         input.productId,
         true,
       );
+      // Membership and product-grant changes lock the organization first. Keep
+      // access stable through later product, task and contact lock waits.
+      await lockContactDirectory(tx, input.organizationId);
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
       await assertProductActive(tx, input.organizationId, input.productId);
       await validateOwner(
         tx,
@@ -289,6 +308,14 @@ export class InternalTaskService {
         found.productId,
         true,
       );
+      await lockContactDirectory(tx, input.organizationId);
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        found.productId,
+        true,
+      );
       await assertProductActive(tx, input.organizationId, found.productId);
       const [task] = await tx
         .select()
@@ -310,6 +337,7 @@ export class InternalTaskService {
       );
       const ownerId = input.ownerId ?? task.ownerId;
       await validateOwner(tx, input.organizationId, task.productId, ownerId);
+      if (input.command === "reopen" && task.status === "open") return task;
       if (input.command === "complete" && task.status !== "open")
         throw new DomainError("ACTION_COMPLETED", 409);
       const timeZone = input.timeZone ?? task.timeZone;

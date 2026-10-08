@@ -1896,6 +1896,7 @@ ul.timeline {
 }
 .archived-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 8px;
 }
@@ -5346,6 +5347,19 @@ nav.list-pagination > label:has(select) {
   flex-basis: 100%;
   margin: 0;
   font-size: var(--text-xs);
+}
+.deal-list .record-actions,
+.deal-card .record-actions {
+  margin: 0;
+}
+.deal-card .record-actions {
+  --gravity-control: 22px;
+}
+.deal-card-head:has(.inline-archive) {
+  flex-wrap: wrap;
+}
+.deal-card-head > .record-actions:has(.inline-archive) {
+  flex-basis: 100%;
 }
 .inline-report {
   margin-bottom: 24px;

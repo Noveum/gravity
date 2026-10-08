@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { recordContactSubmission } from "./contact-attribution";
+import { lockContactDirectory } from "./contact-history";
 import { scopeSchema } from "./crm";
 import { authorize, DomainError, type Principal } from "./policy";
 import { assertProductActive } from "./products";
@@ -70,7 +71,7 @@ export const personUpdateSchema = scopeSchema.extend({
     .default(""),
   linkedinUrl: linkedinUrl.default(""),
   companyId: z.uuid().nullable().optional(),
-  summary: z.string().trim().max(10000).default(""),
+  summary: z.string().trim().max(10000).optional(),
 });
 export const personArchiveSchema = scopeSchema.extend({
   personId: z.uuid(),
@@ -118,6 +119,16 @@ export const opportunityCreateSchema = scopeSchema.extend({
   name: z.string().trim().min(1).max(200),
   amountMinor: amountMinor.default(null),
   currency: currency.default("USD"),
+});
+export const opportunityRemovalSchema = scopeSchema.extend({
+  opportunityId: z.uuid(),
+  version,
+});
+export const opportunityRestoreSchema = opportunityRemovalSchema.extend({
+  stageId: z.uuid().optional(),
+});
+export const opportunityArchiveSchema = opportunityRestoreSchema.extend({
+  archived: z.boolean(),
 });
 export const opportunityChangeSchema = scopeSchema
   .extend({
@@ -208,6 +219,14 @@ export class RecordService {
   ) {
     requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
+      await lockOrganization(tx, input.organizationId);
       const permission = await authorize(
         tx,
         principal,
@@ -216,7 +235,6 @@ export class RecordService {
         true,
       );
       const productIds = permission.products.map((product) => product.id);
-      await lockOrganization(tx, input.organizationId);
       const [person] = await tx
         .select()
         .from(s.people)
@@ -283,7 +301,7 @@ export class RecordService {
           ...(input.companyId !== undefined
             ? { companyId: input.companyId }
             : {}),
-          summary: input.summary,
+          ...(input.summary !== undefined ? { summary: input.summary } : {}),
           version: person.version + 1,
         })
         .where(
@@ -714,6 +732,14 @@ export class RecordService {
   ) {
     requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
+      await lockContactDirectory(tx, input.organizationId);
       const relationship = await writableRelationship(
         tx,
         principal,
@@ -780,6 +806,14 @@ export class RecordService {
   ) {
     requireWriteActor(principal);
     return this.db.transaction(async (tx) => {
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
+      await lockContactDirectory(tx, input.organizationId);
       if (input.stageId)
         await shareLockStage(tx, input.organizationId, input.stageId);
       const [opportunity] = await tx
@@ -804,6 +838,7 @@ export class RecordService {
         throw new DomainError("FORBIDDEN", 403);
       if (opportunity.version !== input.version)
         throw new DomainError("CONFLICT", 409);
+      if (opportunity.archivedAt) throw new DomainError("RECORD_ARCHIVED", 409);
       await assertActiveRelationships(tx, input.organizationId, [
         opportunity.relationshipId,
       ]);
@@ -881,6 +916,100 @@ export class RecordService {
             entityId: opportunity.id,
           })),
         );
+      return updated;
+    });
+  }
+
+  async archiveOpportunity(
+    principal: Principal,
+    input: z.infer<typeof opportunityArchiveSchema>,
+  ) {
+    requireWriteActor(principal);
+    return this.db.transaction(async (tx) => {
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
+      await lockContactDirectory(tx, input.organizationId);
+      const [found] = await tx
+        .select()
+        .from(s.opportunities)
+        .where(
+          and(
+            eq(s.opportunities.id, input.opportunityId),
+            eq(s.opportunities.organizationId, input.organizationId),
+          ),
+        );
+      if (!found) throw new DomainError("NOT_FOUND", 404);
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        found.productId,
+        true,
+      );
+      if (input.productId && input.productId !== found.productId)
+        throw new DomainError("FORBIDDEN", 403);
+      await assertProductActive(tx, input.organizationId, found.productId);
+      // Pipeline changes lock stages before deals. Match that order on restore.
+      const [stage] = input.archived
+        ? []
+        : await tx
+            .select()
+            .from(s.stages)
+            .where(
+              and(
+                eq(s.stages.id, input.stageId ?? found.stageId),
+                eq(s.stages.organizationId, input.organizationId),
+                eq(s.stages.productId, found.productId),
+                eq(s.stages.pipeline, "deal"),
+              ),
+            )
+            .for("share");
+      const [opportunity] = await tx
+        .select()
+        .from(s.opportunities)
+        .where(eq(s.opportunities.id, found.id))
+        .for("update");
+      if (opportunity.version !== input.version)
+        throw new DomainError("CONFLICT", 409);
+      if (!!opportunity.archivedAt === input.archived) return opportunity;
+      if (!input.archived) {
+        await assertActiveRelationships(tx, input.organizationId, [
+          opportunity.relationshipId,
+        ]);
+        const category =
+          opportunity.status === "open"
+            ? ["open", "hold"]
+            : [opportunity.status];
+        if (!stage || stage.archivedAt || !category.includes(stage.category))
+          throw new DomainError("STAGE_REQUIRED", 409);
+      }
+      const [updated] = await tx
+        .update(s.opportunities)
+        .set({
+          archivedAt: input.archived ? new Date() : null,
+          ...(!input.archived && stage ? { stageId: stage.id } : {}),
+          version: opportunity.version + 1,
+        })
+        .where(
+          and(
+            eq(s.opportunities.id, opportunity.id),
+            eq(s.opportunities.version, input.version),
+          ),
+        )
+        .returning();
+      if (!updated) throw new DomainError("CONFLICT", 409);
+      await tx.insert(s.changeEvents).values({
+        organizationId: input.organizationId,
+        productId: opportunity.productId,
+        actorId: principal.userId,
+        type: input.archived ? "opportunity.archived" : "opportunity.restored",
+        entityId: opportunity.id,
+      });
       return updated;
     });
   }

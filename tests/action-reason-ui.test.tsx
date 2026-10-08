@@ -17,6 +17,43 @@ vi.mock("../src/components/client-api", async (importOriginal) => ({
 }));
 const harness = installCrmHarness();
 
+test("editing an action reason preserves an unsaved draft and its usable version", async () => {
+  await harness.local.db
+    .update(s.actions)
+    .set({ status: "open", draft: "Fictional saved draft." })
+    .where(eq(s.actions.id, demoId(600)));
+  await mountCrm(harness, `/people/${demoId(200)}?action=${demoId(600)}`);
+  await contactTab(t.draft);
+  fireEvent.change(await screen.findByLabelText(t.draftLabel), {
+    target: { value: "Fictional unsaved draft to retain." },
+  });
+  await contactTab(t.contactWorkspace.overview);
+  fireEvent.click(
+    await screen.findByRole("button", { name: t.actionReasons.edit }),
+  );
+  fireEvent.change(screen.getByLabelText(t.reason), {
+    target: { value: "Fictional revised action reason." },
+  });
+  fireEvent.click(screen.getByRole("button", { name: t.save }));
+  await waitFor(() => expect(screen.queryByLabelText(t.reason)).toBeNull());
+  await contactTab(t.draft);
+  expect(
+    ((await screen.findByLabelText(t.draftLabel)) as HTMLTextAreaElement).value,
+  ).toBe("Fictional unsaved draft to retain.");
+  fireEvent.click(screen.getByRole("button", { name: t.saveDraft }));
+  await waitFor(async () => {
+    const [action] = await harness.local.db
+      .select()
+      .from(s.actions)
+      .where(eq(s.actions.id, demoId(600)));
+    expect(action).toMatchObject({
+      draft: "Fictional unsaved draft to retain.",
+      reason: "Fictional revised action reason.",
+      version: 3,
+    });
+  });
+});
+
 test("older private native messages can be loaded through the UI after the initial history page", async () => {
   const [conversation] = await harness.local.db
     .insert(s.conversations)

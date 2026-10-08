@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import {
   type APIRequestContext,
   expect,
+  type Locator,
   type Page,
   test,
 } from "@playwright/test";
@@ -577,4 +578,196 @@ test("precise custom fields and product-wide filters preserve numeric zero, fals
   await expect(list.getByRole("link", { name, exact: true })).toBeVisible();
   await screenshots(page, "precise-field-filters");
   expect(monitored.errors).toEqual([]);
+});
+
+test("deal removal is reversible through list Undo and persisted board archival without losing details or dispatching", async ({
+  page,
+  request,
+}) => {
+  const monitored = monitor(page);
+  type Deal = ClientSnapshot["opportunities"][number];
+  const suffix = crypto.randomUUID().slice(0, 8);
+  const name = `Fictional removable deal ${suffix}`;
+  const person = await createPerson(request, `Fictional deal owner ${suffix}`);
+  const snapshot = await read<ClientSnapshot>(request, "snapshot");
+  const stage = snapshot.stages.find(
+    (item) =>
+      item.productId === scope.productId &&
+      item.pipeline === "deal" &&
+      item.category === "open" &&
+      !item.archivedAt,
+  );
+  if (!stage) throw new Error("Fictional open deal stage missing");
+  const original = await post<Deal>(request, "deal", {
+    relationshipId: person.relationshipId,
+    stageId: stage.id,
+    name,
+    amountMinor: 123456,
+    currency: "EUR",
+    probability: 37,
+    expectedCloseDate: "2030-01-31",
+    ownerId: "demo-you",
+    description: "Fictional duplicate evaluation with retained deal history.",
+    tags: ["fictional-duplicate"],
+  });
+  expect(original).toMatchObject({ status: "open", amountMinor: 123456 });
+  try {
+    const before = await read<ClientSnapshot>(request, "snapshot");
+    const expectRetained = (deal: Deal | undefined) =>
+      expect(deal).toMatchObject({
+        id: original.id,
+        organizationId: original.organizationId,
+        productId: original.productId,
+        relationshipId: original.relationshipId,
+        stageId: original.stageId,
+        amountMinor: original.amountMinor,
+        currency: original.currency,
+        status: original.status,
+        probability: original.probability,
+        expectedCloseDate: original.expectedCloseDate,
+        ownerId: original.ownerId,
+        description: original.description,
+        tags: original.tags,
+        closedAt: original.closedAt,
+      });
+    async function archive(record: Locator) {
+      await record
+        .getByRole("button", { name: t.contactWorkspace.more, exact: true })
+        .click();
+      await page
+        .getByRole("menuitem", { name: t.archiveDeal, exact: true })
+        .click();
+      const confirmation = record.getByRole("group", {
+        name: t.archiveDealConfirm,
+        exact: true,
+      });
+      await expect(confirmation).toBeVisible();
+      await confirmation
+        .getByRole("button", {
+          name: t.inlineEditing.confirmArchive,
+          exact: true,
+        })
+        .click();
+      await expect(
+        page.getByText(t.dealArchived.replace("{name}", name), { exact: true }),
+      ).toBeVisible();
+    }
+
+    await page.goto("/opportunities");
+    await page
+      .getByRole("button", { name: t.allProducts, exact: true })
+      .click();
+    const listRow = page.locator(".deal-list tbody tr").filter({
+      has: page.getByRole("button", { name, exact: true }),
+    });
+    await expect(listRow).toBeVisible();
+    await archive(listRow);
+    await expect(listRow).toHaveCount(0);
+    let saved = await read<ClientSnapshot>(request, "snapshot");
+    expect(saved.opportunities.some((deal) => deal.id === original.id)).toBe(
+      false,
+    );
+    const removed = saved.archivedOpportunities.find(
+      (deal) => deal.id === original.id,
+    );
+    expectRetained(removed);
+    expect(removed).toMatchObject({
+      version: original.version + 1,
+      archivedAt: expect.any(String),
+    });
+
+    await page
+      .getByRole("region", { name: t.notifications, exact: true })
+      .getByRole("button", { name: t.undo, exact: true })
+      .click();
+    const dealEditor = editor(page, t.editOpportunity);
+    await expect(dealEditor).toBeVisible();
+    await expect(dealEditor.getByLabel(t.amount, { exact: true })).toHaveValue(
+      "1234.56",
+    );
+    await expect(
+      dealEditor.getByLabel(t.currency, { exact: true }),
+    ).toHaveValue("EUR");
+    await expect(
+      dealEditor.getByRole("textbox", { name: t.dealDescription, exact: true }),
+    ).toHaveValue(original.description);
+    await dealEditor
+      .getByRole("button", { name: t.cancel, exact: true })
+      .click();
+    await expect(listRow).toBeVisible();
+    saved = await read<ClientSnapshot>(request, "snapshot");
+    expectRetained(saved.opportunities.find((deal) => deal.id === original.id));
+    expect(
+      saved.opportunities.find((deal) => deal.id === original.id),
+    ).toMatchObject({ version: original.version + 2, archivedAt: null });
+
+    await page
+      .getByRole("button", { name: t.inlineEditing.board, exact: true })
+      .click();
+    const card = page.locator(".deal-card").filter({
+      has: page.getByRole("button", { name, exact: true }),
+    });
+    await expect(card).toHaveAttribute("draggable", "true");
+    await expect(
+      card.getByRole("button", {
+        name: `${t.editOpportunity}: ${name}`,
+        exact: true,
+      }),
+    ).toBeVisible();
+    await archive(card);
+    await expect(card).toHaveCount(0);
+    await page.reload();
+    const archivedList = page
+      .locator("details.archived-list")
+      .filter({ hasText: t.archivedDeals });
+    await archivedList.locator(":scope > summary").click();
+    const archivedRow = archivedList.locator("li").filter({ hasText: name });
+    await expect(archivedRow).toBeVisible();
+    saved = await read<ClientSnapshot>(request, "snapshot");
+    expectRetained(
+      saved.archivedOpportunities.find((deal) => deal.id === original.id),
+    );
+    await archivedRow.scrollIntoViewIfNeeded();
+    await screenshots(page, "reversible-deal-archive");
+    await archivedRow
+      .getByRole("button", { name: `${t.restore}: ${name}`, exact: true })
+      .click();
+    await expect(archivedRow).toHaveCount(0);
+    await expect(listRow).toBeVisible();
+    const after = await read<ClientSnapshot>(request, "snapshot");
+    const restored = after.opportunities.find(
+      (deal) => deal.id === original.id,
+    );
+    expectRetained(restored);
+    expect(restored).toMatchObject({
+      version: original.version + 4,
+      archivedAt: null,
+    });
+    expect(
+      after.archivedOpportunities.some((deal) => deal.id === original.id),
+    ).toBe(false);
+    expect(after.messageStats).toEqual(before.messageStats);
+    expect(after.touchStats).toEqual(before.touchStats);
+    expect(monitored.writes).toEqual(
+      expect.arrayContaining(["opportunity-delete", "opportunity-restore"]),
+    );
+    expect(
+      monitored.writes.filter((operation) =>
+        ["send-action", "send-touch"].includes(operation),
+      ),
+    ).toEqual([]);
+    expect(monitored.errors).toEqual([]);
+  } finally {
+    // Keep the restored EUR fixture out of later overview metrics. Preserve it
+    // as archived evidence instead of changing its amount/currency/outcome.
+    const workspace = await read<ClientSnapshot>(request, "snapshot");
+    const active = workspace.opportunities.find(
+      (deal) => deal.id === original.id,
+    );
+    if (active)
+      await post(request, "opportunity-delete", {
+        opportunityId: active.id,
+        version: active.version,
+      });
+  }
 });

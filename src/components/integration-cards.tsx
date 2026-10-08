@@ -70,7 +70,11 @@ export function IntegrationCards({
     IntegrationProvider | ""
   >("");
   const [pages, setPages] = useState<(string | undefined)[]>([undefined]);
+  const [failedPages, setFailedPages] = useState<(string | undefined)[]>([
+    undefined,
+  ]);
   const reviewCursor = pages.at(-1);
+  const failedReceiptCursor = failedPages.at(-1);
   const pending = useRef(false);
   const alive = useRef(true);
   const loadGeneration = useRef(0);
@@ -79,6 +83,7 @@ export function IntegrationCards({
     const timer = window.setTimeout(() => {
       setReviewQuery(search.trim());
       setPages([undefined]);
+      setFailedPages([undefined]);
     }, 250);
     return () => clearTimeout(timer);
   }, [search, reviewQuery]);
@@ -91,6 +96,8 @@ export function IntegrationCards({
       if (reviewQuery) query.set("reviewQuery", reviewQuery);
       if (reviewProvider) query.set("reviewProvider", reviewProvider);
       if (reviewCursor) query.set("reviewCursor", reviewCursor);
+      if (failedReceiptCursor)
+        query.set("failedReceiptCursor", failedReceiptCursor);
       const result = await requestJson<ConnectionOverview>(
         `/api/integrations?${query}`,
       );
@@ -112,6 +119,7 @@ export function IntegrationCards({
     reviewQuery,
     reviewProvider,
     reviewCursor,
+    failedReceiptCursor,
   ]);
   const currentLoad = useRef(load);
   currentLoad.current = load;
@@ -119,7 +127,15 @@ export function IntegrationCards({
     alive.current = true;
     setLoading(!demo);
     setOverview((prior) =>
-      prior ? { ...prior, items: [], nextReviewCursor: null } : null,
+      prior
+        ? {
+            ...prior,
+            items: [],
+            nextReviewCursor: null,
+            failedReceipts: [],
+            nextFailedReceiptCursor: null,
+          }
+        : null,
     );
     void load();
     const poll = window.setInterval(() => {
@@ -427,6 +443,7 @@ export function IntegrationCards({
                   event.target.value as IntegrationProvider | "",
                 );
                 setPages([undefined]);
+                setFailedPages([undefined]);
               }}
             >
               <option value="">{t.allImportProviders}</option>
@@ -556,6 +573,22 @@ export function IntegrationCards({
               </button>
             </div>
           </div>
+          <FailedReceiptReview
+            key={`${organizationId}:${productId}:${reviewQuery}:${reviewProvider}:${failedReceiptCursor ?? ""}`}
+            overview={overview}
+            loading={loading}
+            busy={busy}
+            timeZone={timeZone}
+            pages={failedPages}
+            onPrevious={() => setFailedPages((prior) => prior.slice(0, -1))}
+            onNext={() =>
+              setFailedPages((prior) => [
+                ...prior,
+                overview.nextFailedReceiptCursor ?? undefined,
+              ])
+            }
+            onDiscard={(id) => mutate("ignore", { itemId: id }, id)}
+          />
         </article>
       )}
       {settingsOpen && (
@@ -596,6 +629,116 @@ export function IntegrationCards({
         />
       )}
     </>
+  );
+}
+function FailedReceiptReview({
+  overview,
+  loading,
+  busy,
+  timeZone,
+  pages,
+  onPrevious,
+  onNext,
+  onDiscard,
+}: {
+  overview: ConnectionOverview;
+  loading: boolean;
+  busy: string;
+  timeZone: string;
+  pages: (string | undefined)[];
+  onPrevious: () => void;
+  onNext: () => void;
+  onDiscard: (id: string) => Promise<void>;
+}) {
+  const [reviewing, setReviewing] = useState("");
+  return (
+    <section aria-label={t.failedReceipts.heading} aria-busy={loading}>
+      <div className="section-heading">
+        <h3>{t.failedReceipts.heading}</h3>
+        <span className="badge">{overview.failedReceiptTotal ?? 0}</span>
+      </div>
+      <p>{t.failedReceipts.hint}</p>
+      {!loading && !overview.failedReceipts?.length && (
+        <p>{t.failedReceipts.empty}</p>
+      )}
+      {!loading &&
+        overview.failedReceipts?.map((receipt) => (
+          <div className="import-row" key={receipt.id}>
+            <div>
+              <strong>{receipt.externalId}</strong>
+              <small className="connection-meta">
+                {dateLabel(receipt.createdAt, timeZone)} ·{" "}
+                {t.failedReceipts.attempts.replace(
+                  "{count}",
+                  String(receipt.attempts),
+                )}
+              </small>
+              <p>
+                {t.errors[receipt.errorCode as keyof typeof t.errors] ??
+                  t.errors.PROVIDER_RESPONSE_INVALID}
+              </p>
+              {!receipt.canDiscard && <p>{t.failedReceipts.processing}</p>}
+              {reviewing === receipt.id && (
+                <p>{t.failedReceipts.confirmation}</p>
+              )}
+            </div>
+            {reviewing === receipt.id ? (
+              <div className="connection-buttons">
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => setReviewing("")}
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  type="button"
+                  disabled={!!busy || !receipt.canDiscard}
+                  onClick={async () => {
+                    await onDiscard(receipt.id);
+                    setReviewing("");
+                  }}
+                >
+                  {busy === receipt.id ? t.saving : t.failedReceipts.confirm}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={!!busy || !receipt.canDiscard}
+                onClick={() => setReviewing(receipt.id)}
+              >
+                {t.failedReceipts.discard}
+              </button>
+            )}
+          </div>
+        ))}
+      <div className="import-pagination">
+        <span>
+          {t.importPage
+            .replace("{page}", String(pages.length))
+            .replace("{total}", String(overview.failedReceiptTotal ?? 0))}
+        </span>
+        <div className="connection-buttons">
+          <button
+            type="button"
+            disabled={loading || !!busy || pages.length === 1}
+            onClick={onPrevious}
+          >
+            <ChevronLeft size={15} aria-hidden="true" />
+            {t.failedReceipts.previous}
+          </button>
+          <button
+            type="button"
+            disabled={loading || !!busy || !overview.nextFailedReceiptCursor}
+            onClick={onNext}
+          >
+            {t.failedReceipts.next}
+            <ChevronRight size={15} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 function ConnectDialog({

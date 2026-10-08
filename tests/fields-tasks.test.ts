@@ -10,6 +10,10 @@ import {
   matchesFieldFilters,
 } from "../packages/core/field-filters";
 import {
+  fieldTextCaseSources,
+  fieldTextCaseTargets,
+} from "../packages/core/field-text-case";
+import {
   changeInternalTaskSchema,
   createInternalTaskSchema,
   InternalTaskService,
@@ -28,6 +32,7 @@ import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import { operations } from "../packages/operations/catalog";
+import { databaseWithLockInterleave } from "./support/lock-interleave";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 const principal = { userId: demoUser, source: "demo" as const };
@@ -50,6 +55,19 @@ const fields: RelationshipField[] = [
   },
   { id: demoId(8906), label: "Unused seats", type: "number", value: 0 },
   { id: demoId(8907), label: "İD", type: "text", value: "ΟΣ" },
+  { id: demoId(8908), label: "Ⓐ Tier", type: "text", value: "Ⓐ" },
+  {
+    id: demoId(8909),
+    label: "\u{10570} Vithkuqi",
+    type: "text",
+    value: "\u{10570}",
+  },
+  {
+    id: demoId(8910),
+    label: "\u{10d50} Garay",
+    type: "text",
+    value: "\u{10d50}",
+  },
 ];
 beforeAll(async () => {
   local = await createLocalDatabase();
@@ -95,6 +113,25 @@ describe("precise relationship fields", () => {
     expect(instantFromZonedInput("2026-03-08T02:30", "America/New_York")).toBe(
       "",
     );
+    expect(instantFromZonedInput("0000-01-01T00:00", "UTC")).toBe("");
+    expect(instantFromZonedInput("2030-00-01T00:00", "UTC")).toBe("");
+    expect(instantFromZonedInput("2030-01-00T00:00", "UTC")).toBe("");
+    expect(instantFromZonedInput("2030-01-01T24:00", "UTC")).toBe("");
+    expect(instantFromZonedInput("2030-01-01T00:60", "UTC")).toBe("");
+    expect(instantFromZonedInput("2030-01-01T00:00:60", "UTC")).toBe("");
+    expect(instantFromZonedInput("2030-01-01T00:00:18.1234", "UTC")).toBe("");
+    expect(instantFromZonedInput("0001-01-02T03:04:05.125", "UTC")).toBe(
+      "0001-01-02T03:04:05.125Z",
+    );
+    expect(zonedInputValue("0001-01-02T03:04:05.125Z", "UTC", true)).toBe(
+      "0001-01-02T03:04:05.125",
+    );
+    expect(
+      zonedInputValue("1900-01-01T00:00:18.125Z", "Asia/Kolkata", true),
+    ).toBe("1900-01-01T05:21:28.125");
+    expect(
+      instantFromZonedInput("1900-01-01T05:21:28.125", "Asia/Kolkata"),
+    ).toBe("1900-01-01T00:00:18.125Z");
   });
   test("typed comparisons reject incompatible values and operators", () => {
     expect(
@@ -232,6 +269,62 @@ describe("precise relationship fields", () => {
       expect(result.items.map((row) => row.id)).not.toContain(demoId(300));
     }
   });
+  test("Unicode labels and text use the same fixed mapping in SQL and every JS runtime", async () => {
+    const sources = Array.from(fieldTextCaseSources);
+    const targets = Array.from(fieldTextCaseTargets);
+    expect(sources).toHaveLength(targets.length);
+    expect(new Set(sources).size).toBe(sources.length);
+    const service = new RecordListService(local.db);
+    for (const filter of [
+      { label: "Ⓐ Tier", type: "text", operator: "eq", value: "Ⓐ" },
+      { label: "ⓐ tier", type: "text", operator: "eq", value: "ⓐ" },
+      { label: "ⓐ tier", type: "text", operator: "contains", value: "ⓐ" },
+      { label: "Ⓐ Tier", type: "text", operator: "exists" },
+      {
+        label: "\u{10597} vithkuqi",
+        type: "text",
+        operator: "eq",
+        value: "\u{10597}",
+      },
+      {
+        label: "\u{10d70} garay",
+        type: "text",
+        operator: "contains",
+        value: "\u{10d70}",
+      },
+    ]) {
+      const parsed = fieldFilterSchema.parse(filter);
+      expect(matchesFieldFilters(fields, [parsed])).toBe(true);
+      const result = await service.page(
+        principal,
+        recordListSchema.parse({
+          ...scope,
+          entity: "relationships",
+          fieldFilters: [parsed],
+        }),
+      );
+      expect(result.items.map((relationship) => relationship.id)).toContain(
+        demoId(300),
+      );
+    }
+    const missing = fieldFilterSchema.parse({
+      label: "ⓐ tier",
+      type: "text",
+      operator: "missing",
+    });
+    expect(matchesFieldFilters(fields, [missing])).toBe(false);
+    const absent = await service.page(
+      principal,
+      recordListSchema.parse({
+        ...scope,
+        entity: "relationships",
+        fieldFilters: [missing],
+      }),
+    );
+    expect(absent.items.map((relationship) => relationship.id)).not.toContain(
+      demoId(300),
+    );
+  });
   test("filters page every related entity and preserve current product grants", async () => {
     const service = new RecordListService(local.db);
     const filter = [
@@ -321,6 +414,50 @@ describe("product-owned internal tasks", () => {
       version: task.version,
       command,
     });
+  test("task creation and completion reject access revoked during a lock wait", async () => {
+    const service = new InternalTaskService(local.db);
+    const task = await service.create(principal, input());
+    const teammate = { userId: "demo-teammate", source: "session" as const };
+    for (const operation of ["create", "complete"] as const) {
+      for (const revoked of ["membership", "product"] as const) {
+        const replay = databaseWithLockInterleave(local.db, async (tx) => {
+          if (revoked === "membership")
+            await tx
+              .update(s.memberships)
+              .set({ active: false })
+              .where(
+                and(
+                  eq(s.memberships.organizationId, scope.organizationId),
+                  eq(s.memberships.userId, teammate.userId),
+                ),
+              );
+          else
+            await tx
+              .delete(s.productMemberships)
+              .where(
+                and(
+                  eq(s.productMemberships.organizationId, scope.organizationId),
+                  eq(s.productMemberships.productId, scope.productId),
+                  eq(s.productMemberships.userId, teammate.userId),
+                ),
+              );
+        });
+        const interleaved = new InternalTaskService(replay.database);
+        await expect(
+          operation === "create"
+            ? interleaved.create(teammate, input())
+            : interleaved.change(teammate, change(task, "complete")),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+        expect(replay.didInterleave()).toBe(true);
+        expect(
+          await local.db
+            .select()
+            .from(s.internalTasks)
+            .where(eq(s.internalTasks.id, task.id)),
+        ).toEqual([task]);
+      }
+    }
+  });
   test("monthly completion is atomic, retains calendar anchors and never creates delivery", async () => {
     const service = new InternalTaskService(local.db, () =>
       Date.parse("2030-01-31T05:00:00Z"),
@@ -375,6 +512,14 @@ describe("product-owned internal tasks", () => {
     expect(await local.db.select().from(s.deliveries)).toHaveLength(0);
   });
   test("daily and weekly recurrence preserve wall clock through DST and skip missed dates", () => {
+    expect(
+      nextInternalTaskDue(
+        new Date("0001-01-31T09:00:18.125Z"),
+        "UTC",
+        { frequency: "monthly", interval: 1, anchorDay: 31 },
+        Date.parse("0001-01-31T10:00:00Z"),
+      ).toISOString(),
+    ).toBe("0001-02-28T09:00:18.125Z");
     expect(
       nextInternalTaskDue(
         new Date("2026-03-07T14:00:18.125Z"),
@@ -464,6 +609,29 @@ describe("product-owned internal tasks", () => {
         organizationId: demoId(2),
       }),
     ).rejects.toThrow("NOT_FOUND");
+  });
+  test("reopening an already open task is a no-op without a new version or audit event", async () => {
+    const service = new InternalTaskService(local.db);
+    const task = await service.create(principal, input());
+    const before = await local.db
+      .select()
+      .from(s.changeEvents)
+      .where(eq(s.changeEvents.entityId, task.id));
+    expect(await service.change(principal, change(task, "reopen"))).toEqual(
+      task,
+    );
+    expect(
+      await local.db
+        .select()
+        .from(s.changeEvents)
+        .where(eq(s.changeEvents.entityId, task.id)),
+    ).toEqual(before);
+    expect(
+      await service.change(principal, change(task, "complete")),
+    ).toMatchObject({
+      version: task.version + 1,
+      status: "completed",
+    });
   });
   test("registry executes the complete task schemas for verified MCP reads and writes", async () => {
     const writer = {

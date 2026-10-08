@@ -21,7 +21,7 @@ import {
   operations,
   permissionAudit,
 } from "../operations/catalog";
-import { downloadAsset } from "../storage/files";
+import { downloadAsset, uploadAsset } from "../storage/files";
 // Call only after the OAuth library has verified signature, issuer, audience and scope.
 export const mcpRequiredScopes = ["crm:read"];
 export const mcpChallengeScopes = ["crm:read", "crm:write", "crm:send"];
@@ -435,7 +435,7 @@ export function mcpHandler(
         "read_material",
         {
           description:
-            "Read private text/Markdown material with source/version. PDF text extraction is not implemented; download_material returns PDF bytes.",
+            "Read private text/Markdown material with source/version. PDF text extraction is not implemented; download_material returns a signed download URL.",
           inputSchema: z.object({ assetId: z.uuid() }),
           annotations: { readOnlyHint: true },
         },
@@ -466,13 +466,13 @@ export function mcpHandler(
           });
         },
       );
-      // Preserve the original text-material tool while all file types use the shared upload operation.
+      // Preserve the original text-material tool while large file types use the shared direct upload operations.
       if (writable)
         server.registerTool(
           "create_material",
           {
             description:
-              "Upload a private plain-text or Markdown draft to a product folder. Use upload_material for PDF/base64 files.",
+              "Upload a private plain-text or Markdown draft to a product folder. Use reserve_material_upload / complete_material_upload for large files.",
             inputSchema: z.object({
               productId: z.uuid(),
               folderId: z.uuid(),
@@ -490,20 +490,13 @@ export function mcpHandler(
             },
           },
           async ({ content, ...input }) => {
-            const operation = operations.find(
-              (item) => item.name === "upload_material",
-            );
-            if (!operation) throw new DomainError("INTERNAL_ERROR", 500);
+            const bytes = Buffer.from(content, "utf8");
             return result(
-              await executeMcpOperation(
-                operation,
-                { db, principal },
+              await uploadAsset(db, principal, {
                 organizationId,
-                {
-                  ...input,
-                  dataBase64: Buffer.from(content, "utf8").toString("base64"),
-                },
-              ),
+                ...input,
+                bytes,
+              }),
             );
           },
         );

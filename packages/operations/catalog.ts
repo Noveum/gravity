@@ -127,7 +127,13 @@ import {
   MAX_UPLOAD_BYTES,
   publicFileTokenSchema,
 } from "../files/validators";
-import { downloadAsset, maxFileSize, uploadAsset } from "../storage/files";
+import {
+  completeAssetUpload,
+  downloadAsset,
+  maxFileSize,
+  putLocalMaterialUpload,
+  reserveAssetUpload,
+} from "../storage/files";
 
 export interface OperationContext {
   db: Database;
@@ -204,16 +210,19 @@ const overviewSchema = scopeSchema.extend({
   ownerId: z.string().optional(),
   channel: z.enum(["gmail", "linkedin"]).optional(),
 });
-export const materialUploadSchema = scopeSchema.extend({
+export const materialReserveSchema = scopeSchema.extend({
   productId: z.uuid(),
   folderId: z.uuid(),
   stageIds: z.array(z.uuid()).max(100).default([]),
   name: z.string().trim().min(1).max(200),
   mimeType: z.string().min(1).max(100),
-  dataBase64: z
-    .string()
-    .min(1)
-    .max(Math.ceil(maxFileSize / 3) * 4),
+  size: z.number().int().min(1).max(maxFileSize),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+});
+export const materialUploadSchema = materialReserveSchema;
+export const materialCompleteSchema = scopeSchema.extend({
+  productId: z.uuid(),
+  uploadId: z.uuid(),
 });
 export function materialBytes(value: string) {
   const bytes = Buffer.from(value, "base64");
@@ -1409,10 +1418,10 @@ export const operations: Operation[] = [
     operation: "download",
     name: "download_material",
     description:
-      "Download an authorized PDF/text/Markdown file as base64 with its metadata. Includes contract PDFs stored as materials; no contract-signature workflow exists.",
+      "Authorize and return a private download URL and metadata for an authorized PDF/text/Markdown file.",
     schema: scopeSchema.extend({ assetId: z.uuid() }),
     run: async (c, input) => {
-      const { asset, bytes } = await downloadAsset(
+      const { asset, url } = await downloadAsset(
         c.db,
         c.principal,
         input.organizationId,
@@ -1423,24 +1432,52 @@ export const operations: Operation[] = [
         name: asset.name,
         version: asset.version,
         mimeType: asset.mimeType,
-        size: bytes.length,
+        size: asset.size,
         sha256: asset.sha256,
-        dataBase64: Buffer.from(bytes).toString("base64"),
+        url,
       };
     },
   }),
   operation({
     api: "materials",
     method: "POST",
-    operation: "upload",
-    name: "upload_material",
+    operation: "reserve",
+    name: "reserve_material_upload",
     description:
-      "Upload a PDF/text/Markdown document as canonical base64 into an authorized product folder, with optional stage associations. Stored as a draft. Maximum decoded size is 10 MiB; hosting request limits also apply.",
-    schema: materialUploadSchema,
+      "Reserve a private stage-linked document upload up to 100 MiB. PUT bytes directly to the returned storage URL, then complete.",
+    schema: materialReserveSchema,
     destructive: false,
+    run: (c, input) => reserveAssetUpload(c.db, c.principal, input),
+  }),
+  operation({
+    api: "materials",
+    method: "POST",
+    operation: "complete",
+    name: "complete_material_upload",
+    description:
+      "Seal a reserved material upload into an immutable asset after size verification.",
+    schema: materialCompleteSchema,
+    destructive: false,
+    run: (c, input) => completeAssetUpload(c.db, c.principal, input),
+  }),
+  operation({
+    api: "materials",
+    method: "POST",
+    operation: "upload-bytes",
+    name: "put_local_material_upload",
+    publish: false,
+    description:
+      "Local demo transport for an owned material upload. Disabled in production; production uses the reservation signed PUT URL.",
+    schema: scopeSchema.extend({
+      productId: z.uuid(),
+      uploadId: z.uuid(),
+      dataBase64: z.string().max(Math.ceil(maxFileSize / 3) * 4),
+    }),
     run: (c, input) =>
-      uploadAsset(c.db, c.principal, {
-        ...input,
+      putLocalMaterialUpload(c.db, c.principal, {
+        organizationId: input.organizationId,
+        productId: input.productId,
+        uploadId: input.uploadId,
         bytes: materialBytes(input.dataBase64),
       }),
   }),

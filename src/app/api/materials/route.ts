@@ -1,53 +1,15 @@
 import { assertMutationOrigin, currentPrincipal } from "@crm/auth/server";
 import { errorResponse, limitedBody } from "@crm/core/http";
 import { DomainError } from "@crm/core/policy";
-import { getDatabase } from "@crm/database/client";
+import { getDatabase, isDemoMode } from "@crm/database/client";
+import { readLocalObject } from "@crm/files/storage";
 import { apiOperation } from "@crm/operations/catalog";
 import { maxFileSize } from "@crm/storage/files";
 import { z } from "zod";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function POST(request: Request) {
-  try {
-    assertMutationOrigin(request);
-    const principal = await currentPrincipal(request.headers);
-    const raw = await limitedBody(request, maxFileSize + 100000);
-    const form = await new Request(request.url, {
-      method: "POST",
-      headers: { "content-type": request.headers.get("content-type") ?? "" },
-      body: raw,
-    }).formData();
-    const file = form.get("file");
-    if (!(file instanceof File)) throw new DomainError("INVALID_INPUT", 400);
-    const fields = z
-      .object({
-        organizationId: z.uuid(),
-        productId: z.uuid(),
-        folderId: z.uuid(),
-        stageIds: z.array(z.uuid()),
-      })
-      .parse({
-        organizationId: form.get("organizationId"),
-        productId: form.get("productId"),
-        folderId: form.get("folderId"),
-        stageIds: form.getAll("stageIds"),
-      });
-    if (!file.size || file.size > maxFileSize)
-      throw new DomainError("FILE_SIZE", 413);
-    const result = await apiOperation("materials", "POST", "upload").execute(
-      { db: await getDatabase(), principal },
-      {
-        ...fields,
-        name: file.name,
-        mimeType: file.type,
-        dataBase64: Buffer.from(await file.arrayBuffer()).toString("base64"),
-      },
-    );
-    return Response.json(result, { status: 201 });
-  } catch (error) {
-    return errorResponse(error);
-  }
-}
+
 export async function GET(request: Request) {
   try {
     const principal = await currentPrincipal(request.headers);
@@ -57,18 +19,78 @@ export async function GET(request: Request) {
     const asset = (await apiOperation("materials", "GET", "download").execute(
       { db: await getDatabase(), principal },
       fields,
-    )) as { name: string; mimeType: string; dataBase64: string };
-    return new Response(
-      new Uint8Array(Buffer.from(asset.dataBase64, "base64")).buffer,
-      {
+    )) as {
+      assetId: string;
+      name: string;
+      version: number;
+      mimeType: string;
+      size: number;
+      sha256: string;
+      url: string;
+    };
+    if (!asset.url.startsWith("local:")) {
+      return new Response(null, {
+        status: 307,
         headers: {
-          "Content-Type": asset.mimeType,
-          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(asset.name)}`,
+          Location: asset.url,
           "Cache-Control": "private, no-store",
-          "Content-Security-Policy": "sandbox",
         },
+      });
+    }
+    const bytes = await readLocalObject(asset.url.slice(6));
+    return new Response(bytes.buffer as ArrayBuffer, {
+      headers: {
+        "Content-Type": asset.mimeType,
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(asset.name)}`,
+        "Cache-Control": "private, no-store",
+        "Content-Security-Policy": "sandbox",
+        "X-Content-Type-Options": "nosniff",
       },
+    });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    assertMutationOrigin(request);
+    const principal = await currentPrincipal(request.headers);
+    const raw = await limitedBody(request, 4 * 1024 * 1024);
+    const input = z
+      .object({})
+      .passthrough()
+      .parse(JSON.parse(new TextDecoder().decode(raw)));
+    const operation = z
+      .string()
+      .parse(
+        new URL(request.url).searchParams.get("operation") ?? input.operation,
+      );
+    const result = await apiOperation("materials", "POST", operation).execute(
+      { db: await getDatabase(), principal },
+      input,
     );
+    return Response.json(result, {
+      status: operation === "reserve" ? 201 : 200,
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    if (!isDemoMode()) throw new DomainError("FORBIDDEN", 403);
+    assertMutationOrigin(request);
+    const principal = await currentPrincipal(request.headers);
+    const fields = Object.fromEntries(new URL(request.url).searchParams);
+    const bytes = await limitedBody(request, maxFileSize);
+    const result = await apiOperation("materials", "POST", "upload-bytes").execute(
+      { db: await getDatabase(), principal },
+      { ...fields, dataBase64: Buffer.from(bytes).toString("base64") },
+    );
+    return Response.json(result);
   } catch (error) {
     return errorResponse(error);
   }

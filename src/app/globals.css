@@ -1906,6 +1906,7 @@ ul.timeline {
 }
 .archived-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 8px;
 }
@@ -4716,6 +4717,20 @@ tbody tr[data-selected] td:first-child::before {
   margin: 8px 0 0;
 }
 
+.record-field-filters {
+  display: grid;
+  gap: 12px;
+}
+.record-field-filter {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.record-field-filter :where(input, select) {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
 .list-pagination {
   display: flex;
   flex-wrap: wrap;
@@ -4939,6 +4954,7 @@ nav.list-pagination > label:has(select) {
 }
 
 .record-filters {
+  container: record-filters / inline-size;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -5032,6 +5048,7 @@ nav.list-pagination > label:has(select) {
   justify-content: space-between;
   gap: 5px;
   flex: 0 0 120px;
+  min-width: 0;
   min-height: 30px;
   padding: 4px 7px;
   font-size: var(--text-xs);
@@ -5159,6 +5176,31 @@ nav.list-pagination > label:has(select) {
   margin-top: 5px;
   color: var(--gravity-danger);
   font-size: var(--text-xs);
+}
+@container record-filters (max-width: 1100px) {
+  .record-filter-controls {
+    gap: 4px;
+  }
+  .filter-field {
+    flex-basis: 96px;
+  }
+  .filter-tag {
+    flex-basis: 88px;
+  }
+  .filter-qualification {
+    flex-basis: 112px;
+  }
+  .filter-status {
+    flex-basis: 80px;
+  }
+  .record-sort > span {
+    display: none;
+  }
+  .record-sort .select-trigger {
+    width: 135px;
+    min-width: 135px;
+    max-width: 135px;
+  }
 }
 @media (max-width: 640px) {
   .record-filters {
@@ -5567,6 +5609,19 @@ nav.list-pagination > label:has(select) {
   flex-basis: 100%;
   margin: 0;
   font-size: var(--text-xs);
+}
+.deal-list .record-actions,
+.deal-card .record-actions {
+  margin: 0;
+}
+.deal-card .record-actions {
+  --gravity-control: 22px;
+}
+.deal-card-head:has(.inline-archive) {
+  flex-wrap: wrap;
+}
+.deal-card-head > .record-actions:has(.inline-archive) {
+  flex-basis: 100%;
 }
 .inline-report {
   margin-bottom: 24px;

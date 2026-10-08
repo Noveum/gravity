@@ -207,6 +207,8 @@ export function OutreachView() {
   const activeBrowser = tab === "paused" ? pausedBrowser : browser;
   const filtered =
     !!search ||
+    activeBrowser.fieldInvalid ||
+    activeBrowser.fieldDrafts.some((draft) => !!draft.key) ||
     Object.entries(activeBrowser.filters).some(
       ([key, value]) => value && key !== "sort",
     );

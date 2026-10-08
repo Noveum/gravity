@@ -25,6 +25,8 @@ test("inline notes save, dirty navigation stays put, and archive requires confir
   await expect(
     page.getByRole("button", { name: t.allProducts, exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
+  const search = page.getByRole("searchbox", { name: t.search, exact: true });
+  await search.fill(name);
   await page.getByRole("link", { name, exact: true }).press("Enter");
   await expect(page).toHaveURL(/\/people$/);
   const inspector = page.locator("#record-inspector");
@@ -44,6 +46,7 @@ test("inline notes save, dirty navigation stays put, and archive requires confir
   await notes.press("ControlOrMeta+Enter");
   await expect(inspector.getByRole("status")).toHaveText(t.inlineEditing.saved);
   await page.reload();
+  await search.fill(name);
   await page.getByRole("link", { name, exact: true }).click();
   await expect(notes).toHaveValue(
     "Editable notes, saved without leaving this list.",
@@ -64,6 +67,7 @@ test("inline notes save, dirty navigation stays put, and archive requires confir
     inspector.getByRole("button", { name: t.inlineEditing.confirmArchive }),
   ).toBeVisible();
   expect(archives).toHaveLength(0);
+  await search.fill("");
   await page.getByRole("link", { name: "Mira Chen", exact: true }).click();
   await expect(inspector.getByLabel(t.name, { exact: true })).toHaveValue(
     "Mira Chen",
@@ -71,6 +75,7 @@ test("inline notes save, dirty navigation stays put, and archive requires confir
   await expect(
     inspector.getByRole("button", { name: t.inlineEditing.confirmArchive }),
   ).toHaveCount(0);
+  await search.fill(name);
   await page.getByRole("link", { name, exact: true }).click();
   await inspector
     .getByRole("button", { name: t.contactWorkspace.more })
@@ -378,6 +383,8 @@ test("contact preparation separates notes, conversations, context and properties
 
   await page.goto("/people");
   await page.getByRole("button", { name: t.allProducts, exact: true }).click();
+  const search = page.getByRole("searchbox", { name: t.search, exact: true });
+  await search.fill(name);
   await page.getByRole("link", { name, exact: true }).click();
   const inspector = page.locator("#record-inspector");
   const notes = inspector.getByRole("textbox", {
@@ -415,6 +422,7 @@ test("contact preparation separates notes, conversations, context and properties
   await notes.press("ControlOrMeta+Enter");
   await expect(inspector.getByRole("status")).toHaveText(t.inlineEditing.saved);
   await page.reload();
+  await search.fill(name);
   await page.getByRole("link", { name, exact: true }).click();
   await expect(notes).toHaveValue("Updated rollout agenda.");
   await expect(history.locator("article")).toHaveCount(2);

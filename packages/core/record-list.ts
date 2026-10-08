@@ -20,6 +20,8 @@ import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { readableAttribution } from "./contact-attribution";
 import { scopeSchema } from "./crm";
+import { fieldFilterConditions } from "./field-filter-sql";
+import { fieldFiltersSchema } from "./field-filters";
 import { authorize, type Principal } from "./policy";
 import {
   recordFactConditions,
@@ -44,6 +46,7 @@ const recordListObject = scopeSchema.extend({
   sourceMemberId: z.string().min(1).max(200).optional(),
   attribution: z.enum(["recorded", "unknown", "shared"]).optional(),
   ...recordFilterFields,
+  fieldFilters: fieldFiltersSchema,
   pipelineId: z.uuid().optional(),
   stageId: z.uuid().optional(),
   kind: z
@@ -58,6 +61,18 @@ export const recordListSchema = recordListObject
     (input) =>
       input.entity === "people" ||
       (!input.submittedBy && !input.sourceMemberId && !input.attribution),
+  )
+  .refine(
+    (input) =>
+      !input.fieldFilters.length ||
+      [
+        "people",
+        "companies",
+        "relationships",
+        "opportunities",
+        "meetings",
+        "actions",
+      ].includes(input.entity),
   )
   .refine(
     (input) =>
@@ -164,6 +179,8 @@ export class RecordListService {
     const conditions: (SQL | undefined)[] = [
       eq(table.organizationId, input.organizationId),
     ];
+    if (input.entity === "opportunities")
+      conditions.push(isNull(s.opportunities.archivedAt));
     const personRelationships = (personId: typeof s.people.id) =>
       this.db
         .select({ id: s.relationships.id })
@@ -309,6 +326,53 @@ export class RecordListService {
           ),
         ),
       );
+    if (input.fieldFilters.length) {
+      const filteredRelationship = alias(s.relationships, "field_relationship");
+      const relationshipConditions: (SQL | undefined)[] = [
+        eq(filteredRelationship.organizationId, input.organizationId),
+        inArray(filteredRelationship.productId, ids),
+        ...fieldFilterConditions(
+          sql`${filteredRelationship.contextDetails}`,
+          input.fieldFilters,
+        ),
+      ];
+      if (input.entity === "relationships")
+        relationshipConditions.push(
+          eq(filteredRelationship.id, s.relationships.id),
+        );
+      else if (input.entity === "people")
+        relationshipConditions.push(
+          eq(filteredRelationship.personId, s.people.id),
+        );
+      else if (input.entity === "companies")
+        relationshipConditions.push(
+          exists(
+            this.db
+              .select({ id: s.people.id })
+              .from(s.people)
+              .where(
+                and(
+                  eq(s.people.id, filteredRelationship.personId),
+                  eq(s.people.organizationId, input.organizationId),
+                  eq(s.people.companyId, s.companies.id),
+                  isNull(s.people.archivedAt),
+                ),
+              ),
+          ),
+        );
+      else if ("relationshipId" in table)
+        relationshipConditions.push(
+          eq(filteredRelationship.id, table.relationshipId),
+        );
+      conditions.push(
+        exists(
+          this.db
+            .select({ id: filteredRelationship.id })
+            .from(filteredRelationship)
+            .where(and(...relationshipConditions)),
+        ),
+      );
+    }
     const label =
       "name" in table
         ? table.name

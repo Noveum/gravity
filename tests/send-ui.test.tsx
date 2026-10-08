@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -90,6 +96,22 @@ async function openSendFromApproved() {
 
 describe("sending an approved touch", () => {
   test("the confirmation names recipient, account and channel from readiness and a double click sends once", async () => {
+    let release!: (value: typeof delivery) => void;
+    const pending = new Promise<typeof delivery>((resolve) => {
+      release = resolve;
+    });
+    const harnessed = vi.mocked(requestJson).getMockImplementation();
+    vi.mocked(requestJson).mockImplementation(async (url, init) => {
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        if (body.operation === "send-touch") {
+          sends.push(body);
+          return pending;
+        }
+      }
+      if (!harnessed) throw new Error("harness");
+      return harnessed(url, init);
+    });
     const dialog = await openSendFromApproved();
     await within(dialog).findByText("person4@example.test");
     expect(within(dialog).getByText("you@example.test")).toBeTruthy();
@@ -103,6 +125,13 @@ describe("sending an approved touch", () => {
     );
     fireEvent.click(confirm);
     fireEvent.click(confirm);
+    // Verify the race while the first request is still in flight, then commit
+    // its response explicitly instead of racing the toast against a timer.
+    expect(sends).toHaveLength(1);
+    await act(async () => {
+      release(delivery);
+      await pending;
+    });
     await screen.findByText(t.messageSent.replace("{name}", "Amara Stone"));
     expect(sends).toHaveLength(1);
     expect(sends[0]).toMatchObject({

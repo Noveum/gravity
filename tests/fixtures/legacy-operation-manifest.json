@@ -1,0 +1,2456 @@
+{
+  "baselineCommit": "7f10f0542eba8a9f9314f65e016d04ea5b6366b1",
+  "sourcePath": "packages/operations/catalog.ts",
+  "operations": [
+    {
+      "name": "list_files",
+      "api": "files",
+      "method": "GET",
+      "operation": "list",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["parentId", "organizationId", "productId"],
+      "requiredInputKeys": ["organizationId", "productId"]
+    },
+    {
+      "name": "get_file",
+      "api": "files",
+      "method": "GET",
+      "operation": "detail",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "id"],
+      "requiredInputKeys": ["organizationId", "productId", "id"]
+    },
+    {
+      "name": "create_file",
+      "api": "files",
+      "method": "POST",
+      "operation": "create",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "visibility",
+        "grants",
+        "name",
+        "parentId",
+        "kind",
+        "body",
+        "organizationId",
+        "productId"
+      ],
+      "requiredInputKeys": ["name", "kind", "organizationId", "productId"]
+    },
+    {
+      "name": "update_file",
+      "api": "files",
+      "method": "POST",
+      "operation": "update",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "name",
+        "body",
+        "access",
+        "expectedSyncId",
+        "organizationId",
+        "productId",
+        "id"
+      ],
+      "requiredInputKeys": [
+        "expectedSyncId",
+        "organizationId",
+        "productId",
+        "id"
+      ]
+    },
+    {
+      "name": "transfer_files",
+      "api": "files",
+      "method": "POST",
+      "operation": "transfer",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "ids",
+        "parentId",
+        "operation",
+        "organizationId",
+        "productId"
+      ],
+      "requiredInputKeys": [
+        "ids",
+        "parentId",
+        "operation",
+        "organizationId",
+        "productId"
+      ]
+    },
+    {
+      "name": "reserve_file_upload",
+      "api": "files",
+      "method": "POST",
+      "operation": "reserve",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "name",
+        "parentId",
+        "size",
+        "mimeType",
+        "organizationId",
+        "productId"
+      ],
+      "requiredInputKeys": [
+        "name",
+        "size",
+        "mimeType",
+        "organizationId",
+        "productId"
+      ]
+    },
+    {
+      "name": "complete_file_upload",
+      "api": "files",
+      "method": "POST",
+      "operation": "complete",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["uploadId", "organizationId", "productId"],
+      "requiredInputKeys": ["uploadId", "organizationId", "productId"]
+    },
+    {
+      "name": "put_local_file_upload",
+      "api": "files",
+      "method": "POST",
+      "operation": "upload-bytes",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "uploadId", "dataBase64"],
+      "requiredInputKeys": [
+        "organizationId",
+        "productId",
+        "uploadId",
+        "dataBase64"
+      ]
+    },
+    {
+      "name": "download_file",
+      "api": "files",
+      "method": "GET",
+      "operation": "download",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "id", "preview"],
+      "requiredInputKeys": ["organizationId", "productId", "id"]
+    },
+    {
+      "name": "get_public_file",
+      "api": "files",
+      "method": "GET",
+      "operation": "public",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["token"],
+      "requiredInputKeys": ["token"]
+    },
+    {
+      "name": "download_public_file",
+      "api": "files",
+      "method": "GET",
+      "operation": "public-download",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["token", "preview"],
+      "requiredInputKeys": ["token"]
+    },
+    {
+      "name": "preview_invitation",
+      "api": "crm",
+      "method": "POST",
+      "operation": "invitation-preview",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": true,
+        "productAuthorization": true
+      },
+      "inputKeys": ["token"],
+      "requiredInputKeys": ["token"]
+    },
+    {
+      "name": "remove_member",
+      "api": "crm",
+      "method": "POST",
+      "operation": "member-remove",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "userId", "reassignToUserId"],
+      "requiredInputKeys": ["organizationId", "userId"]
+    },
+    {
+      "name": "list_invitations",
+      "api": "crm",
+      "method": "GET",
+      "operation": "invitations",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "create_invitation",
+      "api": "crm",
+      "method": "POST",
+      "operation": "invitation",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": true,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "email", "role", "productIds"],
+      "requiredInputKeys": ["organizationId", "email", "role", "productIds"]
+    },
+    {
+      "name": "revoke_invitation",
+      "api": "crm",
+      "method": "POST",
+      "operation": "invitation-revoke",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "invitationId"],
+      "requiredInputKeys": ["organizationId", "invitationId"]
+    },
+    {
+      "name": "accept_invitation",
+      "api": "crm",
+      "method": "POST",
+      "operation": "invitation-accept",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": true,
+        "productAuthorization": true
+      },
+      "inputKeys": ["token"],
+      "requiredInputKeys": ["token"]
+    },
+    {
+      "name": "update_member_access",
+      "api": "crm",
+      "method": "POST",
+      "operation": "member-access",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "userId", "role", "productIds"],
+      "requiredInputKeys": ["organizationId", "userId", "role", "productIds"]
+    },
+    {
+      "name": "update_organization",
+      "api": "crm",
+      "method": "POST",
+      "operation": "organization-settings",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "name",
+        "timezone",
+        "slug",
+        "allowedEmailDomains"
+      ],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "update_record_metadata",
+      "api": "crm",
+      "method": "POST",
+      "operation": "record-metadata",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "entity",
+        "recordId",
+        "version",
+        "tags",
+        "amountMinor",
+        "currency"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "entity",
+        "recordId",
+        "version",
+        "tags",
+        "amountMinor",
+        "currency"
+      ]
+    },
+    {
+      "name": "set_conversation_visibility",
+      "api": "crm",
+      "method": "POST",
+      "operation": "conversation-sharing",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "conversationId",
+        "visibility",
+        "expectedVisibility"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "productId",
+        "conversationId",
+        "visibility",
+        "expectedVisibility"
+      ]
+    },
+    {
+      "name": "get_permission_audit",
+      "api": "crm",
+      "method": "GET",
+      "operation": "permissions",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "get_send_readiness",
+      "api": "outreach",
+      "method": "GET",
+      "operation": "send-readiness",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "connectionId",
+        "conversationId",
+        "version",
+        "touchId",
+        "actionId"
+      ],
+      "requiredInputKeys": ["organizationId", "connectionId", "version"]
+    },
+    {
+      "name": "get_delivery",
+      "api": "outreach",
+      "method": "GET",
+      "operation": "delivery",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "deliveryId"],
+      "requiredInputKeys": ["organizationId", "deliveryId"]
+    },
+    {
+      "name": "list_deliveries",
+      "api": "outreach",
+      "method": "GET",
+      "operation": "deliveries",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "send_touch",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "send-touch",
+      "idempotent": true,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write", "crm:send"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "connectionId",
+        "conversationId",
+        "version",
+        "idempotencyKey",
+        "touchId"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "connectionId",
+        "version",
+        "idempotencyKey",
+        "touchId"
+      ]
+    },
+    {
+      "name": "send_action",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "send-action",
+      "idempotent": true,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write", "crm:send"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "connectionId",
+        "conversationId",
+        "version",
+        "idempotencyKey",
+        "actionId"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "connectionId",
+        "version",
+        "idempotencyKey",
+        "actionId"
+      ]
+    },
+    {
+      "name": "reconcile_delivery",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "reconcile-delivery",
+      "idempotent": true,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write", "crm:send"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "deliveryId",
+        "externalMessageId",
+        "externalThreadId"
+      ],
+      "requiredInputKeys": ["organizationId", "deliveryId"]
+    },
+    {
+      "name": "resolve_delivery",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "resolve-delivery",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": true,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "deliveryId",
+        "outcome",
+        "reason",
+        "confirm"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "deliveryId",
+        "outcome",
+        "reason",
+        "confirm"
+      ]
+    },
+    {
+      "name": "list_records",
+      "api": "crm",
+      "method": "GET",
+      "operation": "records",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "entity",
+        "submittedBy",
+        "sourceMemberId",
+        "attribution",
+        "query",
+        "tag",
+        "currency",
+        "minimum",
+        "maximum",
+        "offset",
+        "limit"
+      ],
+      "requiredInputKeys": ["organizationId", "entity"]
+    },
+    {
+      "name": "get_sequence",
+      "api": "crm",
+      "method": "GET",
+      "operation": "sequence",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "sequenceId"],
+      "requiredInputKeys": ["organizationId", "sequenceId"]
+    },
+    {
+      "name": "create_sequence",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "create-sequence",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "name", "steps"],
+      "requiredInputKeys": ["organizationId", "productId", "name", "steps"]
+    },
+    {
+      "name": "archive_sequence",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "sequence-archive",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "sequenceId", "version"],
+      "requiredInputKeys": ["organizationId", "sequenceId", "version"]
+    },
+    {
+      "name": "restore_sequence",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "sequence-restore",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "sequenceId", "version"],
+      "requiredInputKeys": ["organizationId", "sequenceId", "version"]
+    },
+    {
+      "name": "list_organizations",
+      "api": "crm",
+      "method": "GET",
+      "operation": "organizations",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [],
+      "requiredInputKeys": []
+    },
+    {
+      "name": "get_workspace",
+      "api": "crm",
+      "method": "GET",
+      "operation": "snapshot",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "compact"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "create_contact_import_batch",
+      "api": "crm",
+      "method": "POST",
+      "operation": "import-batch",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "submissionKey",
+        "label",
+        "sourceKind",
+        "sourceMemberId"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "productId",
+        "submissionKey",
+        "label",
+        "sourceKind"
+      ]
+    },
+    {
+      "name": "record_contact_import",
+      "api": "crm",
+      "method": "POST",
+      "operation": "contact-import",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "personId",
+        "version",
+        "batchId",
+        "sourceRecordId"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "productId",
+        "personId",
+        "version",
+        "batchId",
+        "sourceRecordId"
+      ]
+    },
+    {
+      "name": "get_contact_attribution",
+      "api": "crm",
+      "method": "GET",
+      "operation": "contact-attribution",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "personId",
+        "offset",
+        "limit"
+      ],
+      "requiredInputKeys": ["organizationId", "personId"]
+    },
+    {
+      "name": "get_person_context",
+      "api": "crm",
+      "method": "GET",
+      "operation": "context",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "relationshipId"],
+      "requiredInputKeys": ["organizationId", "relationshipId"]
+    },
+    {
+      "name": "get_person",
+      "api": "crm",
+      "method": "GET",
+      "operation": "person",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "personId"],
+      "requiredInputKeys": ["organizationId", "personId"]
+    },
+    {
+      "name": "get_company_context",
+      "api": "crm",
+      "method": "GET",
+      "operation": "company",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "companyId"],
+      "requiredInputKeys": ["organizationId", "companyId"]
+    },
+    {
+      "name": "get_workspace_revision",
+      "api": "crm",
+      "method": "GET",
+      "operation": "revision",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "get_overview",
+      "api": "crm",
+      "method": "GET",
+      "operation": "overview",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "days",
+        "ownerId",
+        "channel"
+      ],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "get_message_activity",
+      "api": "crm",
+      "method": "GET",
+      "operation": "messageActivity",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "from",
+        "through",
+        "ownerId",
+        "channel",
+        "direction",
+        "page"
+      ],
+      "requiredInputKeys": ["organizationId", "from", "through"]
+    },
+    {
+      "name": "save_deal",
+      "api": "crm",
+      "method": "POST",
+      "operation": "deal",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "tags",
+        "id",
+        "version",
+        "relationshipId",
+        "stageId",
+        "name",
+        "ownerId",
+        "amountMinor",
+        "currency",
+        "probability",
+        "status",
+        "expectedCloseDate",
+        "description",
+        "lostReason"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "productId",
+        "relationshipId",
+        "stageId",
+        "name",
+        "ownerId",
+        "currency"
+      ]
+    },
+    {
+      "name": "create_pipeline",
+      "api": "crm",
+      "method": "POST",
+      "operation": "pipeline",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "name"],
+      "requiredInputKeys": ["organizationId", "productId", "name"]
+    },
+    {
+      "name": "create_workspace",
+      "api": "crm",
+      "method": "POST",
+      "operation": "workspace",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["name", "productName", "timezone"],
+      "requiredInputKeys": ["name", "productName"]
+    },
+    {
+      "name": "create_organization",
+      "api": "crm",
+      "method": "POST",
+      "operation": "organization",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["name", "timezone"],
+      "requiredInputKeys": ["name"]
+    },
+    {
+      "name": "create_product",
+      "api": "crm",
+      "method": "POST",
+      "operation": "product",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "name"],
+      "requiredInputKeys": ["organizationId", "name"]
+    },
+    {
+      "name": "update_product",
+      "api": "crm",
+      "method": "POST",
+      "operation": "product-update",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "name", "colorKey"],
+      "requiredInputKeys": ["organizationId", "productId"]
+    },
+    {
+      "name": "archive_product",
+      "api": "crm",
+      "method": "POST",
+      "operation": "product-archive",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId"],
+      "requiredInputKeys": ["organizationId", "productId"]
+    },
+    {
+      "name": "restore_product",
+      "api": "crm",
+      "method": "POST",
+      "operation": "product-restore",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId"],
+      "requiredInputKeys": ["organizationId", "productId"]
+    },
+    {
+      "name": "create_stage",
+      "api": "crm",
+      "method": "POST",
+      "operation": "stage",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "pipeline",
+        "pipelineId",
+        "name",
+        "category"
+      ],
+      "requiredInputKeys": ["organizationId", "productId", "pipeline", "name"]
+    },
+    {
+      "name": "update_stage",
+      "api": "crm",
+      "method": "POST",
+      "operation": "stage-update",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "stageId",
+        "name",
+        "category"
+      ],
+      "requiredInputKeys": ["organizationId", "stageId"]
+    },
+    {
+      "name": "reorder_stages",
+      "api": "crm",
+      "method": "POST",
+      "operation": "stage-order",
+      "idempotent": true,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "pipeline",
+        "pipelineId",
+        "stageIds"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "productId",
+        "pipeline",
+        "stageIds"
+      ]
+    },
+    {
+      "name": "archive_stage",
+      "api": "crm",
+      "method": "POST",
+      "operation": "stage-archive",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "stageId", "moveToStageId"],
+      "requiredInputKeys": ["organizationId", "stageId", "moveToStageId"]
+    },
+    {
+      "name": "update_pipeline",
+      "api": "crm",
+      "method": "POST",
+      "operation": "pipeline-update",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "pipelineId", "name"],
+      "requiredInputKeys": ["organizationId", "pipelineId", "name"]
+    },
+    {
+      "name": "list_members",
+      "api": "crm",
+      "method": "GET",
+      "operation": "members",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "reactivate_member",
+      "api": "crm",
+      "method": "POST",
+      "operation": "member-reactivate",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": true,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "userId"],
+      "requiredInputKeys": ["organizationId", "userId"]
+    },
+    {
+      "name": "create_person",
+      "api": "crm",
+      "method": "POST",
+      "operation": "person",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "personId",
+        "name",
+        "email",
+        "title",
+        "companyId",
+        "purpose",
+        "context",
+        "contextDetails",
+        "review",
+        "channel",
+        "importSource"
+      ],
+      "requiredInputKeys": ["organizationId", "productId"]
+    },
+    {
+      "name": "update_person",
+      "api": "crm",
+      "method": "POST",
+      "operation": "person-update",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "personId",
+        "version",
+        "name",
+        "title",
+        "email",
+        "otherEmails",
+        "phone",
+        "linkedinUrl",
+        "companyId",
+        "summary"
+      ],
+      "requiredInputKeys": ["organizationId", "personId", "version", "name"]
+    },
+    {
+      "name": "archive_person",
+      "api": "crm",
+      "method": "POST",
+      "operation": "person-archive",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "personId",
+        "version",
+        "archived"
+      ],
+      "requiredInputKeys": ["organizationId", "personId", "version", "archived"]
+    },
+    {
+      "name": "save_company",
+      "api": "crm",
+      "method": "POST",
+      "operation": "company",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "companyId",
+        "version",
+        "name",
+        "domain",
+        "description"
+      ],
+      "requiredInputKeys": ["organizationId", "name"]
+    },
+    {
+      "name": "archive_company",
+      "api": "crm",
+      "method": "POST",
+      "operation": "company-archive",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "companyId",
+        "version",
+        "archived"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "companyId",
+        "version",
+        "archived"
+      ]
+    },
+    {
+      "name": "save_meeting",
+      "api": "crm",
+      "method": "POST",
+      "operation": "meeting",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "meetingId",
+        "version",
+        "relationshipId",
+        "title",
+        "startsAt",
+        "status",
+        "summary"
+      ],
+      "requiredInputKeys": ["organizationId", "title", "startsAt", "status"]
+    },
+    {
+      "name": "create_opportunity",
+      "api": "crm",
+      "method": "POST",
+      "operation": "opportunity",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "relationshipId",
+        "stageId",
+        "name",
+        "amountMinor",
+        "currency"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "relationshipId",
+        "stageId",
+        "name"
+      ]
+    },
+    {
+      "name": "change_opportunity",
+      "api": "crm",
+      "method": "POST",
+      "operation": "opportunity-change",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "opportunityId",
+        "version",
+        "name",
+        "stageId",
+        "amountMinor",
+        "currency"
+      ],
+      "requiredInputKeys": ["organizationId", "opportunityId", "version"]
+    },
+    {
+      "name": "schedule_next_action",
+      "api": "crm",
+      "method": "POST",
+      "operation": "schedule",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "relationshipId",
+        "ownerId",
+        "kind",
+        "channel",
+        "owedBy",
+        "title",
+        "reason",
+        "dueAt"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "relationshipId",
+        "ownerId",
+        "kind",
+        "channel",
+        "owedBy",
+        "title",
+        "dueAt"
+      ]
+    },
+    {
+      "name": "change_action",
+      "api": "crm",
+      "method": "POST",
+      "operation": "action",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "actionId",
+        "version",
+        "command",
+        "draft"
+      ],
+      "requiredInputKeys": ["organizationId", "actionId", "version", "command"]
+    },
+    {
+      "name": "plan_actions",
+      "api": "crm",
+      "method": "POST",
+      "operation": "plan",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "items"],
+      "requiredInputKeys": ["organizationId", "items"]
+    },
+    {
+      "name": "create_material_folder",
+      "api": "crm",
+      "method": "POST",
+      "operation": "folder",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "name", "parentId"],
+      "requiredInputKeys": ["organizationId", "productId", "name"]
+    },
+    {
+      "name": "rename_material_folder",
+      "api": "crm",
+      "method": "POST",
+      "operation": "folder-rename",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "folderId", "name"],
+      "requiredInputKeys": ["organizationId", "folderId", "name"]
+    },
+    {
+      "name": "delete_material_folder",
+      "api": "crm",
+      "method": "POST",
+      "operation": "folder-delete",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "folderId"],
+      "requiredInputKeys": ["organizationId", "folderId"]
+    },
+    {
+      "name": "set_material_status",
+      "api": "crm",
+      "method": "POST",
+      "operation": "material-status",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "assetId",
+        "version",
+        "status"
+      ],
+      "requiredInputKeys": ["organizationId", "assetId", "version", "status"]
+    },
+    {
+      "name": "accept_meeting_commitment",
+      "api": "crm",
+      "method": "POST",
+      "operation": "commitment",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "meetingId",
+        "version",
+        "dueAt",
+        "ownerId"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "meetingId",
+        "version",
+        "dueAt",
+        "ownerId"
+      ]
+    },
+    {
+      "name": "list_due_touches",
+      "api": "outreach",
+      "method": "GET",
+      "operation": "due",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "get_outreach_queue",
+      "api": "outreach",
+      "method": "GET",
+      "operation": "queue",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "get_touch",
+      "api": "outreach",
+      "method": "GET",
+      "operation": "touch",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "touchId"],
+      "requiredInputKeys": ["organizationId", "touchId"]
+    },
+    {
+      "name": "get_contact_rules",
+      "api": "outreach",
+      "method": "GET",
+      "operation": "rules",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "advance_sequences",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "advance",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "enroll_in_sequence",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "enroll",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "sequenceId",
+        "relationshipIds",
+        "dryRun"
+      ],
+      "requiredInputKeys": ["organizationId", "sequenceId", "relationshipIds"]
+    },
+    {
+      "name": "edit_touch_draft",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "draft",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "touchId",
+        "version",
+        "draft"
+      ],
+      "requiredInputKeys": ["organizationId", "touchId", "version", "draft"]
+    },
+    {
+      "name": "approve_touch",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "approve",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "touchId", "version"],
+      "requiredInputKeys": ["organizationId", "touchId", "version"]
+    },
+    {
+      "name": "record_touch_sent",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "sent",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "touchId",
+        "version",
+        "sentAt",
+        "externalMessageId"
+      ],
+      "requiredInputKeys": ["organizationId", "touchId"]
+    },
+    {
+      "name": "skip_touch",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "skip",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "touchId",
+        "version",
+        "reason"
+      ],
+      "requiredInputKeys": ["organizationId", "touchId", "version", "reason"]
+    },
+    {
+      "name": "reopen_touch",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "reopen",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "touchId", "version"],
+      "requiredInputKeys": ["organizationId", "touchId", "version"]
+    },
+    {
+      "name": "snooze_touch",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "snooze",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "touchId",
+        "version",
+        "dueAt"
+      ],
+      "requiredInputKeys": ["organizationId", "touchId", "version", "dueAt"]
+    },
+    {
+      "name": "change_enrollment",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "enrollment",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "enrollmentId",
+        "version",
+        "command"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "enrollmentId",
+        "version",
+        "command"
+      ]
+    },
+    {
+      "name": "change_relationship",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "relationship",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "relationshipId",
+        "version",
+        "context",
+        "contextDetails",
+        "stageId",
+        "priority",
+        "nextStep",
+        "nextStepDueAt",
+        "ownerId"
+      ],
+      "requiredInputKeys": ["organizationId", "relationshipId", "version"]
+    },
+    {
+      "name": "update_sequence",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "sequence",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "sequenceId",
+        "version",
+        "name",
+        "steps"
+      ],
+      "requiredInputKeys": ["organizationId", "sequenceId", "version", "steps"]
+    },
+    {
+      "name": "update_contact_rules",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "rules",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "version",
+        "cooldownDays",
+        "dailyCapPerSender",
+        "quietHoursStart",
+        "quietHoursEnd"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "version",
+        "cooldownDays",
+        "dailyCapPerSender",
+        "quietHoursStart",
+        "quietHoursEnd"
+      ]
+    },
+    {
+      "name": "set_contact_preferences",
+      "api": "outreach",
+      "method": "POST",
+      "operation": "contact",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "personId",
+        "version",
+        "doNotContact",
+        "timeZone"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "personId",
+        "version",
+        "doNotContact"
+      ]
+    },
+    {
+      "name": "get_integrations",
+      "api": "integrations",
+      "method": "GET",
+      "operation": "overview",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "reviewQuery",
+        "reviewProvider",
+        "reviewCursor"
+      ],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "list_unipile_accounts",
+      "api": "integrations",
+      "method": "GET",
+      "operation": "unipile-accounts",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "cursor"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "connect_integration",
+      "api": "integrations",
+      "method": "POST",
+      "operation": "connect",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "provider",
+        "apiKey",
+        "connectionId",
+        "accountId",
+        "allowSending"
+      ],
+      "requiredInputKeys": ["organizationId", "productId", "provider"]
+    },
+    {
+      "name": "sync_integration",
+      "api": "integrations",
+      "method": "POST",
+      "operation": "sync",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "connectionId"],
+      "requiredInputKeys": ["organizationId", "connectionId"]
+    },
+    {
+      "name": "disconnect_integration",
+      "api": "integrations",
+      "method": "POST",
+      "operation": "disconnect",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "connectionId"],
+      "requiredInputKeys": ["organizationId", "connectionId"]
+    },
+    {
+      "name": "update_connection",
+      "api": "integrations",
+      "method": "POST",
+      "operation": "update-connection",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "connectionId", "productId"],
+      "requiredInputKeys": ["organizationId", "connectionId", "productId"]
+    },
+    {
+      "name": "link_import",
+      "api": "integrations",
+      "method": "POST",
+      "operation": "link",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "itemId", "relationshipId"],
+      "requiredInputKeys": ["organizationId", "itemId", "relationshipId"]
+    },
+    {
+      "name": "ignore_import",
+      "api": "integrations",
+      "method": "POST",
+      "operation": "ignore",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "itemId"],
+      "requiredInputKeys": ["organizationId", "itemId"]
+    },
+    {
+      "name": "configure_unipile",
+      "api": "integrations",
+      "method": "POST",
+      "operation": "configure-unipile",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "configurationId",
+        "apiKey",
+        "signingSecret",
+        "apiVersion",
+        "dsn"
+      ],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "register_unipile_webhooks",
+      "api": "integrations",
+      "method": "POST",
+      "operation": "register-unipile-webhooks",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "connectionId"],
+      "requiredInputKeys": ["organizationId", "connectionId"]
+    },
+    {
+      "name": "remove_unipile",
+      "api": "integrations",
+      "method": "POST",
+      "operation": "remove-unipile",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "configurationId"],
+      "requiredInputKeys": ["organizationId", "configurationId"]
+    },
+    {
+      "name": "download_material",
+      "api": "materials",
+      "method": "GET",
+      "operation": "download",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "productId", "assetId"],
+      "requiredInputKeys": ["organizationId", "assetId"]
+    },
+    {
+      "name": "upload_material",
+      "api": "materials",
+      "method": "POST",
+      "operation": "upload",
+      "idempotent": false,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": [
+        "organizationId",
+        "productId",
+        "folderId",
+        "stageIds",
+        "name",
+        "mimeType",
+        "dataBase64"
+      ],
+      "requiredInputKeys": [
+        "organizationId",
+        "productId",
+        "folderId",
+        "name",
+        "mimeType",
+        "dataBase64"
+      ]
+    },
+    {
+      "name": "list_assistant_grants",
+      "api": "crm",
+      "method": "GET",
+      "operation": "assistant-grants",
+      "idempotent": true,
+      "destructive": false,
+      "requirements": {
+        "scopes": ["crm:read"],
+        "administrator": true,
+        "allProducts": true,
+        "currentAccountOrSourceOwner": false,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId"],
+      "requiredInputKeys": ["organizationId"]
+    },
+    {
+      "name": "revoke_assistant",
+      "api": "grants",
+      "method": "DELETE",
+      "operation": "revoke",
+      "idempotent": false,
+      "destructive": true,
+      "requirements": {
+        "scopes": ["crm:read", "crm:write"],
+        "administrator": false,
+        "allProducts": false,
+        "currentAccountOrSourceOwner": true,
+        "humanSession": false,
+        "productAuthorization": true
+      },
+      "inputKeys": ["organizationId", "grantId"],
+      "requiredInputKeys": ["grantId"]
+    }
+  ]
+}

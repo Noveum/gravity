@@ -97,6 +97,44 @@ test("explicit outreach sorting survives row rendering", async () => {
   });
 });
 
+test.each([
+  [
+    "/actions?kind=reply",
+    t.actionEmpty.filteredDetail,
+    "Answer the API format question",
+  ],
+  ["/outreach/drafts", t.outreachFilteredDetail, /^Noor Haddad, /],
+])(
+  "a custom-field rule distinguishes filtered absence and clears from %s",
+  async (path, detail, recovered) => {
+    const rule = JSON.stringify([
+      {
+        label: "Fictional missing field",
+        type: "text",
+        operator: "eq",
+        value: "unmatched",
+      },
+    ]);
+    await mountCrm(
+      harness,
+      `${path}${path.includes("?") ? "&" : "?"}fieldFilters=${encodeURIComponent(rule)}`,
+    );
+    const empty = (await screen.findByText(detail)).closest(".empty-state");
+    if (!empty) throw new Error("Missing custom-field empty-state recovery");
+    expect(empty.textContent).toContain(t.noResults);
+    fireEvent.click(empty.querySelector("button") as HTMLButtonElement);
+    if (typeof recovered === "string")
+      expect(await screen.findByText(recovered)).toBeTruthy();
+    else
+      expect(
+        await screen.findByRole("button", { name: recovered }),
+      ).toBeTruthy();
+    expect(window.location.search).not.toContain("fieldFilters");
+    if (path.includes("kind=reply"))
+      expect(window.location.search).toContain("kind=reply");
+  },
+);
+
 test("a failed product-scoped load cannot reuse another product's queue", async () => {
   await mountCrm(harness, "/outreach/drafts");
   await screen.findByRole("button", { name: /^Noor Haddad, / });

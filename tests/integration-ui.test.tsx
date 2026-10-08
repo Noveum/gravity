@@ -28,7 +28,133 @@ const overview = {
   configured: { gmail: true, calendar: true, linkedin: false, fireflies: true },
   connections: [],
   items: [],
+  failedReceipts: [],
+  failedReceiptTotal: 0,
+  nextFailedReceiptCursor: null,
 };
+
+test("failed receipts have independent pagination and explicit discard review", async () => {
+  let discarded = false;
+  request.mockImplementation(async (url, init) => {
+    if (init?.method === "POST") {
+      discarded = true;
+      return { ok: true };
+    }
+    const query = new URL(String(url), "https://example.test").searchParams;
+    const older = query.has("failedReceiptCursor");
+    return {
+      ...overview,
+      connections: [
+        {
+          id: "c",
+          provider: "gmail",
+          displayName: "Fictional receipt account",
+          status: "connected",
+          productId: "p",
+          lastSyncedAt: null,
+          errorCode: null,
+          more: false,
+        },
+      ],
+      reviewTotal: 0,
+      nextReviewCursor: null,
+      failedReceiptTotal: discarded ? 0 : 21,
+      nextFailedReceiptCursor:
+        older || discarded ? null : "fictional-failed-cursor",
+      failedReceipts: discarded
+        ? []
+        : [
+            {
+              id: older ? "older-receipt" : "newer-receipt",
+              connectionId: "c",
+              productId: "p",
+              externalId: older
+                ? "Fictional older receipt"
+                : "Fictional newer receipt",
+              errorCode: "PROVIDER_RESPONSE_INVALID",
+              attempts: 8,
+              createdAt: "2026-10-01T04:00:00Z",
+              conversationId: null,
+              threadId: null,
+              canDiscard: true,
+            },
+          ],
+    };
+  });
+  render(<IntegrationCards {...props} />);
+  await screen.findByText("Fictional newer receipt");
+  fireEvent.click(screen.getByRole("button", { name: t.failedReceipts.next }));
+  await screen.findByText("Fictional older receipt");
+  const query = new URL(
+    String(request.mock.calls.at(-1)?.[0]),
+    "https://example.test",
+  ).searchParams;
+  expect(query.get("failedReceiptCursor")).toBe("fictional-failed-cursor");
+  expect(query.has("reviewCursor")).toBe(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: t.failedReceipts.discard }),
+  );
+  expect(screen.getByText(t.failedReceipts.confirmation)).toBeTruthy();
+  expect(
+    request.mock.calls.filter((call) => call[1]?.method === "POST"),
+  ).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: t.cancel }));
+  expect(screen.queryByText(t.failedReceipts.confirmation)).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: t.failedReceipts.discard }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: t.failedReceipts.confirm }),
+  );
+  await screen.findByText(t.failedReceipts.empty);
+  const post = request.mock.calls.find((call) => call[1]?.method === "POST");
+  expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+    operation: "ignore",
+    organizationId: "org",
+    itemId: "older-receipt",
+  });
+  expect(props.onChanged).toHaveBeenCalled();
+});
+
+test("failed receipts with an active worker lease cannot be discarded in the UI", async () => {
+  request.mockResolvedValue({
+    ...overview,
+    connections: [
+      {
+        id: "c",
+        provider: "gmail",
+        displayName: "Fictional receipt account",
+        status: "connected",
+        productId: "p",
+        lastSyncedAt: null,
+        errorCode: null,
+        more: false,
+      },
+    ],
+    failedReceiptTotal: 1,
+    failedReceipts: [
+      {
+        id: "leased-receipt",
+        externalId: "Fictional leased receipt",
+        attempts: 2,
+        errorCode: "PROVIDER_RESPONSE_INVALID",
+        createdAt: "2026-10-01T04:00:00Z",
+        canDiscard: false,
+      },
+    ],
+  });
+  render(<IntegrationCards {...props} />);
+  await screen.findByText("Fictional leased receipt");
+  expect(screen.getByText(t.failedReceipts.processing)).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: t.failedReceipts.discard })
+      .matches(":disabled"),
+  ).toBe(true);
+  expect(
+    request.mock.calls.filter((call) => call[1]?.method === "POST"),
+  ).toHaveLength(0);
+});
 const props = {
   data,
   organizationId: "org",

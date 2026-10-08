@@ -64,6 +64,20 @@
   margin-left: auto;
 }
 
+.opportunity-workspace .opportunity-archived-deals {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--gravity-border-subtle);
+  font-size: var(--text-xs);
+}
+
+.opportunity-workspace .opportunity-archived-deals > ul {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
 .opportunity-board {
   display: flex;
   flex-direction: column;
@@ -139,10 +153,16 @@
 }
 
 .opportunity-card .deal-card-head .text-button {
+  flex: 1;
+  min-width: 0;
   text-align: left;
   line-height: 1.5;
   font-size: var(--text-dense);
   font-weight: 500;
+}
+
+.opportunity-card .deal-card-head > .record-actions:has(.inline-archive) {
+  display: contents;
 }
 
 .opportunity-product {

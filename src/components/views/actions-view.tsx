@@ -13,6 +13,7 @@ import {
 } from "../crm/crm-context";
 import { useWarmContext } from "../crm/record-context";
 import { formatMoney } from "../money";
+import { InternalTasks } from "../records/internal-tasks";
 import {
   Pagination,
   RecordFilters,
@@ -66,6 +67,8 @@ export function ActionsView() {
   const filtered =
     !!search ||
     !!filters.owner ||
+    browser.fieldInvalid ||
+    browser.fieldDrafts.some((draft) => !!draft.key) ||
     Object.entries(browser.filters).some(
       ([key, value]) => value && key !== "sort",
     );
@@ -85,6 +88,7 @@ export function ActionsView() {
   return (
     <>
       <RecordFilters browser={browser} hiddenFields={["ownerId"]} />
+      <InternalTasks />
       {["now", "upcoming"].map((group) => {
         const list = browser.page.items.filter((action) =>
           group === "now"

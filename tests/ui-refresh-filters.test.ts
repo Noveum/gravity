@@ -85,6 +85,7 @@ test("every UI filter is in the shared HTTP/MCP schemas", () => {
       "minimum",
       "maximum",
       "sort",
+      "fieldFilters",
     ])
       expect(schema.shape).toHaveProperty(field);
   expect(

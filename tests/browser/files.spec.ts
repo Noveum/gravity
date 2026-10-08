@@ -122,6 +122,20 @@ test("persistent native uploads, nested navigation, transfers and every preview"
       buffer: Buffer.from(file.base64, "base64"),
     })),
   );
+  await expect
+    .poll(
+      () =>
+        page
+          .getByRole("progressbar")
+          .evaluateAll((elements) =>
+            elements.map((element) => (element as HTMLProgressElement).value),
+          ),
+      { timeout: 30_000 },
+    )
+    .toEqual(samples.map(() => 100));
+  await expect(
+    page.getByRole("button", { name: "Upload files", exact: true }),
+  ).toBeEnabled();
   await expect(page.getByRole("treeitem")).toHaveCount(12);
   for (const sample of samples) {
     await page
@@ -323,6 +337,9 @@ test("large workbooks page in a worker, jump to distant cells, and keep oversize
   );
   await page.goto("/files");
   await page
+    .getByRole("textbox", { name: t.files.search, exact: true })
+    .fill(file.name);
+  await page
     .getByRole("treeitem")
     .getByRole("button", { name: file.name, exact: true })
     .click();
@@ -395,6 +412,9 @@ test("large workbooks page in a worker, jump to distant cells, and keep oversize
     hugeBytes,
   );
   await page.reload();
+  await page
+    .getByRole("textbox", { name: t.files.search, exact: true })
+    .fill(huge.name);
   await page
     .getByRole("treeitem")
     .getByRole("button", { name: huge.name, exact: true })

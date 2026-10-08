@@ -162,7 +162,9 @@ async function moveDeals(
     .where(
       and(
         eq(s.opportunities.organizationId, from.organizationId),
+        eq(s.opportunities.productId, from.productId),
         eq(s.opportunities.stageId, from.id),
+        isNull(s.opportunities.archivedAt),
       ),
     )
     .for("update");

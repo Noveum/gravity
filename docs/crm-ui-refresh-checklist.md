@@ -42,6 +42,8 @@ Filters start visible in one sticky row, with owner and tags first, a Deal value
 
 HTTP and MCP list operations share the full filter schemas and authorized domain services. Amount ranges in the UI use major units; MCP schemas explicitly accept integer currency minor units. Actions, relationships, due touches and outreach queues support the same applicable owner, tag, qualification, status, size, currency, amount and sort controls. Filters run before paging. Current membership, product grants and private source histories remain enforced.
 
+The integration review preserves the custom fields, internal tasks and reversible deal removal landed in PR #69. Custom-field rules use a compact popover, survive reload through a canonical URL and clear on product changes. Numeric zero, boolean false and precise date/time values remain typed. A workspace timezone change preserves the saved UTC instant. The shared server predicate applies identical rules to record, action and outreach queries. Empty searches keep active controls available; clearing and changing rules reset board pagination. Archive confirmation fits its card, retired-stage restoration uses the shared Select, and Undo restores the current layout, filters and sort.
+
 Outreach reads existing queues immediately while planning runs separately. Slow or forbidden planning cannot hide readable queued work. Failed loads and cached responses are scoped to the current user, organization and readable products. Message report responses also hide immediately when snapshot visibility or request scope changes.
 
 Saved views use actual action kind and owed-by state. Imported contact tags or historical notes do not establish a current reply, scheduled commitment or running enrollment. Empty saved views explain this and offer all-products or all-actions recovery. No production data was backfilled and no message was sent.
@@ -52,7 +54,7 @@ Reviewed the current [Radix Select documentation](https://www.radix-ui.com/primi
 
 ## Browser verification
 
-Used the local fictional demo through the browser UI at 1440px and 1280px laptop widths, 945px panel width and 390px mobile width. The 17-case automated browser suite also covers the file library, record inspector, sharing/revocation and send preparation without dispatch. Checked:
+Used the local fictional demo through the browser UI at 1440px and 1280px laptop widths, 945px panel width and 390px mobile width. The 21-case automated browser suite also covers the file library, record inspector, sharing/revocation, custom fields, internal tasks, reversible deal removal and send preparation without dispatch. Checked:
 
 - Expected revenue exposes amount, probability, weighted value, product, stage, owner and close date; open pipeline includes unpriced deals.
 - Activity counts and bars are readable at low volume; a genuinely empty owner/channel selection shows useful recovery copy.
@@ -69,9 +71,9 @@ Additional defects found and fixed during review: rapid URL edits overwriting on
 
 ## Validation
 
-Typecheck, lint, license inventory, production build and the public-site smoke test passed. The complete Node 22 suite passed in three shards: **1,011 passing tests and two production PostgreSQL skips across 125 files**. The final 17-case browser suite passed, including error-free filtered reloads. The dedicated production PostgreSQL CI job passed on the prior PR head; the updated head is checked again by CI. PostgreSQL checks require a local server and have a dedicated CI job. Targeted filter, scope, queue, revenue, board and keyboard regressions also passed.
+Typecheck, lint, license inventory, production build and the public-site smoke test passed. The integrated Node 22 suite was exercised in three shards across **144 files**, with final focused checks for changes made during the review. Shard 1 passed 428 tests and skipped 11 cases requiring a local PostgreSQL server; shard 3 passed 528 tests. Shard 2 covered 333 distinct passing cases after its sole load-sensitive send test was rechecked and made deterministic: all 13 send UI cases passed with an explicitly pending mock response. Final navigation/field checks passed all 51 cases, the eight queue/recovery cases passed, and the final **21-case browser suite passed**. The two laptop filter workflows passed again after the final label-width adjustment. The dedicated production PostgreSQL CI job and all full suites run again on the updated PR head; PR checks provide the final clean-run result. Targeted filter, scope, queue, revenue, board and keyboard regressions also passed.
 
-A monolithic local run stalled in PGlite's WebAssembly trap recovery. The complete sharded run used the runner-only `NODE_OPTIONS=--disable-wasm-trap-handler` diagnostic flag; application and CI runtime configuration were unchanged. Validation also exposed a send-reservation test that counted a UTC day instead of the workspace day. Its fictional fixture now uses the same timezone bounds as the policy and restores rules even after a failed preflight; production sending rules were unchanged.
+A monolithic local run stalled in PGlite's WebAssembly trap recovery. The local sharded run used the runner-only `NODE_OPTIONS=--disable-wasm-trap-handler` diagnostic flag; application and CI runtime configuration were unchanged. Validation also exposed a send-reservation test that counted a UTC day instead of the workspace day. Its fictional fixture now uses the same timezone bounds as the policy and restores rules even after a failed preflight; production sending rules were unchanged. Browser runs interrupted by dev-cache failures were repeated on a clean server with their original interaction, privacy and geometry assertions intact.
 
 Fresh fictional demo captures are included in [ui-refresh](ui-refresh/): overview and board in light/dark themes, expanded revenue, the deal-value slider and the inspector layout. The real-contact screenshots supplied in the request are excluded.
 
@@ -91,7 +93,7 @@ Fresh fictional demo captures are included in [ui-refresh](ui-refresh/): overvie
 | 9 | Visible by default; hide/show preference survives reload and respects user/workspace scope | [Preference tests](../tests/filter-visibility.test.tsx), [browser checks](../tests/browser/ui-usability.spec.ts) |
 | 10 | One compact filter row at 1440, 1280, 945 and 390px; laptop controls fully contained | [Browser geometry](../tests/browser/ui-usability.spec.ts) |
 | 11 | Qualification/status remain available; attribution has a compact control where applicable | [Browser filters](../tests/browser/ui-usability.spec.ts), [attribution UI](../tests/contact-attribution-ui.test.tsx) |
-| 12 | Full filters/sorts run before paging through shared authorized HTTP/MCP operations | [Transport and filter parity](../tests/ui-refresh-filters.test.ts) |
+| 12 | Full filters/sorts run before paging through shared authorized HTTP/MCP operations | [Transport and filter parity](../tests/ui-refresh-filters.test.ts), [custom outreach rules](../tests/outreach-field-filters.test.ts) |
 | 13 | Board default, List alternative and B/L shortcuts | [Keyboard map](../tests/keyboard-map.test.tsx) |
 | 14 | Exactly one merged board across readable products and pipelines | [Board model](../tests/opportunity-board.test.ts), [browser checks](../tests/browser/ui-usability.spec.ts) |
 | 15 | Real product/pipeline IDs retained; ambiguous or unauthorized moves rejected | [Board moves](../tests/opportunity-board.test.ts) |
@@ -101,7 +103,7 @@ Fresh fictional demo captures are included in [ui-refresh](ui-refresh/): overvie
 | 19 | Slider plus exact inputs, numeric hints, unbounded defaults and legal currency endpoints | [Value filter](../tests/value-filter.test.tsx), [integration](../tests/ui-refresh-browser.test.tsx) |
 | 20 | Top-right sort and stable name/amount/currency/unknown-value ordering | [Filter sorting](../tests/ui-refresh-filters.test.ts), [browser checks](../tests/browser/ui-usability.spec.ts) |
 | 21 | Discoverable keyboard hints; editing and open layers guard shortcuts | [Keyboard map](../tests/keyboard-map.test.tsx), [Select](../tests/select-control.test.tsx) |
-| 22 | Rapid combined edits, clearing, scope changes, refresh and empty recovery | [URL and filter integration](../tests/ui-refresh-browser.test.tsx), [browser checks](../tests/browser/ui-usability.spec.ts) |
+| 22 | Rapid combined edits, clearing, scope changes, refresh and empty recovery | [URL and filter integration](../tests/ui-refresh-browser.test.tsx), [typed field rules and timezone changes](../tests/fields-tasks-ui.test.tsx), [browser checks](../tests/browser/ui-usability.spec.ts) |
 | 23 | Official component research and Orbit pattern inspection | Component research above; pinned Radix dependencies and license inventory |
 | 24 | Light/dark, laptop/mobile, inspector, outreach and shared dropdown verification | [Browser suite](../tests/browser/ui-usability.spec.ts), fresh [screenshots](ui-refresh/) |
 | 25 | Additional race, privacy, density, dropdown, precision and hydration defects repaired | [Message scope](../tests/overview-message-scope.test.tsx), [value filter](../tests/value-filter.test.tsx), [browser reload checks](../tests/browser/ui-usability.spec.ts) |

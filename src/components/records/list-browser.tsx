@@ -1,10 +1,19 @@
 "use client";
 import { parseMoney } from "@crm/core/analytics";
+import { instantFromZonedInput, zonedInputValue } from "@crm/core/calendar";
 import type { ClientSnapshot } from "@crm/core/dto";
+import {
+  fieldFilterOperators,
+  fieldFilterSchema,
+  matchesFieldFilters,
+  normalizeFieldLabel,
+} from "@crm/core/field-filters";
+import type { RelationshipField } from "@crm/core/relationship-context";
 import t from "@crm/i18n/translations/en.json";
 import { SlidersHorizontal, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { type ReactNode, useId, useMemo, useState } from "react";
+import { type ReactNode, useId, useMemo, useRef, useState } from "react";
+import { z } from "zod";
 import { useWorkspaceData } from "../crm/crm-context";
 import { useFilterVisibility } from "../filter-visibility";
 import { minorStep } from "../money";
@@ -25,6 +34,7 @@ export interface RecordFacts {
   submitterIds?: readonly string[];
   sourceMemberIds?: readonly string[];
   attribution?: boolean;
+  fieldGroups?: readonly (readonly RelationshipField[])[];
 }
 
 export function useRecordIndex() {
@@ -69,6 +79,7 @@ export function useRecordIndex() {
         currency: value?.currency ?? "USD",
         ownerId: relationship?.ownerId ?? "",
         qualification: relationship?.qualification ?? "",
+        fieldGroups: [relationship?.contextFields ?? []],
       };
     };
     return { people, companies, relationships, byPerson, byCompany, facts };
@@ -193,6 +204,97 @@ export const emptyFilters = {
   size: "",
   sort: "default",
 };
+interface FieldFilterDraft {
+  id: string;
+  key: string;
+  operator: string;
+  value: string;
+  timeZone: string;
+  label?: string;
+  type?: RelationshipField["type"];
+}
+
+interface FieldDefinition {
+  key: string;
+  label: string;
+  type: RelationshipField["type"];
+}
+
+// Keep incomplete values editable; matching still validates the full domain schema.
+const fieldDraftQuerySchema = z
+  .array(z.object(fieldFilterSchema.shape))
+  .max(10);
+function readFieldQuery(value: string) {
+  if (!value) return { fields: [] as FieldFilterDraft[], invalid: false };
+  try {
+    if (value.length > 20000) throw new Error("Invalid field filters");
+    const parsed = fieldDraftQuerySchema.safeParse(JSON.parse(value));
+    if (!parsed.success) return { fields: [], invalid: true };
+    return {
+      fields: parsed.data.map((field, index) => ({
+        id: `query-${index}`,
+        key: `${field.type}:${normalizeFieldLabel(field.label)}`,
+        label: field.label,
+        type: field.type,
+        operator: field.operator,
+        value:
+          field.type === "datetime" &&
+          typeof field.value === "string" &&
+          field.value.endsWith("Z")
+            ? zonedInputValue(field.value, "UTC", true)
+            : String(field.value ?? ""),
+        timeZone: field.type === "datetime" ? "UTC" : "",
+      })),
+      invalid: parsed.data.some(
+        (field) => !fieldFilterSchema.safeParse(field).success,
+      ),
+    };
+  } catch {
+    return { fields: [], invalid: true };
+  }
+}
+
+function fieldDefinition(
+  draft: FieldFilterDraft,
+  definitions: readonly FieldDefinition[],
+) {
+  return (
+    definitions.find((field) => field.key === draft.key) ??
+    (draft.label && draft.type
+      ? { key: draft.key, label: draft.label, type: draft.type }
+      : undefined)
+  );
+}
+
+function fieldQueryValue(
+  draft: FieldFilterDraft,
+  definitions: readonly FieldDefinition[],
+  timeZone: string,
+) {
+  const field = fieldDefinition(draft, definitions);
+  return {
+    label: field?.label,
+    type: field?.type,
+    operator: draft.operator,
+    ...(!["exists", "missing"].includes(draft.operator)
+      ? {
+          value:
+            field?.type === "number"
+              ? draft.value.trim()
+                ? Number(draft.value)
+                : undefined
+              : field?.type === "boolean"
+                ? draft.value === "true"
+                : field?.type === "datetime"
+                  ? instantFromZonedInput(
+                      draft.value,
+                      draft.timeZone || timeZone,
+                    ) || draft.value
+                  : draft.value,
+        }
+      : {}),
+  };
+}
 export function useRecordBrowser<T>(
   rows: readonly T[],
   read: (row: T) => RecordFacts,
@@ -202,6 +304,22 @@ export function useRecordBrowser<T>(
   const crm = useWorkspaceData();
   const scope = `${crm.organizationId}/${crm.productId}/${crm.pathname}/${crm.listFilterKey}`;
   const query = useSearchParams();
+  const fieldScope = `${crm.organizationId}/${crm.productId}/${crm.pathname}/${crm.timeZone}`;
+  const serializedFields = query.get("fieldFilters") ?? "";
+  const fieldQuery = useMemo(
+    () => readFieldQuery(serializedFields),
+    [serializedFields],
+  );
+  const [fieldState, setFieldState] = useState({
+    scope: fieldScope,
+    query: serializedFields,
+    fields: fieldQuery.fields,
+  });
+  const pendingFields = useRef(fieldState);
+  const fieldDrafts =
+    fieldState.scope === fieldScope && fieldState.query === serializedFields
+      ? fieldState.fields
+      : fieldQuery.fields;
   const filters = Object.fromEntries(
     Object.entries(emptyFilters).map(([key, fallback]) => [
       key,
@@ -225,9 +343,61 @@ export function useRecordBrowser<T>(
     const next = currentViewQuery();
     for (const key of Object.keys(emptyFilters))
       next.delete(key === "ownerId" ? "owner" : key);
+    next.delete("fieldFilters");
+    const cleared = { scope: fieldScope, query: "", fields: [] };
+    pendingFields.current = cleared;
+    setFieldState(cleared);
     replace(next);
   };
   const facts = rows.map((row) => ({ row, value: read(row) }));
+  const fieldDefinitions = [
+    ...new Map(
+      crm.data.relationships
+        .flatMap((relationship) => relationship.contextFields ?? [])
+        .map((field) => [
+          `${field.type}:${normalizeFieldLabel(field.label)}`,
+          {
+            key: `${field.type}:${normalizeFieldLabel(field.label)}`,
+            label: field.label,
+            type: field.type,
+          },
+        ]),
+    ).values(),
+  ].sort((a, b) => a.label.localeCompare(b.label));
+  const changeFields = (
+    change: (current: readonly FieldFilterDraft[]) => FieldFilterDraft[],
+  ) => {
+    const next = currentViewQuery();
+    const liveQuery = next.get("fieldFilters") ?? "";
+    const current =
+      pendingFields.current.scope === fieldScope &&
+      pendingFields.current.query === liveQuery
+        ? pendingFields.current.fields
+        : readFieldQuery(liveQuery).fields;
+    const fields = change(current);
+    const values = fields
+      .filter((draft) => draft.key)
+      .map((draft) => fieldQueryValue(draft, fieldDefinitions, crm.timeZone));
+    const serialized = values.length ? JSON.stringify(values) : "";
+    if (serialized) next.set("fieldFilters", serialized);
+    else next.delete("fieldFilters");
+    const state = { scope: fieldScope, query: serialized, fields };
+    pendingFields.current = state;
+    setFieldState(state);
+    replace(next);
+  };
+  const parsedFields = fieldDrafts
+    .filter((draft) => draft.key)
+    .map((draft) =>
+      fieldFilterSchema.safeParse(
+        fieldQueryValue(draft, fieldDefinitions, crm.timeZone),
+      ),
+    );
+  const fieldInvalid =
+    fieldQuery.invalid || parsedFields.some((result) => !result.success);
+  const fieldFilters = parsedFields.flatMap((result) =>
+    result.success ? [result.data] : [],
+  );
   let invalid = false;
   let minimum: number | null = null;
   let maximum: number | null = null;
@@ -239,7 +409,14 @@ export function useRecordBrowser<T>(
     invalid = true;
   }
   const filtered = facts.filter(({ value }) => {
-    if (invalid) return false;
+    if (invalid || fieldInvalid) return false;
+    if (
+      fieldFilters.length &&
+      !(value.fieldGroups ?? []).some((group) =>
+        matchesFieldFilters(group, fieldFilters),
+      )
+    )
+      return false;
     if (
       filters.tag &&
       !value.tags?.some((tag) => tag.toLowerCase() === filters.tag)
@@ -323,7 +500,7 @@ export function useRecordBrowser<T>(
     });
   const page = useListPage(
     filtered.map(({ row }) => row),
-    `${scope}/${crm.search}/${JSON.stringify(filters)}`,
+    `${scope}/${crm.search}/${JSON.stringify(filters)}/${JSON.stringify(fieldDrafts)}`,
     revealId,
   );
   return {
@@ -344,6 +521,34 @@ export function useRecordBrowser<T>(
           .map(({ value }) => value.amountMinor ?? 0),
       ) * Number(minorStep(filters.currency || "USD")),
     invalid,
+    fieldInvalid,
+    fieldDrafts,
+    fieldDefinitions,
+    addFieldFilter: () =>
+      changeFields((current) =>
+        current.length >= 10
+          ? [...current]
+          : [
+              ...current,
+              {
+                id: crypto.randomUUID(),
+                key: "",
+                operator: "eq",
+                value: "",
+                timeZone: "",
+              },
+            ],
+      ),
+    updateFieldFilter: (index: number, patch: Partial<FieldFilterDraft>) =>
+      changeFields((current) =>
+        current.map((draft, position) =>
+          position === index ? { ...draft, ...patch } : draft,
+        ),
+      ),
+    removeFieldFilter: (index: number) =>
+      changeFields((current) =>
+        current.filter((_, position) => position !== index),
+      ),
     tags: [
       ...new Map(
         facts
@@ -396,6 +601,7 @@ export function useRecordBrowser<T>(
     })),
     userId: crm.userId,
     organizationId: crm.organizationId,
+    timeZone: crm.timeZone,
     members: crm.data.members,
   };
 }
@@ -426,6 +632,176 @@ export function RecordSort({
   );
 }
 
+function FieldFilters({
+  browser,
+}: {
+  browser: ReturnType<typeof useRecordBrowser>;
+}) {
+  const id = useId();
+  const active = browser.fieldDrafts.filter((draft) => draft.key).length;
+  return (
+    <FilterPopover
+      label={t.uiRefresh.customFields}
+      summary={`${t.uiRefresh.customFields}${active ? ` · ${active}` : ""}`}
+      active={active > 0 || browser.fieldInvalid}
+    >
+      <div className="record-field-filters">
+        <small>{t.fieldFilters.hint}</small>
+        {browser.fieldDrafts.map((draft, index) => {
+          const field = fieldDefinition(draft, browser.fieldDefinitions);
+          const fields =
+            field &&
+            !browser.fieldDefinitions.some((item) => item.key === field.key)
+              ? [field, ...browser.fieldDefinitions]
+              : browser.fieldDefinitions;
+          const valueId = `${id}-value-${draft.id}`;
+          return (
+            <fieldset
+              key={draft.id}
+              className="context-editor-card record-field-filter"
+            >
+              <legend>
+                {t.fieldFilters.field} {index + 1}
+              </legend>
+              <label htmlFor={`${id}-field-${draft.id}`}>
+                <span>{t.fieldFilters.field}</span>
+                <Select
+                  id={`${id}-field-${draft.id}`}
+                  label={t.fieldFilters.field}
+                  value={draft.key}
+                  onChange={(key) => {
+                    const selected = fields.find((item) => item.key === key);
+                    browser.updateFieldFilter(index, {
+                      key,
+                      label: selected?.label,
+                      type: selected?.type,
+                      operator: "eq",
+                      value: "",
+                      timeZone: "",
+                    });
+                  }}
+                  options={[
+                    { value: "", label: t.fieldFilters.allFields },
+                    ...fields.map((field) => ({
+                      value: field.key,
+                      label: `${field.label} · ${t.contextFields.fieldTypes[field.type]}`,
+                    })),
+                  ]}
+                />
+              </label>
+              {field && (
+                <>
+                  <label htmlFor={`${id}-operator-${draft.id}`}>
+                    <span>{t.fieldFilters.operator}</span>
+                    <Select
+                      id={`${id}-operator-${draft.id}`}
+                      label={t.fieldFilters.operator}
+                      value={draft.operator}
+                      onChange={(operator) =>
+                        browser.updateFieldFilter(index, { operator })
+                      }
+                      options={fieldFilterOperators(field.type).map(
+                        (operator) => ({
+                          value: operator,
+                          label: t.fieldFilters[operator],
+                        }),
+                      )}
+                    />
+                  </label>
+                  {!["exists", "missing"].includes(draft.operator) && (
+                    <>
+                      {field.type === "datetime" && (
+                        <label htmlFor={`${id}-zone-${draft.id}`}>
+                          <span>{t.timezone}</span>
+                          <Select
+                            id={`${id}-zone-${draft.id}`}
+                            label={t.timezone}
+                            value={draft.timeZone || browser.timeZone}
+                            onChange={(timeZone) =>
+                              browser.updateFieldFilter(index, {
+                                timeZone:
+                                  timeZone === browser.timeZone ? "" : timeZone,
+                              })
+                            }
+                            options={[
+                              ...new Set([browser.timeZone, "UTC"]),
+                            ].map((zone) => ({
+                              value: zone,
+                              label: zone,
+                            }))}
+                          />
+                        </label>
+                      )}
+                      <label htmlFor={valueId}>
+                        <span>{t.fieldFilters.value}</span>
+                        {field.type === "boolean" ? (
+                          <Select
+                            id={valueId}
+                            label={t.fieldFilters.value}
+                            value={draft.value || "false"}
+                            onChange={(value) =>
+                              browser.updateFieldFilter(index, { value })
+                            }
+                            options={[
+                              { value: "true", label: t.contextFields.yes },
+                              { value: "false", label: t.contextFields.no },
+                            ]}
+                          />
+                        ) : (
+                          <input
+                            id={valueId}
+                            type={
+                              field.type === "datetime"
+                                ? "datetime-local"
+                                : field.type === "number" ||
+                                    field.type === "date"
+                                  ? field.type
+                                  : "text"
+                            }
+                            step={
+                              field.type === "number"
+                                ? "any"
+                                : field.type === "datetime"
+                                  ? "0.001"
+                                  : undefined
+                            }
+                            value={draft.value}
+                            onChange={(event) =>
+                              browser.updateFieldFilter(index, {
+                                value: event.target.value,
+                              })
+                            }
+                          />
+                        )}
+                      </label>
+                    </>
+                  )}
+                </>
+              )}
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => browser.removeFieldFilter(index)}
+              >
+                {t.contextFields.removeField}
+              </button>
+            </fieldset>
+          );
+        })}
+        <button
+          type="button"
+          disabled={
+            browser.fieldDrafts.length >= 10 || !browser.fieldDefinitions.length
+          }
+          onClick={browser.addFieldFilter}
+        >
+          {t.contextFields.addField}
+        </button>
+      </div>
+    </FilterPopover>
+  );
+}
+
 export function RecordFilters({
   browser,
   hideSort = false,
@@ -438,9 +814,14 @@ export function RecordFilters({
   const { filters, update } = browser;
   const { visible, setVisible } = useFilterVisibility(browser);
   const id = useId();
-  const active = Object.entries(filters).filter(
-    ([key, value]) => value && !(key === "sort" && value === "default"),
-  ).length;
+  const active =
+    Object.entries(filters).filter(
+      ([key, value]) => value && !(key === "sort" && value === "default"),
+    ).length +
+    browser.fieldDrafts.filter((draft) => draft.key).length +
+    Number(
+      browser.fieldInvalid && !browser.fieldDrafts.some((draft) => draft.key),
+    );
   const field = (
     key: keyof typeof emptyFilters,
     label: string,
@@ -515,6 +896,9 @@ export function RecordFilters({
               invalid={browser.invalid}
               onChange={browser.updateMany}
             />
+            {(!!browser.fieldDefinitions.length ||
+              browser.fieldDrafts.length > 0 ||
+              browser.fieldInvalid) && <FieldFilters browser={browser} />}
             {(!!browser.qualifications.length || !!filters.qualification) &&
               field("qualification", t.qualification, [
                 { value: "", label: t.allQualifications },
@@ -603,6 +987,11 @@ export function RecordFilters({
       {browser.invalid && (
         <p className="filter-error" role="alert">
           {t.invalidDealRange}
+        </p>
+      )}
+      {browser.fieldInvalid && (
+        <p className="filter-error" role="alert">
+          {t.fieldFilters.invalid}
         </p>
       )}
     </section>

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { demoId } from "../../packages/database/seed";
+import t from "../../packages/i18n/translations/en.json" with { type: "json" };
 
 test("a file preview URL opens after direct navigation and reload", async ({
   page,
@@ -89,8 +90,9 @@ test("records and files share a persistent resizable inspector", async ({
   await panel.getByRole("button", { name: "Restore split view" }).click();
   const scope = { organizationId: demoId(1), productId: demoId(10) };
   const names: string[] = [];
+  const panelRunId = crypto.randomUUID();
   for (const index of [1, 2]) {
-    const name = `Panel document ${index} ${crypto.randomUUID()}`;
+    const name = `Panel document ${index} ${panelRunId}`;
     names.push(name);
     const response = await request.post("/api/files", {
       headers: { Origin: String(test.info().project.use.baseURL) },
@@ -106,6 +108,9 @@ test("records and files share a persistent resizable inspector", async ({
     expect(response.ok(), await response.text()).toBe(true);
   }
   await page.goto("/files");
+  await page
+    .getByRole("textbox", { name: t.files.search, exact: true })
+    .fill(panelRunId);
   for (const [index, name] of names.entries()) {
     await page
       .getByRole("treeitem")

@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { eq } from "drizzle-orm";
 import { expect, test, vi } from "vitest";
 import { OutreachService } from "../packages/core/outreach";
+import { emptyRelationshipDetails } from "../packages/core/relationship-context";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
@@ -24,6 +25,348 @@ vi.mock("../src/components/client-api", async (importOriginal) => ({
   requestJson: vi.fn(),
 }));
 const harness = installCrmHarness();
+
+test.each([
+  {
+    name: "a nonexistent DST hour",
+    invalid: "2026-03-08T02:30:18.125",
+    correction: "2026-03-08T03:30:18.125",
+    expected: "2026-03-08T07:30:18.125Z",
+    timeZone: "America/New_York",
+  },
+  {
+    name: "a local timestamp beyond the supported UTC year",
+    invalid: "9999-12-31T23:30:18.125",
+    correction: null,
+    expected: "9999-12-31T23:30:18.125Z",
+    timeZone: "America/New_York",
+  },
+  {
+    name: "a local timestamp before the supported UTC year",
+    invalid: "0001-01-01T00:30:18.125",
+    correction: null,
+    expected: "0001-01-01T00:30:18.125Z",
+    timeZone: "Asia/Kolkata",
+  },
+])(
+  "date editors retain invalid text for $name and recover without losing canonical source values",
+  async ({ invalid, correction, expected, timeZone }) => {
+    const legacy = "2026-11-01T06:30:18.123456Z";
+    const original = {
+      ...emptyRelationshipDetails(),
+      signals: [
+        {
+          id: demoId(8980),
+          title: "Fictional precise source",
+          description: "",
+          kind: "other" as const,
+          classification: "fact" as const,
+          sourceUrl: null,
+          observedAt: legacy,
+        },
+        {
+          id: demoId(8982),
+          title: "Fictional editable timestamp",
+          description: "",
+          kind: "other" as const,
+          classification: "hypothesis" as const,
+          sourceUrl: null,
+          observedAt: "2026-01-01T12:34:56.789Z",
+        },
+      ],
+      fields: [
+        {
+          id: demoId(8981),
+          label: "Fictional editable instant",
+          type: "datetime" as const,
+          value: "2026-01-01T12:34:56.789Z",
+        },
+      ],
+    };
+    await harness.local.db
+      .update(s.organizations)
+      .set({ timezone: timeZone })
+      .where(eq(s.organizations.id, demoId(1)));
+    await harness.local.db
+      .update(s.relationships)
+      .set({ contextDetails: original })
+      .where(eq(s.relationships.id, demoId(300)));
+    await mountCrm(harness, `/people/${demoId(200)}`);
+    await contactTab(t.contactWorkspace.context);
+    fireEvent.click(
+      await screen.findByRole("button", { name: t.contextFields.edit }),
+    );
+    const editor = within(
+      screen.getByRole("region", { name: t.contextFields.edit }),
+    );
+    const signal = within(
+      editor.getByRole("group", { name: `${t.contextFields.signal} 2` }),
+    );
+    const field = within(
+      editor.getByRole("group", { name: `${t.contextFields.field} 1` }),
+    );
+    const signalDate = signal.getByLabelText(t.contextFields.observedDate);
+    const fieldDate = field.getByLabelText(t.contextFields.value);
+    for (const input of [signalDate, fieldDate]) {
+      fireEvent.change(input, { target: { value: invalid } });
+      expect(input).toHaveProperty("value", invalid);
+      expect(input.getAttribute("aria-invalid")).toBe("true");
+    }
+    expect(signalDate.closest("form")?.dataset.dirty).toBe("true");
+    expect(signal.getByRole("alert").textContent).toBe(
+      t.contextFields.invalidDatetime,
+    );
+    expect(field.getByRole("alert").textContent).toBe(
+      t.contextFields.invalidDatetime,
+    );
+    fireEvent.click(editor.getByRole("button", { name: t.save }));
+    await waitFor(() => expect(editor.getAllByRole("alert")).toHaveLength(3));
+    expect(harness.posts).toEqual([]);
+    const [unchanged] = await harness.local.db
+      .select()
+      .from(s.relationships)
+      .where(eq(s.relationships.id, demoId(300)));
+    expect(unchanged.contextDetails).toEqual(original);
+    if (correction) {
+      for (const input of [signalDate, fieldDate])
+        fireEvent.change(input, { target: { value: correction } });
+    } else {
+      fireEvent.change(editor.getByLabelText(t.timezone), {
+        target: { value: "UTC" },
+      });
+      expect(signalDate).toHaveProperty("value", invalid);
+      expect(fieldDate).toHaveProperty("value", invalid);
+    }
+    for (const input of [signalDate, fieldDate])
+      expect(input.getAttribute("aria-invalid")).toBeNull();
+    expect(signal.queryByRole("alert")).toBeNull();
+    expect(field.queryByRole("alert")).toBeNull();
+    fireEvent.click(editor.getByRole("button", { name: t.save }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", { name: t.contextFields.edit }),
+      ).toBeNull(),
+    );
+    const [stored] = await harness.local.db
+      .select()
+      .from(s.relationships)
+      .where(eq(s.relationships.id, demoId(300)));
+    expect(stored.contextDetails.signals[0]?.observedAt).toBe(legacy);
+    expect(stored.contextDetails.signals[1]?.observedAt).toBe(expected);
+    expect(stored.contextDetails.fields[0]?.value).toBe(expected);
+    expect(
+      harness.posts.filter((post) => post.operation === "relationship"),
+    ).toHaveLength(1);
+  },
+);
+
+test("removing invalid dates and changing field types clears only the affected drafts", async () => {
+  await harness.local.db
+    .update(s.organizations)
+    .set({ timezone: "America/New_York" })
+    .where(eq(s.organizations.id, demoId(1)));
+  await mountCrm(harness, `/people/${demoId(200)}`);
+  await contactTab(t.contactWorkspace.context);
+  fireEvent.click(
+    await screen.findByRole("button", { name: t.contextFields.edit }),
+  );
+  const editor = within(
+    screen.getByRole("region", { name: t.contextFields.edit }),
+  );
+  fireEvent.click(
+    editor.getByRole("button", { name: t.contextFields.addSignal }),
+  );
+  const signal = within(
+    editor.getByRole("group", { name: `${t.contextFields.signal} 1` }),
+  );
+  fireEvent.change(signal.getByLabelText(t.contextFields.title), {
+    target: { value: "Fictional discarded date" },
+  });
+  fireEvent.change(signal.getByLabelText(t.contextFields.observedDate), {
+    target: { value: "2026-03-08T02:30:18.125" },
+  });
+  for (const index of [1, 2]) {
+    fireEvent.click(
+      editor.getByRole("button", { name: t.contextFields.addField }),
+    );
+    const field = within(
+      editor.getByRole("group", { name: `${t.contextFields.field} ${index}` }),
+    );
+    fireEvent.change(field.getByLabelText(t.name), {
+      target: { value: `Fictional edited date ${index}` },
+    });
+    fireEvent.change(field.getByLabelText(t.contextFields.fieldType), {
+      target: { value: "datetime" },
+    });
+    fireEvent.change(field.getByLabelText(t.contextFields.value), {
+      target: { value: "2026-03-08T02:30:18.125" },
+    });
+  }
+  expect(editor.getAllByRole("alert")).toHaveLength(3);
+  fireEvent.click(
+    signal.getByRole("button", {
+      name: `${t.contextFields.removeSignal} 1`,
+    }),
+  );
+  fireEvent.click(
+    editor.getByRole("button", { name: `${t.contextFields.removeField} 2` }),
+  );
+  const retained = within(
+    editor.getByRole("group", { name: `${t.contextFields.field} 1` }),
+  );
+  fireEvent.change(retained.getByLabelText(t.contextFields.fieldType), {
+    target: { value: "text" },
+  });
+  expect(editor.queryByRole("alert")).toBeNull();
+  fireEvent.change(retained.getByLabelText(t.contextFields.fieldType), {
+    target: { value: "datetime" },
+  });
+  expect(retained.getByLabelText(t.contextFields.value)).toHaveProperty(
+    "value",
+    "",
+  );
+  fireEvent.change(retained.getByLabelText(t.contextFields.value), {
+    target: { value: "2026-03-08T03:30:18.125" },
+  });
+  fireEvent.click(editor.getByRole("button", { name: t.save }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("region", { name: t.contextFields.edit }),
+    ).toBeNull(),
+  );
+  const [stored] = await harness.local.db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, demoId(300)));
+  expect(stored.contextDetails.signals).toEqual([]);
+  expect(stored.contextDetails.fields).toHaveLength(1);
+  expect(stored.contextDetails.fields[0]?.value).toBe(
+    "2026-03-08T07:30:18.125Z",
+  );
+});
+
+test("UTC datetime entry reaches the repeated second hour and preserves untouched signal precision and instants", async () => {
+  const observedAt = "2026-11-01T06:30:18.123456Z";
+  const fieldValue = "2026-11-01T06:30:18.125Z";
+  await harness.local.db
+    .update(s.organizations)
+    .set({ timezone: "America/New_York" })
+    .where(eq(s.organizations.id, demoId(1)));
+  await harness.local.db
+    .update(s.relationships)
+    .set({
+      contextDetails: {
+        ...emptyRelationshipDetails(),
+        signals: [
+          {
+            id: demoId(8980),
+            title: "Fictional existing signal",
+            description: "Existing precision remains source data.",
+            kind: "other",
+            classification: "fact",
+            sourceUrl: null,
+            observedAt,
+          },
+        ],
+        fields: [
+          {
+            id: demoId(8981),
+            label: "Fictional existing timestamp",
+            type: "datetime",
+            value: fieldValue,
+          },
+        ],
+      },
+    })
+    .where(eq(s.relationships.id, demoId(300)));
+  await mountCrm(harness, `/people/${demoId(200)}`);
+  await contactTab(t.contactWorkspace.context);
+  fireEvent.click(
+    await screen.findByRole("button", { name: t.contextFields.edit }),
+  );
+  const editor = within(
+    screen.getByRole("region", { name: t.contextFields.edit }),
+  );
+  fireEvent.change(editor.getByLabelText(t.contextFields.sections.needs), {
+    target: { value: "Fictional updated notes" },
+  });
+  expect(editor.getByLabelText(t.timezone)).toHaveProperty(
+    "value",
+    "America/New_York",
+  );
+  expect(editor.getByLabelText(t.contextFields.value)).toHaveProperty(
+    "value",
+    "2026-11-01T01:30:18.125",
+  );
+  fireEvent.change(editor.getByLabelText(t.timezone), {
+    target: { value: "UTC" },
+  });
+  expect(editor.getByLabelText(t.contextFields.value)).toHaveProperty(
+    "value",
+    "2026-11-01T06:30:18.125",
+  );
+  expect(editor.getByLabelText(t.contextFields.sections.needs)).toHaveProperty(
+    "value",
+    "Fictional updated notes",
+  );
+  fireEvent.click(
+    editor.getByRole("button", { name: t.contextFields.addSignal }),
+  );
+  const signal = within(
+    editor.getByRole("group", { name: `${t.contextFields.signal} 2` }),
+  );
+  fireEvent.change(signal.getByLabelText(t.contextFields.title), {
+    target: { value: "Fictional second repeated-hour signal" },
+  });
+  fireEvent.change(signal.getByLabelText(t.contextFields.observedDate), {
+    target: { value: "2026-11-01T06:30:18.126" },
+  });
+  fireEvent.click(
+    editor.getByRole("button", { name: t.contextFields.addField }),
+  );
+  const field = within(
+    editor.getByRole("group", { name: `${t.contextFields.field} 2` }),
+  );
+  fireEvent.change(field.getByLabelText(t.name), {
+    target: { value: "Fictional second repeated-hour field" },
+  });
+  fireEvent.change(field.getByLabelText(t.contextFields.fieldType), {
+    target: { value: "datetime" },
+  });
+  fireEvent.change(field.getByLabelText(t.contextFields.value), {
+    target: { value: "2026-11-01T06:30:18.127" },
+  });
+  fireEvent.change(editor.getByLabelText(t.timezone), {
+    target: { value: "America/New_York" },
+  });
+  expect(signal.getByLabelText(t.contextFields.observedDate)).toHaveProperty(
+    "value",
+    "2026-11-01T01:30:18.126",
+  );
+  expect(field.getByLabelText(t.contextFields.value)).toHaveProperty(
+    "value",
+    "2026-11-01T01:30:18.127",
+  );
+  fireEvent.click(editor.getByRole("button", { name: t.save }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("region", { name: t.contextFields.edit }),
+    ).toBeNull(),
+  );
+  const [stored] = await harness.local.db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, demoId(300)));
+  expect(stored.contextDetails.needs).toBe("Fictional updated notes");
+  expect(stored.contextDetails.signals[0]?.observedAt).toBe(observedAt);
+  expect(stored.contextDetails.fields[0]?.value).toBe(fieldValue);
+  expect(stored.contextDetails.signals[1]?.observedAt).toBe(
+    "2026-11-01T06:30:18.126Z",
+  );
+  expect(stored.contextDetails.fields[1]?.value).toBe(
+    "2026-11-01T06:30:18.127Z",
+  );
+});
 
 test("context editor saves readable notes, signals and each custom field type on the full person record", async () => {
   await mountCrm(harness, `/people/${demoId(200)}`);
@@ -50,12 +393,17 @@ test("context editor saves readable notes, signals and each custom field type on
     target: { value: "https://example.test/careers" },
   });
   fireEvent.change(signal.getByLabelText(t.contextFields.observedDate), {
-    target: { value: "2026-10-06" },
+    target: { value: "2026-10-06T14:37:18.125" },
   });
   const examples = [
     { label: "Seats", type: "number", value: "0" },
     { label: "Verified", type: "boolean", value: "false" },
     { label: "Review date", type: "date", value: "2026-10-20" },
+    {
+      label: "Review time",
+      type: "datetime",
+      value: "2026-10-20T14:37:18.125",
+    },
     { label: "Website", type: "url", value: "https://example.test" },
     { label: "Region", type: "text", value: "West" },
   ];
@@ -98,11 +446,12 @@ test("context editor saves readable notes, signals and each custom field type on
     0,
     false,
     "2026-10-20",
+    "2026-10-20T14:37:18.125Z",
     "https://example.test",
     "West",
   ]);
   expect(stored.contextDetails.signals[0]?.observedAt).toBe(
-    "2026-10-06T00:00:00Z",
+    "2026-10-06T14:37:18.125Z",
   );
   fireEvent.click(screen.getByRole("button", { name: t.contextFields.edit }));
   const reopened = within(

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { expect, test, vi } from "vitest";
 import { CrmService } from "../packages/core/crm";
 import * as s from "../packages/database/schema";
@@ -54,7 +54,7 @@ test("editing an action reason preserves an unsaved draft and its usable version
   });
 });
 
-test("older private native messages can be loaded through the UI after the initial history page", async () => {
+test("older private native messages sharing a microsecond instant remain reachable after the initial history page", async () => {
   const [conversation] = await harness.local.db
     .insert(s.conversations)
     .values({
@@ -75,7 +75,7 @@ test("older private native messages can be loaded through the UI after the initi
       providerMessageId: `fictional-older-${index}`,
       direction: "outbound" as const,
       body: `Older fictional message ${index}`,
-      occurredAt: new Date("2020-01-01T01:02:03.123Z"),
+      occurredAt: sql`timestamptz '2020-01-01T01:02:03.123456Z'`,
     })),
   );
   const context = await new CrmService(harness.local.db).context(
@@ -83,6 +83,9 @@ test("older private native messages can be loaded through the UI after the initi
     demoId(1),
     demoId(300),
   );
+  expect(JSON.parse(context.messagesNextCursor ?? "null")).toMatchObject({
+    occurredAt: "2020-01-01T01:02:03.123456Z",
+  });
   const older = (await harness.local.db.select().from(s.messages)).find(
     (message) =>
       message.body.startsWith("Older fictional") &&

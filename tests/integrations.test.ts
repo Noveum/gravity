@@ -1090,6 +1090,17 @@ test("private review pages preserve microseconds and tied timestamps while filte
       }),
     ).rejects.toMatchObject({ code: "INVALID_INPUT" });
     await expect(
+      service.overview(admin, {
+        ...scopeWithSearch,
+        reviewCursor: Buffer.from(
+          JSON.stringify({
+            createdAt: "0000-01-01T00:00:00Z",
+            id: randomUUID(),
+          }),
+        ).toString("base64url"),
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(
       service.overview({ ...admin, source: "mcp" }, scopeWithSearch),
     ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
   } finally {
@@ -1195,6 +1206,17 @@ test("failed receipt review pages preserve microseconds, owner privacy, product 
       service.overview(admin, {
         ...scope,
         failedReceiptCursor: "not-a-valid-cursor",
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(
+      service.overview(admin, {
+        ...scope,
+        failedReceiptCursor: Buffer.from(
+          JSON.stringify({
+            createdAt: "0000-01-01T00:00:00Z",
+            id: randomUUID(),
+          }),
+        ).toString("base64url"),
       }),
     ).rejects.toMatchObject({ code: "INVALID_INPUT" });
   } finally {

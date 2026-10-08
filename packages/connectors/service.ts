@@ -21,6 +21,7 @@ import {
   contactIdsForParticipants,
   lockContactDirectory,
 } from "../core/contact-history";
+import { cursorInstantSchema } from "../core/datetime";
 import { pauseForReply, peopleByEmail } from "../core/outreach";
 import { authorize, DomainError, type Principal } from "../core/policy";
 import { assertProductActive } from "../core/products";
@@ -64,7 +65,10 @@ export const integrationOverviewInput = integrationScope.extend({
   reviewCursor: z.string().min(1).max(1000).optional(),
   failedReceiptCursor: z.string().min(1).max(1000).optional(),
 });
-const reviewPosition = z.object({ id: z.uuid(), createdAt: z.iso.datetime() });
+const reviewPosition = z.object({
+  id: z.uuid(),
+  createdAt: cursorInstantSchema,
+});
 const reviewPageSize = 20;
 function cursorPosition(cursor?: string) {
   if (!cursor) return undefined;

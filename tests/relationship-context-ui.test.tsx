@@ -26,9 +26,13 @@ vi.mock("../src/components/client-api", async (importOriginal) => ({
 }));
 const harness = installCrmHarness();
 
-test("editing notes preserves existing signal timestamp precision and datetime instants", async () => {
+test("UTC datetime entry reaches the repeated second hour and preserves untouched signal precision and instants", async () => {
   const observedAt = "2026-11-01T06:30:18.123456Z";
   const fieldValue = "2026-11-01T06:30:18.125Z";
+  await harness.local.db
+    .update(s.organizations)
+    .set({ timezone: "America/New_York" })
+    .where(eq(s.organizations.id, demoId(1)));
   await harness.local.db
     .update(s.relationships)
     .set({
@@ -67,6 +71,52 @@ test("editing notes preserves existing signal timestamp precision and datetime i
   fireEvent.change(editor.getByLabelText(t.contextFields.sections.needs), {
     target: { value: "Fictional updated notes" },
   });
+  expect(editor.getByLabelText(t.timezone)).toHaveProperty(
+    "value",
+    "America/New_York",
+  );
+  expect(editor.getByLabelText(t.contextFields.value)).toHaveProperty(
+    "value",
+    "2026-11-01T01:30:18.125",
+  );
+  fireEvent.change(editor.getByLabelText(t.timezone), {
+    target: { value: "UTC" },
+  });
+  expect(editor.getByLabelText(t.contextFields.value)).toHaveProperty(
+    "value",
+    "2026-11-01T06:30:18.125",
+  );
+  expect(editor.getByLabelText(t.contextFields.sections.needs)).toHaveProperty(
+    "value",
+    "Fictional updated notes",
+  );
+  fireEvent.click(
+    editor.getByRole("button", { name: t.contextFields.addSignal }),
+  );
+  const signal = within(
+    editor.getByRole("group", { name: `${t.contextFields.signal} 2` }),
+  );
+  fireEvent.change(signal.getByLabelText(t.contextFields.title), {
+    target: { value: "Fictional second repeated-hour signal" },
+  });
+  fireEvent.change(signal.getByLabelText(t.contextFields.observedDate), {
+    target: { value: "2026-11-01T06:30:18.126" },
+  });
+  fireEvent.click(
+    editor.getByRole("button", { name: t.contextFields.addField }),
+  );
+  const field = within(
+    editor.getByRole("group", { name: `${t.contextFields.field} 2` }),
+  );
+  fireEvent.change(field.getByLabelText(t.name), {
+    target: { value: "Fictional second repeated-hour field" },
+  });
+  fireEvent.change(field.getByLabelText(t.contextFields.fieldType), {
+    target: { value: "datetime" },
+  });
+  fireEvent.change(field.getByLabelText(t.contextFields.value), {
+    target: { value: "2026-11-01T06:30:18.127" },
+  });
   fireEvent.click(editor.getByRole("button", { name: t.save }));
   await waitFor(() =>
     expect(
@@ -80,6 +130,12 @@ test("editing notes preserves existing signal timestamp precision and datetime i
   expect(stored.contextDetails.needs).toBe("Fictional updated notes");
   expect(stored.contextDetails.signals[0]?.observedAt).toBe(observedAt);
   expect(stored.contextDetails.fields[0]?.value).toBe(fieldValue);
+  expect(stored.contextDetails.signals[1]?.observedAt).toBe(
+    "2026-11-01T06:30:18.126Z",
+  );
+  expect(stored.contextDetails.fields[1]?.value).toBe(
+    "2026-11-01T06:30:18.127Z",
+  );
 });
 
 test("context editor saves readable notes, signals and each custom field type on the full person record", async () => {

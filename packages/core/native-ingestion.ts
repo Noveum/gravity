@@ -14,7 +14,7 @@ import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { contactIdentityIds, lockContactDirectory } from "./contact-history";
 import { scopeSchema } from "./crm";
-import { preciseInstantSchema } from "./datetime";
+import { cursorInstantSchema, preciseInstantSchema } from "./datetime";
 import { draftHash, draftSubject } from "./drafts";
 import { authorize, DomainError, type Principal } from "./policy";
 import { assertProductActive } from "./products";
@@ -36,7 +36,7 @@ export const listNativeDraftsSchema = nativeDraftListSchema.extend({
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 const draftCursorSchema = z.strictObject({
-  createdAt: z.iso.datetime(),
+  createdAt: cursorInstantSchema,
   id: z.uuid(),
 });
 export const ingestHistorySchema = nativeDraftListSchema

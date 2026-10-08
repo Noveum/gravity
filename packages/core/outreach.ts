@@ -359,8 +359,14 @@ async function sentOnDay(
         or(
           and(
             inArray(s.deliveries.status, ["sending", "unknown", "accepted"]),
-            gte(s.deliveries.createdAt, new Date(start)),
-            lt(s.deliveries.createdAt, new Date(end)),
+            gte(
+              sql`coalesce(${s.deliveries.sentAt}, ${s.deliveries.createdAt})`,
+              new Date(start).toISOString(),
+            ),
+            lt(
+              sql`coalesce(${s.deliveries.sentAt}, ${s.deliveries.createdAt})`,
+              new Date(end).toISOString(),
+            ),
           ),
           and(
             eq(s.deliveries.status, "sent"),

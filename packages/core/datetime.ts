@@ -1,19 +1,19 @@
 import { z } from "zod";
 
-// Browser inputs and persisted timestamps preserve milliseconds. Higher precision
-// would compare differently in PostgreSQL and JavaScript or disappear on edits.
-function precisePersistableInstant(value: string) {
-  if (value.startsWith("0000-") || /\.\d{4}/.test(value)) return false;
-  // Offsets can cross the supported UTC year range even when the written year
-  // is valid. Date serialization must remain a four-digit AD timestamp.
+function persistableYear(value: string) {
   const year = new Date(value).getUTCFullYear();
-  return year >= 1 && year <= 9999;
+  return !value.startsWith("0000-") && year >= 1 && year <= 9999;
 }
 
 export const preciseInstantSchema = z.iso
   .datetime()
-  .refine(precisePersistableInstant);
+  .refine((value) => persistableYear(value) && !/\.\d{4}/.test(value));
 
 export const preciseOffsetInstantSchema = z.iso
   .datetime({ offset: true })
-  .refine(precisePersistableInstant);
+  .refine((value) => persistableYear(value) && !/\.\d{4}/.test(value));
+
+// Cursors preserve PostgreSQL microseconds; editable fields preserve milliseconds.
+export const cursorInstantSchema = z.iso
+  .datetime()
+  .refine((value) => persistableYear(value) && !/\.\d{7}/.test(value));

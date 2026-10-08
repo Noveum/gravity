@@ -7,8 +7,10 @@ type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 export function databaseWithLockInterleave(
   database: Database,
   interleave: (tx: Transaction, sql: string) => Promise<void>,
+  matchesLock: (sql: string) => boolean = () => true,
 ) {
   let interleaved = false;
+  const locks: string[] = [];
   const intercepted = new Proxy(database, {
     get(db, property, receiver) {
       if (property !== "transaction")
@@ -22,17 +24,20 @@ export function databaseWithLockInterleave(
                 if (typeof member !== "function") return member;
                 return (...args: unknown[]) => {
                   const result: unknown = Reflect.apply(member, builder, args);
-                  if (key === "for" && !interleaved) {
+                  if (key === "for") {
                     const { sql } = Reflect.apply(
                       Reflect.get(builder, "toSQL"),
                       builder,
                       [],
                     ) as { sql: string };
-                    interleaved = true;
-                    return (async () => {
-                      await interleave(tx, sql);
-                      return await (result as PromiseLike<unknown>);
-                    })();
+                    locks.push(sql);
+                    if (!interleaved && matchesLock(sql)) {
+                      interleaved = true;
+                      return (async () => {
+                        await interleave(tx, sql);
+                        return await (result as PromiseLike<unknown>);
+                      })();
+                    }
                   }
                   return result !== null && typeof result === "object"
                     ? wrapQuery(result)
@@ -55,5 +60,5 @@ export function databaseWithLockInterleave(
         });
     },
   });
-  return { database: intercepted, didInterleave: () => interleaved };
+  return { database: intercepted, locks, didInterleave: () => interleaved };
 }

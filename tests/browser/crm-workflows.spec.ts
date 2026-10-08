@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import {
   type APIRequestContext,
   expect,
@@ -11,7 +10,6 @@ import { demoId } from "../../packages/database/seed";
 import t from "../../packages/i18n/translations/en.json" with { type: "json" };
 
 const scope = { organizationId: demoId(1), productId: demoId(10) };
-const screenshotDirectory = ".data/crm-workflows";
 test.use({
   actionTimeout: 15_000,
   navigationTimeout: 60_000,
@@ -113,30 +111,6 @@ const editor = (page: Page, title: string) =>
       : "region",
     { name: title, exact: true },
   );
-async function screenshots(page: Page, name: string) {
-  await mkdir(screenshotDirectory, { recursive: true });
-  const viewport = page.viewportSize();
-  if (name === "native-history-drafts" && viewport) {
-    await page.setViewportSize({ ...viewport, height: 1100 });
-  }
-  const dismiss = page
-    .getByRole("region", { name: t.notifications, exact: true })
-    .getByRole("button", { name: t.dismiss, exact: true });
-  while (await dismiss.count()) await dismiss.first().click();
-  await expect(page.locator("html")).not.toHaveClass(/\bdark\b/);
-  await page.screenshot({
-    animations: "disabled",
-    path: `${screenshotDirectory}/${name}-light.png`,
-  });
-  await page.getByRole("button", { name: t.toggleTheme, exact: true }).click();
-  await expect(page.locator("html")).toHaveClass(/\bdark\b/);
-  await page.screenshot({
-    animations: "disabled",
-    path: `${screenshotDirectory}/${name}-dark.png`,
-  });
-  await page.getByRole("button", { name: t.toggleTheme, exact: true }).click();
-  if (viewport) await page.setViewportSize(viewport);
-}
 function monitor(page: Page) {
   const errors: string[] = [];
   const writes: string[] = [];
@@ -344,8 +318,6 @@ test("native history and undated drafts persist through the UI, and legacy reaso
     dueAt,
     status: "open",
   });
-  await native.scrollIntoViewIfNeeded();
-  await screenshots(page, "native-history-drafts");
   await page.reload();
   await page
     .getByRole("tab", { name: t.contactWorkspace.overview, exact: true })
@@ -446,8 +418,6 @@ test("a monthly internal task preserves exact local time and its month-end ancho
   expect(after.actions).toEqual(before.actions);
   expect(after.messageStats).toEqual(before.messageStats);
   expect(after.touchStats).toEqual(before.touchStats);
-  await taskCard.scrollIntoViewIfNeeded();
-  await screenshots(page, "monthly-internal-task");
   await page.reload();
   await expect(taskCard.locator(`time[datetime="${march}"]`)).toBeVisible();
   expect(
@@ -576,7 +546,6 @@ test("precise custom fields and product-wide filters preserve numeric zero, fals
     .getByRole("combobox", { name: t.fieldFilters.operator, exact: true })
     .selectOption("gt");
   await expect(list.getByRole("link", { name, exact: true })).toBeVisible();
-  await screenshots(page, "precise-field-filters");
   expect(monitored.errors).toEqual([]);
 });
 
@@ -727,8 +696,6 @@ test("deal removal is reversible through list Undo and persisted board archival 
     expectRetained(
       saved.archivedOpportunities.find((deal) => deal.id === original.id),
     );
-    await archivedRow.scrollIntoViewIfNeeded();
-    await screenshots(page, "reversible-deal-archive");
     await archivedRow
       .getByRole("button", { name: `${t.restore}: ${name}`, exact: true })
       .click();

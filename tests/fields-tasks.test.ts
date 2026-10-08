@@ -511,6 +511,39 @@ describe("product-owned internal tasks", () => {
     ).toHaveLength(2);
     expect(await local.db.select().from(s.deliveries)).toHaveLength(0);
   });
+  test.each(["daily", "weekly", "monthly"] as const)(
+    "%s completion rejects a recurrence past the supported year atomically",
+    async (frequency) => {
+      const service = new InternalTaskService(local.db);
+      const task = await service.create(
+        principal,
+        input({
+          dueAt: "9999-12-31T09:00:00.125Z",
+          timeZone: "UTC",
+          recurrence: { frequency, interval: 1 },
+        }),
+      );
+      const before = await local.db
+        .select()
+        .from(s.changeEvents)
+        .where(eq(s.changeEvents.entityId, task.id));
+      await expect(
+        service.change(principal, change(task, "complete")),
+      ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      expect(
+        await local.db
+          .select()
+          .from(s.internalTasks)
+          .where(eq(s.internalTasks.id, task.id)),
+      ).toEqual([task]);
+      expect(
+        await local.db
+          .select()
+          .from(s.changeEvents)
+          .where(eq(s.changeEvents.entityId, task.id)),
+      ).toEqual(before);
+    },
+  );
   test("daily and weekly recurrence preserve wall clock through DST and skip missed dates", () => {
     expect(
       nextInternalTaskDue(

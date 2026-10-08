@@ -463,6 +463,16 @@ test("native draft pagination reaches every owned draft through ties and microse
       cursor: "malformed",
     }),
   ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+  await expect(
+    f.service.drafts(owner, {
+      ...scope,
+      relationshipId: f.relationshipId,
+      cursor: JSON.stringify({
+        createdAt: "0000-01-01T00:00:00Z",
+        id: randomUUID(),
+      }),
+    }),
+  ).rejects.toMatchObject({ code: "INVALID_INPUT" });
 });
 
 test("read-only assistants cannot list an archived person's private native drafts", async () => {

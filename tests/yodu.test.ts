@@ -783,6 +783,17 @@ test("pagination is deterministic for matching receipt instants and invalid curs
   await expect(
     service().events(writer, { ...scope, cursor: "bad-cursor" }),
   ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+  await expect(
+    service().events(writer, {
+      ...scope,
+      cursor: Buffer.from(
+        JSON.stringify({
+          receivedAt: "0000-01-01T00:00:00Z",
+          id: randomUUID(),
+        }),
+      ).toString("base64url"),
+    }),
+  ).rejects.toMatchObject({ code: "INVALID_INPUT" });
 });
 
 test("all source associations remain reachable and versioned beyond 200 without any receipt events", async () => {

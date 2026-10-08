@@ -183,14 +183,17 @@ describe.skipIf(!usableServer)("outreach on the production driver", () => {
     await server.end();
   }, 60000);
 
-  async function waitForManagementLock(blockerPid: number) {
+  async function waitForManagementLock(
+    blockerPid: number,
+    table = "organizations",
+  ) {
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
       const rows = await client`
         SELECT pid, query FROM pg_stat_activity
         WHERE datname = current_database() AND pid <> ${blockerPid}
           AND wait_event_type = 'Lock'
-          AND (query LIKE '%"organizations"%' OR query LIKE '%"products"%')
+          AND query LIKE ${`%"${table}"%`}
       `;
       if (rows.length) return rows[0];
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -199,6 +202,123 @@ describe.skipIf(!usableServer)("outreach on the production driver", () => {
       "Management operation did not reach its database lock wait",
     );
   }
+
+  test("conversation visibility waits for the recipient claim lock before locking the source", async () => {
+    const db = postgresDrizzle(client, { schema: s });
+    const [source] = await db
+      .select()
+      .from(s.conversations)
+      .where(eq(s.conversations.id, demoId(710)));
+    const [relationship] = await db
+      .select()
+      .from(s.relationships)
+      .where(eq(s.relationships.id, source.relationshipId));
+    const visibility = source.visibility === "product" ? "private" : "product";
+    let pending: Promise<PromiseSettledResult<unknown>> | undefined;
+    try {
+      await client.begin(async (blocker) => {
+        await blocker`SET LOCAL lock_timeout = '1500ms'`;
+        const [backend] = await blocker`SELECT pg_backend_pid() AS pid`;
+        await blocker`SELECT id FROM organizations WHERE id = ${org} FOR SHARE`;
+        await blocker`SELECT id FROM people WHERE id = ${relationship.personId} FOR UPDATE`;
+        pending = new CrmService(db)
+          .shareConversation(admin, {
+            organizationId: org,
+            productId: source.productId,
+            conversationId: source.id,
+            expectedVisibility: source.visibility,
+            visibility,
+          })
+          .then(
+            (value) => ({ status: "fulfilled" as const, value }),
+            (reason) => ({ status: "rejected" as const, reason }),
+          );
+        const waiting = await waitForManagementLock(backend.pid, "people");
+        expect(waiting?.query).toContain('"people"');
+        const [lockedSource] =
+          await blocker`SELECT visibility FROM conversations WHERE id = ${source.id} FOR UPDATE`;
+        expect(lockedSource.visibility).toBe(source.visibility);
+      });
+      expect(await pending).toMatchObject({
+        status: "fulfilled",
+        value: { ok: true },
+      });
+      expect(
+        await db
+          .select({ visibility: s.conversations.visibility })
+          .from(s.conversations)
+          .where(eq(s.conversations.id, source.id)),
+      ).toEqual([{ visibility }]);
+    } finally {
+      await pending;
+      await db
+        .update(s.conversations)
+        .set({ visibility: source.visibility })
+        .where(eq(s.conversations.id, source.id));
+    }
+  });
+
+  test("conversation sharing refreshes membership after an organization lock wait", async () => {
+    const db = postgresDrizzle(client, { schema: s });
+    const [source] = await db
+      .select()
+      .from(s.conversations)
+      .where(eq(s.conversations.id, demoId(710)));
+    const beforeEvents = await db
+      .select()
+      .from(s.changeEvents)
+      .where(eq(s.changeEvents.entityId, source.id))
+      .orderBy(s.changeEvents.id);
+    let pending: Promise<PromiseSettledResult<unknown>> | undefined;
+    try {
+      await client.begin(async (blocker) => {
+        const [backend] = await blocker`SELECT pg_backend_pid() AS pid`;
+        await blocker`SELECT id FROM organizations WHERE id = ${org} FOR UPDATE`;
+        pending = new CrmService(db)
+          .shareConversation(admin, {
+            organizationId: org,
+            productId: source.productId,
+            conversationId: source.id,
+            expectedVisibility: source.visibility,
+            visibility: source.visibility === "product" ? "private" : "product",
+          })
+          .then(
+            (value) => ({ status: "fulfilled" as const, value }),
+            (reason) => ({ status: "rejected" as const, reason }),
+          );
+        expect(await waitForManagementLock(backend.pid)).toBeDefined();
+        await blocker`UPDATE memberships SET active = false WHERE organization_id = ${org} AND user_id = ${admin.userId}`;
+      });
+      expect(await pending).toMatchObject({
+        status: "rejected",
+        reason: { code: "FORBIDDEN" },
+      });
+      expect(
+        await db
+          .select()
+          .from(s.conversations)
+          .where(eq(s.conversations.id, source.id)),
+      ).toEqual([source]);
+      expect(
+        await db
+          .select()
+          .from(s.changeEvents)
+          .where(eq(s.changeEvents.entityId, source.id))
+          .orderBy(s.changeEvents.id),
+      ).toEqual(beforeEvents);
+    } finally {
+      await pending;
+      await db
+        .update(s.memberships)
+        .set({ active: true })
+        .where(
+          and(
+            eq(s.memberships.organizationId, org),
+            eq(s.memberships.userId, admin.userId),
+          ),
+        );
+    }
+  });
 
   test("Yodu creation loses administrator authority while a separate transaction holds its locks", async () => {
     vi.stubEnv("INTEGRATION_ENCRYPTION_KEY", "cd".repeat(32));

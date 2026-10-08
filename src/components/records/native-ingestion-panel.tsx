@@ -12,7 +12,11 @@ type Draft = JsonValue<Awaited<ReturnType<NativeIngestionService["draft"]>>>;
 type DraftPage = JsonValue<
   Awaited<ReturnType<NativeIngestionService["drafts"]>>
 >;
-type Editor = { kind: "history" | "draft" | "schedule"; draft?: Draft };
+type Editor = {
+  kind: "history" | "draft" | "schedule";
+  draft?: Draft;
+  timeZone?: string;
+};
 const field = (fields: FormData, name: string) =>
   String(fields.get(name) ?? "");
 
@@ -25,6 +29,7 @@ export function NativeIngestionPanel({
 }) {
   const crm = useCrm();
   const [editor, setEditor] = useState<Editor | null>(null);
+  const inputTimeZone = editor?.timeZone ?? crm.timeZone;
   const [loaded, setLoaded] = useState<{
     key: string;
     items: Draft[];
@@ -143,7 +148,7 @@ export function NativeIngestionPanel({
     if (editor.kind === "history") {
       const occurredAt = instantFromZonedInput(
         field(fields, "occurredAt"),
-        crm.timeZone,
+        field(fields, "timeZone"),
       );
       if (!occurredAt) return t.errors.INVALID_INPUT;
       input = {
@@ -161,7 +166,10 @@ export function NativeIngestionPanel({
         ],
       };
     } else if (editor.kind === "schedule") {
-      const dueAt = instantFromZonedInput(field(fields, "dueAt"), crm.timeZone);
+      const dueAt = instantFromZonedInput(
+        field(fields, "dueAt"),
+        field(fields, "timeZone"),
+      );
       if (!dueAt || !editor.draft) return t.errors.INVALID_INPUT;
       input = {
         ...scope,
@@ -405,9 +413,29 @@ export function NativeIngestionPanel({
               />
             </label>
           )}
-          <p className="field-hint">
-            {t.nativeIngestion.zone.replace("{zone}", crm.timeZone)}
-          </p>
+          {editor.kind !== "draft" && (
+            <>
+              <label>
+                {t.timezone}
+                <select
+                  name="timeZone"
+                  value={inputTimeZone}
+                  onChange={(event) =>
+                    setEditor({ ...editor, timeZone: event.target.value })
+                  }
+                >
+                  {[...new Set([crm.timeZone, "UTC"])].map((zone) => (
+                    <option key={zone} value={zone}>
+                      {zone}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="field-hint">
+                {t.nativeIngestion.zone.replace("{zone}", inputTimeZone)}
+              </p>
+            </>
+          )}
         </RecordDialog>
       )}
     </section>

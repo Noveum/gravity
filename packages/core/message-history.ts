@@ -1,8 +1,13 @@
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
+import {
+  messageHistoryCursor,
+  messageHistoryCursorTimestamp,
+} from "./contact-history";
 import { scopeSchema } from "./crm";
+import { cursorInstantSchema } from "./datetime";
 import { authorize, DomainError, type Principal } from "./policy";
 
 export const messageHistorySchema = scopeSchema.extend({
@@ -11,7 +16,7 @@ export const messageHistorySchema = scopeSchema.extend({
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 const cursorSchema = z.strictObject({
-  occurredAt: z.iso.datetime(),
+  occurredAt: cursorInstantSchema,
   id: z.uuid(),
 });
 
@@ -71,6 +76,7 @@ export class MessageHistoryService {
         direction: s.messages.direction,
         body: s.messages.body,
         occurredAt: s.messages.occurredAt,
+        cursorOccurredAt: messageHistoryCursorTimestamp,
         providerMessageId: s.messages.providerMessageId,
         provenance: s.conversations.provenance,
         channel: s.conversations.channel,
@@ -92,13 +98,7 @@ export class MessageHistoryService {
             eq(s.conversations.visibility, "product"),
           ),
           cursor
-            ? or(
-                lt(s.messages.occurredAt, new Date(cursor.occurredAt)),
-                and(
-                  eq(s.messages.occurredAt, new Date(cursor.occurredAt)),
-                  lt(s.messages.id, cursor.id),
-                ),
-              )
+            ? sql`(${s.messages.occurredAt}, ${s.messages.id}) < (${cursor.occurredAt}::timestamptz, ${cursor.id}::uuid)`
             : undefined,
         ),
       )
@@ -107,14 +107,11 @@ export class MessageHistoryService {
     const messages = items.slice(0, value.limit);
     const last = messages.at(-1);
     return {
-      messages,
+      messages: messages.map(
+        ({ cursorOccurredAt: _cursorOccurredAt, ...message }) => message,
+      ),
       nextCursor:
-        items.length > value.limit && last
-          ? JSON.stringify({
-              occurredAt: last.occurredAt.toISOString(),
-              id: last.id,
-            })
-          : null,
+        items.length > value.limit ? messageHistoryCursor(last) : null,
       accessibleHistoryOnly: true,
     };
   }

@@ -72,6 +72,114 @@ test("the person UI imports native history with an exact instant and private sou
   );
 });
 
+test("native history can record the second repeated workspace hour using UTC without losing entered content", async () => {
+  await harness.local.db
+    .update(s.organizations)
+    .set({ timezone: "America/New_York" })
+    .where(eq(s.organizations.id, demoId(1)));
+  const section = await panel();
+  fireEvent.click(
+    within(section).getByRole("button", { name: t.nativeIngestion.addHistory }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: t.nativeIngestion.addHistory,
+  });
+  enter(dialog, t.nativeIngestion.sourceThread, "fictional-repeated-hour");
+  enter(dialog, t.nativeIngestion.sourceMessage, "fictional-second-hour");
+  enter(dialog, t.nativeIngestion.body, "Fictional repeated-hour history.");
+  enter(dialog, t.nativeIngestion.occurredAt, "2025-11-02T06:30:18.125");
+  expect(within(dialog).getByLabelText(t.timezone)).toHaveProperty(
+    "value",
+    "America/New_York",
+  );
+  enter(dialog, t.timezone, "UTC");
+  expect(
+    within(dialog).getByLabelText(t.nativeIngestion.occurredAt),
+  ).toHaveProperty("value", "2025-11-02T06:30:18.125");
+  expect(within(dialog).getByLabelText(t.nativeIngestion.body)).toHaveProperty(
+    "value",
+    "Fictional repeated-hour history.",
+  );
+  expect(
+    within(dialog).getByText(t.nativeIngestion.zone.replace("{zone}", "UTC")),
+  ).toBeTruthy();
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: t.nativeIngestion.record }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(
+    harness.posts.find((post) => post.operation === "ingest-history"),
+  ).toMatchObject({
+    messages: [{ occurredAt: "2025-11-02T06:30:18.125Z" }],
+  });
+  const [message] = await harness.local.db
+    .select()
+    .from(s.messages)
+    .where(eq(s.messages.providerMessageId, "fictional-second-hour"));
+  expect(message.occurredAt.toISOString()).toBe("2025-11-02T06:30:18.125Z");
+});
+
+test("an undated draft can schedule the second repeated workspace hour in UTC without approval or sending", async () => {
+  await harness.local.db
+    .update(s.organizations)
+    .set({ timezone: "America/New_York" })
+    .where(eq(s.organizations.id, demoId(1)));
+  const draft = await new NativeIngestionService(harness.local.db).draft(
+    principal,
+    {
+      organizationId: demoId(1),
+      productId: demoId(10),
+      relationshipId: demoId(300),
+      channel: "gmail",
+      sourceId: "fictional-repeated-hour-draft",
+      title: "Fictional repeated-hour follow-up",
+      reason: "",
+      body: "Subject: Fictional\n\nFictional repeated-hour follow-up.",
+    },
+  );
+  const section = await panel();
+  fireEvent.click(
+    await within(section).findByRole("button", {
+      name: t.nativeIngestion.schedule,
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: t.nativeIngestion.schedule,
+  });
+  enter(dialog, t.nativeIngestion.dueAt, "2026-11-01T06:30:18.125");
+  enter(dialog, t.timezone, "UTC");
+  expect(within(dialog).getByLabelText(t.nativeIngestion.dueAt)).toHaveProperty(
+    "value",
+    "2026-11-01T06:30:18.125",
+  );
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: t.nativeIngestion.schedule }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(
+    harness.posts.find((post) => post.operation === "schedule-native-draft"),
+  ).toMatchObject({
+    draftId: draft.id,
+    dueAt: "2026-11-01T06:30:18.125Z",
+  });
+  const [scheduled] = await harness.local.db
+    .select()
+    .from(s.nativeDrafts)
+    .where(eq(s.nativeDrafts.id, draft.id));
+  const [action] = await harness.local.db
+    .select()
+    .from(s.actions)
+    .where(eq(s.actions.id, scheduled.scheduledActionId ?? ""));
+  expect(action.dueAt.toISOString()).toBe("2026-11-01T06:30:18.125Z");
+  expect(action.approvedHash).toBeNull();
+  expect(action.approvedBy).toBeNull();
+  expect(
+    harness.posts.some((post) =>
+      ["send-action", "send-touch"].includes(String(post.operation)),
+    ),
+  ).toBe(false);
+});
+
 test("the UI can load, edit and schedule an imported draft beyond its first 100 rows", async () => {
   const service = new NativeIngestionService(harness.local.db);
   let finalDraft: Awaited<ReturnType<typeof service.draft>> | undefined;

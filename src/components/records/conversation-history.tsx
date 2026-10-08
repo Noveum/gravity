@@ -210,54 +210,48 @@ export function ConversationHistory({
               )}
         </button>
       )}
-      {context &&
-        (page ? !!page.nextCursor : context.messages.length >= 30) && (
-          <button
-            type="button"
-            className="small ghost"
-            disabled={loading}
-            onClick={async () => {
-              if (pending.current) return;
-              pending.current = true;
-              setLoadingScope(scope);
-              setHistoryError({ scope, message: "" });
-              const last = context.messages.at(-1);
-              const cursor =
-                page?.nextCursor ??
-                (last
-                  ? JSON.stringify({ occurredAt: last.occurredAt, id: last.id })
-                  : null);
-              const query = new URLSearchParams({
-                operation: "messages",
-                organizationId: context.relationship.organizationId,
-                productId: context.relationship.productId,
-                relationshipId: context.relationship.id,
-              });
-              if (cursor) query.set("cursor", cursor);
-              try {
-                const result = await requestJson<Page>(`/api/crm?${query}`);
-                if (currentScope.current === scope) {
-                  setHistoryPage({
-                    scope,
-                    page: {
-                      ...result,
-                      messages: [...(page?.messages ?? []), ...result.messages],
-                    },
-                  });
-                  setAll(true);
-                }
-              } catch (cause) {
-                if (currentScope.current === scope)
-                  setHistoryError({ scope, message: errorText(cause) });
-              } finally {
-                pending.current = false;
-                if (currentScope.current === scope) setLoadingScope("");
+      {context && (page ? !!page.nextCursor : !!context.messagesNextCursor) && (
+        <button
+          type="button"
+          className="small ghost"
+          disabled={loading}
+          onClick={async () => {
+            if (pending.current) return;
+            pending.current = true;
+            setLoadingScope(scope);
+            setHistoryError({ scope, message: "" });
+            const cursor = page?.nextCursor ?? context.messagesNextCursor;
+            const query = new URLSearchParams({
+              operation: "messages",
+              organizationId: context.relationship.organizationId,
+              productId: context.relationship.productId,
+              relationshipId: context.relationship.id,
+            });
+            if (cursor) query.set("cursor", cursor);
+            try {
+              const result = await requestJson<Page>(`/api/crm?${query}`);
+              if (currentScope.current === scope) {
+                setHistoryPage({
+                  scope,
+                  page: {
+                    ...result,
+                    messages: [...(page?.messages ?? []), ...result.messages],
+                  },
+                });
+                setAll(true);
               }
-            }}
-          >
-            {loading ? t.loading : t.nativeIngestion.loadEarlier}
-          </button>
-        )}
+            } catch (cause) {
+              if (currentScope.current === scope)
+                setHistoryError({ scope, message: errorText(cause) });
+            } finally {
+              pending.current = false;
+              if (currentScope.current === scope) setLoadingScope("");
+            }
+          }}
+        >
+          {loading ? t.loading : t.nativeIngestion.loadEarlier}
+        </button>
+      )}
       {error && <p role="alert">{error}</p>}
       <p className="coverage-note">{t.partialHistory}</p>
     </section>

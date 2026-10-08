@@ -43,6 +43,7 @@ export function RelationshipContextDialog({
   const [fields, setFields] = useState<FieldDraft[]>(
     details.fields.map((field) => ({ ...field, value: String(field.value) })),
   );
+  const [timeZone, setTimeZone] = useState(crm.timeZone);
   const updateSignal = (id: string, patch: Partial<RelationshipSignal>) =>
     setSignals((current) =>
       current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
@@ -111,6 +112,22 @@ export function RelationshipContextDialog({
       }}
     >
       <p className="muted field-hint">{t.contextFields.sharedHint}</p>
+      {(signals.length > 0 ||
+        fields.some((field) => field.type === "datetime")) && (
+        <label>
+          {t.timezone}
+          <select
+            value={timeZone}
+            onChange={(event) => setTimeZone(event.target.value)}
+          >
+            {[...new Set([crm.timeZone, "UTC"])].map((zone) => (
+              <option key={zone} value={zone}>
+                {zone}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label>
         {t.summary}
         <textarea
@@ -243,13 +260,13 @@ export function RelationshipContextDialog({
               step="0.001"
               value={
                 signal.observedAt
-                  ? zonedInputValue(signal.observedAt, crm.timeZone, true)
+                  ? zonedInputValue(signal.observedAt, timeZone, true)
                   : ""
               }
               onChange={(event) =>
                 updateSignal(signal.id, {
                   observedAt: event.target.value
-                    ? instantFromZonedInput(event.target.value, crm.timeZone)
+                    ? instantFromZonedInput(event.target.value, timeZone)
                     : null,
                 })
               }
@@ -353,17 +370,14 @@ export function RelationshipContextDialog({
                 maxLength={field.type === "url" ? 2000 : 10000}
                 value={
                   field.type === "datetime"
-                    ? zonedInputValue(field.value, crm.timeZone, true)
+                    ? zonedInputValue(field.value, timeZone, true)
                     : field.value
                 }
                 onChange={(event) =>
                   updateField(field.id, {
                     value:
                       field.type === "datetime" && event.target.value
-                        ? instantFromZonedInput(
-                            event.target.value,
-                            crm.timeZone,
-                          )
+                        ? instantFromZonedInput(event.target.value, timeZone)
                         : event.target.value,
                   })
                 }

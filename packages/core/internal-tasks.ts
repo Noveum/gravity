@@ -112,6 +112,10 @@ export function nextInternalTaskDue(
         start.minute,
         start.second,
       ) + precision;
+    const nextDate = new Date(next);
+    const utcYear = nextDate.getUTCFullYear();
+    if (!Number.isFinite(next) || utcYear < 1 || utcYear > 9999)
+      throw new DomainError("INVALID_INPUT", 400);
     const actual = wallClock(next, timeZone);
     // A nonexistent local time is skipped, retaining the recurring wall clock.
     // Normalizing a DST gap would shift every subsequent daily occurrence.
@@ -124,7 +128,7 @@ export function nextInternalTaskDue(
       actual.minute === start.minute &&
       actual.second === start.second
     )
-      return new Date(next);
+      return nextDate;
     occurrence += 1;
   }
 }

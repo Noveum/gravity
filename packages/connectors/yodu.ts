@@ -9,7 +9,10 @@ import { z } from "zod";
 import { appUrl } from "../auth/options";
 import { publishChange } from "../core/changes";
 import { lockContactDirectory } from "../core/contact-history";
-import { preciseOffsetInstantSchema } from "../core/datetime";
+import {
+  cursorInstantSchema,
+  preciseOffsetInstantSchema,
+} from "../core/datetime";
 import { authorize, DomainError, type Principal } from "../core/policy";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
@@ -71,7 +74,7 @@ export const yoduEventSchema = z.strictObject({
   occurredAt: preciseOffsetInstantSchema,
 });
 const positionSchema = z.strictObject({
-  receivedAt: z.iso.datetime(),
+  receivedAt: cursorInstantSchema,
   id: uuid,
 });
 const bindingPositionSchema = z.strictObject({

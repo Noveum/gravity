@@ -1487,60 +1487,72 @@ test("readiness with private history never reveals whether a private outbound me
   }
 });
 
-test("an action confirmed sent on a later day consumes that day's sending cap", async () => {
-  const previous = await fixture("gmail", true);
-  const candidate = await fixture("gmail", true);
-  const claimAt = now + 6 * 86400000;
-  const sentAt = now + 7 * 86400000;
-  const unknownTransport = vi.fn<typeof fetch>(async () => {
-    throw new Error("Fictional ambiguous provider outcome");
-  });
-  const delivery = await new OutboundService(
-    local.db,
-    unknownTransport,
-    () => claimAt,
-  ).send(principal, previous.input);
-  expect(delivery.status).toBe("unknown");
-  await new OutboundService(local.db, previous.transport, () => sentAt).resolve(
-    human,
-    {
+test.each(["sent", "accepted"] as const)(
+  "%s action receipts consume their confirmed day's sending cap",
+  async (status) => {
+    const previous = await fixture("gmail", true);
+    const candidate = await fixture("gmail", true);
+    const claimDay = status === "sent" ? 6 : 8;
+    const claimAt = now + claimDay * 86400000;
+    const sentAt = claimAt + 86400000;
+    const unknownTransport = vi.fn<typeof fetch>(async () => {
+      throw new Error("Fictional ambiguous provider outcome");
+    });
+    const delivery = await new OutboundService(
+      local.db,
+      unknownTransport,
+      () => claimAt,
+    ).send(principal, previous.input);
+    expect(delivery.status).toBe("unknown");
+    await new OutboundService(
+      local.db,
+      previous.transport,
+      () => sentAt,
+    ).resolve(human, {
       organizationId: org,
       deliveryId: delivery.id,
       confirm: true,
       outcome: "sent",
       reason: "recipient_confirmed",
-    },
-  );
-  const rules = await candidate.outreach.contactRules(principal, org);
-  await candidate.outreach.updateContactRules(human, {
-    organizationId: org,
-    ...rules,
-    dailyCapPerSender: 1,
-  });
-  try {
-    const service = new OutboundService(
-      local.db,
-      candidate.transport,
-      () => sentAt,
-    );
-    expect(await service.readiness(principal, candidate.input)).toMatchObject({
-      ready: false,
-      blockedBy: "CONTACT_POLICY_BLOCKED",
     });
-    await expect(
-      service.send(principal, candidate.input),
-    ).rejects.toMatchObject({
-      code: "CONTACT_POLICY_BLOCKED",
-    });
-    expect(candidate.transport).not.toHaveBeenCalled();
-  } finally {
+    if (status === "accepted")
+      await local.db
+        .update(s.deliveries)
+        .set({ status })
+        .where(eq(s.deliveries.id, delivery.id));
+    const rules = await candidate.outreach.contactRules(principal, org);
     await candidate.outreach.updateContactRules(human, {
       organizationId: org,
       ...rules,
-      version: rules.version + 1,
+      dailyCapPerSender: 1,
     });
-  }
-});
+    try {
+      const service = new OutboundService(
+        local.db,
+        candidate.transport,
+        () => sentAt,
+      );
+      expect(await service.readiness(principal, candidate.input)).toMatchObject(
+        {
+          ready: false,
+          blockedBy: "CONTACT_POLICY_BLOCKED",
+        },
+      );
+      await expect(
+        service.send(principal, candidate.input),
+      ).rejects.toMatchObject({
+        code: "CONTACT_POLICY_BLOCKED",
+      });
+      expect(candidate.transport).not.toHaveBeenCalled();
+    } finally {
+      await candidate.outreach.updateContactRules(human, {
+        organizationId: org,
+        ...rules,
+        version: rules.version + 1,
+      });
+    }
+  },
+);
 
 test("unknown sends reserve the canonical person across products and channels", async () => {
   const original = await fixture();

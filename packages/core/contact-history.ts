@@ -20,6 +20,16 @@ type Person = Pick<
   "id" | "email" | "otherEmails" | "linkedinUrl"
 >;
 
+export const messageHistoryCursorTimestamp = sql<string>`to_char(${s.messages.occurredAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
+export function messageHistoryCursor(
+  message: { id: string; cursorOccurredAt: string } | undefined,
+) {
+  return message
+    ? JSON.stringify({ occurredAt: message.cursorOccurredAt, id: message.id })
+    : null;
+}
+
 // Identity creation and editing take this organization's update lock. The
 // shared lock keeps a component stable while claims/history lock its contacts.
 export async function lockContactDirectory(db: Reader, organizationId: string) {
@@ -185,7 +195,7 @@ export async function contactHistoryChecks(
       eq(s.conversations.visibility, "product"),
     ),
   );
-  const [hidden] = await db
+  const hiddenHistory = db
     .select({ id: s.messages.id })
     .from(s.messages)
     .innerJoin(
@@ -208,7 +218,7 @@ export async function contactHistoryChecks(
       ),
     )
     .limit(1);
-  const messages = await db
+  const readableHistory = db
     .select({
       id: s.messages.id,
       conversationId: s.messages.conversationId,
@@ -225,7 +235,27 @@ export async function contactHistoryChecks(
     )
     .where(and(relevant, readable))
     .orderBy(desc(s.messages.occurredAt), desc(s.messages.id))
-    .limit(12);
+    .limit(12)
+    .as("readable_history");
+  const history = await db
+    .select({
+      hidden: sql<boolean>`EXISTS (${hiddenHistory})`,
+      message: {
+        id: readableHistory.id,
+        conversationId: readableHistory.conversationId,
+        channel: readableHistory.channel,
+        direction: readableHistory.direction,
+        body: readableHistory.body,
+        occurredAt: readableHistory.occurredAt,
+        provenance: readableHistory.provenance,
+      },
+    })
+    .from(s.organizations)
+    .leftJoin(readableHistory, sql`true`)
+    .where(eq(s.organizations.id, organizationId))
+    .orderBy(desc(readableHistory.occurredAt), desc(readableHistory.id));
+  const hidden = history.some((row) => row.hidden);
+  const messages = history.flatMap((row) => (row.message ? [row.message] : []));
   const emails = emailsFor(people);
   const participantMatches: SQL[] = [];
   if (emails.length)

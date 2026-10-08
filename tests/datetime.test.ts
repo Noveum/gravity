@@ -1,8 +1,24 @@
 import { expect, test } from "vitest";
 import {
+  cursorInstantSchema,
   preciseInstantSchema,
   preciseOffsetInstantSchema,
 } from "../packages/core/datetime";
+
+test("cursor instants preserve database microseconds without year or precision overflow", () => {
+  for (const value of [
+    "0001-01-01T00:00:00Z",
+    "2026-10-08T00:00:00.123456Z",
+    "9999-12-31T23:59:59.999999Z",
+  ])
+    expect(cursorInstantSchema.parse(value)).toBe(value);
+  for (const value of [
+    "0000-01-01T00:00:00Z",
+    "2026-10-08T00:00:00.1234567Z",
+    "9999-12-31T23:59:59.9999999Z",
+  ])
+    expect(cursorInstantSchema.safeParse(value).success).toBe(false);
+});
 
 test("precise instants reject ISO year zero before binding a PostgreSQL timestamp", () => {
   for (const schema of [preciseInstantSchema, preciseOffsetInstantSchema]) {

@@ -147,6 +147,109 @@ test("private or ungranted identity history blocks dispatch without exposing ano
   });
 });
 
+test("history visibility and readable messages use one snapshot when a source owner unshares", async () => {
+  const f = await fixture();
+  const sourceOwner: Principal = {
+    userId: "demo-teammate",
+    source: "session",
+  };
+  await local.db.insert(s.productMemberships).values({
+    organizationId: org,
+    productId: f.secondProduct.id,
+    userId: sourceOwner.userId,
+  });
+  const crm = new CrmService(local.db);
+  const sharing = {
+    organizationId: org,
+    productId: f.secondProduct.id,
+    conversationId: f.conversation.id,
+  };
+  await crm.shareConversation(sourceOwner, {
+    ...sharing,
+    expectedVisibility: "private",
+    visibility: "product",
+  });
+  let interleaved = false;
+  const unshare = async () => {
+    interleaved = true;
+    await crm.shareConversation(sourceOwner, {
+      ...sharing,
+      expectedVisibility: "product",
+      visibility: "private",
+    });
+  };
+  const wrapQuery = (query: object): object =>
+    new Proxy(query, {
+      get(builder, key, receiver) {
+        const member = Reflect.get(builder, key, receiver);
+        if (key === "then") {
+          return async (
+            resolve: (value: unknown) => unknown,
+            reject: (error: unknown) => unknown,
+          ) => {
+            try {
+              const { sql } = Reflect.apply(
+                Reflect.get(builder, "toSQL"),
+                builder,
+                [],
+              ) as { sql: string };
+              if (
+                !interleaved &&
+                sql.includes('from "messages"') &&
+                sql.includes('"conversations"."visibility"')
+              ) {
+                const splitRead = !sql.includes('"messages"."body"');
+                if (!splitRead) await unshare();
+                const rows = await (builder as PromiseLike<unknown>);
+                if (splitRead) {
+                  expect(rows).toEqual([]);
+                  await unshare();
+                }
+                return resolve(rows);
+              }
+              return resolve(await (builder as PromiseLike<unknown>));
+            } catch (error) {
+              return reject(error);
+            }
+          };
+        }
+        if (typeof member !== "function") return member;
+        return (...args: unknown[]) => {
+          const result: unknown = Reflect.apply(member, builder, args);
+          return result !== null && typeof result === "object"
+            ? wrapQuery(result)
+            : result;
+        };
+      },
+    });
+  const reader = new Proxy(local.db, {
+    get(db, key, receiver) {
+      const member = Reflect.get(db, key, receiver);
+      if (key === "select")
+        return (...args: unknown[]) =>
+          wrapQuery(Reflect.apply(member, db, args) as object);
+      return typeof member === "function" ? member.bind(db) : member;
+    },
+  });
+  const history = await contactHistoryChecks(reader, owner, org, f.person, [
+    f.firstProduct.id,
+    f.secondProduct.id,
+  ]);
+  expect(interleaved).toBe(true);
+  expect(history).toMatchObject({
+    blockedBy: "PRIVATE_HISTORY_REVIEW_REQUIRED",
+    messages: [],
+  });
+  const owned = await contactHistoryChecks(local.db, sourceOwner, org, f.last, [
+    f.secondProduct.id,
+  ]);
+  expect(owned.blockedBy).toBeNull();
+  expect(owned.messages[0]).toMatchObject({
+    body: "Private fictional contents must stay hidden",
+    occurredAt: new Date("2026-10-01T00:00:00Z"),
+  });
+});
+
 test("pending history matches aliases on the complete identity and preserves owner/product access", async () => {
   const f = await fixture();
   await local.db

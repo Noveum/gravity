@@ -48,6 +48,20 @@ test("persistent native uploads, nested navigation, transfers and every preview"
       buffer: Buffer.from(file.base64, "base64"),
     })),
   );
+  await expect
+    .poll(
+      () =>
+        page
+          .getByRole("progressbar")
+          .evaluateAll((elements) =>
+            elements.map((element) => (element as HTMLProgressElement).value),
+          ),
+      { timeout: 30_000 },
+    )
+    .toEqual(samples.map(() => 100));
+  await expect(
+    page.getByRole("button", { name: "Upload files", exact: true }),
+  ).toBeEnabled();
   await expect(page.getByRole("treeitem")).toHaveCount(12);
   for (const sample of samples) {
     await page

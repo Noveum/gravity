@@ -3,10 +3,7 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 import { ActionDetailsService } from "../packages/core/action-details";
 import { CrmService } from "../packages/core/crm";
 import type { Principal } from "../packages/core/policy";
-import {
-  createLocalDatabase,
-  type Database,
-} from "../packages/database/client";
+import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import {
@@ -14,6 +11,7 @@ import {
   executeMcpOperation,
   operations,
 } from "../packages/operations/catalog";
+import { databaseWithLockInterleave } from "./support/lock-interleave";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 const admin: Principal = { userId: demoUser, source: "session" };
@@ -31,67 +29,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await local.client.close();
 });
-
-type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
-// PGlite has one connection. Replay the other writer's committed change at a
-// lock wait inside this transaction so the interleaving is deterministic.
-function databaseWithLockInterleave(
-  table: "people" | "organizations",
-  interleave: (tx: Transaction) => Promise<void>,
-) {
-  let interleaved = false;
-  const locks: string[] = [];
-  const database = new Proxy(local.db, {
-    get(db, property, receiver) {
-      if (property !== "transaction")
-        return Reflect.get(db, property, receiver);
-      return (run: Parameters<Database["transaction"]>[0]) =>
-        db.transaction(async (tx) => {
-          const wrapQuery = (query: object): object =>
-            new Proxy(query, {
-              get(builder, key, builderReceiver) {
-                const member = Reflect.get(builder, key, builderReceiver);
-                if (typeof member !== "function") return member;
-                return (...args: unknown[]) => {
-                  const result: unknown = Reflect.apply(member, builder, args);
-                  if (key === "for") {
-                    const { sql } = Reflect.apply(
-                      Reflect.get(builder, "toSQL"),
-                      builder,
-                      [],
-                    ) as { sql: string };
-                    locks.push(sql);
-                    if (!interleaved && sql.includes(`"${table}"`)) {
-                      interleaved = true;
-                      return (async () => {
-                        await interleave(tx);
-                        return await (result as PromiseLike<unknown>);
-                      })();
-                    }
-                  }
-                  return result !== null && typeof result === "object"
-                    ? wrapQuery(result)
-                    : result;
-                };
-              },
-            });
-          const intercepted = new Proxy(tx, {
-            get(target, key, targetReceiver) {
-              const member = Reflect.get(target, key, targetReceiver);
-              if (key === "select")
-                return (...args: unknown[]) =>
-                  wrapQuery(Reflect.apply(member, target, args) as object);
-              return typeof member === "function"
-                ? member.bind(target)
-                : member;
-            },
-          });
-          return run(intercepted);
-        });
-    },
-  });
-  return { database, locks, didInterleave: () => interleaved };
-}
 
 test("HTTP and MCP edit a legacy reason, preserve source, invalidate approval and reject stale versions", async () => {
   const original =
@@ -236,12 +173,16 @@ test("sharing revoked while a reason edit waits for contact locks prevents the e
     .update(s.conversations)
     .set({ visibility: "product" })
     .where(eq(s.conversations.id, demoId(710)));
-  const replay = databaseWithLockInterleave("people", async (tx) => {
-    await tx
-      .update(s.conversations)
-      .set({ visibility: "private" })
-      .where(eq(s.conversations.id, demoId(710)));
-  });
+  const replay = databaseWithLockInterleave(
+    local.db,
+    async (tx) => {
+      await tx
+        .update(s.conversations)
+        .set({ visibility: "private" })
+        .where(eq(s.conversations.id, demoId(710)));
+    },
+    (query) => query.includes('"people"'),
+  );
   try {
     await expect(
       new ActionDetailsService(replay.database).save(
@@ -301,7 +242,7 @@ test("reason editing rechecks current membership and product grants after a dire
     })
     .returning();
   for (const revoked of ["membership", "product"] as const) {
-    const replay = databaseWithLockInterleave("organizations", async (tx) => {
+    const replay = databaseWithLockInterleave(local.db, async (tx) => {
       if (revoked === "membership")
         await tx
           .update(s.memberships)

@@ -20,6 +20,7 @@ function formatter(timeZone: string) {
   const created = new Intl.DateTimeFormat("en-US", {
     timeZone,
     hourCycle: "h23",
+    era: "short",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -39,7 +40,7 @@ export function wallClock(instant: number, timeZone: string): WallClock {
       .map((part) => [part.type, part.value]),
   );
   return {
-    year: Number(parts.year),
+    year: parts.era === "BC" ? 1 - Number(parts.year) : Number(parts.year),
     month: Number(parts.month),
     day: Number(parts.day),
     hour: Number(parts.hour),
@@ -182,6 +183,8 @@ export function instantFromZonedInput(value: string, timeZone: string) {
   } catch {
     return "";
   }
+  const utcYear = new Date(instant).getUTCFullYear();
+  if (utcYear < 1 || utcYear > 9999) return "";
   const actual = wallClock(instant, timeZone);
   // Invalid calendar dates and nonexistent DST wall-clock times are never normalized silently.
   if (

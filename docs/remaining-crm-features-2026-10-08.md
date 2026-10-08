@@ -12,18 +12,22 @@ The investigation checked each requested feature in the database/domain services
 | Recurring internal tasks | All actions were contact-bound and had no recurrence. | Standalone product-owned tasks have optional same-product contact links, owners, precise due times and calendar recurrence in an IANA zone. Completing an occurrence atomically advances to the next future occurrence, retains monthly anchors and skips nonexistent DST times. Internal tasks never create approvals or deliveries. |
 | Legacy JSON action reasons | Reasons were readable but had no edit operation. | `update_action_reason` exposes versioned editing in the contact's action summary. The original source is preserved, editing invalidates approval, and blocked/completed states and private-thread access are retained. |
 
+Native history and draft writes share a 90 KB serialized UTF-8 budget across both transports; batch larger imports rather than relying on character counts.
+
+Independent review hardened authorization after send-lock waits, rechecked conversation visibility in message-body reads and reason edits, and made direct unmatched replies reviewable. Signed LinkedIn messages now materialize locally before webhook acknowledgement. Failed retained receipts for known threads block sending until processed; an unknown thread with no participant identity cannot be attributed to a contact until it is explicitly linked.
+
 Every business operation is defined in `packages/operations/catalog.ts`, so HTTP and MCP execute the same schemas and authorized services. Verified assistants require current organization/product membership and the appropriate read/write grant; explicit dispatch still separately requires verified `crm:send`, provider consent, current approval, sender ownership and durable idempotency. Unknown message outcomes are never retried automatically.
 
 ## Rollout and verification
 
-Migration `0025_remaining_crm_features.sql` adds native provenance/drafts, original reason archives, internal tasks and Yodu sources/mappings/receipts. It preserves existing provider messages, action reasons, dates, statuses and versions. New tables use the trusted server RLS policy and restricted runtime grants. The migration is generated and exercised locally, including upgrading populated pre-change fixtures and running the migration twice.
+Migration `0025_remaining_crm_features.sql` adds native provenance/drafts, original reason archives, internal tasks and Yodu sources/mappings/receipts. It preserves existing provider messages, action reasons, dates, statuses and versions. New tables use the trusted server RLS policy and restricted runtime grants. The migration is generated and exercised locally, including upgrading populated current-main fixtures, preserving contact-import attribution, and running the migration twice. Fresh local PostgreSQL also exercises the production postgres-js driver.
 
 This work does not apply migrations to an external database, import real customer records or deploy the application. Review the target and backup policy before production migration. The signed Yodu bridge needs `INTEGRATION_ENCRYPTION_KEY`, source setup, explicit subject mapping and an authoritative Yodu backend emitter; it is an authenticated source attestation, not an independent payment-processor query or proof of a current subscription. See [Yodu bridge setup](yodu-lifecycle-bridge.md) and [field filters/internal tasks](field-filters-internal-tasks.md).
 
 Validation completed locally:
 
-- `bun run typecheck`, `bun run lint` and `bun run build` pass.
-- `bun run test --reporter=verbose`: 124 files pass, with 1,000 passing tests. Two optional production-driver tests require a separate PostgreSQL server and are skipped.
-- An additional 64 focused tests pass after hardening send-readiness responses to suppress cooldown timestamps derived from private history. Dispatch enforcement still uses the full history.
-- `bun run test:public` verifies 11 built public pages with demo mode disabled, including the Yodu bridge guide.
+- `bun run verify` passes: lint, license inventory, TypeScript, 127 test files with 1,023 passing tests, production build, and 11 built public-page smoke checks with demo mode disabled. No tests are skipped; `GRAVITY_POSTGRES_TEST_URL` points to a fresh isolated local PostgreSQL instance.
+- `bun run test:files` passes all 18 browser tests, including real native-history/draft/reason persistence, zero/false/datetime filters, month-end recurrence, existing file downloads and navigation. Screenshots were inspected in light and dark themes; the final datetime filter layout shows the full date, seconds and milliseconds. Lint/types, the focused UI tests, production build and public smoke checks pass again after this layout adjustment.
+- `bun audit` reports no vulnerabilities in the locked dependencies.
+- Independent-review regressions and a further 91 focused ingestion/history/attribution tests pass. Send-readiness responses suppress cooldown timestamps derived from private history while dispatch still enforces the full history.
 - Focused regressions cover tenant/product/owner isolation, native import retries and conflicts, private history, approval invalidation, alias and cross-channel dispatch gates, unknown outcomes, exact timestamps, field comparisons, recurrence, legacy reason editing, signed receipts, and draft/customer-mapping pagination beyond 100/200 records.

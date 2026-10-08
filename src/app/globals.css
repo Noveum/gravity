@@ -4726,6 +4726,24 @@ tbody tr[data-selected] td:first-child::before {
 .record-filters .record-filter-fields input {
   max-width: 150px;
 }
+.record-filters .record-filter-fields > small {
+  flex-basis: 100%;
+}
+.record-field-filter {
+  flex: 0 1 320px;
+  max-width: 100%;
+}
+.record-filters .record-field-filter > label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+.record-filters .record-field-filter input,
+.record-filters .record-field-filter select {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
 .list-pagination {
   display: flex;
   flex-wrap: wrap;

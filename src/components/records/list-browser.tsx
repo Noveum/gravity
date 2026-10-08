@@ -459,7 +459,10 @@ export function RecordFilters({
                 (field) => field.key === draft.key,
               );
               return (
-                <fieldset key={draft.id} className="context-editor-card">
+                <fieldset
+                  key={draft.id}
+                  className="context-editor-card record-field-filter"
+                >
                   <legend>
                     {t.fieldFilters.field} {index + 1}
                   </legend>

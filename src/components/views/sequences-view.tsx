@@ -7,7 +7,10 @@ import { useState } from "react";
 import { label } from "../client-api";
 import { useCreate, useWorkspaceData } from "../crm/crm-context";
 import { useOutreachSend } from "../outreach/outreach-data";
-import { SequenceDialog } from "../outreach/sequence-dialog";
+import {
+  SequenceDialog,
+  StopEnrollmentDialog,
+} from "../outreach/sequence-dialog";
 import { SequenceEditor } from "../outreach/sequence-editor";
 import { followUpLabel } from "../outreach/touch-labels";
 import { PagedItems, Pagination, useListPage } from "../records/list-browser";
@@ -359,19 +362,12 @@ export function SequencesView() {
         </RecordDialog>
       )}
       {stopping && (
-        <RecordDialog
-          inline
-          title={t.stopEnrollmentTitle.replace("{name}", stopping.name)}
-          submitLabel={t.stop}
+        <StopEnrollmentDialog
+          name={stopping.name}
+          sequenceName={stopping.sequence.name}
           onClose={() => setStopping(null)}
           onSubmit={() => stop(stopping)}
-        >
-          <p className="muted">
-            {t.stopEnrollmentDetail
-              .replace("{name}", stopping.name)
-              .replace("{sequence}", stopping.sequence.name)}
-          </p>
-        </RecordDialog>
+        />
       )}
     </div>
   );

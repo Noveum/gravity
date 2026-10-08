@@ -330,6 +330,42 @@ describe("touch rows, the draft drawer and paused work", () => {
       ).toBeNull(),
     );
   });
+
+  test("Stop asks for confirmation, then stops the paused enrollment", async () => {
+    await mountCrm(harness, "/outreach/paused");
+    const stop = await screen.findByRole("button", {
+      name: `${t.stop}: Mira Chen`,
+    });
+    fireEvent.click(stop);
+    const dialog = await screen.findByRole("region", {
+      name: t.stopEnrollmentTitle.replace("{name}", "Mira Chen"),
+    });
+    expect(dialog.textContent).toContain("Thoughtful introduction");
+    const [before] = await harness.local.db
+      .select()
+      .from(s.enrollments)
+      .where(eq(s.enrollments.id, demoId(500)));
+    expect(before?.status).toBe("paused");
+    fireEvent.click(within(dialog).getByRole("button", { name: t.stop }));
+    await screen.findByText(
+      t.enrollmentStopped.replace("{name}", "Mira Chen"),
+    );
+    const [after] = await harness.local.db
+      .select()
+      .from(s.enrollments)
+      .where(eq(s.enrollments.id, demoId(500)));
+    expect(after).toMatchObject({ status: "stopped" });
+    expect(
+      harness.posts.find(
+        (post) => post.operation === "enrollment" && post.command === "stop",
+      ),
+    ).toMatchObject({ enrollmentId: demoId(500) });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: `${t.stop}: Mira Chen` }),
+      ).toBeNull(),
+    );
+  });
 });
 
 describe("enrolling from People", () => {

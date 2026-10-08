@@ -420,6 +420,108 @@ describe.skipIf(!usableServer)("outreach on the production driver", () => {
     },
   );
 
+  test.each(["membership", "product grant"])(
+    "action approval refreshes %s revocation after a separate transaction releases the organization lock",
+    async (revoked) => {
+      const db = postgresDrizzle(client, { schema: s });
+      const actor: Principal = {
+        userId: "demo-restricted",
+        source: "session",
+      };
+      const [action] = await db
+        .select()
+        .from(s.actions)
+        .where(eq(s.actions.id, demoId(601)));
+      expect(action).toMatchObject({
+        organizationId: org,
+        productId: demoId(11),
+        ownerId: "demo-teammate",
+        status: "open",
+        version: 1,
+        approvedBy: null,
+        approvedHash: null,
+      });
+      expect(action.draft.trim()).not.toBe("");
+      const beforeEvents = await db
+        .select()
+        .from(s.changeEvents)
+        .where(eq(s.changeEvents.entityId, action.id))
+        .orderBy(s.changeEvents.id);
+      let pending: Promise<PromiseSettledResult<unknown>> | undefined;
+      try {
+        await client.begin(async (blocker) => {
+          const [backend] = await blocker`SELECT pg_backend_pid() AS pid`;
+          await blocker`SELECT id FROM organizations WHERE id = ${org} FOR UPDATE`;
+          pending = new CrmService(db)
+            .changeAction(actor, {
+              organizationId: org,
+              productId: action.productId,
+              actionId: action.id,
+              version: action.version,
+              command: "approve",
+            })
+            .then(
+              (value) => ({ status: "fulfilled" as const, value }),
+              (reason) => ({ status: "rejected" as const, reason }),
+            );
+          const waiting = await waitForManagementLock(backend.pid);
+          expect(waiting?.query).toContain('"organizations"');
+          // Neither access change touches this shared action's distinct owner
+          // or version, so only current actor authorization can stop approval.
+          if (revoked === "membership")
+            await blocker`UPDATE memberships SET active = false WHERE organization_id = ${org} AND user_id = ${actor.userId}`;
+          else
+            await blocker`DELETE FROM product_memberships WHERE organization_id = ${org} AND product_id = ${action.productId} AND user_id = ${actor.userId}`;
+        });
+        expect(await pending).toMatchObject({
+          status: "rejected",
+          reason: { code: "FORBIDDEN" },
+        });
+        expect(
+          await db.select().from(s.actions).where(eq(s.actions.id, action.id)),
+        ).toEqual([action]);
+        expect(
+          await db
+            .select()
+            .from(s.changeEvents)
+            .where(eq(s.changeEvents.entityId, action.id))
+            .orderBy(s.changeEvents.id),
+        ).toEqual(beforeEvents);
+      } finally {
+        await pending;
+        await db
+          .update(s.memberships)
+          .set({ active: true })
+          .where(
+            and(
+              eq(s.memberships.organizationId, org),
+              eq(s.memberships.userId, actor.userId),
+            ),
+          );
+        await db
+          .insert(s.productMemberships)
+          .values({
+            organizationId: org,
+            productId: action.productId,
+            userId: actor.userId,
+          })
+          .onConflictDoNothing();
+        // Keep both fail-before cases independent on their disposable fixture.
+        await db
+          .update(s.actions)
+          .set({
+            draft: action.draft,
+            draftHash: action.draftHash,
+            approvedHash: action.approvedHash,
+            approvedBy: action.approvedBy,
+            status: action.status,
+            version: action.version,
+          })
+          .where(eq(s.actions.id, action.id));
+      }
+    },
+  );
+
   test("reply ingestion waits for the organization before locking an account needed by a concurrent update", async () => {
     const db = postgresDrizzle(client, { schema: s });
     const messageId = `fictional-lock-order-${randomUUID()}`;

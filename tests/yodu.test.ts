@@ -445,6 +445,40 @@ test("signed occurrence times preserve offset milliseconds and reject unsupporte
   );
 });
 
+test.each(["0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"])(
+  "signed UTC year boundary overflow rejects input before storing a receipt: %s",
+  async (occurredAt) => {
+    const saved = await source();
+    const beforeChanges = await db.select().from(s.changeEvents);
+    const raw = bytes({ ...event(), occurredAt });
+    await expect(
+      service().ingest(saved.id, raw, signature(raw, saved.signingSecret)),
+    ).rejects.toMatchObject({ name: "ZodError" });
+    const response = await webhook(
+      new Request(
+        `https://gravity.example.test/api/webhooks/yodu?sourceId=${saved.id}`,
+        {
+          method: "POST",
+          headers: {
+            "yodu-signature": signature(raw, saved.signingSecret, Date.now()),
+            "Content-Type": "application/json",
+          },
+          body: Uint8Array.from(raw).buffer,
+        },
+      ),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "INVALID_INPUT" });
+    expect(
+      await db
+        .select()
+        .from(s.yoduEvents)
+        .where(eq(s.yoduEvents.sourceId, saved.id)),
+    ).toEqual([]);
+    expect(await db.select().from(s.changeEvents)).toEqual(beforeChanges);
+  },
+);
+
 test("explicit versioned subject association enforces tenant/product boundaries and preserves immutable receipts", async () => {
   const saved = await source();
   const raw = bytes(event());

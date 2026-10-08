@@ -1369,6 +1369,8 @@ export class CrmService {
       ]);
       const [action] = await actionRow().for("update");
       if (!action) throw new DomainError("NOT_FOUND", 404);
+      // Access may have changed while waiting for the organization or row locks.
+      await authorizeAction(tx, principal, action);
       if (action.version !== input.version)
         throw new DomainError("CONFLICT", 409);
       const [dispatch] = await tx

@@ -23,6 +23,7 @@ import { decodeMailHeader } from "../packages/connectors/providers";
 import { ingestReply } from "../packages/connectors/replies";
 import { seal } from "../packages/connectors/security";
 import { IntegrationService } from "../packages/connectors/service";
+import { zonedDayBounds } from "../packages/core/calendar";
 import * as contactHistory from "../packages/core/contact-history";
 import { CrmService } from "../packages/core/crm";
 import { NativeIngestionService } from "../packages/core/native-ingestion";
@@ -56,7 +57,13 @@ const json = (data: unknown, status = 200) =>
   });
 beforeAll(async () => {
   local = await createLocalDatabase();
-  await seedDemo(local.db);
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(now);
+  try {
+    await seedDemo(local.db);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 afterAll(async () => local.client.close());
 beforeEach(() => {
@@ -274,6 +281,11 @@ test.each(["approval", "commitment"] as const)(
 test("an in-flight send reserves the sender's last daily slot across different products", async () => {
   const first = await fixture();
   const second = await fixture();
+  const [organization] = await local.db
+    .select({ timezone: s.organizations.timezone })
+    .from(s.organizations)
+    .where(eq(s.organizations.id, org));
+  const [dayStart, dayEnd] = zonedDayBounds(now, organization.timezone);
   const [baseline] = await local.db
     .select({ count: sql<number>`count(*)::int` })
     .from(s.touches)
@@ -282,8 +294,8 @@ test("an in-flight send reserves the sender's last daily slot across different p
         eq(s.touches.senderId, demoUser),
         eq(s.touches.organizationId, org),
         eq(s.touches.status, "sent"),
-        gte(s.touches.sentAt, new Date("2026-10-06T00:00:00Z")),
-        lt(s.touches.sentAt, new Date("2026-10-07T00:00:00Z")),
+        gte(s.touches.sentAt, new Date(dayStart)),
+        lt(s.touches.sentAt, new Date(dayEnd)),
       ),
     );
   const [actionsSent] = await local.db
@@ -295,8 +307,8 @@ test("an in-flight send reserves the sender's last daily slot across different p
         eq(s.deliveries.ownerId, demoUser),
         eq(s.deliveries.status, "sent"),
         isNull(s.deliveries.touchId),
-        gte(s.deliveries.createdAt, new Date("2026-10-06T00:00:00Z")),
-        lt(s.deliveries.createdAt, new Date("2026-10-07T00:00:00Z")),
+        gte(s.deliveries.sentAt, new Date(dayStart)),
+        lt(s.deliveries.sentAt, new Date(dayEnd)),
       ),
     );
   const rules = await first.outreach.contactRules(principal, org);
@@ -323,7 +335,8 @@ test("an in-flight send reserves the sender's last daily slot across different p
     first.input,
   );
   try {
-    await dispatched;
+    await Promise.race([dispatched, sending]);
+    expect(transport).toHaveBeenCalledTimes(1);
     expect(
       (await second.service.readiness(principal, second.input)).blockedBy,
     ).toBe("CONTACT_POLICY_BLOCKED");
@@ -333,12 +346,15 @@ test("an in-flight send reserves the sender's last daily slot across different p
     expect(second.transport).not.toHaveBeenCalled();
   } finally {
     release();
-    expect((await sending).status).toBe("sent");
-    await first.outreach.updateContactRules(human, {
-      organizationId: org,
-      ...rules,
-      version: rules.version + 1,
-    });
+    try {
+      expect((await sending).status).toBe("sent");
+    } finally {
+      await first.outreach.updateContactRules(human, {
+        organizationId: org,
+        ...rules,
+        version: rules.version + 1,
+      });
+    }
   }
 });
 test("an accepted receipt survives bookkeeping failure and a retry never sends again", async () => {

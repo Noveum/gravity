@@ -19,7 +19,21 @@ import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { readableAttribution } from "./contact-attribution";
 import { scopeSchema } from "./crm";
+import {
+  type FieldFilter,
+  fieldFiltersSchema,
+  fieldLabelWhitespace,
+  normalizeFieldLabel,
+  normalizeFieldText,
+} from "./field-filters";
+import { fieldTextCaseSources, fieldTextCaseTargets } from "./field-text-case";
 import { authorize, type Principal } from "./policy";
+
+function normalizedFieldSql(value: SQL) {
+  // Most labels and prose are ASCII. Avoid scanning the full Unicode mapping
+  // for those strings while keeping both branches independent of DB locale.
+  return sql`CASE WHEN octet_length(${value}) = char_length(${value}) THEN translate(${value}, ${fieldTextCaseSources.slice(0, 26)}, ${fieldTextCaseTargets.slice(0, 26)}) ELSE translate(${value}, ${fieldTextCaseSources}, ${fieldTextCaseTargets}) END`;
+}
 
 export const recordListSchema = scopeSchema
   .extend({
@@ -38,6 +52,7 @@ export const recordListSchema = scopeSchema
     sourceMemberId: z.string().min(1).max(200).optional(),
     attribution: z.enum(["recorded", "unknown", "shared"]).optional(),
     query: z.string().trim().max(200).default(""),
+    fieldFilters: fieldFiltersSchema,
     tag: z.string().trim().max(50).optional(),
     currency: z
       .string()
@@ -52,6 +67,18 @@ export const recordListSchema = scopeSchema
     (input) =>
       input.entity === "people" ||
       (!input.submittedBy && !input.sourceMemberId && !input.attribution),
+  )
+  .refine(
+    (input) =>
+      !input.fieldFilters.length ||
+      [
+        "people",
+        "companies",
+        "relationships",
+        "opportunities",
+        "meetings",
+        "actions",
+      ].includes(input.entity),
   )
   .refine(
     (input) =>
@@ -98,6 +125,8 @@ export class RecordListService {
     const conditions: (SQL | undefined)[] = [
       eq(table.organizationId, input.organizationId),
     ];
+    if (input.entity === "opportunities")
+      conditions.push(isNull(s.opportunities.archivedAt));
     const personRelationships = (personId: typeof s.people.id) =>
       this.db
         .select({ id: s.relationships.id })
@@ -243,6 +272,84 @@ export class RecordListService {
           ),
         ),
       );
+    if (input.fieldFilters.length) {
+      const filteredRelationship = alias(s.relationships, "field_relationship");
+      const relationshipConditions: (SQL | undefined)[] = [
+        eq(filteredRelationship.organizationId, input.organizationId),
+        inArray(filteredRelationship.productId, ids),
+        ...input.fieldFilters.map((filter: FieldFilter) => {
+          const matchingName = sql`${normalizedFieldSql(sql`btrim(field.value->>'label', ${fieldLabelWhitespace})`)} = ${normalizeFieldLabel(filter.label)} AND field.value->>'type' = ${filter.type}`;
+          let comparison: SQL | undefined;
+          const value = filter.value;
+          const stored =
+            filter.type === "number"
+              ? sql`CASE WHEN jsonb_typeof(field.value->'value') = 'number' THEN (field.value->>'value')::numeric END`
+              : filter.type === "datetime"
+                ? sql`CASE WHEN field.value->>'type' = 'datetime' THEN (field.value->>'value')::timestamptz END`
+                : filter.type === "text" || filter.type === "url"
+                  ? normalizedFieldSql(sql`field.value->>'value'`)
+                  : sql`field.value->>'value'`;
+          const expected =
+            typeof value === "string"
+              ? normalizeFieldText(value)
+              : typeof value === "boolean"
+                ? String(value)
+                : value;
+          if (filter.operator === "eq")
+            comparison = sql`${stored} = ${expected}`;
+          if (filter.operator === "contains")
+            comparison = sql`position(${expected} in ${stored}) > 0`;
+          if (filter.operator === "gt")
+            comparison = sql`${stored} > ${expected}`;
+          if (filter.operator === "gte")
+            comparison = sql`${stored} >= ${expected}`;
+          if (filter.operator === "lt")
+            comparison = sql`${stored} < ${expected}`;
+          if (filter.operator === "lte")
+            comparison = sql`${stored} <= ${expected}`;
+          const matching = sql`EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(${filteredRelationship.contextDetails}->'fields', '[]'::jsonb)) AS field(value) WHERE ${matchingName}${comparison ? sql` AND ${comparison}` : sql``})`;
+          return filter.operator === "missing"
+            ? sql`NOT (${matching})`
+            : matching;
+        }),
+      ];
+      if (input.entity === "relationships")
+        relationshipConditions.push(
+          eq(filteredRelationship.id, s.relationships.id),
+        );
+      else if (input.entity === "people")
+        relationshipConditions.push(
+          eq(filteredRelationship.personId, s.people.id),
+        );
+      else if (input.entity === "companies")
+        relationshipConditions.push(
+          exists(
+            this.db
+              .select({ id: s.people.id })
+              .from(s.people)
+              .where(
+                and(
+                  eq(s.people.id, filteredRelationship.personId),
+                  eq(s.people.organizationId, input.organizationId),
+                  eq(s.people.companyId, s.companies.id),
+                  isNull(s.people.archivedAt),
+                ),
+              ),
+          ),
+        );
+      else if ("relationshipId" in table)
+        relationshipConditions.push(
+          eq(filteredRelationship.id, table.relationshipId),
+        );
+      conditions.push(
+        exists(
+          this.db
+            .select({ id: filteredRelationship.id })
+            .from(filteredRelationship)
+            .where(and(...relationshipConditions)),
+        ),
+      );
+    }
     const label =
       "name" in table
         ? table.name

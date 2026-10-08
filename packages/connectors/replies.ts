@@ -2,8 +2,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { recordProviderContribution } from "../core/contact-attribution";
+import {
+  contactIdentityIds,
+  lockContactDirectory,
+} from "../core/contact-history";
 import { pauseForReply, peopleByEmail } from "../core/outreach";
 import { DomainError } from "../core/policy";
+import { clearApprovals } from "../core/visibility";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import t from "../i18n/translations/en.json";
@@ -119,24 +124,34 @@ export function normalizeUnipileV2(
   return null;
 }
 export async function ingestReply(db: Database, input: ReplyEvent) {
-  const event = replySchema.parse(input);
+  let event = replySchema.parse(input);
+  const matchesAccount = and(
+    eq(s.connections.provider, event.provider),
+    eq(s.connections.externalAccountId, event.accountId),
+    event.connectionId ? eq(s.connections.id, event.connectionId) : undefined,
+  );
+  const found = await db
+    .select({ organizationId: s.connections.organizationId })
+    .from(s.connections)
+    .where(matchesAccount)
+    .limit(2);
+  if (found.length !== 1) throw new DomainError("CONNECTION_UNAVAILABLE", 422);
   return db.transaction(async (tx) => {
+    // Discover the account before locking, then stabilize its organization
+    // before taking connection/contact locks, as membership changes do.
+    await lockContactDirectory(tx, found[0].organizationId);
     const candidates = await tx
       .select()
       .from(s.connections)
-      .where(
-        and(
-          eq(s.connections.provider, event.provider),
-          eq(s.connections.externalAccountId, event.accountId),
-          event.connectionId
-            ? eq(s.connections.id, event.connectionId)
-            : undefined,
-        ),
-      )
+      .where(matchesAccount)
       .limit(2)
       .for("update");
     const connection = candidates.length === 1 ? candidates[0] : undefined;
-    if (!connection || !["connected", "demo"].includes(connection.status))
+    if (
+      !connection ||
+      connection.organizationId !== found[0].organizationId ||
+      !["connected", "demo"].includes(connection.status)
+    )
       throw new DomainError("CONNECTION_UNAVAILABLE", 422);
     const [receipt] = await tx
       .insert(s.connectorEvents)
@@ -148,9 +163,10 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
       })
       .onConflictDoNothing()
       .returning();
+    let receiptId = receipt?.id;
     if (!receipt) {
       const [previous] = await tx
-        .select({ status: s.connectorEvents.status })
+        .select()
         .from(s.connectorEvents)
         .where(
           and(
@@ -158,7 +174,12 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
             eq(s.connectorEvents.providerEventId, event.messageId),
           ),
         );
-      return { duplicate: true, matched: previous?.status === "processed" };
+      if (!previous || previous.status === "processed")
+        return { duplicate: true, matched: previous?.status === "processed" };
+      // A retained unmatched event becomes processable after its owner links
+      // the thread. Always materialize the original authenticated payload.
+      event = replySchema.parse(previous.payload);
+      receiptId = previous.id;
     }
     const [conversation] = await tx
       .select()
@@ -174,7 +195,52 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
       event.direction === "inbound" && event.from
         ? await peopleByEmail(tx, connection.organizationId, event.from)
         : [];
+    const [relationship] = conversation
+      ? await tx
+          .select()
+          .from(s.relationships)
+          .where(
+            and(
+              eq(s.relationships.id, conversation.relationshipId),
+              eq(s.relationships.organizationId, connection.organizationId),
+            ),
+          )
+      : [];
+    const [person] = relationship
+      ? await tx
+          .select()
+          .from(s.people)
+          .where(eq(s.people.id, relationship.personId))
+      : [];
+    const identities = [
+      ...new Set([
+        ...senders,
+        ...(person
+          ? await contactIdentityIds(tx, connection.organizationId, person)
+          : []),
+      ]),
+    ].sort();
+    if (identities.length)
+      await tx
+        .select({ id: s.people.id })
+        .from(s.people)
+        .where(
+          and(
+            eq(s.people.organizationId, connection.organizationId),
+            inArray(s.people.id, identities),
+          ),
+        )
+        .orderBy(s.people.id)
+        .for("update");
     if (!conversation || conversation.channel !== event.channel) {
+      if (!receipt) return { duplicate: true, matched: false };
+      for (const personId of identities)
+        await clearApprovals(
+          tx,
+          { userId: connection.ownerId, source: "session" },
+          connection.organizationId,
+          personId,
+        );
       if (!event.historical)
         await pauseForReply(tx, {
           organizationId: connection.organizationId,
@@ -183,10 +249,31 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
           actorId: connection.ownerId,
           pause: true,
         });
+      if (connection.productId)
+        await tx
+          .insert(s.integrationItems)
+          .values({
+            organizationId: connection.organizationId,
+            productId: connection.productId,
+            connectionId: connection.id,
+            externalId: event.messageId,
+            record: {
+              externalId: event.messageId,
+              threadId: event.threadId,
+              kind: "message",
+              title: t.newReplyAction,
+              body: event.body,
+              occurredAt: event.occurredAt,
+              participants: event.from ? [event.from] : [],
+              direction: event.direction,
+              ...(event.from ? { from: event.from } : {}),
+            },
+          })
+          .onConflictDoNothing();
       await tx
         .update(s.connectorEvents)
         .set({ status: "unmatched" })
-        .where(eq(s.connectorEvents.id, receipt.id));
+        .where(eq(s.connectorEvents.id, receiptId ?? ""));
       return { duplicate: false, matched: false };
     }
     const [message] = await tx
@@ -220,6 +307,18 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
           sourceRecordId: `message:${event.messageId}`,
           sourceConversationId: conversation.id,
         });
+      if (event.direction === "outbound")
+        await tx
+          .update(s.relationships)
+          .set({
+            lastOutboundAt: sql`greatest(coalesce(${s.relationships.lastOutboundAt}, ${event.occurredAt}::timestamptz), ${event.occurredAt}::timestamptz)`,
+          })
+          .where(
+            and(
+              eq(s.relationships.organizationId, connection.organizationId),
+              inArray(s.relationships.personId, identities),
+            ),
+          );
     }
     const [latest] = await tx
       .select()
@@ -228,6 +327,7 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
       .orderBy(desc(s.messages.occurredAt), desc(s.messages.createdAt))
       .limit(1);
     if (
+      !event.historical &&
       message &&
       latest?.id === message.id &&
       event.direction === "outbound"
@@ -346,10 +446,20 @@ export async function ingestReply(db: Database, input: ReplyEvent) {
           dueAt: new Date(),
         });
     }
+    // Preserve the live-reply transition's approval predicate before clearing
+    // remaining approvals across other products and legacy identity aliases.
+    if (message)
+      for (const personId of identities)
+        await clearApprovals(
+          tx,
+          { userId: connection.ownerId, source: "session" },
+          connection.organizationId,
+          personId,
+        );
     await tx
       .update(s.connectorEvents)
       .set({ status: "processed" })
-      .where(eq(s.connectorEvents.id, receipt.id));
+      .where(eq(s.connectorEvents.id, receiptId ?? ""));
     if (message)
       await tx.insert(s.changeEvents).values({
         organizationId: connection.organizationId,

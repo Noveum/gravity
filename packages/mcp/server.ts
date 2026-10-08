@@ -10,6 +10,7 @@ import {
   grantedProductIds,
   type Principal,
 } from "../core/policy";
+import { fieldKinds } from "../core/relationship-context";
 import type { Database } from "../database/client";
 import { mcpGrants, oauthClient, session } from "../database/schema";
 import t from "../i18n/translations/en.json";
@@ -255,6 +256,14 @@ export function mcpHandler(
             readCompanyContext: true,
             readMaterials: true,
             readSalesAnalytics: true,
+            nativeHistoricalMessages: true,
+            undatedDrafts: true,
+            productFieldFilters: true,
+            preciseDatetimeFields: true,
+            recurringInternalTasks: true,
+            editActionReasons: writable,
+            yoduLifecycleEvents: "signed-backend-bridge",
+            yoduBillingVerification: "source-attestation-only",
             writeDeals: writable,
             writeRecords: writable,
             manageSequences: writable,
@@ -310,13 +319,7 @@ export function mcpHandler(
             sharedApiRegistry: true,
             structuredRelationshipContext: true,
             relationshipSignals: true,
-            typedRelationshipFields: [
-              "text",
-              "number",
-              "date",
-              "url",
-              "boolean",
-            ],
+            typedRelationshipFields: fieldKinds,
             operations: operations.map((operation) => ({
               name: operation.name,
               api: `/api/${operation.api}`,

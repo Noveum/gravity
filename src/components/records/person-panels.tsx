@@ -11,11 +11,13 @@ import { keyInput } from "../keyboard-navigation";
 import { SendDialog } from "../outreach/send-dialog";
 import { initials } from "../shell/workspace-menu";
 import { ShortcutHint } from "../ui/shortcut-hint";
+import { ActionReason } from "./action-reason";
 import { PersonFields } from "./contact-fields";
 import { ConversationHistory } from "./conversation-history";
 import { ConversationSharing } from "./conversation-sharing";
-import { RecordText } from "./record-text";
+import { NativeIngestionPanel } from "./native-ingestion-panel";
 import { RelationshipContext } from "./relationship-context";
+import { YoduLifecyclePanel } from "./yodu-lifecycle";
 
 type Action = ClientSnapshot["actions"][number];
 type DraftState = ReturnType<typeof useDraft>;
@@ -29,7 +31,11 @@ export function findAction(
   const action = snapshot?.actions.find((action) => action.id === actionId);
   const detail = context?.actions.find((action) => action.id === actionId);
   if (snapshot?.compact && action && detail)
-    return { ...action, reason: detail.reason };
+    return {
+      ...action,
+      reason: detail.reason,
+      reasonSource: detail.reasonSource,
+    };
   return action ?? detail;
 }
 
@@ -156,7 +162,13 @@ export function PersonActivity({
         </div>
       )}
       {current === "timeline" && (
-        <ConversationHistory context={context} timeZone={timeZone} />
+        <>
+          <ConversationHistory context={context} timeZone={timeZone} />
+          <NativeIngestionPanel
+            relationshipId={context.relationship.id}
+            productId={context.relationship.productId}
+          />
+        </>
       )}
       {current === "details" && (
         <ConversationSharing
@@ -185,6 +197,13 @@ export function PersonActivity({
       )}
       {current === "evidence" && (
         <>
+          <YoduLifecyclePanel
+            organizationId={organizationId}
+            productId={context.relationship.productId}
+            relationshipId={context.relationship.id}
+            timeZone={timeZone}
+            revision={context.asOf}
+          />
           {context.evidence.map((item) => (
             <article className="evidence-item" key={item.id}>
               <div>
@@ -360,7 +379,7 @@ export function ActionSummary({
         {label(action.kind)} · {label(action.status)} ·{" "}
         {dateLabel(action.dueAt, timeZone)}
       </p>
-      <RecordText value={action.reason} />
+      <ActionReason key={action.id} action={action} />
       <button
         type="button"
         disabled={

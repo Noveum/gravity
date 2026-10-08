@@ -32,6 +32,7 @@ import { shortcutLabel } from "../packages/core/shortcuts";
 import { createLocalDatabase } from "../packages/database/client";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { apiOperation } from "../packages/operations/catalog";
 import { appearanceBootScript } from "../src/components/appearance-boot";
 import { label, requestJson } from "../src/components/client-api";
 import { CrmApp } from "../src/components/crm-app";
@@ -154,6 +155,23 @@ beforeEach(() => {
     if (url.startsWith("/api/outreach")) throw new Error("NOT_FOUND");
     const params = new URL(url, "http://localhost").searchParams;
     const organizationId = params.get("organizationId") || demoId(1);
+    const operation = params.get("operation");
+    if (
+      ["native-drafts", "internal-tasks", "messages"].includes(operation ?? "")
+    )
+      return serialize(
+        await apiOperation("crm", "GET", operation).execute(
+          { db: local.db, principal },
+          Object.fromEntries(params),
+        ),
+      );
+    if (url.startsWith("/api/integrations") && operation?.startsWith("yodu-"))
+      return serialize(
+        await apiOperation("integrations", "GET", operation).execute(
+          { db: local.db, principal },
+          Object.fromEntries(params),
+        ),
+      );
     if (params.get("operation") === "invitations") return [];
     if (params.get("operation") === "contact-attribution")
       return serialize(

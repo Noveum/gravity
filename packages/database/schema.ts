@@ -639,6 +639,7 @@ export const actions = pgTable(
     }).notNull(),
     title: text("title").notNull(),
     reason: text("reason").notNull(),
+    reasonSource: text("reason_source"),
     owedBy: text("owed_by", { enum: ["us", "them", "unknown"] }).notNull(),
     channel: text("channel", {
       enum: ["gmail", "linkedin", "research"],
@@ -780,7 +781,10 @@ export const conversations = pgTable(
     organizationId: organizationId(),
     productId: productId(),
     relationshipId: uuid("relationship_id").notNull(),
-    connectionId: uuid("connection_id").notNull(),
+    connectionId: uuid("connection_id"),
+    provenance: text("provenance", { enum: ["provider", "native"] })
+      .notNull()
+      .default("provider"),
     externalThreadId: text("external_thread_id").notNull(),
     ownerId: text("owner_id").notNull(),
     visibility: text("visibility", { enum: ["private", "product"] })
@@ -790,6 +794,13 @@ export const conversations = pgTable(
   },
   (t) => [
     serverAccessPolicy(),
+    check(
+      "conversation_provenance",
+      sql`(${t.provenance} = 'provider') = (${t.connectionId} IS NOT NULL)`,
+    ),
+    uniqueIndex("conversations_native_source")
+      .on(t.organizationId, t.ownerId, t.channel, t.externalThreadId)
+      .where(sql`${t.provenance} = 'native'`),
     unique().on(t.organizationId, t.productId, t.id),
     unique().on(t.connectionId, t.externalThreadId),
     foreignKey({
@@ -817,7 +828,7 @@ export const messages = pgTable(
     organizationId: organizationId(),
     productId: productId(),
     conversationId: uuid("conversation_id").notNull(),
-    connectionId: uuid("connection_id").notNull(),
+    connectionId: uuid("connection_id"),
     providerMessageId: text("provider_message_id").notNull(),
     direction: text("direction", { enum: ["inbound", "outbound"] }).notNull(),
     body: text("body").notNull(),
@@ -826,6 +837,10 @@ export const messages = pgTable(
   },
   (t) => [
     serverAccessPolicy(),
+    uniqueIndex("messages_native_source")
+      .on(t.conversationId, t.providerMessageId)
+      .where(sql`${t.connectionId} IS NULL`),
+    check("message_body_source", sql`${t.providerMessageId} <> ''`),
     index("messages_activity_idx").on(
       t.organizationId,
       t.productId,
@@ -1135,6 +1150,7 @@ export const opportunities = pgTable(
     closedAt: timestamp("closed_at", { withTimezone: true }),
     description: text("description").notNull().default(""),
     lostReason: text("lost_reason").notNull().default(""),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }),
     version: version(),
@@ -1460,5 +1476,215 @@ export const fileUpload = pgTable(
       ],
     }).onDelete("cascade"),
     check("file_upload_size", sql`${t.size} between 0 and 104857600`),
+  ],
+).enableRLS();
+
+export const internalTasks = pgTable(
+  "internal_tasks",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    relationshipId: uuid("relationship_id"),
+    ownerId: text("owner_id").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+    timeZone: text("time_zone").notNull(),
+    recurrence: jsonb("recurrence").$type<{
+      frequency: "daily" | "weekly" | "monthly";
+      interval: number;
+      anchorDay: number;
+    }>(),
+    status: text("status", { enum: ["open", "completed"] })
+      .notNull()
+      .default("open"),
+    version: version(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.organizationId, t.productId, t.id),
+    index().on(t.organizationId, t.productId, t.status, t.dueAt),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.relationshipId],
+      foreignColumns: [
+        relationships.organizationId,
+        relationships.productId,
+        relationships.id,
+      ],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.ownerId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+  ],
+).enableRLS();
+
+// Yodu's backend bridge is product-scoped. A signed receipt attests only what
+// the configured backend asserted; it is not independent payment verification.
+export const yoduSources = pgTable(
+  "yodu_sources",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    label: text("label").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    encryptedSecret: text("encrypted_secret").notNull(),
+    createdBy: text("created_by").notNull(),
+    version: version(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.organizationId, t.productId, t.id),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.createdBy],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+  ],
+).enableRLS();
+export const yoduBindings = pgTable(
+  "yodu_bindings",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    sourceId: uuid("source_id").notNull(),
+    externalSubjectId: text("external_subject_id").notNull(),
+    relationshipId: uuid("relationship_id").notNull(),
+    createdBy: text("created_by").notNull(),
+    version: version(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.sourceId, t.externalSubjectId),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.sourceId],
+      foreignColumns: [
+        yoduSources.organizationId,
+        yoduSources.productId,
+        yoduSources.id,
+      ],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.relationshipId],
+      foreignColumns: [
+        relationships.organizationId,
+        relationships.productId,
+        relationships.id,
+      ],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.createdBy],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+  ],
+).enableRLS();
+export const yoduEvents = pgTable(
+  "yodu_events",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    sourceId: uuid("source_id").notNull(),
+    externalSubjectId: text("external_subject_id").notNull(),
+    providerEventId: text("provider_event_id").notNull(),
+    kind: text("kind", {
+      enum: ["signup", "onboarding", "payment", "activation"],
+    }).notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    sourceVersion: integer("source_version").notNull(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.sourceId, t.providerEventId),
+    index("yodu_events_product_received").on(
+      t.organizationId,
+      t.productId,
+      t.receivedAt,
+      t.id,
+    ),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.sourceId],
+      foreignColumns: [
+        yoduSources.organizationId,
+        yoduSources.productId,
+        yoduSources.id,
+      ],
+    }),
+    check(
+      "yodu_event_kind",
+      sql`${t.kind} IN ('signup', 'onboarding', 'payment', 'activation')`,
+    ),
+    check("yodu_event_hash", sql`${t.payloadHash} ~ '^[a-f0-9]{64}$'`),
+    check("yodu_event_source_version", sql`${t.sourceVersion} > 0`),
+  ],
+).enableRLS();
+
+export const nativeDrafts = pgTable(
+  "native_drafts",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    relationshipId: uuid("relationship_id").notNull(),
+    ownerId: text("owner_id").notNull(),
+    sourceConversationId: uuid("source_conversation_id").notNull(),
+    channel: text("channel", { enum: ["gmail", "linkedin"] }).notNull(),
+    title: text("title").notNull(),
+    reason: text("reason").notNull().default(""),
+    body: text("body").notNull(),
+    sourceId: text("source_id").notNull(),
+    sourceHash: text("source_hash").notNull(),
+    scheduledActionId: uuid("scheduled_action_id"),
+    version: version(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    unique().on(t.organizationId, t.productId, t.id),
+    uniqueIndex("native_drafts_source").on(
+      t.organizationId,
+      t.ownerId,
+      t.sourceId,
+    ),
+    check("native_draft_source_hash", sql`${t.sourceHash} ~ '^[a-f0-9]{64}$'`),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.relationshipId],
+      foreignColumns: [
+        relationships.organizationId,
+        relationships.productId,
+        relationships.id,
+      ],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.ownerId],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.sourceConversationId],
+      foreignColumns: [
+        conversations.organizationId,
+        conversations.productId,
+        conversations.id,
+      ],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.scheduledActionId],
+      foreignColumns: [actions.organizationId, actions.productId, actions.id],
+    }),
   ],
 ).enableRLS();

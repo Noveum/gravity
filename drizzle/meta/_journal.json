@@ -176,6 +176,20 @@
       "when": 1791316608067,
       "tag": "0024_stiff_namorita",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791466373186,
+      "tag": "0025_remaining_crm_features",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791471931369,
+      "tag": "0026_deal_archiving",
+      "breakpoints": true
     }
   ]
 }

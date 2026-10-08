@@ -4,6 +4,7 @@ import type {
   ConnectionOverview,
   PublicConnection,
 } from "@crm/connectors/service";
+import { preciseDateLabel } from "@crm/core/calendar";
 import type { JsonValue } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import Link from "next/link";
@@ -267,6 +268,44 @@ export function SendDialog({
             ? t.sendReady
             : blockedReason(readiness)}
       </p>
+      {readiness?.history && (
+        <details className="conversation-source" open>
+          <summary>{t.nativeIngestion.sendHistory}</summary>
+          {readiness.history.messages.length ? (
+            readiness.history.messages.map((message) => (
+              <article className="conversation-card" key={message.id}>
+                <header>
+                  <span>
+                    {label(message.channel)} ·{" "}
+                    {message.direction === "inbound" ? t.incoming : t.outgoing}
+                  </span>
+                  <time dateTime={message.occurredAt}>
+                    {preciseDateLabel(message.occurredAt, crm.timeZone)}
+                  </time>
+                </header>
+                <p>{message.body.slice(0, 1000)}</p>
+              </article>
+            ))
+          ) : (
+            <p className="muted">{t.nativeIngestion.noVisibleHistory}</p>
+          )}
+          <p className="field-hint">{t.nativeIngestion.historyCoverage}</p>
+          {recipient && (
+            <Link
+              href={personPath(recipient.id, {
+                relationshipId: source.relationshipId,
+              })}
+            >
+              {t.openPersonRecord.replace("{name}", recipient.name)}
+            </Link>
+          )}
+        </details>
+      )}
+      {readiness?.checks?.exclusions &&
+        readiness.checks.crossChannel &&
+        readiness.checks.history && (
+          <p className="field-hint">{t.nativeIngestion.exclusionChecked}</p>
+        )}
     </>
   );
   return (

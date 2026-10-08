@@ -1,5 +1,7 @@
 "use client";
-import type { ClientContext } from "@crm/core/dto";
+import { preciseDateLabel } from "@crm/core/calendar";
+import type { ClientContext, JsonValue } from "@crm/core/dto";
+import type { MessageHistoryService } from "@crm/core/message-history";
 import t from "@crm/i18n/translations/en.json";
 import {
   ArrowDownLeft,
@@ -8,8 +10,8 @@ import {
   MessageSquare,
   MessagesSquare,
 } from "lucide-react";
-import { useState } from "react";
-import { label } from "../client-api";
+import { useRef, useState } from "react";
+import { errorText, label, requestJson } from "../client-api";
 import { splitImportedConversation } from "./imported-conversation";
 
 function paragraphs(body: string) {
@@ -33,8 +35,28 @@ export function ConversationHistory({
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState("");
   const [all, setAll] = useState(false);
+  const scope = context ? `${context.relationship.id}:${context.asOf}` : "";
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  type Page = JsonValue<Awaited<ReturnType<MessageHistoryService["page"]>>>;
+  const [historyPage, setHistoryPage] = useState<{
+    scope: string;
+    page: Page;
+  } | null>(null);
+  const [loadingScope, setLoadingScope] = useState("");
+  const loading = !!scope && loadingScope === scope;
+  const [historyError, setHistoryError] = useState({ scope: "", message: "" });
+  const error = historyError.scope === scope ? historyError.message : "";
+  const pending = useRef(false);
+  const page = historyPage?.scope === scope ? historyPage.page : null;
   person = context?.person ?? person;
-  const native = context?.messages ?? [];
+  const native = [
+    ...(context?.messages ?? []),
+    ...(page?.messages ?? []),
+  ].filter(
+    (message, index, messages) =>
+      messages.findIndex((other) => other.id === message.id) === index,
+  );
   const imported = splitImportedConversation(person?.summary ?? "").messages;
   const messages = [
     ...native.map((message) => ({
@@ -43,7 +65,8 @@ export function ConversationHistory({
         message.direction === "inbound"
           ? (person?.name ?? t.incoming)
           : t.outgoing,
-      sourceId: "",
+      sourceId: message.providerMessageId,
+      native: message.provenance === "native",
       imported: false,
     })),
     ...imported
@@ -57,7 +80,12 @@ export function ConversationHistory({
                 Date.parse(message.occurredAt),
           ),
       )
-      .map((message) => ({ ...message, channel: "imported", imported: true })),
+      .map((message) => ({
+        ...message,
+        channel: "imported",
+        imported: true,
+        native: false,
+      })),
   ].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt));
   const filtered = messages.filter(
     (message) =>
@@ -128,14 +156,7 @@ export function ConversationHistory({
                   : label(message.channel)}
               </span>
               <time dateTime={message.occurredAt}>
-                {new Intl.DateTimeFormat("en", {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                  timeZone,
-                }).format(new Date(message.occurredAt))}
+                {preciseDateLabel(message.occurredAt, timeZone)}
               </time>
             </header>
             <div className="conversation-sender">
@@ -145,6 +166,9 @@ export function ConversationHistory({
                 <ArrowUpRight size={14} />
               )}
               <strong>{message.sender}</strong>
+              {message.native && (
+                <span className="badge">{t.nativeIngestion.historySource}</span>
+              )}
               <span>
                 {message.direction === "inbound" ? t.incoming : t.outgoing}
               </span>
@@ -186,6 +210,49 @@ export function ConversationHistory({
               )}
         </button>
       )}
+      {context && (page ? !!page.nextCursor : !!context.messagesNextCursor) && (
+        <button
+          type="button"
+          className="small ghost"
+          disabled={loading}
+          onClick={async () => {
+            if (pending.current) return;
+            pending.current = true;
+            setLoadingScope(scope);
+            setHistoryError({ scope, message: "" });
+            const cursor = page?.nextCursor ?? context.messagesNextCursor;
+            const query = new URLSearchParams({
+              operation: "messages",
+              organizationId: context.relationship.organizationId,
+              productId: context.relationship.productId,
+              relationshipId: context.relationship.id,
+            });
+            if (cursor) query.set("cursor", cursor);
+            try {
+              const result = await requestJson<Page>(`/api/crm?${query}`);
+              if (currentScope.current === scope) {
+                setHistoryPage({
+                  scope,
+                  page: {
+                    ...result,
+                    messages: [...(page?.messages ?? []), ...result.messages],
+                  },
+                });
+                setAll(true);
+              }
+            } catch (cause) {
+              if (currentScope.current === scope)
+                setHistoryError({ scope, message: errorText(cause) });
+            } finally {
+              pending.current = false;
+              if (currentScope.current === scope) setLoadingScope("");
+            }
+          }}
+        >
+          {loading ? t.loading : t.nativeIngestion.loadEarlier}
+        </button>
+      )}
+      {error && <p role="alert">{error}</p>}
       <p className="coverage-note">{t.partialHistory}</p>
     </section>
   );

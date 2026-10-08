@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   afterAll,
@@ -403,6 +403,28 @@ test("review links a whole private thread, routes subsequent replies, and expose
       (i) => i.record.threadId === "review-thread",
     ),
   ).toBe(false);
+  const approvedReply = await crm.changeAction(admin, {
+    organizationId: scope.organizationId,
+    actionId: actions[0].id,
+    version: actions[0].version,
+    command: "approve",
+    draft: "A fictional approved reply",
+  });
+  await service.importRecord(connection, {
+    ...record,
+    externalId: "thread-message-4",
+    body: "Another live reply after review",
+    occurredAt: "2026-10-03T12:00:00.000Z",
+  });
+  const [invalidated] = await local.db
+    .select()
+    .from(s.actions)
+    .where(eq(s.actions.id, approvedReply.id));
+  expect(invalidated).toMatchObject({
+    status: "blocked",
+    approvedHash: null,
+    approvedBy: null,
+  });
 });
 
 test("meeting updates and cancellations modify one CRM record and require an explicit shared-context link", async () => {
@@ -839,7 +861,7 @@ test("durable webhook receipts deduplicate deliveries, retry sanitized failures,
       .from(s.integrationReceipts)
       .where(eq(s.integrationReceipts.connectionId, connection.id)),
   ).toHaveLength(1);
-  expect(await processReceipts(local.db)).toEqual({ processed: 1, failed: 0 });
+  expect(await processReceipts(local.db)).toEqual({ processed: 0, failed: 0 });
   expect(
     await local.db
       .select()
@@ -860,6 +882,7 @@ test("durable webhook receipts deduplicate deliveries, retry sanitized failures,
   await saveReceipt(local.db, connection, "evt-after", "unipile", {
     ...payload,
     id: "after",
+    timestamp: "invalid",
   });
   await service.disconnect(admin, scope.organizationId, connection.id);
   expect(await processReceipts(local.db)).toEqual({ processed: 1, failed: 0 });
@@ -1067,6 +1090,17 @@ test("private review pages preserve microseconds and tied timestamps while filte
       }),
     ).rejects.toMatchObject({ code: "INVALID_INPUT" });
     await expect(
+      service.overview(admin, {
+        ...scopeWithSearch,
+        reviewCursor: Buffer.from(
+          JSON.stringify({
+            createdAt: "0000-01-01T00:00:00Z",
+            id: randomUUID(),
+          }),
+        ).toString("base64url"),
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(
       service.overview({ ...admin, source: "mcp" }, scopeWithSearch),
     ).rejects.toMatchObject({ code: "HUMAN_ACTION_REQUIRED" });
   } finally {
@@ -1076,6 +1110,120 @@ test("private review pages preserve microseconds and tied timestamps while filte
     await local.db
       .delete(s.connections)
       .where(inArray(s.connections.id, connectionIds));
+  }
+});
+
+test("failed receipt review pages preserve microseconds, owner privacy, product grants and bounded sanitized summaries", async () => {
+  const ids = Array.from({ length: 3 }, () => randomUUID());
+  await local.db.insert(s.connections).values(
+    ids.map((id, index) => ({
+      id,
+      organizationId: scope.organizationId,
+      productId: index === 2 ? demoId(11) : scope.productId,
+      ownerId: index === 1 ? another.userId : admin.userId,
+      provider: "unipile" as const,
+      externalAccountId: `fictional-failed-review-${id}`,
+      status: "connected" as const,
+    })),
+  );
+  const prefix = `fictional-failed-page-${randomUUID()}`;
+  try {
+    await local.db.insert(s.integrationReceipts).values(
+      Array.from({ length: 45 }, (_, index) => ({
+        organizationId: scope.organizationId,
+        connectionId: ids[index === 43 ? 1 : index === 44 ? 2 : 0],
+        externalId: `${prefix}-${index.toString().padStart(2, "0")}`,
+        provider: "unipile" as const,
+        payload: { privateBody: "Fictional retained private source" },
+        errorCode: "PROVIDER_RESPONSE_INVALID",
+        createdAt: sql`'2026-10-01 00:00:00.123000+00'::timestamptz + ${Math.max(0, index - 25)} * interval '1 microsecond'`,
+      })),
+    );
+    const service = new IntegrationService(local.db);
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await service.overview(admin, {
+        ...scope,
+        reviewProvider: "linkedin",
+        reviewQuery: prefix,
+        failedReceiptCursor: cursor,
+      });
+      expect(page.failedReceipts.length).toBeLessThanOrEqual(20);
+      expect(page.failedReceiptTotal).toBe(43);
+      expect(page.items).toEqual([]);
+      expect(JSON.stringify(page.failedReceipts)).not.toContain("privateBody");
+      seen.push(...page.failedReceipts.map((item) => item.externalId));
+      cursor = page.nextFailedReceiptCursor ?? undefined;
+    } while (cursor);
+    expect(seen).toHaveLength(43);
+    expect(new Set(seen).size).toBe(43);
+    expect(
+      (
+        await service.overview(another, { ...scope, reviewQuery: prefix })
+      ).failedReceipts.map((item) => item.externalId),
+    ).toEqual([`${prefix}-43`]);
+    expect(
+      (
+        await service.overview(admin, {
+          ...scope,
+          reviewQuery: prefix,
+          reviewProvider: "gmail",
+        })
+      ).failedReceipts,
+    ).toEqual([]);
+    expect(
+      (
+        await service.overview(
+          {
+            ...admin,
+            source: "mcp",
+            organizationId: scope.organizationId,
+            productIds: [scope.productId],
+            readOnly: true,
+          },
+          {
+            organizationId: scope.organizationId,
+            reviewQuery: prefix,
+          },
+        )
+      ).failedReceiptTotal,
+    ).toBe(43);
+    expect(
+      (
+        await service.overview(
+          {
+            ...admin,
+            source: "mcp",
+            organizationId: scope.organizationId,
+            readOnly: true,
+          },
+          { ...scope, reviewQuery: prefix },
+        )
+      ).failedReceipts.every((item) => !item.canDiscard),
+    ).toBe(true);
+    await expect(
+      service.overview(admin, {
+        ...scope,
+        failedReceiptCursor: "not-a-valid-cursor",
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(
+      service.overview(admin, {
+        ...scope,
+        failedReceiptCursor: Buffer.from(
+          JSON.stringify({
+            createdAt: "0000-01-01T00:00:00Z",
+            id: randomUUID(),
+          }),
+        ).toString("base64url"),
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+  } finally {
+    await local.db
+      .delete(s.integrationReceipts)
+      .where(inArray(s.integrationReceipts.connectionId, ids));
+    await local.db.delete(s.connections).where(inArray(s.connections.id, ids));
   }
 });
 

@@ -67,6 +67,9 @@ export function PeopleView() {
       qualifications: (index.byPerson.get(person.id) ?? []).map(
         (relationship) => relationship.qualification,
       ),
+      fieldGroups: (index.byPerson.get(person.id) ?? []).map(
+        (relationship) => relationship.contextFields ?? [],
+      ),
     }),
     (person) => person.name,
   );

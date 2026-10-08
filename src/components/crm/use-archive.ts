@@ -8,27 +8,43 @@ interface Archivable {
   id: string;
   name: string;
   version: number;
+  productId?: string;
 }
-type Kind = "person" | "company";
+type Kind = "person" | "company" | "opportunity";
 
 const operations = {
   person: { operation: "person-archive", key: "personId" },
   company: { operation: "company-archive", key: "companyId" },
+  opportunity: { operation: "opportunity-delete", key: "opportunityId" },
 } as const;
 
 export function useArchive() {
   const crm = useCrm();
   const current = useRef(crm);
   current.current = crm;
-  async function change(kind: Kind, record: Archivable, archived: boolean) {
-    const { operation, key } = operations[kind];
+  async function change(
+    kind: Kind,
+    record: Archivable,
+    archived: boolean,
+    stageId?: string,
+  ) {
+    const { key } = operations[kind];
+    const operation =
+      kind === "opportunity" && !archived
+        ? "opportunity-restore"
+        : operations[kind].operation;
     const { ok, result } = await crm.send(
       {
         operation,
         organizationId: crm.organizationId,
         [key]: record.id,
         version: record.version,
-        archived,
+        ...(kind === "opportunity"
+          ? {
+              productId: record.productId,
+              ...(!archived && stageId ? { stageId } : {}),
+            }
+          : { archived }),
       },
       false,
     );
@@ -37,9 +53,13 @@ export function useArchive() {
     return result as { version: number };
   }
   const recordPath = (kind: Kind, id: string) =>
-    kind === "person" ? personPath(id) : companyPath(id);
-  async function restore(kind: Kind, record: Archivable) {
-    const restored = await change(kind, record, false);
+    kind === "person"
+      ? personPath(id)
+      : kind === "company"
+        ? companyPath(id)
+        : `/opportunities?deal=${encodeURIComponent(id)}`;
+  async function restore(kind: Kind, record: Archivable, stageId?: string) {
+    const restored = await change(kind, record, false, stageId);
     if (restored)
       crm.notify(t.recordRestored.replace("{name}", record.name), "success");
     return !!restored;
@@ -51,10 +71,12 @@ export function useArchive() {
     crm.closePeek(true);
     crm.leaveRecord();
     crm.notify(
-      (kind === "person" ? t.personArchived : t.companyArchived).replace(
-        "{name}",
-        record.name,
-      ),
+      (kind === "person"
+        ? t.personArchived
+        : kind === "company"
+          ? t.companyArchived
+          : t.dealArchived
+      ).replace("{name}", record.name),
       "success",
       {
         label: t.undo,

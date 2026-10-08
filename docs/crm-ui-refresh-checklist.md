@@ -28,7 +28,7 @@ Requested 2026-10-08. Each item is tracked separately for implementation and bro
 - [x] Verify overview, opportunities, outreach, actions and shared dropdowns in the browser in light/dark themes and narrow widths.
 - [x] Fix any additional issues discovered during the browser review.
 - [x] Run typecheck, tests, lint and production build; record material limits.
-- [ ] Create and attach a new pull request containing only this task's changes.
+- [x] Create and attach a new pull request containing only this task's changes: [PR #70](https://github.com/Noveum/gravity/pull/70).
 
 No real contact data, screenshots containing real contacts, credentials, uploaded files or transcripts belong in this PR. Browser fixtures are fictional and remain separate from domain code.
 
@@ -66,7 +66,7 @@ Additional defects found and fixed during review: rapid URL edits overwriting on
 
 ## Validation
 
-Typecheck, lint, license inventory, production build and the public-site smoke test passed. The complete Node 22 suite passed in three shards: 988 passing tests and two environment-dependent skips across 122 files. Targeted filter, scope, queue, revenue, board and keyboard regressions also passed.
+Typecheck, lint, license inventory, production build and the public-site smoke test passed. The complete Node 22 suite passed in three shards: 988 passing tests and two production PostgreSQL skips across 122 files. PostgreSQL checks require a local server and have a dedicated CI job. Targeted filter, scope, queue, revenue, board and keyboard regressions also passed.
 
 A monolithic local run stalled in PGlite's WebAssembly trap recovery. The complete sharded run used the runner-only `NODE_OPTIONS=--disable-wasm-trap-handler` diagnostic flag; application and CI runtime configuration were unchanged. Validation also exposed a send-reservation test that counted a UTC day instead of the workspace day. Its fictional fixture now uses the same timezone bounds as the policy and restores rules even after a failed preflight; production sending rules were unchanged.
 

@@ -101,27 +101,80 @@ export function nextWorkingMorning(now: number, timeZone: string) {
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
-export function zonedInputValue(value: string, timeZone: string) {
+export function preciseDateLabel(value: string, timeZone = "UTC") {
+  return new Intl.DateTimeFormat("en", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    fractionalSecondDigits: 3,
+    timeZone,
+  }).format(new Date(value));
+}
+
+export function zonedInputValue(
+  value: string,
+  timeZone: string,
+  precise = false,
+) {
   const instant = Date.parse(value);
   if (Number.isNaN(instant)) return "";
   const clock = wallClock(instant, timeZone);
-  return `${clock.year}-${pad(clock.month)}-${pad(clock.day)}T${pad(clock.hour)}:${pad(clock.minute)}`;
+  const date = new Date(instant);
+  const seconds = precise
+    ? `:${pad(date.getUTCSeconds())}${date.getUTCMilliseconds() ? `.${String(date.getUTCMilliseconds()).padStart(3, "0")}` : ""}`
+    : "";
+  return `${clock.year}-${pad(clock.month)}-${pad(clock.day)}T${pad(clock.hour)}:${pad(clock.minute)}${seconds}`;
 }
 
 export function instantFromZonedInput(value: string, timeZone: string) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(
+      value,
+    );
   if (!match) return "";
-  const [, year, month, date, hour, minute] = match.map(Number);
-  return new Date(
-    zonedInstant(
-      year ?? 0,
-      month ?? 1,
-      date ?? 1,
-      hour ?? 0,
-      timeZone,
-      minute ?? 0,
-    ),
-  ).toISOString();
+  const [, year, month, date, hour, minute, second] = match.map(Number);
+  const milliseconds = Number((match[7] ?? "").padEnd(3, "0"));
+  if (
+    !year ||
+    !month ||
+    !date ||
+    month > 12 ||
+    date > 31 ||
+    (hour ?? 0) > 23 ||
+    (minute ?? 0) > 59 ||
+    (second ?? 0) > 59
+  )
+    return "";
+  let instant: number;
+  try {
+    instant =
+      zonedInstant(
+        year ?? 0,
+        month ?? 1,
+        date ?? 1,
+        hour ?? 0,
+        timeZone,
+        minute ?? 0,
+      ) +
+      (second || 0) * 1000 +
+      milliseconds;
+  } catch {
+    return "";
+  }
+  const actual = wallClock(instant, timeZone);
+  // Invalid calendar dates and nonexistent DST wall-clock times are never normalized silently.
+  if (
+    actual.year !== year ||
+    actual.month !== month ||
+    actual.day !== date ||
+    actual.hour !== hour ||
+    actual.minute !== minute
+  )
+    return "";
+  return new Date(instant).toISOString();
 }
 
 export function dueToday(dueAt: string, now: number, timeZone: string) {

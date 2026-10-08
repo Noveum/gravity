@@ -334,6 +334,8 @@ test("returning to an anonymous login tab checks the shared session once and pre
 const connectionData = {
   products: [{ id: "p", name: "Product" }],
   grants: [{ id: "g", productIds: ["p"] }],
+  relationships: [],
+  people: [],
 } as unknown as ClientSnapshot;
 test("assistant access renders a canonical endpoint on the server and copies with visible recovery while offline providers stay disclosed", async () => {
   const endpoint = "https://gravity.example.test/mcp";

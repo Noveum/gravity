@@ -585,7 +585,7 @@ function useCrmState({
             ? patchRecords(previous, changed.operation ?? "", result)
             : previous,
         );
-      if (changed.operation === "action") {
+      if (["action", "action-details"].includes(changed.operation ?? "")) {
         const updatedAction = result as Snapshot["actions"][number];
         draftBuffers.drop(updatedAction.id, changed.actionId ?? "");
         setData((previous) =>

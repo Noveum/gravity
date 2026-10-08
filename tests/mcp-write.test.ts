@@ -89,7 +89,24 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
     operations.filter((item) => !operationRequirements(item).humanSession)
       .length + 8,
   );
-  expect(names).toHaveLength(111);
+  expect(names).toEqual(
+    expect.arrayContaining([
+      "ingest_history",
+      "list_native_drafts",
+      "ingest_draft",
+      "edit_native_draft",
+      "schedule_native_draft",
+      "list_internal_tasks",
+      "create_internal_task",
+      "change_internal_task",
+      "update_action_reason",
+      "get_yodu_sources",
+      "create_yodu_source",
+      "update_yodu_source",
+      "bind_yodu_subject",
+      "list_yodu_events",
+    ]),
+  );
   expect(
     new Set(
       operations.map((item) => `${item.api}:${item.method}:${item.operation}`),

@@ -29,16 +29,80 @@ export async function saveReceipt(
     !connection.encryptedCredentials
   )
     throw new DomainError("CONNECTION_UNAVAILABLE", 422);
-  await db
-    .insert(s.integrationReceipts)
-    .values({
-      organizationId: connection.organizationId,
-      connectionId: connection.id,
-      externalId: z.string().min(1).max(1000).parse(externalId),
-      provider,
-      payload,
-    })
-    .onConflictDoNothing();
+  await db.transaction(async (tx) => {
+    const [active] = await tx
+      .select()
+      .from(s.connections)
+      .where(
+        and(
+          eq(s.connections.id, connection.id),
+          eq(s.connections.organizationId, connection.organizationId),
+          eq(s.connections.ownerId, connection.ownerId),
+        ),
+      )
+      .for("update");
+    if (
+      !active?.productId ||
+      active.status !== "connected" ||
+      !active.encryptedCredentials
+    )
+      throw new DomainError("CONNECTION_UNAVAILABLE", 422);
+    await authorize(
+      tx,
+      { userId: active.ownerId, source: "session" },
+      active.organizationId,
+      active.productId,
+      true,
+    );
+    const [created] = await tx
+      .insert(s.integrationReceipts)
+      .values({
+        organizationId: active.organizationId,
+        connectionId: active.id,
+        externalId: z.string().min(1).max(1000).parse(externalId),
+        provider,
+        payload,
+      })
+      .onConflictDoNothing()
+      .returning();
+    const [receipt] = created
+      ? [created]
+      : await tx
+          .select()
+          .from(s.integrationReceipts)
+          .where(
+            and(
+              eq(s.integrationReceipts.connectionId, active.id),
+              eq(s.integrationReceipts.externalId, externalId),
+            ),
+          );
+    if (!receipt || receipt.processedAt || receipt.provider !== "unipile")
+      return;
+    try {
+      // LinkedIn message normalization needs no provider request. Make its
+      // history/inbox and approval invalidation durable before acknowledging
+      // the webhook, instead of leaving an unprotected cron-processing gap.
+      const record = normalizeLinkedIn(receipt.payload);
+      if (record) await new IntegrationService(tx).importRecord(active, record);
+      await tx
+        .update(s.integrationReceipts)
+        .set({ processedAt: new Date(), leaseUntil: null, errorCode: null })
+        .where(eq(s.integrationReceipts.id, receipt.id));
+    } catch (error) {
+      // Retain the original signed receipt for retry and keep matching raw
+      // history fail-closed when local normalization/materialization fails.
+      await tx
+        .update(s.integrationReceipts)
+        .set({
+          errorCode:
+            error instanceof DomainError
+              ? error.code
+              : "PROVIDER_RESPONSE_INVALID",
+        })
+        .where(eq(s.integrationReceipts.id, receipt.id));
+    }
+  });
+  publishChange(connection.organizationId);
 }
 export async function processReceipts(
   db: Database,

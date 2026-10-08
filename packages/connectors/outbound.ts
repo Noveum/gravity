@@ -1,7 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { publishChange } from "../core/changes";
+import {
+  contactHistoryChecks,
+  contactIdentityIds,
+  lockContactDirectory,
+} from "../core/contact-history";
 import { scopeSchema } from "../core/crm";
 import { draftHash, draftSubject } from "../core/drafts";
 import { OutreachService, outboundGate } from "../core/outreach";
@@ -159,7 +164,13 @@ export class OutboundService {
       : [];
     const found = touch ?? action;
     if (!found) throw new DomainError("NOT_FOUND", 404);
-    await authorize(db, principal, input.organizationId, found.productId, lock);
+    let permission = await authorize(
+      db,
+      principal,
+      input.organizationId,
+      found.productId,
+      lock,
+    );
     if (input.productId && input.productId !== found.productId)
       throw new DomainError("FORBIDDEN", 403);
     if ((touch?.senderId ?? action?.ownerId) !== principal.userId)
@@ -175,6 +186,7 @@ export class OutboundService {
         ),
       );
     if (!relationship) throw new DomainError("NOT_FOUND", 404);
+    if (lock) await lockContactDirectory(db, input.organizationId);
     const peopleQuery = db
       .select()
       .from(s.people)
@@ -184,8 +196,27 @@ export class OutboundService {
           eq(s.people.organizationId, input.organizationId),
         ),
       );
-    const [person] = await (lock ? peopleQuery.for("update") : peopleQuery);
+    let [person] = await peopleQuery;
     if (!person) throw new DomainError("NOT_FOUND", 404);
+    if (lock) {
+      const identities = await contactIdentityIds(
+        db,
+        input.organizationId,
+        person,
+      );
+      const people = await db
+        .select()
+        .from(s.people)
+        .where(
+          and(
+            eq(s.people.organizationId, input.organizationId),
+            inArray(s.people.id, identities),
+          ),
+        )
+        .orderBy(asc(s.people.id))
+        .for("update");
+      person = people.find((row) => row.id === person.id) ?? person;
+    }
     await assertActiveRelationships(db, input.organizationId, [
       relationship.id,
     ]);
@@ -204,7 +235,7 @@ export class OutboundService {
     // Recheck membership after waiting for the quota lock: revocation may have
     // committed since the first authorization read.
     if (lock)
-      await authorize(
+      permission = await authorize(
         db,
         principal,
         input.organizationId,
@@ -315,7 +346,13 @@ export class OutboundService {
               eq(s.conversations.organizationId, input.organizationId),
               eq(s.conversations.productId, record.productId),
               eq(s.conversations.relationshipId, relationship.id),
-              eq(s.conversations.connectionId, connection.id),
+              or(
+                eq(s.conversations.connectionId, connection.id),
+                and(
+                  eq(s.conversations.provenance, "native"),
+                  isNull(s.conversations.connectionId),
+                ),
+              ),
               eq(s.conversations.ownerId, principal.userId),
               eq(
                 s.conversations.channel,
@@ -326,6 +363,8 @@ export class OutboundService {
       : [];
     if (conversationId && !conversation)
       throw new DomainError("FORBIDDEN", 403);
+    const providerConversation =
+      conversation?.provenance === "native" ? undefined : conversation;
     const hash = draftHash({
       draft: record.draft,
       ...(await draftSubject(db, person)),
@@ -344,6 +383,13 @@ export class OutboundService {
       input.organizationId,
       person,
     );
+    const history = await contactHistoryChecks(
+      db,
+      principal,
+      input.organizationId,
+      person,
+      permission.products.map((product) => product.id),
+    );
     return {
       touch: !!touch,
       identityOptedOut,
@@ -351,7 +397,8 @@ export class OutboundService {
       relationship,
       person,
       connection,
-      conversation,
+      conversation: providerConversation,
+      history,
       hash,
       gate,
       enrollment,
@@ -376,6 +423,8 @@ export class OutboundService {
       throw new DomainError("SOURCE_NOT_SENDABLE", 409);
     if (person.doNotContact || source.identityOptedOut)
       throw new DomainError("DO_NOT_CONTACT", 409);
+    if (source.history.blockedBy)
+      throw new DomainError(source.history.blockedBy, 409);
     if (
       touch
         ? record.status !== "approved" || enrollment?.status !== "running"
@@ -431,7 +480,7 @@ export class OutboundService {
         .where(
           and(
             eq(s.deliveries.organizationId, input.organizationId),
-            eq(s.relationships.personId, source.person.id),
+            inArray(s.relationships.personId, source.history.identities),
             inArray(s.deliveries.status, ["sending", "unknown", "accepted"]),
           ),
         );
@@ -453,21 +502,36 @@ export class OutboundService {
       draft: source.record.draft,
       connectionId: source.connection.id,
       conversationId: source.conversation?.id ?? null,
-      policy: {
-        ...source.gate,
-        sendAfter:
-          source.gate.sendAfter === null
-            ? null
-            : new Date(source.gate.sendAfter).toISOString(),
-        reasons: source.gate.reasons.map((reason) => ({
-          ...reason,
-          ...("until" in reason
-            ? { until: new Date(reason.until).toISOString() }
-            : {}),
-        })),
-      },
+      // Cooldown arithmetic can disclose the exact time of a private message.
+      // Keep the full gate for dispatch, but withhold its public timing details
+      // until the caller can review all relevant history.
+      policy: source.history.blockedBy
+        ? { allowed: false, sendAfter: null, reasons: [] }
+        : {
+            ...source.gate,
+            sendAfter:
+              source.gate.sendAfter === null
+                ? null
+                : new Date(source.gate.sendAfter).toISOString(),
+            reasons: source.gate.reasons.map((reason) => ({
+              ...reason,
+              ...("until" in reason
+                ? { until: new Date(reason.until).toISOString() }
+                : {}),
+            })),
+          },
       providerAuthorizationRequired:
         blockedBy === "GMAIL_SEND_CONSENT_REQUIRED",
+      history: {
+        messages: source.history.messages,
+        coverage: source.history.coverage,
+      },
+      checks: {
+        exclusions: !source.person.doNotContact && !source.identityOptedOut,
+        crossChannel:
+          source.gate.allowed && blockedBy !== "DELIVERY_IN_PROGRESS",
+        history: source.history.blockedBy === null,
+      },
     };
   }
   private async credentials(connection: typeof s.connections.$inferSelect) {
@@ -704,7 +768,7 @@ export class OutboundService {
         .where(
           and(
             eq(s.deliveries.organizationId, input.organizationId),
-            eq(s.relationships.personId, current.person.id),
+            inArray(s.relationships.personId, current.history.identities),
             inArray(s.deliveries.status, ["sending", "unknown", "accepted"]),
           ),
         );

@@ -403,6 +403,28 @@ test("review links a whole private thread, routes subsequent replies, and expose
       (i) => i.record.threadId === "review-thread",
     ),
   ).toBe(false);
+  const approvedReply = await crm.changeAction(admin, {
+    organizationId: scope.organizationId,
+    actionId: actions[0].id,
+    version: actions[0].version,
+    command: "approve",
+    draft: "A fictional approved reply",
+  });
+  await service.importRecord(connection, {
+    ...record,
+    externalId: "thread-message-4",
+    body: "Another live reply after review",
+    occurredAt: "2026-10-03T12:00:00.000Z",
+  });
+  const [invalidated] = await local.db
+    .select()
+    .from(s.actions)
+    .where(eq(s.actions.id, approvedReply.id));
+  expect(invalidated).toMatchObject({
+    status: "blocked",
+    approvedHash: null,
+    approvedBy: null,
+  });
 });
 
 test("meeting updates and cancellations modify one CRM record and require an explicit shared-context link", async () => {
@@ -839,7 +861,7 @@ test("durable webhook receipts deduplicate deliveries, retry sanitized failures,
       .from(s.integrationReceipts)
       .where(eq(s.integrationReceipts.connectionId, connection.id)),
   ).toHaveLength(1);
-  expect(await processReceipts(local.db)).toEqual({ processed: 1, failed: 0 });
+  expect(await processReceipts(local.db)).toEqual({ processed: 0, failed: 0 });
   expect(
     await local.db
       .select()
@@ -860,6 +882,7 @@ test("durable webhook receipts deduplicate deliveries, retry sanitized failures,
   await saveReceipt(local.db, connection, "evt-after", "unipile", {
     ...payload,
     id: "after",
+    timestamp: "invalid",
   });
   await service.disconnect(admin, scope.organizationId, connection.id);
   expect(await processReceipts(local.db)).toEqual({ processed: 1, failed: 0 });

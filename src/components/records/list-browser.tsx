@@ -1,6 +1,14 @@
 "use client";
 import { parseMoney } from "@crm/core/analytics";
+import { instantFromZonedInput } from "@crm/core/calendar";
 import type { ClientSnapshot } from "@crm/core/dto";
+import {
+  fieldFilterOperators,
+  fieldFilterSchema,
+  matchesFieldFilters,
+  normalizeFieldLabel,
+} from "@crm/core/field-filters";
+import type { RelationshipField } from "@crm/core/relationship-context";
 import t from "@crm/i18n/translations/en.json";
 import { type ReactNode, useMemo, useState } from "react";
 import { useWorkspaceData } from "../crm/crm-context";
@@ -18,6 +26,7 @@ export interface RecordFacts {
   submitterIds?: readonly string[];
   sourceMemberIds?: readonly string[];
   attribution?: boolean;
+  fieldGroups?: readonly (readonly RelationshipField[])[];
 }
 
 export function useRecordIndex() {
@@ -62,6 +71,7 @@ export function useRecordIndex() {
         currency: value?.currency ?? "USD",
         ownerId: relationship?.ownerId ?? "",
         qualification: relationship?.qualification ?? "",
+        fieldGroups: [relationship?.contextFields ?? []],
       };
     };
     return { people, companies, relationships, byPerson, byCompany, facts };
@@ -186,6 +196,12 @@ const emptyFilters = {
   size: "",
   sort: "default",
 };
+interface FieldFilterDraft {
+  id: string;
+  key: string;
+  operator: string;
+  value: string;
+}
 export function useRecordBrowser<T>(
   rows: readonly T[],
   read: (row: T) => RecordFacts,
@@ -194,11 +210,62 @@ export function useRecordBrowser<T>(
 ) {
   const crm = useWorkspaceData();
   const scope = `${crm.organizationId}/${crm.productId}/${crm.pathname}/${crm.listFilterKey}`;
-  const [state, setState] = useState({ scope, filters: emptyFilters });
+  const [state, setState] = useState({
+    scope,
+    filters: emptyFilters,
+    fields: [] as FieldFilterDraft[],
+  });
   const filters = state.scope === scope ? state.filters : emptyFilters;
+  const fieldDrafts = state.scope === scope ? state.fields : [];
   const update = (key: keyof typeof emptyFilters, value: string) =>
-    setState({ scope, filters: { ...filters, [key]: value } });
+    setState({
+      scope,
+      filters: { ...filters, [key]: value },
+      fields: fieldDrafts,
+    });
   const facts = rows.map((row) => ({ row, value: read(row) }));
+  const fieldDefinitions = [
+    ...new Map(
+      crm.data.relationships
+        .flatMap((relationship) => relationship.contextFields ?? [])
+        .map((field) => [
+          `${field.type}:${normalizeFieldLabel(field.label)}`,
+          {
+            key: `${field.type}:${normalizeFieldLabel(field.label)}`,
+            label: field.label,
+            type: field.type,
+          },
+        ]),
+    ).values(),
+  ].sort((a, b) => a.label.localeCompare(b.label));
+  const parsedFields = fieldDrafts
+    .filter((draft) => draft.key)
+    .map((draft) => {
+      const field = fieldDefinitions.find((field) => field.key === draft.key);
+      return fieldFilterSchema.safeParse({
+        label: field?.label,
+        type: field?.type,
+        operator: draft.operator,
+        ...(!["exists", "missing"].includes(draft.operator)
+          ? {
+              value:
+                field?.type === "number"
+                  ? draft.value.trim()
+                    ? Number(draft.value)
+                    : undefined
+                  : field?.type === "boolean"
+                    ? draft.value === "true"
+                    : field?.type === "datetime"
+                      ? instantFromZonedInput(draft.value, crm.timeZone)
+                      : draft.value,
+            }
+          : {}),
+      });
+    });
+  const fieldInvalid = parsedFields.some((result) => !result.success);
+  const fieldFilters = parsedFields.flatMap((result) =>
+    result.success ? [result.data] : [],
+  );
   let invalid = false;
   let minimum: number | null = null;
   let maximum: number | null = null;
@@ -210,7 +277,14 @@ export function useRecordBrowser<T>(
     invalid = true;
   }
   const filtered = facts.filter(({ value }) => {
-    if (invalid) return false;
+    if (invalid || fieldInvalid) return false;
+    if (
+      fieldFilters.length &&
+      !(value.fieldGroups ?? []).some((group) =>
+        matchesFieldFilters(group, fieldFilters),
+      )
+    )
+      return false;
     if (
       filters.tag &&
       !value.tags?.some((tag) => tag.toLowerCase() === filters.tag)
@@ -270,7 +344,7 @@ export function useRecordBrowser<T>(
     filtered.sort((a, b) => name(a.row).localeCompare(name(b.row)));
   const page = useListPage(
     filtered.map(({ row }) => row),
-    `${scope}/${crm.search}/${JSON.stringify(filters)}`,
+    `${scope}/${crm.search}/${JSON.stringify(filters)}/${JSON.stringify(fieldDrafts)}`,
     revealId,
   );
   return {
@@ -278,8 +352,35 @@ export function useRecordBrowser<T>(
     rows: filtered.map(({ row }) => row),
     filters,
     update,
-    clear: () => setState({ scope, filters: emptyFilters }),
+    clear: () => setState({ scope, filters: emptyFilters, fields: [] }),
     invalid,
+    fieldInvalid,
+    fieldDrafts,
+    fieldDefinitions,
+    hasFieldGroups: facts.some(({ value }) => value.fieldGroups !== undefined),
+    addFieldFilter: () =>
+      setState({
+        scope,
+        filters,
+        fields: [
+          ...fieldDrafts,
+          { id: crypto.randomUUID(), key: "", operator: "eq", value: "" },
+        ],
+      }),
+    updateFieldFilter: (index: number, patch: Partial<FieldFilterDraft>) =>
+      setState({
+        scope,
+        filters,
+        fields: fieldDrafts.map((draft, position) =>
+          position === index ? { ...draft, ...patch } : draft,
+        ),
+      }),
+    removeFieldFilter: (index: number) =>
+      setState({
+        scope,
+        filters,
+        fields: fieldDrafts.filter((_, position) => position !== index),
+      }),
     tags: [
       ...new Map(
         facts
@@ -339,9 +440,10 @@ export function RecordFilters({
   browser: ReturnType<typeof useRecordBrowser>;
 }) {
   const { filters, update } = browser;
-  const active = Object.entries(filters).filter(
-    ([key, value]) => value && !(key === "sort" && value === "default"),
-  ).length;
+  const active =
+    Object.entries(filters).filter(
+      ([key, value]) => value && !(key === "sort" && value === "default"),
+    ).length + browser.fieldDrafts.filter((draft) => draft.key).length;
   return (
     <details className="record-filters">
       <summary>
@@ -349,6 +451,126 @@ export function RecordFilters({
         {active ? ` (${active})` : ""}
       </summary>
       <div className="record-filter-fields">
+        {browser.hasFieldGroups && !!browser.fieldDefinitions.length && (
+          <>
+            <small>{t.fieldFilters.hint}</small>
+            {browser.fieldDrafts.map((draft, index) => {
+              const field = browser.fieldDefinitions.find(
+                (field) => field.key === draft.key,
+              );
+              return (
+                <fieldset key={draft.id} className="context-editor-card">
+                  <legend>
+                    {t.fieldFilters.field} {index + 1}
+                  </legend>
+                  <label>
+                    {t.fieldFilters.field}
+                    <select
+                      value={draft.key}
+                      onChange={(event) =>
+                        browser.updateFieldFilter(index, {
+                          key: event.target.value,
+                          operator: "eq",
+                          value: "",
+                        })
+                      }
+                    >
+                      <option value="">{t.fieldFilters.allFields}</option>
+                      {browser.fieldDefinitions.map((field) => (
+                        <option key={field.key} value={field.key}>
+                          {field.label} ·{" "}
+                          {t.contextFields.fieldTypes[field.type]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {field && (
+                    <>
+                      <label>
+                        {t.fieldFilters.operator}
+                        <select
+                          value={draft.operator}
+                          onChange={(event) =>
+                            browser.updateFieldFilter(index, {
+                              operator: event.target.value,
+                            })
+                          }
+                        >
+                          {fieldFilterOperators(field.type).map((operator) => (
+                            <option key={operator} value={operator}>
+                              {t.fieldFilters[operator]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {!["exists", "missing"].includes(draft.operator) && (
+                        <label htmlFor={`field-filter-value-${draft.id}`}>
+                          {t.fieldFilters.value}
+                          {field.type === "boolean" ? (
+                            <select
+                              id={`field-filter-value-${draft.id}`}
+                              value={draft.value || "false"}
+                              onChange={(event) =>
+                                browser.updateFieldFilter(index, {
+                                  value: event.target.value,
+                                })
+                              }
+                            >
+                              <option value="true">
+                                {t.contextFields.yes}
+                              </option>
+                              <option value="false">
+                                {t.contextFields.no}
+                              </option>
+                            </select>
+                          ) : (
+                            <input
+                              id={`field-filter-value-${draft.id}`}
+                              type={
+                                field.type === "datetime"
+                                  ? "datetime-local"
+                                  : field.type === "number" ||
+                                      field.type === "date"
+                                    ? field.type
+                                    : "text"
+                              }
+                              step={
+                                field.type === "number"
+                                  ? "any"
+                                  : field.type === "datetime"
+                                    ? "0.001"
+                                    : undefined
+                              }
+                              value={draft.value}
+                              onChange={(event) =>
+                                browser.updateFieldFilter(index, {
+                                  value: event.target.value,
+                                })
+                              }
+                            />
+                          )}
+                        </label>
+                      )}
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => browser.removeFieldFilter(index)}
+                  >
+                    {t.contextFields.removeField}
+                  </button>
+                </fieldset>
+              );
+            })}
+            <button
+              type="button"
+              disabled={browser.fieldDrafts.length >= 10}
+              onClick={browser.addFieldFilter}
+            >
+              {t.contextFields.addField}
+            </button>
+          </>
+        )}
         <label>
           {t.tags}
           <select
@@ -525,6 +747,7 @@ export function RecordFilters({
           {t.clearFilters}
         </button>
         {browser.invalid && <p role="alert">{t.invalidDealRange}</p>}
+        {browser.fieldInvalid && <p role="alert">{t.fieldFilters.invalid}</p>}
       </div>
     </details>
   );

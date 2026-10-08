@@ -1,4 +1,5 @@
 "use client";
+import { preciseDateLabel } from "@crm/core/calendar";
 import type { ClientContext } from "@crm/core/dto";
 import {
   contextSectionKeys,
@@ -9,7 +10,6 @@ import {
 import t from "@crm/i18n/translations/en.json";
 import { Clock3, FileText, Pencil, Radar } from "lucide-react";
 import { useState } from "react";
-import { dateLabel } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { ImportedContext } from "./imported-context";
 import { InlineField } from "./inline-field";
@@ -148,6 +148,10 @@ export function RelationshipContext({
                     >
                       {field.value}
                     </a>
+                  ) : field.type === "datetime" ? (
+                    <time dateTime={field.value} title={field.value}>
+                      {preciseDateLabel(field.value, timeZone)}
+                    </time>
                   ) : field.type === "text" && field.value ? (
                     <RecordText value={String(field.value)} />
                   ) : (
@@ -182,7 +186,7 @@ export function RelationshipContext({
                 {signal.observedAt && (
                   <span>
                     <Clock3 size={12} aria-hidden="true" />
-                    {dateLabel(signal.observedAt, timeZone)}
+                    {preciseDateLabel(signal.observedAt, timeZone)}
                   </span>
                 )}
                 {signal.sourceUrl && safeContextUrl(signal.sourceUrl) && (

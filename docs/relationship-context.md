@@ -4,7 +4,7 @@ A person has a separate relationship for each product and purpose. Contact ident
 
 ## Fields in the UI, HTTP API and MCP
 
-The full person record and inspector have **Context & signals → Edit context**. The full record uses the wider main pane; narrow inspectors stack sections. The keyboard-accessible dialog supports Cmd/Ctrl+Enter to save and Escape to cancel. Saved values appear immediately from the server response and refresh through the existing live change feed. Workspace snapshots omit the new detailed document and source archive; fetch `get_person_context` to load them on demand.
+The full person record and inspector have **Context & signals → Edit context**. The full record uses the wider main pane; narrow inspectors stack sections. The keyboard-accessible dialog supports Cmd/Ctrl+Enter to save and Escape to cancel. Saved values appear immediately from the server response and refresh through the existing live change feed. Workspace snapshots expose typed custom fields for list filters while omitting the rest of the detailed document and source archive; fetch `get_person_context` to load them on demand.
 
 | Field | Purpose |
 | --- | --- |
@@ -17,7 +17,7 @@ The full person record and inspector have **Context & signals → Edit context**
 | `contextDetails.risks` | Risks and blockers. |
 | `contextDetails.history` | Human-readable relationship history. This does not create messages or mark a draft as sent. |
 | `contextDetails.signals` | Up to 100 sourced observations, with stable UUID, title, description, kind (hiring/funding/product/engagement/other), fact/hypothesis classification, nullable HTTP(S) source URL and nullable ISO timestamp. |
-| `contextDetails.fields` | Up to 50 custom fields with stable UUID, label, type and matching value: text/string, number/finite number, date/ISO date, url/HTTP(S) URL, boolean/boolean. False and zero are preserved. |
+| `contextDetails.fields` | Up to 50 custom fields with stable UUID, label, type and matching value: text/string, number/finite number, date/ISO date, datetime/UTC ISO instant with seconds and milliseconds, url/HTTP(S) URL, boolean/boolean. False and zero are preserved. |
 | `contextSource` | Read-only original context, preserved the first time existing nonempty notes/imports are replaced. |
 
 The complete structured details document is limited to 80,000 UTF-8 bytes; combined relationship inputs are bounded to 90,000 bytes below both HTTP adapters’ 100,000-byte envelope limit. Each narrative/description/text value is bounded to 10,000 characters. URLs containing embedded credentials or executable schemes are rejected. Unknown structured properties and duplicate IDs in an array are rejected.

@@ -11,7 +11,10 @@ import {
 } from "drizzle-orm";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
+import { contactIdentityIds, linkedinKey } from "./contact-history";
 import { DomainError, type Principal } from "./policy";
+
+export { linkedinKey } from "./contact-history";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Reader = Database | Transaction;
@@ -108,12 +111,6 @@ export async function emailTaken(
   return !!taken;
 }
 
-const linkedinHost = "^[a-z]+://([a-z0-9-]+[.])*linkedin[.]com";
-const linkedinSuffix = "[?#].*$";
-export function linkedinKey(value: SQL | typeof s.people.linkedinUrl) {
-  return sql`rtrim(regexp_replace(regexp_replace(lower(trim(${value})), ${linkedinHost}, ''), ${linkedinSuffix}, ''), '/')`;
-}
-
 export async function linkedinTaken(
   db: Reader,
   organizationId: string,
@@ -144,39 +141,15 @@ export async function optedOutIdentity(
     "id" | "email" | "otherEmails" | "linkedinUrl"
   >,
 ) {
-  const emails = [
-    ...new Set(
-      [person.email ?? "", ...person.otherEmails]
-        .map((email) => email.trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  ];
-  const matches: SQL[] = [];
-  if (emails.length)
-    matches.push(
-      inArray(sql`lower(${s.people.email})`, emails),
-      sql`${s.people.otherEmails} ?| array[${sql.join(
-        emails.map((email) => sql`${email}`),
-        sql`, `,
-      )}]::text[]`,
-    );
-  if (person.linkedinUrl.trim())
-    matches.push(
-      and(
-        ne(s.people.linkedinUrl, ""),
-        sql`${linkedinKey(s.people.linkedinUrl)} = ${linkedinKey(sql`${person.linkedinUrl}`)}`,
-      ) as SQL,
-    );
-  if (!matches.length) return false;
+  const identities = await contactIdentityIds(db, organizationId, person);
   const [found] = await db
     .select({ id: s.people.id })
     .from(s.people)
     .where(
       and(
         eq(s.people.organizationId, organizationId),
-        ne(s.people.id, person.id),
+        inArray(s.people.id, identities),
         eq(s.people.doNotContact, true),
-        or(...matches),
       ),
     )
     .limit(1);

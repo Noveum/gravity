@@ -30,6 +30,7 @@ import {
   useReadyFocus,
 } from "./modal-lifecycle";
 import { UnipileSettings } from "./unipile-settings";
+import { YoduSettings } from "./yodu-settings";
 
 const providers = ["gmail", "calendar", "linkedin", "fireflies"] as const;
 const icons = {
@@ -382,6 +383,15 @@ export function IntegrationCards({
           </article>
         );
       })}
+      <YoduSettings
+        key={`yodu:${organizationId}:${productId}`}
+        data={data}
+        organizationId={organizationId}
+        productId={productId}
+        demo={demo}
+        onChanged={onChanged}
+        timeZone={timeZone}
+      />
       {!!overview?.connections.length && (
         <article className="integration-card import-review">
           <div className="section-heading">

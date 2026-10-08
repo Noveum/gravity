@@ -13,6 +13,7 @@ import {
 } from "../crm/crm-context";
 import { useWarmContext } from "../crm/record-context";
 import { formatMoney } from "../money";
+import { InternalTasks } from "../records/internal-tasks";
 import {
   Pagination,
   RecordFilters,
@@ -65,6 +66,7 @@ export function ActionsView() {
   const now = Date.now();
   return (
     <>
+      <InternalTasks />
       <RecordFilters browser={browser} />
       {["now", "upcoming"].map((group) => {
         const list = browser.page.items.filter((action) =>

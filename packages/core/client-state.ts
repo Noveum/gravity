@@ -51,6 +51,7 @@ export function productSnapshot(
       ),
     },
     actions: scoped(snapshot.actions),
+    internalTasks: scoped(snapshot.internalTasks),
     sequences: scoped(snapshot.sequences),
     enrollments: scoped(snapshot.enrollments),
     folders: scoped(snapshot.folders),

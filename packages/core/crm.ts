@@ -27,6 +27,7 @@ import {
   importSubmission,
   recordContactSubmission,
 } from "./contact-attribution";
+import { contactIdentityIds, lockContactDirectory } from "./contact-history";
 import { draftHash, draftSubject } from "./drafts";
 import { serialize } from "./dto";
 import {
@@ -41,6 +42,7 @@ import { tagsSchema } from "./record-tags";
 import {
   emptyRelationshipDetails,
   fitsRelationshipInput,
+  type RelationshipField,
   relationshipDetailsPatchSchema,
   relationshipDetailsSchema,
 } from "./relationship-context";
@@ -638,6 +640,9 @@ export class CrmService {
       this.db
         .select({
           ...relationshipColumns,
+          contextFields: sql<
+            RelationshipField[]
+          >`coalesce(${s.relationships.contextDetails}->'fields', '[]'::jsonb)`,
           context: compact ? sql<string>`''` : s.relationships.context,
         })
         .from(s.relationships)
@@ -647,6 +652,9 @@ export class CrmService {
         .select({
           ...getTableColumns(s.actions),
           reason: compact ? sql<string>`''` : s.actions.reason,
+          reasonSource: compact
+            ? sql<string | null>`null`
+            : s.actions.reasonSource,
         })
         .from(s.actions)
         .where(
@@ -901,7 +909,11 @@ export class CrmService {
           archivedCompanies.get(companyId) ??
           [],
       );
+    const internalTasks = await new (
+      await import("./internal-tasks")
+    ).InternalTaskService(this.db).list(principal, scope);
     return {
+      internalTasks,
       compact,
       contactAttribution: await new ContactAttributionService(
         this.db,
@@ -940,7 +952,11 @@ export class CrmService {
           }))
         : activeRelationships,
       actions: compact
-        ? active(actions).map((action) => ({ ...action, reason: "" }))
+        ? active(actions).map((action) => ({
+            ...action,
+            reason: "",
+            reasonSource: null,
+          }))
         : active(actions),
       sequences,
       enrollments: active(enrollments),
@@ -1027,6 +1043,8 @@ export class CrmService {
           conversationId: s.messages.conversationId,
           direction: s.messages.direction,
           body: s.messages.body,
+          providerMessageId: s.messages.providerMessageId,
+          provenance: s.conversations.provenance,
           occurredAt: s.messages.occurredAt,
           channel: s.conversations.channel,
         })
@@ -1044,7 +1062,7 @@ export class CrmService {
             ),
           ),
         )
-        .orderBy(desc(s.messages.occurredAt))
+        .orderBy(desc(s.messages.occurredAt), desc(s.messages.id))
         .limit(30),
       this.db
         .select()
@@ -1125,16 +1143,19 @@ export class CrmService {
       meetings,
       opportunities,
       messages,
-      conversations: sources.map(({ id, ownerId, channel, visibility }) => ({
-        id,
-        ownerId,
-        channel,
-        visibility,
-        preview:
-          messages
-            .find((message) => message.conversationId === id)
-            ?.body.slice(0, 160) ?? null,
-      })),
+      conversations: sources.map(
+        ({ id, ownerId, channel, visibility, provenance }) => ({
+          id,
+          ownerId,
+          channel,
+          visibility,
+          provenance,
+          preview:
+            messages
+              .find((message) => message.conversationId === id)
+              ?.body.slice(0, 160) ?? null,
+        }),
+      ),
       evidence,
       actions,
       asOf: new Date().toISOString(),
@@ -1300,6 +1321,44 @@ export class CrmService {
       const [found] = await actionRow();
       if (!found) throw new DomainError("NOT_FOUND", 404);
       await authorizeAction(tx, principal, found);
+      if (input.productId && input.productId !== found.productId)
+        throw new DomainError("FORBIDDEN", 403);
+      await lockContactDirectory(tx, input.organizationId);
+      const [subject] = await tx
+        .select({ person: getTableColumns(s.people) })
+        .from(s.relationships)
+        .innerJoin(
+          s.people,
+          and(
+            eq(s.people.organizationId, s.relationships.organizationId),
+            eq(s.people.id, s.relationships.personId),
+          ),
+        )
+        .where(
+          and(
+            eq(s.relationships.organizationId, input.organizationId),
+            eq(s.relationships.id, found.relationshipId),
+          ),
+        );
+      if (!subject) throw new DomainError("NOT_FOUND", 404);
+      const identities = await contactIdentityIds(
+        tx,
+        input.organizationId,
+        subject.person,
+      );
+      // History ingestion and delivery claims take these locks before action rows.
+      // Approval must observe the same serialized history state.
+      await tx
+        .select({ id: s.people.id })
+        .from(s.people)
+        .where(
+          and(
+            eq(s.people.organizationId, input.organizationId),
+            inArray(s.people.id, identities),
+          ),
+        )
+        .orderBy(asc(s.people.id))
+        .for("update");
       await assertActiveRelationships(tx, input.organizationId, [
         found.relationshipId,
       ]);

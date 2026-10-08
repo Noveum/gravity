@@ -20,9 +20,12 @@ import {
   mimeMessage,
 } from "../packages/connectors/outbound-provider";
 import { decodeMailHeader } from "../packages/connectors/providers";
+import { ingestReply } from "../packages/connectors/replies";
 import { seal } from "../packages/connectors/security";
 import { IntegrationService } from "../packages/connectors/service";
+import * as contactHistory from "../packages/core/contact-history";
 import { CrmService } from "../packages/core/crm";
+import { NativeIngestionService } from "../packages/core/native-ingestion";
 import { OutreachService } from "../packages/core/outreach";
 import { DomainError, type Principal } from "../packages/core/policy";
 import { createLocalDatabase } from "../packages/database/client";
@@ -718,6 +721,599 @@ test("parallel retries commit one provider call and preserve the same delivery I
   ]);
   expect(results[0].id).toBe(results[1].id);
   expect(f.transport).toHaveBeenCalledTimes(1);
+});
+test("native draft source identifiers never become provider reply identifiers", async () => {
+  const f = await fixture();
+  const ingestion = new NativeIngestionService(local.db, clock);
+  const draft = await ingestion.draft(principal, {
+    organizationId: org,
+    productId: f.productId,
+    relationshipId: f.relationshipId,
+    channel: "gmail",
+    sourceId: `fictional-local-source-${randomUUID()}`,
+    title: "Fictional imported draft",
+    reason: "Imported notes",
+    body: f.draft,
+  });
+  const scheduled = await ingestion.schedule(principal, {
+    organizationId: org,
+    draftId: draft.id,
+    version: draft.version,
+    dueAt: new Date(now).toISOString(),
+  });
+  const approved = await f.crm.changeAction(principal, {
+    organizationId: org,
+    actionId: scheduled.actionId,
+    version: 1,
+    command: "approve",
+  });
+  const input = {
+    organizationId: org,
+    productId: f.productId,
+    actionId: scheduled.actionId,
+    version: approved.version,
+    connectionId: f.connectionId,
+    idempotencyKey: randomUUID(),
+  };
+  expect(await f.service.readiness(principal, input)).toMatchObject({
+    ready: true,
+    conversationId: null,
+  });
+  const sent = await f.service.send(principal, input);
+  expect(sent.status).toBe("sent");
+  expect(f.transport).toHaveBeenCalledTimes(1);
+  const payload = JSON.parse(String(f.transport.mock.calls[0]?.[1]?.body));
+  expect(payload.threadId).toBeUndefined();
+  const mime = Buffer.from(payload.raw, "base64url").toString("utf8");
+  expect(mime).not.toContain("In-Reply-To:");
+  expect(mime).not.toContain(draft.sourceId);
+  await local.db.insert(s.productMemberships).values({
+    organizationId: org,
+    productId: f.productId,
+    userId: "demo-teammate",
+  });
+  expect(
+    (
+      await f.crm.context(
+        { userId: "demo-teammate", source: "session" },
+        org,
+        f.relationshipId,
+      )
+    )?.actions ?? [],
+  ).toEqual([]);
+});
+test("provider historical outbound backfill invalidates approval without completing current replies", async () => {
+  const f = await fixture("gmail", true);
+  if (!("actionId" in f.source)) throw new Error("fixture");
+  const threadId = randomUUID();
+  const [conversation] = await local.db
+    .insert(s.conversations)
+    .values({
+      organizationId: org,
+      productId: f.productId,
+      relationshipId: f.relationshipId,
+      connectionId: f.connectionId,
+      externalThreadId: threadId,
+      ownerId: principal.userId,
+      channel: "gmail",
+      visibility: "private",
+    })
+    .returning();
+  await local.db
+    .update(s.actions)
+    .set({ sourceConversationId: conversation.id })
+    .where(eq(s.actions.id, f.source.actionId));
+  const [connection] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.id, f.connectionId));
+  await ingestReply(local.db, {
+    provider: "gmail",
+    accountId: connection.externalAccountId,
+    messageId: randomUUID(),
+    threadId,
+    direction: "outbound",
+    channel: "gmail",
+    body: "Fictional old answer",
+    occurredAt: "2026-09-01T00:00:00Z",
+    historical: true,
+  });
+  const [action] = await local.db
+    .select()
+    .from(s.actions)
+    .where(eq(s.actions.id, f.source.actionId));
+  expect(action).toMatchObject({
+    status: "open",
+    approvedHash: null,
+    approvedBy: null,
+    version: f.input.version + 1,
+  });
+});
+test("history committed during provider preflight invalidates approval before dispatch", async () => {
+  const f = await fixture("linkedin");
+  const ingestion = new NativeIngestionService(local.db, clock);
+  const publicIdentifier = `fixture-${counter}`;
+  const transport = vi.fn<typeof fetch>(async (url) => {
+    if (String(url).endsWith("/chat"))
+      return json({ object: "ChatLookup", data: [] });
+    await ingestion.history(principal, {
+      organizationId: org,
+      productId: f.productId,
+      relationshipId: f.relationshipId,
+      channel: "gmail",
+      sourceThreadId: randomUUID(),
+      messages: [
+        {
+          sourceMessageId: randomUUID(),
+          direction: "inbound",
+          body: "Fictional context arrived during review",
+          occurredAt: "2026-10-01T00:00:00Z",
+        },
+      ],
+    });
+    return json({
+      id: "fictional-resolved-person",
+      public_identifier: publicIdentifier,
+    });
+  });
+  await expect(
+    new OutboundService(local.db, transport, clock).send(principal, f.input),
+  ).rejects.toMatchObject({ code: "CONFLICT" });
+  expect(
+    transport.mock.calls.every(([, init]) => init?.method === undefined),
+  ).toBe(true);
+  expect(
+    await local.db
+      .select()
+      .from(s.deliveries)
+      .where(eq(s.deliveries.relationshipId, f.relationshipId)),
+  ).toEqual([]);
+});
+
+test("a product grant lost while the send claim waits makes its history inaccessible", async () => {
+  const f = await fixture("gmail", true);
+  const otherProduct = await f.crm.createProduct(
+    human,
+    org,
+    "Fictional grant-revocation history",
+  );
+  const [relationship] = await local.db
+    .insert(s.relationships)
+    .values({
+      organizationId: org,
+      productId: otherProduct.id,
+      personId: f.personId,
+      ownerId: demoUser,
+      purpose: "buyer",
+    })
+    .returning();
+  const [conversation] = await local.db
+    .insert(s.conversations)
+    .values({
+      organizationId: org,
+      productId: otherProduct.id,
+      relationshipId: relationship.id,
+      ownerId: demoUser,
+      provenance: "native",
+      channel: "linkedin",
+      externalThreadId: `fictional-revoked-product-${randomUUID()}`,
+    })
+    .returning();
+  await local.db.insert(s.messages).values({
+    organizationId: org,
+    productId: otherProduct.id,
+    conversationId: conversation.id,
+    providerMessageId: "fictional-revoked-product-message",
+    direction: "inbound",
+    body: "Fictional history in a product that loses its grant",
+    occurredAt: new Date("2026-10-01T00:00:00Z"),
+  });
+  await local.db
+    .insert(s.productMemberships)
+    .values(
+      [f.productId, otherProduct.id].map((productId) => ({
+        organizationId: org,
+        productId,
+        userId: demoUser,
+      })),
+    )
+    .onConflictDoNothing();
+  await local.db
+    .update(s.memberships)
+    .set({ role: "member" })
+    .where(
+      and(
+        eq(s.memberships.organizationId, org),
+        eq(s.memberships.userId, demoUser),
+      ),
+    );
+  const lockDirectory = contactHistory.lockContactDirectory;
+  let revoked = false;
+  const barrier = vi
+    .spyOn(contactHistory, "lockContactDirectory")
+    .mockImplementation(async (db, organizationId) => {
+      if (!revoked) {
+        revoked = true;
+        await db
+          .delete(s.productMemberships)
+          .where(
+            and(
+              eq(s.productMemberships.organizationId, org),
+              eq(s.productMemberships.productId, otherProduct.id),
+              eq(s.productMemberships.userId, demoUser),
+            ),
+          );
+      }
+      await lockDirectory(db, organizationId);
+    });
+  try {
+    await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
+      code: "PRIVATE_HISTORY_REVIEW_REQUIRED",
+    });
+    expect(revoked).toBe(true);
+    expect(f.transport).not.toHaveBeenCalled();
+  } finally {
+    barrier.mockRestore();
+    await local.db
+      .update(s.memberships)
+      .set({ role: "admin" })
+      .where(
+        and(
+          eq(s.memberships.organizationId, org),
+          eq(s.memberships.userId, demoUser),
+        ),
+      );
+  }
+});
+
+test("unlinked known-sender receipts stay in the private review inbox and block reapproved sends until reviewed", async () => {
+  const f = await fixture("gmail", true);
+  const [connection] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.id, f.connectionId));
+  const [person] = await local.db
+    .select()
+    .from(s.people)
+    .where(eq(s.people.id, f.personId));
+  const event = {
+    provider: "gmail" as const,
+    accountId: connection.externalAccountId,
+    connectionId: connection.id,
+    messageId: `fictional-unlinked-${randomUUID()}`,
+    threadId: `fictional-unlinked-thread-${randomUUID()}`,
+    direction: "inbound" as const,
+    channel: "gmail" as const,
+    body: "Fictional original authenticated reply",
+    occurredAt: "2026-10-01T00:00:00Z",
+    historical: true,
+    from: person.email ?? "",
+  };
+  expect(await ingestReply(local.db, event)).toMatchObject({ matched: false });
+  expect(await ingestReply(local.db, event)).toMatchObject({
+    duplicate: true,
+    matched: false,
+  });
+  const integration = new IntegrationService(local.db, f.transport);
+  const inbox = await integration.overview(principal, {
+    organizationId: org,
+    productId: f.productId,
+  });
+  const item = inbox.items.find(
+    (entry) => entry.record.externalId === event.messageId,
+  );
+  expect(item?.record.body).toBe(event.body);
+  await local.db
+    .insert(s.productMemberships)
+    .values({
+      organizationId: org,
+      productId: f.productId,
+      userId: "demo-teammate",
+    })
+    .onConflictDoNothing();
+  expect(
+    (
+      await integration.overview(
+        { userId: "demo-teammate", source: "session" },
+        { organizationId: org, productId: f.productId },
+      )
+    ).items.some((entry) => entry.id === item?.id),
+  ).toBe(false);
+  const [action] = await local.db
+    .select()
+    .from(s.actions)
+    .where(eq(s.actions.id, "actionId" in f.source ? f.source.actionId : ""));
+  const approved = await f.crm.changeAction(principal, {
+    organizationId: org,
+    actionId: action.id,
+    version: action.version,
+    command: "approve",
+  });
+  const input = { ...f.input, version: approved.version };
+  expect(await f.service.readiness(principal, input)).toMatchObject({
+    ready: false,
+    blockedBy: "PENDING_HISTORY_REVIEW_REQUIRED",
+  });
+  await expect(f.service.send(principal, input)).rejects.toMatchObject({
+    code: "PENDING_HISTORY_REVIEW_REQUIRED",
+  });
+  expect(f.transport).not.toHaveBeenCalled();
+  await integration.link(principal, org, item?.id ?? "", f.relationshipId);
+  const context = await f.crm.context(principal, org, f.relationshipId);
+  expect(
+    context.messages.filter((message) => message.body === event.body),
+  ).toHaveLength(1);
+  const [retained] = await local.db
+    .select()
+    .from(s.connectorEvents)
+    .where(eq(s.connectorEvents.providerEventId, event.messageId));
+  expect(retained.status).toBe("processed");
+  expect(
+    await ingestReply(local.db, {
+      ...event,
+      body: "An altered retry must never replace the source",
+    }),
+  ).toMatchObject({ duplicate: true, matched: true });
+  expect(
+    (
+      await integration.overview(principal, {
+        organizationId: org,
+        productId: f.productId,
+      })
+    ).items.some((entry) => entry.id === item?.id),
+  ).toBe(false);
+  const unrelated = {
+    ...event,
+    messageId: `fictional-ignore-${randomUUID()}`,
+    threadId: `fictional-ignore-thread-${randomUUID()}`,
+  };
+  await ingestReply(local.db, unrelated);
+  const ignored = (
+    await integration.overview(principal, {
+      organizationId: org,
+      productId: f.productId,
+    })
+  ).items.find((entry) => entry.record.externalId === unrelated.messageId);
+  await integration.link(principal, org, ignored?.id ?? "");
+  const [latest] = await local.db
+    .select()
+    .from(s.actions)
+    .where(eq(s.actions.id, action.id));
+  const reapproved = await f.crm.changeAction(principal, {
+    organizationId: org,
+    actionId: action.id,
+    version: latest.version,
+    command: "approve",
+  });
+  expect(
+    await f.service.readiness(principal, {
+      ...f.input,
+      version: reapproved.version,
+    }),
+  ).toMatchObject({ ready: true });
+});
+
+test("accepted LinkedIn webhooks materialize linked history before cron and failed matching raw receipts block dispatch", async () => {
+  const { saveReceipt } = await import("../packages/connectors/receipts");
+  const f = await fixture("linkedin", true);
+  const [connection] = await local.db
+    .select()
+    .from(s.connections)
+    .where(eq(s.connections.id, f.connectionId));
+  const threadId = `fictional-live-receipt-${randomUUID()}`;
+  const [conversation] = await local.db
+    .insert(s.conversations)
+    .values({
+      organizationId: org,
+      productId: f.productId,
+      relationshipId: f.relationshipId,
+      connectionId: connection.id,
+      ownerId: demoUser,
+      externalThreadId: threadId,
+      channel: "linkedin",
+    })
+    .returning();
+  await saveReceipt(
+    local.db,
+    connection,
+    `fictional-bad-receipt-${randomUUID()}`,
+    "unipile",
+    { chat_id: threadId, text: "An incomplete signed receipt" },
+  );
+  expect(await f.service.readiness(principal, f.input)).toMatchObject({
+    ready: false,
+    blockedBy: "PENDING_HISTORY_REVIEW_REQUIRED",
+  });
+  await expect(f.service.send(principal, f.input)).rejects.toMatchObject({
+    code: "PENDING_HISTORY_REVIEW_REQUIRED",
+  });
+  expect(f.transport).not.toHaveBeenCalled();
+  const receiptId = `fictional-valid-receipt-${randomUUID()}`;
+  await saveReceipt(local.db, connection, receiptId, "unipile", {
+    id: receiptId,
+    chat_id: threadId,
+    is_sender: false,
+    is_event: false,
+    text: "A fictional incoming message is durable before acknowledgement",
+    timestamp: "2026-10-01T00:00:00Z",
+  });
+  const [message] = await local.db
+    .select()
+    .from(s.messages)
+    .where(eq(s.messages.conversationId, conversation.id));
+  expect(message.body).toBe(
+    "A fictional incoming message is durable before acknowledgement",
+  );
+  const [receipt] = await local.db
+    .select()
+    .from(s.integrationReceipts)
+    .where(eq(s.integrationReceipts.externalId, receiptId));
+  expect(receipt.processedAt).not.toBeNull();
+  const [action] = await local.db
+    .select()
+    .from(s.actions)
+    .where(eq(s.actions.id, "actionId" in f.source ? f.source.actionId : ""));
+  expect(action.approvedHash).toBeNull();
+});
+test("unknown sends reserve the canonical person across products and channels", async () => {
+  const original = await fixture();
+  const alternative = await fixture("linkedin");
+  const [person] = await local.db
+    .select()
+    .from(s.people)
+    .where(eq(s.people.id, original.personId));
+  await local.db
+    .update(s.people)
+    .set({ otherEmails: [person.email?.toUpperCase() ?? ""] })
+    .where(eq(s.people.id, alternative.personId));
+  const outage = vi.fn<typeof fetch>(async () => {
+    throw new Error("Fictional ambiguous response");
+  });
+  expect(
+    (
+      await new OutboundService(local.db, outage, clock).send(
+        principal,
+        original.input,
+      )
+    ).status,
+  ).toBe("unknown");
+  expect(
+    await alternative.service.readiness(principal, alternative.input),
+  ).toMatchObject({ ready: false, blockedBy: "DELIVERY_IN_PROGRESS" });
+  await expect(
+    alternative.service.send(principal, alternative.input),
+  ).rejects.toMatchObject({ code: "DELIVERY_IN_PROGRESS" });
+  expect(
+    alternative.transport.mock.calls.every(
+      ([, init]) => init?.method === undefined,
+    ),
+  ).toBe(true);
+  expect(outage).toHaveBeenCalledTimes(1);
+});
+test("a native outbound message enforces the gap before a different channel can send", async () => {
+  const f = await fixture("linkedin");
+  const history = new NativeIngestionService(local.db, clock);
+  const imported = await history.history(principal, {
+    organizationId: org,
+    productId: f.productId,
+    relationshipId: f.relationshipId,
+    channel: "gmail",
+    sourceThreadId: randomUUID(),
+    messages: [
+      {
+        sourceMessageId: randomUUID(),
+        direction: "outbound",
+        body: "Fictional recent email",
+        occurredAt: new Date(now - 3600000).toISOString(),
+      },
+    ],
+  });
+  if (!("touchId" in f.source)) throw new Error("fixture");
+  const [touch] = await local.db
+    .select()
+    .from(s.touches)
+    .where(eq(s.touches.id, f.source.touchId));
+  const approved = await f.outreach.approve(principal, {
+    organizationId: org,
+    touchId: touch.id,
+    version: touch.version,
+  });
+  const input = { ...f.input, version: approved.version };
+  const ready = await f.service.readiness(principal, input);
+  expect(ready).toMatchObject({
+    ready: false,
+    blockedBy: "CONTACT_POLICY_BLOCKED",
+    checks: { crossChannel: false },
+  });
+  expect(ready.history.messages[0]).toMatchObject({
+    channel: "gmail",
+    direction: "outbound",
+  });
+  expect(ready.policy.sendAfter).not.toBeNull();
+  expect(ready.policy.reasons.some((reason) => "until" in reason)).toBe(true);
+  await local.db
+    .update(s.conversations)
+    .set({ ownerId: "demo-teammate" })
+    .where(eq(s.conversations.id, imported.conversationId));
+  expect(await f.service.readiness(principal, input)).toMatchObject({
+    ready: false,
+    blockedBy: "PRIVATE_HISTORY_REVIEW_REQUIRED",
+    history: { messages: [] },
+    policy: { allowed: false, sendAfter: null, reasons: [] },
+  });
+  await expect(f.service.send(principal, input)).rejects.toMatchObject({
+    code: "PRIVATE_HISTORY_REVIEW_REQUIRED",
+  });
+  await local.db
+    .update(s.conversations)
+    .set({ ownerId: principal.userId })
+    .where(eq(s.conversations.id, imported.conversationId));
+  expect((await f.service.readiness(principal, input)).policy).toEqual(
+    ready.policy,
+  );
+  await expect(f.service.send(principal, input)).rejects.toMatchObject({
+    code: "CONTACT_POLICY_BLOCKED",
+  });
+  expect(f.transport).not.toHaveBeenCalled();
+});
+test("daily caps count a dispatched LinkedIn action once and count native outbound history", async () => {
+  const first = await fixture("linkedin", true);
+  const nextDay = now + 86400000;
+  const rules = await first.outreach.contactRules(principal, org);
+  await first.outreach.updateContactRules(human, {
+    organizationId: org,
+    ...rules,
+    dailyCapPerSender: 2,
+  });
+  try {
+    expect(
+      (
+        await new OutboundService(
+          local.db,
+          first.transport,
+          () => nextDay,
+        ).send(principal, first.input)
+      ).status,
+    ).toBe("sent");
+    const second = await fixture("gmail", true);
+    const secondService = new OutboundService(
+      local.db,
+      second.transport,
+      () => nextDay,
+    );
+    expect((await secondService.readiness(principal, second.input)).ready).toBe(
+      true,
+    );
+    const historical = await fixture("gmail", true);
+    await new NativeIngestionService(local.db, () => nextDay).history(
+      principal,
+      {
+        organizationId: org,
+        productId: historical.productId,
+        relationshipId: historical.relationshipId,
+        channel: "gmail",
+        sourceThreadId: randomUUID(),
+        messages: [
+          {
+            sourceMessageId: randomUUID(),
+            direction: "outbound",
+            body: "Fictional outbound observed outside Gravity",
+            occurredAt: new Date(nextDay - 3600000).toISOString(),
+          },
+        ],
+      },
+    );
+    expect(
+      await secondService.readiness(principal, second.input),
+    ).toMatchObject({ ready: false, blockedBy: "CONTACT_POLICY_BLOCKED" });
+    expect(second.transport).not.toHaveBeenCalled();
+  } finally {
+    await first.outreach.updateContactRules(human, {
+      organizationId: org,
+      ...rules,
+      version: rules.version + 1,
+    });
+  }
 });
 test("an approved follow-up sends and completes, while a newer inbound reply remains actionable", async () => {
   const f = await fixture("gmail", true);

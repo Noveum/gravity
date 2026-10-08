@@ -50,12 +50,17 @@ test("context editor saves readable notes, signals and each custom field type on
     target: { value: "https://example.test/careers" },
   });
   fireEvent.change(signal.getByLabelText(t.contextFields.observedDate), {
-    target: { value: "2026-10-06" },
+    target: { value: "2026-10-06T14:37:18.125" },
   });
   const examples = [
     { label: "Seats", type: "number", value: "0" },
     { label: "Verified", type: "boolean", value: "false" },
     { label: "Review date", type: "date", value: "2026-10-20" },
+    {
+      label: "Review time",
+      type: "datetime",
+      value: "2026-10-20T14:37:18.125",
+    },
     { label: "Website", type: "url", value: "https://example.test" },
     { label: "Region", type: "text", value: "West" },
   ];
@@ -98,11 +103,12 @@ test("context editor saves readable notes, signals and each custom field type on
     0,
     false,
     "2026-10-20",
+    "2026-10-20T14:37:18.125Z",
     "https://example.test",
     "West",
   ]);
   expect(stored.contextDetails.signals[0]?.observedAt).toBe(
-    "2026-10-06T00:00:00Z",
+    "2026-10-06T14:37:18.125Z",
   );
   fireEvent.click(screen.getByRole("button", { name: t.contextFields.edit }));
   const reopened = within(

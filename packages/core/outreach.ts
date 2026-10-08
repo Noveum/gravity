@@ -19,6 +19,10 @@ import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { zonedDayBounds } from "./calendar";
 import { recordContactSubmission } from "./contact-attribution";
+import {
+  contactIdentityIds,
+  contactIdsForParticipants,
+} from "./contact-history";
 import { scopeSchema } from "./crm";
 import { draftHash, draftSubject } from "./drafts";
 import { assertProductAccess, reassignTouches } from "./members";
@@ -287,11 +291,42 @@ async function lastContacts(
       ),
     )
     .groupBy(s.relationships.personId);
-  return new Map(
+  const contacts = new Map(
     rows.flatMap((row) =>
       row.last ? [[row.personId, row.last.getTime()] as const] : [],
     ),
   );
+  // Imported/native outbound messages are actual contact history, even when
+  // they were never dispatched through a Gravity touch or delivery.
+  const messages = await db
+    .select({
+      personId: s.relationships.personId,
+      last: max(s.messages.occurredAt),
+    })
+    .from(s.messages)
+    .innerJoin(
+      s.conversations,
+      eq(s.conversations.id, s.messages.conversationId),
+    )
+    .innerJoin(
+      s.relationships,
+      eq(s.relationships.id, s.conversations.relationshipId),
+    )
+    .where(
+      and(
+        eq(s.messages.organizationId, organizationId),
+        inArray(s.relationships.personId, [...personIds]),
+        eq(s.messages.direction, "outbound"),
+      ),
+    )
+    .groupBy(s.relationships.personId);
+  for (const message of messages)
+    if (message.last)
+      contacts.set(
+        message.personId,
+        Math.max(contacts.get(message.personId) ?? 0, message.last.getTime()),
+      );
+  return contacts;
 }
 
 async function sentOnDay(
@@ -329,7 +364,27 @@ async function sentOnDay(
         lt(s.deliveries.createdAt, new Date(end)),
       ),
     );
-  return (row?.count ?? 0) + (reservations?.count ?? 0);
+  const [observed] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(s.messages)
+    .innerJoin(
+      s.conversations,
+      eq(s.conversations.id, s.messages.conversationId),
+    )
+    .where(
+      and(
+        eq(s.messages.organizationId, organizationId),
+        eq(s.conversations.ownerId, senderId),
+        eq(s.messages.direction, "outbound"),
+        gte(s.messages.occurredAt, new Date(start)),
+        lt(s.messages.occurredAt, new Date(end)),
+        sql`NOT EXISTS (SELECT 1 FROM ${s.deliveries} WHERE ${s.deliveries.organizationId} = ${organizationId}::uuid AND (CASE WHEN ${s.deliveries.channel} = 'linkedin' THEN ${s.deliveries.externalThreadId} || ':' || ${s.deliveries.externalMessageId} ELSE ${s.deliveries.externalMessageId} END) = ${s.messages.providerMessageId} AND ${s.deliveries.connectionId} = ${s.messages.connectionId})`,
+        sql`NOT EXISTS (SELECT 1 FROM ${s.touches} WHERE ${s.touches.organizationId} = ${organizationId}::uuid AND ${s.touches.externalMessageId} = ${s.messages.providerMessageId} AND ${s.touches.channel} = ${s.conversations.channel} AND ${s.messages.connectionId} IS NOT NULL)`,
+      ),
+    );
+  return (
+    (row?.count ?? 0) + (reservations?.count ?? 0) + (observed?.count ?? 0)
+  );
 }
 
 async function expireOpenTouches(
@@ -682,14 +737,36 @@ export async function outboundGate(
   senderId: string,
   person: Pick<
     typeof s.people.$inferSelect,
-    "id" | "doNotContact" | "timeZone"
+    "id" | "doNotContact" | "timeZone" | "email" | "otherEmails" | "linkedinUrl"
   >,
   now: number,
 ) {
-  return (await gateContext(db, organizationId, [person.id], now))(
-    { senderId },
-    person,
-  );
+  const identities = await contactIdentityIds(db, organizationId, person);
+  const [rules, zone, contacts] = await Promise.all([
+    readContactRules(db, organizationId),
+    workspaceZone(db, organizationId),
+    lastContacts(db, organizationId, identities),
+  ]);
+  const [excluded] = await db
+    .select({ id: s.people.id })
+    .from(s.people)
+    .where(
+      and(
+        eq(s.people.organizationId, organizationId),
+        inArray(s.people.id, identities),
+        eq(s.people.doNotContact, true),
+      ),
+    )
+    .limit(1);
+  return sendWindow({
+    now,
+    doNotContact: person.doNotContact || !!excluded,
+    timeZone: person.timeZone ?? zone,
+    workspaceTimeZone: zone,
+    lastContactAt: contacts.size ? Math.max(...contacts.values()) : null,
+    sentTodayBySender: await sentOnDay(db, organizationId, senderId, now, zone),
+    rules,
+  });
 }
 
 export async function pauseForReply(
@@ -774,18 +851,7 @@ export async function peopleByEmail(
   organizationId: string,
   email: string,
 ) {
-  const lowered = email.trim().toLowerCase();
-  if (!lowered) return [];
-  const rows = await db
-    .select({ id: s.people.id })
-    .from(s.people)
-    .where(
-      and(
-        eq(s.people.organizationId, organizationId),
-        sql`(lower(${s.people.email}) = ${lowered} OR ${s.people.otherEmails} ?| array[${lowered}]::text[])`,
-      ),
-    );
-  return rows.map((row) => row.id);
+  return contactIdsForParticipants(db, organizationId, [email]);
 }
 
 export class OutreachService {

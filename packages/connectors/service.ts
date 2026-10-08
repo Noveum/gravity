@@ -15,10 +15,15 @@ import { z } from "zod";
 import { appUrl } from "../auth/options";
 import { publishChange } from "../core/changes";
 import { recordProviderContribution } from "../core/contact-attribution";
+import {
+  contactIdentityIds,
+  contactIdsForParticipants,
+  lockContactDirectory,
+} from "../core/contact-history";
 import { pauseForReply, peopleByEmail } from "../core/outreach";
 import { authorize, DomainError, type Principal } from "../core/policy";
 import { assertProductActive } from "../core/products";
-import { assertActiveRelationships } from "../core/visibility";
+import { assertActiveRelationships, clearApprovals } from "../core/visibility";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import {
@@ -800,6 +805,37 @@ export class IntegrationService {
               )
           : [];
       if (
+        record.kind === "message" &&
+        !isDeepStrictEqual(prior?.record, record) &&
+        (!linked || prior?.status === "matched")
+      ) {
+        await lockContactDirectory(tx, active.organizationId);
+        const identities = await contactIdsForParticipants(
+          tx,
+          active.organizationId,
+          [...record.participants, ...(record.from ? [record.from] : [])],
+        );
+        if (identities.length)
+          await tx
+            .select({ id: s.people.id })
+            .from(s.people)
+            .where(
+              and(
+                eq(s.people.organizationId, active.organizationId),
+                inArray(s.people.id, identities),
+              ),
+            )
+            .orderBy(s.people.id)
+            .for("update");
+        for (const personId of identities)
+          await clearApprovals(
+            tx,
+            { userId: active.ownerId, source: "session" },
+            active.organizationId,
+            personId,
+          );
+      }
+      if (
         !prior &&
         !linked &&
         record.kind === "message" &&
@@ -892,6 +928,53 @@ export class IntegrationService {
       const { threadId, direction } = record;
       if (!threadId || !direction) throw new DomainError("INVALID_INPUT", 400);
       await this.db.transaction(async (tx) => {
+        // Match the connection/contact lock order used by reply ingestion.
+        const [active] = await tx
+          .select()
+          .from(s.connections)
+          .where(
+            and(
+              eq(s.connections.id, connection.id),
+              eq(s.connections.status, "connected"),
+            ),
+          )
+          .for("update");
+        if (!active?.productId || !active.encryptedCredentials)
+          throw new DomainError("CONNECTION_UNAVAILABLE", 422);
+        await authorize(
+          tx,
+          permission,
+          connection.organizationId,
+          relationship.productId,
+          true,
+        );
+        await lockContactDirectory(tx, connection.organizationId);
+        const [person] = await tx
+          .select()
+          .from(s.people)
+          .where(
+            and(
+              eq(s.people.id, relationship.personId),
+              eq(s.people.organizationId, connection.organizationId),
+            ),
+          );
+        if (!person) throw new DomainError("NOT_FOUND", 404);
+        const identities = await contactIdentityIds(
+          tx,
+          connection.organizationId,
+          person,
+        );
+        await tx
+          .select({ id: s.people.id })
+          .from(s.people)
+          .where(
+            and(
+              eq(s.people.organizationId, connection.organizationId),
+              inArray(s.people.id, identities),
+            ),
+          )
+          .orderBy(s.people.id)
+          .for("update");
         if (linkedByMember) {
           await assertActiveRelationships(tx, connection.organizationId, [
             relationshipId,

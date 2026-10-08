@@ -1189,6 +1189,68 @@ describe("dialogs and safety", () => {
 });
 
 describe("record editing keys", () => {
+  test("opportunities starts as one combined board and B/L switch layouts without intercepting search typing", async () => {
+    binding("board-layout");
+    binding("list-layout");
+    await mountCrm(harness, "/opportunities");
+    expect(
+      screen.getAllByRole("region", { name: t.opportunityBoard.title }),
+    ).toHaveLength(1);
+    expect(
+      screen
+        .getByRole("button", { name: t.inlineEditing.board })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    screen.getByRole("button", { name: t.inlineEditing.list }).focus();
+    await press("l");
+    expect(screen.getByRole("table")).toBeTruthy();
+    expect(new URLSearchParams(window.location.search).get("layout")).toBe(
+      "list",
+    );
+    screen.getByRole("button", { name: t.inlineEditing.board }).focus();
+    await press("b");
+    expect(
+      screen.getByRole("region", { name: t.opportunityBoard.title }),
+    ).toBeTruthy();
+    const search = screen.getByRole("searchbox");
+    search.focus();
+    await press("l");
+    expect(
+      new URLSearchParams(window.location.search).get("layout"),
+    ).toBeNull();
+  });
+
+  test("filtered opportunity emptiness explains recovery and clears the search, amount, pipeline and stage filters", async () => {
+    await mountCrm(
+      harness,
+      `/opportunities?currency=USD&minimum=6000&pipeline=${demoId(1212)}&stage=${demoId(821)}`,
+    );
+    const search = screen.getByRole("searchbox");
+    await userEvent.setup().type(search, "No matching fictional deal");
+    expect(screen.getByText(t.uiRefresh.noMatchingDeals)).toBeTruthy();
+    const empty = screen
+      .getByRole("heading", { name: t.noResults })
+      .closest(".empty-state") as HTMLElement;
+    fireEvent.click(
+      within(empty).getByRole("button", { name: t.clearFilters }),
+    );
+    await screen.findByRole("region", { name: t.opportunityBoard.title });
+    expect(window.location.search).toBe("");
+    expect(search).toHaveProperty("value", "");
+    expect(
+      screen.getByRole("button", { name: "Cedar workflow pilot" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Northstar evaluation project" }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "API Marketplace" }));
+    await screen.findByText(t.uiRefresh.noMatchingDeals);
+    fireEvent.click(
+      screen.getByRole("button", { name: t.actionEmpty.viewAllProducts }),
+    );
+    await screen.findByRole("button", { name: "Cedar workflow pilot" });
+  });
+
   test("keyboard stage moves stay inside the deal's pipeline", async () => {
     const snapshot = await harness.service.snapshot(
       { userId: demoUser, source: "demo" },
@@ -1215,12 +1277,10 @@ describe("record editing keys", () => {
   });
 
   const card = (name: string) => screen.getByRole("button", { name });
-  const column = (name: string, product = "AI Platform") => {
-    const pipeline = screen
-      .getByRole("heading", { name: `${product} / Sales pipeline`, level: 2 })
-      .closest(".product-pipeline") as HTMLElement;
-    return within(pipeline).getByRole("region", { name });
-  };
+  const column = (name: string) =>
+    within(
+      screen.getByRole("region", { name: t.opportunityBoard.title }),
+    ).getByRole("region", { name });
   const changes = () =>
     harness.posts.filter((post) => post.operation === "opportunity-change") as {
       stageId?: string;
@@ -1296,18 +1356,10 @@ describe("record editing keys", () => {
     const article = card(name).closest("article") as HTMLElement;
     fireEvent.dragStart(article);
     fireEvent.dragOver(column("Won"));
-    expect(column("Won").hasAttribute("data-drop-target")).toBe(false);
+    expect(column("Won").hasAttribute("data-drop-target")).toBe(true);
     fireEvent.drop(column("Won"));
-    expect(changes()).toHaveLength(0);
-    fireEvent.dragOver(column("Won", "Services"));
-    expect(column("Won", "Services").hasAttribute("data-drop-target")).toBe(
-      true,
-    );
-    fireEvent.drop(column("Won", "Services"));
     await waitFor(() =>
-      expect(
-        within(column("Won", "Services")).getByRole("button", { name }),
-      ).toBeTruthy(),
+      expect(within(column("Won")).getByRole("button", { name })).toBeTruthy(),
     );
     expect(changes().map((post) => post.stageId)).toEqual([demoId(823)]);
     card(name).focus();

@@ -1,0 +1,257 @@
+.opportunity-workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.opportunity-workspace[data-layout="board"] {
+  height: 100%;
+}
+
+.opportunity-controls,
+.opportunity-workspace > .record-filters {
+  flex-shrink: 0;
+}
+
+.opportunity-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 16px 10px;
+}
+
+.opportunity-workspace .layout-switch {
+  margin-left: 0;
+  flex-shrink: 0;
+  background: var(--gravity-surface-2);
+}
+
+.opportunity-workspace .layout-switch button[aria-pressed="true"] {
+  background: var(--gravity-surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+}
+
+.opportunity-workspace .layout-switch kbd {
+  min-width: 14px;
+  padding: 0 3px;
+  font-size: 10px;
+  color: var(--gravity-muted);
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: 3px;
+}
+
+.opportunity-pipeline-filter {
+  width: clamp(160px, 18vw, 260px);
+}
+
+.opportunity-pipeline-filter .select-trigger {
+  width: 100%;
+}
+
+.opportunity-result-count {
+  font-size: var(--text-xs);
+  color: var(--gravity-muted);
+  white-space: nowrap;
+}
+
+.opportunity-control-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.opportunity-board {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 240px;
+  padding: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable;
+}
+
+.opportunity-workspace .opportunity-columns {
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: visible;
+}
+
+.opportunity-workspace .opportunity-columns > section {
+  min-width: 0;
+  max-height: none;
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: 10px;
+}
+
+.opportunity-column-head {
+  flex-shrink: 0;
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--gravity-border-subtle);
+}
+
+.opportunity-workspace .opportunity-column-head .group-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0;
+  margin: 0 0 4px;
+  font-size: var(--text-dense);
+  font-weight: 600;
+}
+
+.opportunity-column-count {
+  padding: 1px 6px;
+  border: 1px solid var(--gravity-border-subtle);
+  border-radius: 5px;
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--gravity-muted);
+}
+
+.opportunity-column-head .stage-value {
+  display: block;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--gravity-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.opportunity-workspace .opportunity-card {
+  padding: 12px;
+  margin: 8px;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 3%);
+}
+
+.opportunity-card .deal-card-head .text-button {
+  text-align: left;
+  line-height: 1.5;
+  font-size: var(--text-dense);
+  font-weight: 500;
+}
+
+.opportunity-product {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 8px;
+  font-size: var(--text-2xs);
+  color: var(--gravity-muted);
+}
+
+.opportunity-product .product-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.opportunity-card .opportunity-person {
+  margin: 5px 0 12px;
+  overflow-wrap: anywhere;
+}
+
+.opportunity-card-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.opportunity-card-value strong {
+  font-size: var(--text-dense);
+  font-weight: 600;
+}
+
+.opportunity-card-value strong.muted {
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+.opportunity-card-value > span {
+  padding: 1px 5px;
+  background: var(--gravity-surface-2);
+  border-radius: 4px;
+  font-size: var(--text-2xs);
+  color: var(--gravity-muted);
+}
+
+.opportunity-card-owner {
+  margin-top: 6px;
+  font-size: var(--text-2xs);
+  color: var(--gravity-muted);
+}
+
+.opportunity-close-date {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 7px;
+  color: var(--gravity-muted);
+}
+
+.opportunity-card .record-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 9px;
+}
+
+.opportunity-card .record-tags .badge {
+  max-width: 100%;
+  font-size: var(--text-2xs);
+  overflow-wrap: anywhere;
+}
+
+.opportunity-card .deal-context {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--gravity-border-subtle);
+}
+
+.opportunity-card .deal-context small {
+  display: block;
+  margin-top: 8px;
+}
+
+.opportunity-card .deal-context summary {
+  color: var(--gravity-muted);
+}
+
+.opportunity-columns .stage-cards {
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 760px) {
+  .opportunity-controls {
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .opportunity-control-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .opportunity-pipeline-filter {
+    flex: 1;
+    min-width: 150px;
+  }
+
+  .opportunity-workspace .layout-switch kbd {
+    display: none;
+  }
+
+  .opportunity-board {
+    padding: 12px;
+  }
+}

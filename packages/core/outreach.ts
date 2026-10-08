@@ -5,6 +5,7 @@ import {
   eq,
   gt,
   gte,
+  ilike,
   inArray,
   isNotNull,
   isNull,
@@ -34,6 +35,12 @@ import {
 import { authorize, DomainError, type Principal } from "./policy";
 import { assertProductActive } from "./products";
 import {
+  recordFactConditions,
+  recordFilterFields,
+  relationshipFactSql,
+  type SqlRecordFacts,
+} from "./record-filters";
+import {
   emptyRelationshipDetails,
   fitsRelationshipInput,
   relationshipDetailsPatchSchema,
@@ -62,6 +69,70 @@ export const enrollSchema = scopeSchema.extend({
   dryRun: z.boolean().default(false),
 });
 export const touchQuerySchema = touchScope;
+export const outreachListSchema = scopeSchema
+  .extend({
+    ...recordFilterFields,
+    status: z
+      .enum([
+        "planned",
+        "drafted",
+        "approved",
+        "sent",
+        "skipped",
+        "expired",
+        "paused",
+      ])
+      .optional(),
+    channel: z.enum(["gmail", "linkedin"]).optional(),
+    stageId: z.uuid().optional(),
+    pipelineId: z.uuid().optional(),
+  })
+  .refine(
+    (input) =>
+      input.minimum === undefined ||
+      input.maximum === undefined ||
+      input.minimum <= input.maximum,
+  );
+
+function outreachFilters(
+  input: z.infer<typeof outreachListSchema>,
+  facts: SqlRecordFacts,
+  status: SQL,
+  searchable: SQL[],
+) {
+  const term = `%${input.query.replace(/[\\%_]/g, "\\$&")}%`;
+  return [
+    ...recordFactConditions(input, { ...facts, status }),
+    input.query
+      ? or(...searchable.map((value) => ilike(value, term)))
+      : undefined,
+    input.stageId ? eq(s.relationships.stageId, input.stageId) : undefined,
+    input.pipelineId
+      ? sql`EXISTS (SELECT 1 FROM ${s.stages} WHERE ${s.stages.id} = ${s.relationships.stageId} AND ${s.stages.organizationId} = ${input.organizationId} AND ${s.stages.productId} = ${s.relationships.productId} AND ${s.stages.pipelineId} = ${input.pipelineId})`
+      : undefined,
+  ];
+}
+
+function outreachOrder(
+  input: z.infer<typeof outreachListSchema>,
+  facts: SqlRecordFacts,
+  defaultOrder: SQL[],
+  id: SQL,
+) {
+  if (input.sort === "default") return defaultOrder;
+  if (input.sort.startsWith("amount_") && facts.amount && facts.currency)
+    return [
+      sql`${facts.amount} IS NULL ASC`,
+      asc(facts.currency),
+      input.sort === "amount_desc" ? desc(facts.amount) : asc(facts.amount),
+      asc(s.people.name),
+      asc(id),
+    ];
+  return [
+    input.sort === "name_desc" ? desc(s.people.name) : asc(s.people.name),
+    asc(id),
+  ];
+}
 export const touchDraftSchema = touchScope.extend({
   version,
   draft: z.string().max(20000),
@@ -977,7 +1048,11 @@ export class OutreachService {
     });
   }
 
-  async dueTouches(principal: Principal, scope: z.infer<typeof scopeSchema>) {
+  async dueTouches(
+    principal: Principal,
+    input: z.input<typeof outreachListSchema>,
+  ) {
+    const scope = outreachListSchema.parse(input);
     const permission = await authorize(
       this.db,
       principal,
@@ -987,6 +1062,11 @@ export class OutreachService {
     const productIds = permission.products
       .map((product) => product.id)
       .filter((id) => !scope.productId || id === scope.productId);
+    const facts = relationshipFactSql(
+      sql`${s.touches.relationshipId}`,
+      scope.organizationId,
+      productIds,
+    );
     const now = this.clock();
     const zone = await workspaceZone(this.db, scope.organizationId);
     const [, endOfToday] = zonedDayBounds(now, zone);
@@ -1033,9 +1113,21 @@ export class OutreachService {
               lt(s.touches.dueAt, new Date(endOfToday)),
               eq(s.enrollments.status, "running"),
               isNull(s.people.archivedAt),
+              scope.channel ? eq(s.touches.channel, scope.channel) : undefined,
+              ...outreachFilters(scope, facts, sql`${s.touches.status}`, [
+                sql`${s.people.name}`,
+                sql`${s.touches.draft}`,
+              ]),
             ),
           )
-          .orderBy(asc(s.touches.dueAt), asc(s.touches.id))
+          .orderBy(
+            ...outreachOrder(
+              scope,
+              facts,
+              [asc(s.touches.dueAt), asc(s.touches.id)],
+              sql`${s.touches.id}`,
+            ),
+          )
       : [];
     const gate = await gateContext(
       this.db,
@@ -1064,7 +1156,8 @@ export class OutreachService {
     };
   }
 
-  async queue(principal: Principal, scope: z.infer<typeof scopeSchema>) {
+  async queue(principal: Principal, input: z.input<typeof outreachListSchema>) {
+    const scope = outreachListSchema.parse(input);
     const permission = await authorize(
       this.db,
       principal,
@@ -1074,6 +1167,11 @@ export class OutreachService {
     const productIds = permission.products
       .map((product) => product.id)
       .filter((id) => !scope.productId || id === scope.productId);
+    const facts = relationshipFactSql(
+      sql`${s.touches.relationshipId}`,
+      scope.organizationId,
+      productIds,
+    );
     const now = this.clock();
     const asOf = new Date(now).toISOString();
     if (!productIds.length)
@@ -1128,6 +1226,11 @@ export class OutreachService {
         and(
           eq(s.touches.organizationId, scope.organizationId),
           inArray(s.touches.productId, productIds),
+          scope.channel ? eq(s.touches.channel, scope.channel) : undefined,
+          ...outreachFilters(scope, facts, sql`${s.touches.status}`, [
+            sql`${s.people.name}`,
+            sql`${s.touches.draft}`,
+          ]),
           or(
             and(
               inArray(s.touches.status, [...openStatuses]),
@@ -1141,7 +1244,14 @@ export class OutreachService {
           ),
         ),
       )
-      .orderBy(asc(s.touches.dueAt), asc(s.touches.id));
+      .orderBy(
+        ...outreachOrder(
+          scope,
+          facts,
+          [asc(s.touches.dueAt), asc(s.touches.id)],
+          sql`${s.touches.id}`,
+        ),
+      );
     const gate = await gateContext(
       this.db,
       scope.organizationId,
@@ -1166,6 +1276,11 @@ export class OutreachService {
         const window = await gate(touch, who);
         return { ...base, allowed: window.allowed, ...gateData(window) };
       }),
+    );
+    const pausedFacts = relationshipFactSql(
+      sql`${s.enrollments.relationshipId}`,
+      scope.organizationId,
+      productIds,
     );
     const paused = await this.db
       .select({
@@ -1202,9 +1317,23 @@ export class OutreachService {
           eq(s.enrollments.organizationId, scope.organizationId),
           inArray(s.enrollments.productId, productIds),
           eq(s.enrollments.status, "paused"),
+          scope.channel
+            ? sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${s.sequences.steps}) AS step(value) WHERE step.value->>'channel' = ${scope.channel})`
+            : undefined,
+          ...outreachFilters(scope, pausedFacts, sql`${s.enrollments.status}`, [
+            sql`${s.people.name}`,
+            sql`${s.sequences.name}`,
+          ]),
         ),
       )
-      .orderBy(desc(s.relationships.lastInboundAt), asc(s.enrollments.id));
+      .orderBy(
+        ...outreachOrder(
+          scope,
+          pausedFacts,
+          [desc(s.relationships.lastInboundAt), asc(s.enrollments.id)],
+          sql`${s.enrollments.id}`,
+        ),
+      );
     return {
       drafts: listed.filter(
         (touch) => touch.status === "planned" || touch.status === "drafted",
@@ -1212,8 +1341,10 @@ export class OutreachService {
       approved: listed.filter((touch) => touch.status === "approved"),
       sent: listed
         .filter((touch) => touch.status === "sent")
-        .sort(
-          (a, b) => (b.sentAt?.getTime() ?? 0) - (a.sentAt?.getTime() ?? 0),
+        .sort((a, b) =>
+          scope.sort === "default"
+            ? (b.sentAt?.getTime() ?? 0) - (a.sentAt?.getTime() ?? 0)
+            : 0,
         ),
       paused: paused.map(({ enrollment, person: who, ...row }) => ({
         ...enrollment,

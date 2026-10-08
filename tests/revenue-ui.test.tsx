@@ -6,6 +6,7 @@ import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
+import { chooseSelect } from "./support/select-control";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
 vi.mock("next/link", () => import("./support/memory-router"));
@@ -167,16 +168,17 @@ test("switching products clears an incompatible pipeline and stage instead of hi
     harness,
     `/opportunities?pipeline=${pipeline.id}&stage=${demoId(801)}`,
   );
-  fireEvent.change(screen.getByRole("combobox", { name: t.product }), {
-    target: { value: demoId(11) },
-  });
-  await waitFor(() => expect(window.location.search).toBe(""));
-  expect(screen.getByRole("combobox", { name: t.pipeline })).toHaveProperty(
-    "value",
-    "",
+  await chooseSelect(
+    screen.getByRole("combobox", { name: t.product }),
+    "API Marketplace",
   );
+  await waitFor(() => expect(window.location.search).toBe(""));
+  expect(
+    screen.getByRole("combobox", { name: t.pipeline }).textContent,
+  ).toContain(t.allPipelines);
   fireEvent.click(screen.getByRole("button", { name: t.inlineEditing.board }));
-  expect(screen.getByText(t.inlineEditing.noOpportunities)).toBeTruthy();
+  expect(screen.getByText(t.noResults)).toBeTruthy();
+  expect(screen.getByText(t.uiRefresh.noMatchingDeals)).toBeTruthy();
 });
 
 test("overview forecasts use deals, exclude contact estimates and disclose incomplete coverage", async () => {

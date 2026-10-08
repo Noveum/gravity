@@ -6,13 +6,15 @@ import { Pagination, useListPage } from "./list-browser";
 export function StageCards<T>({
   rows,
   scope,
+  revealId = "",
   children,
 }: {
   rows: T[];
   scope: string;
+  revealId?: string;
   children: (rows: T[]) => ReactNode;
 }) {
-  const page = useListPage(rows, scope);
+  const page = useListPage(rows, scope, revealId);
   return (
     <>
       <div className="stage-cards">

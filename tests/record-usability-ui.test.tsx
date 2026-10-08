@@ -14,6 +14,7 @@ import t from "../packages/i18n/translations/en.json";
 import { archiveRecord, contactTab } from "./support/contact-workspace";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
 import { visit } from "./support/memory-router";
+import { chooseSelect } from "./support/select-control";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
 vi.mock("next/link", () => import("./support/memory-router"));
@@ -357,10 +358,7 @@ describe("browsing records", () => {
     fireEvent.click(
       inspector().getByRole("button", { name: t.closeInspector }),
     );
-    fireEvent.click(screen.getByText(t.filters));
-    fireEvent.change(screen.getByLabelText(t.tags), {
-      target: { value: "enterprise" },
-    });
+    await chooseSelect(screen.getByLabelText(t.tags), "Enterprise");
     fireEvent.change(screen.getByLabelText(t.minimumDealSize), {
       target: { value: "20000" },
     });
@@ -368,9 +366,7 @@ describe("browsing records", () => {
     expect(table.getAllByRole("row")).toHaveLength(2);
     expect(table.getByRole("link", { name: "Jonah Reed" })).toBeTruthy();
     expect(table.getByText("$25,000.00")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText(t.currency), {
-      target: { value: "USD" },
-    });
+    await chooseSelect(screen.getByLabelText(t.currency), "USD");
     fireEvent.change(screen.getByLabelText(t.maximumDealSize), {
       target: { value: "100" },
     });

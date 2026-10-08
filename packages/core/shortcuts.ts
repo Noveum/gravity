@@ -27,7 +27,8 @@ export type ShortcutScope =
   | "pipeline"
   | "outreach"
   | "row"
-  | "dialog";
+  | "dialog"
+  | "opportunities";
 export type ShortcutSection =
   | "navigation"
   | "general"
@@ -128,6 +129,8 @@ const definitions = {
     "lists",
     labels.movePrevious,
   ),
+  "board-layout": define(["b"], "opportunities", "lists", labels.boardLayout),
+  "list-layout": define(["l"], "opportunities", "lists", labels.listLayout),
   "move-to": define(["m"], "pipeline", "lists", labels.moveTo),
   done: define(["d"], "actions", "actions", labels.done),
   snooze: define(["s"], "actions", "actions", labels.snooze),

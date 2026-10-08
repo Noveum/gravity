@@ -16,6 +16,7 @@ import { requestJson } from "../src/components/client-api";
 import { contactTab } from "./support/contact-workspace";
 import { installCrmHarness, mountCrm, principal } from "./support/crm-harness";
 import { visit } from "./support/memory-router";
+import { chooseSelect } from "./support/select-control";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
 vi.mock("next/link", () => import("./support/memory-router"));
@@ -79,15 +80,15 @@ test("recording a declared source preserves unknown creator and owner, and filte
   const source = await screen.findByRole("combobox", {
     name: t.attribution.sourceMember,
   });
-  fireEvent.change(source, { target: { value: "demo-teammate" } });
+  await chooseSelect(source, "Sam Rivera");
   await waitFor(() =>
     expect(screen.getByRole("table").querySelectorAll("tbody tr")).toHaveLength(
       1,
     ),
   );
-  fireEvent.change(
+  await chooseSelect(
     screen.getByRole("combobox", { name: t.attribution.submittedBy }),
-    { target: { value: "demo-teammate" } },
+    "Sam Rivera",
   );
   await waitFor(() =>
     expect(

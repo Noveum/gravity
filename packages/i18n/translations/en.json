@@ -1189,7 +1189,9 @@
     "save": "Save the form or draft",
     "edit": "Edit the open record",
     "moveNext": "Move to the next open stage",
-    "movePrevious": "Move to the previous stage"
+    "movePrevious": "Move to the previous stage",
+    "boardLayout": "Show opportunity board",
+    "listLayout": "Show opportunity list"
   },
   "shortcutSections": {
     "outreach": "Outreach",
@@ -2191,5 +2193,53 @@
     "newAction": "Add next action",
     "showAll": "Show all ({count})",
     "showLess": "Show less"
+  },
+  "uiRefresh": {
+    "clearProduct": "Clear product filter",
+    "searchDeals": "Search deals, people or companies…",
+    "nameDescending": "Name · Z to A",
+    "amountDescending": "Deal size · high to low",
+    "amountAscending": "Deal size · low to high",
+    "noLimit": "No limit",
+    "noMatchingDeals": "Try another search, product or filter to see more deals."
+  },
+  "activityEmptyTitle": "No synced messages in this period",
+  "activityEmptyDescription": "Try a wider date range or review your connections and unmatched conversations.",
+  "activityDailyTotal": "{count} messages per day",
+  "activityTotal": "Total messages",
+  "activityActiveDays": "Days with activity",
+  "reviewConnections": "Review connections",
+  "pipelineValueNote": "Current value of open deals with a recorded amount. This is unweighted pipeline, not booked revenue.",
+  "pricedDeals": "Deals with an amount",
+  "forecastIncludedDeals": "Deals in forecast",
+  "forecastProbability": "Win probability",
+  "opportunityBoard": {
+    "title": "Opportunity board",
+    "layout": "Opportunity layout",
+    "deals": "{count} deals",
+    "moreTags": "More tags: {tags}",
+    "deal": "{count} deal"
+  },
+  "actionEmpty": {
+    "repliesTitle": "No replies to handle",
+    "repliesDetail": "This view shows scheduled reply actions. Imported tags and notes do not create reply tasks. Review contact history, then schedule the next action.",
+    "promisesTitle": "No promises scheduled",
+    "promisesDetail": "Promises appear after you schedule a commitment or accept a reviewed meeting commitment. Imported notes alone do not establish a promise.",
+    "waitingTitle": "Nothing is awaiting them",
+    "waitingDetail": "This view shows open actions owed by the other person. Schedule a review reminder with Owed by set to Them when you are waiting for a response.",
+    "allTitle": "No next actions yet",
+    "allDetail": "Schedule an action from a person’s record to give the next step an owner and a due date.",
+    "filteredDetail": "Try another product, search or filter, or clear the filters to see more scheduled actions.",
+    "viewAll": "View all next actions",
+    "reviewPeople": "Review people",
+    "viewAllProducts": "View all products"
+  },
+  "outreachFilteredDetail": "Try another product, search or filter, or clear the filters to see more outreach.",
+  "outreachEmptyDetails": {
+    "today": "No sequence touches are due for this product today. Check drafts and approved messages, or enroll a person in a sequence.",
+    "drafts": "Drafts are created from real sequence enrollments. Enroll people in a sequence to plan their next message.",
+    "approved": "Review and approve a draft to add it here. Approval applies to the exact saved draft and does not send it.",
+    "sent": "This view contains recorded sequence sends from the last 30 days. Synced mailbox history appears in the person’s record and Overview.",
+    "paused": "Sequences pause after a reply or an explicit pause. Running enrollments stay in the other outreach tabs."
   }
 }

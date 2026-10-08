@@ -2,9 +2,13 @@
 import { parseMoney } from "@crm/core/analytics";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
-import { type ReactNode, useMemo, useState } from "react";
+import { SlidersHorizontal } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { type ReactNode, useId, useMemo, useState } from "react";
 import { useWorkspaceData } from "../crm/crm-context";
 import { minorStep } from "../money";
+import { Select } from "../ui/select";
+import { currentViewQuery, replaceViewQuery } from "../view-query";
 
 export interface RecordFacts {
   tags?: readonly string[];
@@ -172,7 +176,7 @@ export function PagedItems<T>({
   );
 }
 
-const emptyFilters = {
+export const emptyFilters = {
   tag: "",
   ownerId: "",
   submittedBy: "",
@@ -194,10 +198,28 @@ export function useRecordBrowser<T>(
 ) {
   const crm = useWorkspaceData();
   const scope = `${crm.organizationId}/${crm.productId}/${crm.pathname}/${crm.listFilterKey}`;
-  const [state, setState] = useState({ scope, filters: emptyFilters });
-  const filters = state.scope === scope ? state.filters : emptyFilters;
-  const update = (key: keyof typeof emptyFilters, value: string) =>
-    setState({ scope, filters: { ...filters, [key]: value } });
+  const query = useSearchParams();
+  const filters = Object.fromEntries(
+    Object.entries(emptyFilters).map(([key, fallback]) => [
+      key,
+      query.get(key === "ownerId" ? "owner" : key) ?? fallback,
+    ]),
+  ) as typeof emptyFilters;
+  const replace = replaceViewQuery;
+  const update = (key: keyof typeof emptyFilters, value: string) => {
+    const next = currentViewQuery();
+    const parameter = key === "ownerId" ? "owner" : key;
+    if (value && !(key === "sort" && value === "default"))
+      next.set(parameter, value);
+    else next.delete(parameter);
+    replace(next);
+  };
+  const clear = () => {
+    const next = currentViewQuery();
+    for (const key of Object.keys(emptyFilters))
+      next.delete(key === "ownerId" ? "owner" : key);
+    replace(next);
+  };
   const facts = rows.map((row) => ({ row, value: read(row) }));
   let invalid = false;
   let minimum: number | null = null;
@@ -266,8 +288,32 @@ export function useRecordBrowser<T>(
       return false;
     return true;
   });
-  if (filters.sort === "name")
-    filtered.sort((a, b) => name(a.row).localeCompare(name(b.row)));
+  const idOrder = (a: T, b: T) =>
+    String((a as { id?: string }).id ?? "").localeCompare(
+      String((b as { id?: string }).id ?? ""),
+    );
+  const nameOrder = (a: T, b: T) =>
+    name(a).localeCompare(name(b)) || idOrder(a, b);
+  if (filters.sort === "name" || filters.sort === "name_desc")
+    filtered.sort(
+      (a, b) =>
+        name(a.row).localeCompare(name(b.row)) *
+          (filters.sort === "name_desc" ? -1 : 1) || idOrder(a.row, b.row),
+    );
+  if (filters.sort === "amount_asc" || filters.sort === "amount_desc")
+    filtered.sort((a, b) => {
+      if (a.value.amountMinor == null && b.value.amountMinor != null) return 1;
+      if (b.value.amountMinor == null && a.value.amountMinor != null) return -1;
+      const currency = (a.value.currency || "USD").localeCompare(
+        b.value.currency || "USD",
+      );
+      return (
+        currency ||
+        ((a.value.amountMinor ?? 0) - (b.value.amountMinor ?? 0)) *
+          (filters.sort === "amount_desc" ? -1 : 1) ||
+        nameOrder(a.row, b.row)
+      );
+    });
   const page = useListPage(
     filtered.map(({ row }) => row),
     `${scope}/${crm.search}/${JSON.stringify(filters)}`,
@@ -278,7 +324,17 @@ export function useRecordBrowser<T>(
     rows: filtered.map(({ row }) => row),
     filters,
     update,
-    clear: () => setState({ scope, filters: emptyFilters }),
+    clear,
+    amountMaximum:
+      Math.max(
+        0,
+        ...facts
+          .filter(
+            ({ value }) =>
+              (value.currency || "USD") === (filters.currency || "USD"),
+          )
+          .map(({ value }) => value.amountMinor ?? 0),
+      ) * Number(minorStep(filters.currency || "USD")),
     invalid,
     tags: [
       ...new Map(
@@ -314,7 +370,9 @@ export function useRecordBrowser<T>(
     hasOwner: facts.some(
       ({ value }) => !!value.ownerId || !!value.ownerIds?.length,
     ),
-    hasAttribution: facts.some(({ value }) => value.attribution),
+    hasAttribution:
+      crm.route?.section === "people" ||
+      facts.some(({ value }) => value.attribution),
     attributionMembers: [
       ...new Set(
         facts.flatMap(({ value }) => [
@@ -333,199 +391,186 @@ export function useRecordBrowser<T>(
   };
 }
 
-export function RecordFilters({
+export function RecordSort({
   browser,
 }: {
   browser: ReturnType<typeof useRecordBrowser>;
 }) {
+  const id = useId();
+  return (
+    <label className="record-sort" htmlFor={id}>
+      <span>{t.sortBy}</span>
+      <Select
+        id={id}
+        label={t.sortBy}
+        value={browser.filters.sort}
+        onChange={(value) => browser.update("sort", value)}
+        options={[
+          { value: "default", label: t.defaultOrder },
+          { value: "name", label: t.name },
+          { value: "name_desc", label: t.uiRefresh.nameDescending },
+          { value: "amount_desc", label: t.uiRefresh.amountDescending },
+          { value: "amount_asc", label: t.uiRefresh.amountAscending },
+        ]}
+      />
+    </label>
+  );
+}
+
+export function RecordFilters({
+  browser,
+  hideSort = false,
+  hiddenFields = [],
+}: {
+  browser: ReturnType<typeof useRecordBrowser>;
+  hideSort?: boolean;
+  hiddenFields?: readonly (keyof typeof emptyFilters)[];
+}) {
   const { filters, update } = browser;
+  const id = useId();
   const active = Object.entries(filters).filter(
     ([key, value]) => value && !(key === "sort" && value === "default"),
   ).length;
+  const field = (
+    key: keyof typeof emptyFilters,
+    label: string,
+    options: readonly { value: string; label: string }[],
+  ) =>
+    hiddenFields.includes(key) ? null : (
+      <label className={`filter-field filter-${key}`} htmlFor={`${id}-${key}`}>
+        <span>{label}</span>
+        <Select
+          id={`${id}-${key}`}
+          label={label}
+          value={filters[key]}
+          onChange={(value) => update(key, value)}
+          options={options}
+        />
+      </label>
+    );
   return (
-    <details className="record-filters">
-      <summary>
-        {t.filters}
-        {active ? ` (${active})` : ""}
-      </summary>
-      <div className="record-filter-fields">
-        <label>
-          {t.tags}
-          <select
-            value={filters.tag}
-            onChange={(e) => update("tag", e.target.value)}
-          >
-            <option value="">{t.allTags}</option>
-            {browser.tags.map(([key, tag]) => (
-              <option key={key} value={key}>
-                {tag}
-              </option>
-            ))}
-          </select>
-        </label>
-        {browser.hasOwner && (
-          <label>
-            {t.owner}
-            <select
-              value={filters.ownerId}
-              onChange={(e) => update("ownerId", e.target.value)}
-            >
-              <option value="">{t.everyone}</option>
-              {browser.members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {browser.hasAttribution && (
-          <>
-            <label>
-              {t.attribution.submittedBy}
-              <select
-                value={filters.submittedBy}
-                onChange={(e) => update("submittedBy", e.target.value)}
-              >
-                <option value="">{t.attribution.allSubmitters}</option>
-                <option value={browser.userId}>
-                  {t.attribution.submittedByMe}
-                </option>
-                {browser.attributionMembers
-                  .filter((m) => m.id !== browser.userId)
-                  .map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              {t.attribution.sourceMember}
-              <select
-                value={filters.sourceMemberId}
-                onChange={(e) => update("sourceMemberId", e.target.value)}
-              >
-                <option value="">{t.attribution.allSources}</option>
-                {browser.attributionMembers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {t.attribution.title}
-              <select
-                value={filters.attribution}
-                onChange={(e) => update("attribution", e.target.value)}
-              >
-                <option value="">{t.attribution.allCoverage}</option>
-                <option value="recorded">{t.attribution.recorded}</option>
-                <option value="unknown">{t.attribution.unknownFilter}</option>
-                <option value="shared">{t.attribution.shared}</option>
-              </select>
-            </label>
-          </>
-        )}
-        {!!browser.qualifications.length && (
-          <label>
-            {t.qualification}
-            <select
-              value={filters.qualification}
-              onChange={(e) => update("qualification", e.target.value)}
-            >
-              <option value="">{t.allQualifications}</option>
-              {browser.qualifications.map((value) => (
-                <option key={value} value={value}>
-                  {value.replaceAll("_", " ")}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {!!browser.statuses.length && (
-          <label>
-            {t.status}
-            <select
-              value={filters.status}
-              onChange={(e) => update("status", e.target.value)}
-            >
-              <option value="">{t.allStatuses}</option>
-              {browser.statuses.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <label>
-          {t.dealSize}
-          <select
-            value={filters.size}
-            onChange={(e) => update("size", e.target.value)}
-          >
-            <option value="">{t.anyDealSize}</option>
-            <option value="known">{t.knownDealSize}</option>
-            <option value="unknown">{t.amountUnknown}</option>
-          </select>
-        </label>
-        <label>
-          {t.currency}
-          <select
-            value={filters.currency}
-            onChange={(e) => update("currency", e.target.value)}
-          >
-            <option value="">{t.allCurrencies}</option>
-            {[...new Set(["USD", ...browser.currencies])].map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {t.minimumDealSize}
-          <input
-            type="number"
-            min="0"
-            step={minorStep(filters.currency || "USD")}
-            value={filters.minimum}
-            onChange={(e) => update("minimum", e.target.value)}
-          />
-        </label>
-        <label>
-          {t.maximumDealSize}
-          <input
-            type="number"
-            min="0"
-            step={minorStep(filters.currency || "USD")}
-            value={filters.maximum}
-            onChange={(e) => update("maximum", e.target.value)}
-          />
-        </label>
-        <small>
-          {t.dealFilterCurrency.replace(
-            "{currency}",
-            filters.currency || "USD",
-          )}
-        </small>
-        <label>
-          {t.sortBy}
-          <select
-            value={filters.sort}
-            onChange={(e) => update("sort", e.target.value)}
-          >
-            <option value="default">{t.defaultOrder}</option>
-            <option value="name">{t.name}</option>
-          </select>
-        </label>
-        <button type="button" onClick={browser.clear} disabled={!active}>
+    <section className="record-filters" aria-label={t.filters}>
+      <div className="record-filter-heading">
+        <span className="filter-heading-label">
+          <SlidersHorizontal size={14} aria-hidden />
+          {t.filters}
+          {active > 0 && <span className="filter-count">{active}</span>}
+        </span>
+        <button
+          type="button"
+          className="ghost"
+          onClick={browser.clear}
+          disabled={!active}
+        >
           {t.clearFilters}
         </button>
-        {browser.invalid && <p role="alert">{t.invalidDealRange}</p>}
+        {!hideSort && <RecordSort browser={browser} />}
       </div>
-    </details>
+      <div className="record-filter-fields">
+        {(browser.hasOwner || !!filters.ownerId) &&
+          field("ownerId", t.owner, [
+            { value: "", label: t.everyone },
+            ...browser.members.map((member) => ({
+              value: member.id,
+              label: member.name,
+            })),
+          ])}
+        {field("tag", t.tags, [
+          { value: "", label: t.allTags },
+          ...browser.tags.map(([value, label]) => ({ value, label })),
+        ])}
+        {field("size", t.dealSize, [
+          { value: "", label: t.anyDealSize },
+          { value: "known", label: t.knownDealSize },
+          { value: "unknown", label: t.amountUnknown },
+        ])}
+        {field("currency", t.currency, [
+          { value: "", label: t.allCurrencies },
+          ...[...new Set(["USD", ...browser.currencies])].map((value) => ({
+            value,
+            label: value,
+          })),
+        ])}
+        <div
+          className="filter-amount-range"
+          aria-describedby="deal-range-currency"
+        >
+          <label className="filter-amount-field">
+            <span>{t.minimumDealSize}</span>
+            <input
+              className="filter-amount-input"
+              type="number"
+              min="0"
+              step={minorStep(filters.currency || "USD")}
+              placeholder="0"
+              value={filters.minimum}
+              onChange={(event) => update("minimum", event.target.value)}
+              aria-invalid={browser.invalid}
+            />
+          </label>
+          <span className="range-separator" aria-hidden>
+            –
+          </span>
+          <label className="filter-amount-field">
+            <span>{t.maximumDealSize}</span>
+            <input
+              className="filter-amount-input"
+              type="number"
+              min="0"
+              step={minorStep(filters.currency || "USD")}
+              placeholder={String(browser.amountMaximum || 10000)}
+              value={filters.maximum}
+              onChange={(event) => update("maximum", event.target.value)}
+              aria-invalid={browser.invalid}
+            />
+          </label>
+        </div>
+        {(!!browser.qualifications.length || !!filters.qualification) &&
+          field("qualification", t.qualification, [
+            { value: "", label: t.allQualifications },
+            ...browser.qualifications.map((value) => ({
+              value,
+              label: value.replaceAll("_", " "),
+            })),
+          ])}
+        {(!!browser.statuses.length || !!filters.status) &&
+          field("status", t.status, [
+            { value: "", label: t.allStatuses },
+            ...browser.statuses.map((value) => ({ value, label: value })),
+          ])}
+        {browser.hasAttribution && (
+          <>
+            {field("submittedBy", t.attribution.submittedBy, [
+              { value: "", label: t.attribution.allSubmitters },
+              { value: browser.userId, label: t.attribution.submittedByMe },
+              ...browser.attributionMembers
+                .filter((m) => m.id !== browser.userId)
+                .map((m) => ({ value: m.id, label: m.name })),
+            ])}
+            {field("sourceMemberId", t.attribution.sourceMember, [
+              { value: "", label: t.attribution.allSources },
+              ...browser.attributionMembers.map((m) => ({
+                value: m.id,
+                label: m.name,
+              })),
+            ])}
+            {field("attribution", t.attribution.title, [
+              { value: "", label: t.attribution.allCoverage },
+              { value: "recorded", label: t.attribution.recorded },
+              { value: "unknown", label: t.attribution.unknownFilter },
+              { value: "shared", label: t.attribution.shared },
+            ])}
+          </>
+        )}
+      </div>
+      <small id="deal-range-currency" className="filter-range-note">
+        {t.dealFilterCurrency.replace("{currency}", filters.currency || "USD")}
+      </small>
+      {browser.invalid && (
+        <p className="filter-error" role="alert">
+          {t.invalidDealRange}
+        </p>
+      )}
+    </section>
   );
 }

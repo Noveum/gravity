@@ -76,6 +76,7 @@ import {
   enrollmentChangeSchema,
   enrollSchema,
   OutreachService,
+  outreachListSchema,
   relationshipChangeSchema,
   sequenceArchiveSchema,
   sequenceCreateSchema,
@@ -105,7 +106,11 @@ import {
   restoreProductSchema,
   updateProductSchema,
 } from "../core/products";
-import { RecordListService, recordListSchema } from "../core/record-list";
+import {
+  nextActionsSchema,
+  RecordListService,
+  recordListSchema,
+} from "../core/record-list";
 import {
   RecordMetadataService,
   recordMetadataSchema,
@@ -618,9 +623,24 @@ export const operations: Operation[] = [
     operation: "records",
     name: "list_records",
     description:
-      "Page authorized people/clients, companies, relationships, deals, meetings, sequences or materials. Search is applied only to readable records.",
+      "Page authorized people/clients, companies, relationships, deals, meetings, actions, sequences or materials. Apply query, tag, ownerId, qualification, status, size (known/unknown), currency, minimum/maximum in currency minor units, pipelineId/stageId, action kind/owedBy and sort (default/name/name_desc/amount_asc/amount_desc). Filters use the same visible metadata and owner inheritance as the UI, run before paging, and never widen product or private-history access. Amount sorts group currencies without conversion and put unknown amounts last. Attribution filters apply to people only.",
     schema: recordListSchema,
     run: (c, input) => new RecordListService(c.db).page(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "next-actions",
+    name: "list_next_actions",
+    description:
+      "Page pending next actions using the same search, owner, relationship tags/qualification/deal-size, status and sort filters as the UI. Use kind=reply for replies to handle, kind=commitment for promises, or owedBy=them for awaiting them. Only scheduled actions qualify: contact tags and imported prose are not promises, replies or sends. Completed actions are excluded unless includeCompleted is the string true. Private source actions remain visible only to their conversation owner or the product when shared.",
+    schema: nextActionsSchema,
+    run: (c, input) =>
+      new RecordListService(c.db).page(
+        c.principal,
+        recordListSchema.parse({ ...input, entity: "actions" }),
+        input.includeCompleted !== "true",
+      ),
   }),
   operation({
     api: "crm",
@@ -1128,8 +1148,8 @@ export const operations: Operation[] = [
     operation: "due",
     name: "list_due_touches",
     description:
-      "Read today's due outreach touches, drafts and send-gate warnings in the workspace timezone.",
-    schema: scopeSchema,
+      "Read today's due outreach touches, drafts and send-gate warnings in the workspace timezone. Supports query, ownerId, tag, qualification, status, known/unknown size, currency, minimum/maximum in minor units, channel, outreach pipelineId/stageId and the UI's name/amount sorts. Reads never send messages or create enrollments.",
+    schema: outreachListSchema,
     run: (c, input) => outreach(c).dueTouches(c.principal, input),
   }),
   operation({
@@ -1138,8 +1158,8 @@ export const operations: Operation[] = [
     operation: "queue",
     name: "get_outreach_queue",
     description:
-      "Read outreach enrollments and queue across authorized products.",
-    schema: scopeSchema,
+      "Read outreach enrollments and queue across authorized products. Supports the same query, ownerId, tag, qualification, status, known/unknown size, currency, minimum/maximum in minor units, channel, outreach pipelineId/stageId and name/amount sorts as the UI. Empty queues mean no matching real sequence enrollments, not absent imported contact history. Reads never send messages.",
+    schema: outreachListSchema,
     run: (c, input) => outreach(c).queue(c.principal, input),
   }),
   operation({

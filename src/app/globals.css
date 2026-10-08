@@ -266,9 +266,19 @@
   max-width: 100%;
   font-size: var(--text-dense);
 }
-:where(select) {
+:where(select:not([multiple])) {
   cursor: pointer;
+  appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23818a99' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 14px;
 }
+.inline-field select:not([multiple]) {
+  padding-right: 30px;
+}
+
 :where(textarea) {
   resize: vertical;
   width: 100%;
@@ -4703,29 +4713,6 @@ tbody tr[data-selected] td:first-child::before {
   margin: 8px 0 0;
 }
 
-.record-filters {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-}
-.record-filters summary {
-  cursor: pointer;
-  width: fit-content;
-}
-.record-filter-fields {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 12px;
-  padding-top: 12px;
-}
-.record-filters .record-filter-fields > label {
-  display: grid;
-  gap: 4px;
-  font-size: 12px;
-}
-.record-filters .record-filter-fields input {
-  max-width: 150px;
-}
 .list-pagination {
   display: flex;
   flex-wrap: wrap;
@@ -4900,9 +4887,26 @@ nav.list-pagination > label:has(select) {
 .select-trigger {
   justify-content: space-between;
   width: 100%;
-  min-width: 140px;
+  min-width: 0;
   min-height: 32px;
+  gap: 10px;
+  padding: 0 10px;
+  border: 1px solid var(--gravity-field-border);
   background: var(--gravity-surface);
+}
+.select-trigger > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.select-trigger > svg {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--gravity-muted);
+}
+.select-trigger[data-state="open"] {
+  border-color: var(--gravity-accent);
 }
 .select-popup {
   z-index: 90;
@@ -4932,6 +4936,134 @@ nav.list-pagination > label:has(select) {
 }
 .select-option[data-highlighted] {
   background: var(--gravity-menu-row);
+}
+
+.record-filters {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--gravity-border-subtle);
+  background: var(--gravity-surface);
+}
+.record-filter-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.filter-heading-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--gravity-muted);
+}
+.filter-count {
+  border-radius: 4px;
+  background: var(--gravity-accent-soft);
+  color: var(--gravity-accent);
+  padding: 0 5px;
+}
+.record-filter-heading > button {
+  font-size: var(--text-xs);
+  min-height: 24px;
+  padding: 2px 6px;
+}
+.record-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--gravity-muted);
+}
+
+.record-sort .select-trigger {
+  width: auto;
+  min-width: 150px;
+  max-width: 215px;
+}
+.record-filter-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+.record-filter-fields :where(label) {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--text-2xs);
+  color: var(--gravity-muted);
+}
+.filter-field {
+  flex: 0 1 140px;
+}
+.filter-field .select-trigger {
+  min-width: 0;
+  font-size: var(--text-xs);
+}
+.filter-ownerId,
+.filter-tag {
+  flex-basis: 158px;
+}
+.filter-currency {
+  flex-basis: 150px;
+}
+.filter-qualification {
+  flex-basis: 180px;
+}
+.filter-status {
+  flex-basis: 150px;
+}
+.filter-amount-range {
+  display: flex;
+  gap: 6px;
+  align-items: end;
+}
+.filter-amount-field {
+  width: 120px;
+}
+.filter-amount-input {
+  width: 100%;
+  min-height: 32px;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.range-separator {
+  line-height: 32px;
+  color: var(--gravity-faint);
+}
+.filter-range-note {
+  margin-top: 5px;
+}
+.filter-error {
+  margin-top: 5px;
+  color: var(--gravity-danger);
+  font-size: var(--text-xs);
+}
+@media (max-width: 640px) {
+  .record-filters {
+    padding-inline: 12px;
+  }
+  .record-filter-heading {
+    flex-wrap: wrap;
+  }
+  .record-sort {
+    margin-left: auto;
+  }
+  .record-filter-fields .filter-field {
+    flex: 1 1 130px;
+  }
+  .filter-amount-range {
+    flex: 1 1 100%;
+  }
+  .filter-amount-field {
+    flex: 1;
+    width: auto;
+  }
 }
 .dropdown-popup {
   position: relative;
@@ -5943,5 +6075,45 @@ nav.list-pagination > label:has(select) {
   }
   .touch-identity .badge:not(.warning) {
     display: inline-flex;
+  }
+}
+
+/* Shared workspace controls keep their labels and chevrons clear at every width. */
+.toolbar {
+  flex-wrap: wrap;
+  padding-inline: 16px;
+  gap: 8px;
+}
+.toolbar > .select-trigger {
+  width: auto;
+  min-width: 130px;
+  max-width: 180px;
+}
+.product-picker {
+  gap: 4px;
+}
+.product-picker > .select-trigger {
+  width: 180px;
+}
+.product-reset {
+  min-width: 26px;
+  padding: 4px;
+}
+.toolbar .search {
+  flex: 0 1 330px;
+  min-width: 180px;
+}
+.toolbar-search-input {
+  width: 100%;
+}
+@media (max-width: 640px) {
+  .toolbar {
+    padding-inline: 12px;
+  }
+  .product-picker > .select-trigger {
+    width: 152px;
+  }
+  .toolbar .search {
+    flex: 1 1 200px;
   }
 }

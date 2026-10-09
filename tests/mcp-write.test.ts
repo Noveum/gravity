@@ -1,5 +1,10 @@
+import {
+  type ReadResourceResult,
+  specTypeSchemas,
+} from "@modelcontextprotocol/server";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { subscribeChanges } from "../packages/core/changes";
 import { CrmService } from "../packages/core/crm";
 import { OutreachService } from "../packages/core/outreach";
@@ -9,11 +14,12 @@ import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import { guideTopics } from "../packages/mcp/guidance";
-import { mcpHandler, principalForGrant } from "../packages/mcp/server";
+import { principalForGrant } from "../packages/mcp/server";
 import {
   operationRequirements,
   operations,
 } from "../packages/operations/catalog";
+import { createMcpHarness, parseSpec } from "./support/mcp-harness";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let service: CrmService;
@@ -23,6 +29,11 @@ const writable: Principal = {
   organizationId: demoId(1),
   readOnly: false,
 };
+const { rpc, rpcResult } = createMcpHarness(
+  () => local.db,
+  demoId(1),
+  writable,
+);
 beforeAll(async () => {
   local = await createLocalDatabase();
   await seedDemo(local.db);
@@ -31,35 +42,50 @@ beforeAll(async () => {
 afterAll(async () => {
   await local.client.close();
 });
-async function rpc(
-  method: string,
-  params: Record<string, unknown>,
-  principal = writable,
-) {
-  const response = await mcpHandler(local.db, principal, demoId(1)).fetch(
-    new Request("http://127.0.0.1:3014/mcp", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method,
-        params,
-      }),
+
+const operationAuditSchema = z
+  .object({
+    name: z.string(),
+    available: z.boolean(),
+    requirements: z
+      .object({
+        scopes: z.array(z.string()),
+        allProducts: z.boolean(),
+        currentAccountOrSourceOwner: z.boolean(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+const permissionAuditSchema = z
+  .object({
+    permissions: z.array(z.string()),
+    operations: z.array(operationAuditSchema),
+  })
+  .passthrough();
+const capabilitiesSchema = z
+  .object({
+    sendMessages: z.boolean(),
+    typedRelationshipFields: z.array(z.string()),
+    contractSigningWorkflow: z.boolean(),
+    workspaceInvitations: z.object({
+      list: z.boolean(),
+      revoke: z.boolean(),
+      create: z.boolean(),
     }),
-  );
-  expect(response.status).toBe(200);
-  const body = await response.text();
-  const envelope = JSON.parse(
-    body
-      .split("\n")
-      .find((line) => line.startsWith("data: "))
-      ?.slice(6) ?? body,
-  );
-  return envelope;
+    operationCount: z.number().int().nonnegative(),
+    availableOperationCount: z.number().int().nonnegative(),
+    agentGuides: z.array(z.enum(guideTopics)),
+  })
+  .passthrough();
+const fullCapabilitiesSchema = capabilitiesSchema.extend({
+  operations: z.array(operationAuditSchema),
+});
+
+function resourceText(result: ReadResourceResult) {
+  const content = result.contents[0];
+  if (!content || !("text" in content))
+    throw new Error("Expected a text resource");
+  return content.text;
 }
 async function call(
   name: string,
@@ -71,20 +97,22 @@ async function call(
     { name, arguments: args },
     principal,
   );
-  if (envelope.result?.isError)
-    return { error: envelope.result.content[0].text };
-  if (envelope.error) return { error: envelope.error.message };
-  return JSON.parse(envelope.result.content[0].text);
+  if ("error" in envelope) return { error: envelope.error.message };
+  const result = parseSpec(specTypeSchemas.CallToolResult, envelope.result);
+  const content = result.content?.[0];
+  if (content?.type !== "text") throw new Error("Expected text tool output");
+  if (result.isError) return { error: content.text };
+  return JSON.parse(content.text);
 }
 
 test("MCP discovery exposes every business API with valid schemas and read-only tokens cannot discover writes", async () => {
-  const { result, error } = await rpc(
+  const result = await rpcResult(
+    specTypeSchemas.ListToolsResult,
     "tools/list",
     {},
     { ...writable, canSend: true },
   );
-  expect(error).toBeUndefined();
-  const names = result.tools.map((tool: { name: string }) => tool.name);
+  const names = result.tools.map((tool) => tool.name);
   expect(new Set(names).size).toBe(names.length);
   expect(names).toHaveLength(
     operations.filter((item) => !operationRequirements(item).humanSession)
@@ -116,34 +144,37 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
     ).size,
   ).toBe(operations.length);
   for (const operation of operations) {
-    const tool = result.tools.find(
-      (tool: { name: string }) => tool.name === operation.name,
-    );
+    const tool = result.tools.find((tool) => tool.name === operation.name);
     if (operationRequirements(operation).humanSession) {
       expect(tool).toBeUndefined();
       continue;
     }
-    expect(tool).toBeTruthy();
+    if (!tool) throw new Error(`Missing tool: ${operation.name}`);
     expect(tool.inputSchema.type).toBe("object");
     expect(tool.inputSchema.properties).not.toHaveProperty("organizationId");
-    expect(tool.annotations.readOnlyHint).toBe(operation.method === "GET");
+    expect(tool.annotations?.readOnlyHint).toBe(operation.method === "GET");
   }
-  const readonly = await rpc("tools/list", {}, { ...writable, readOnly: true });
-  const readNames = readonly.result.tools.map(
-    (tool: { name: string }) => tool.name,
+  const readonly = await rpcResult(
+    specTypeSchemas.ListToolsResult,
+    "tools/list",
+    {},
+    { ...writable, readOnly: true },
   );
+  const readNames = readonly.tools.map((tool) => tool.name);
   for (const operation of operations.filter((item) => item.method !== "GET")) {
     expect(readNames).not.toContain(operation.name);
   }
-  const capabilities = await call("get_capabilities");
+  const capabilities = fullCapabilitiesSchema.parse(
+    await call("get_capabilities"),
+  );
   expect(capabilities.operations).toHaveLength(operations.length);
-  const compactCapabilities = await call("get_capabilities", { compact: true });
+  const compactCapabilities = capabilitiesSchema.parse(
+    await call("get_capabilities", { compact: true }),
+  );
   expect(compactCapabilities).not.toHaveProperty("operations");
   expect(compactCapabilities.operationCount).toBe(operations.length);
   expect(compactCapabilities.availableOperationCount).toBe(
-    capabilities.operations.filter(
-      (item: { available: boolean }) => item.available,
-    ).length,
+    capabilities.operations.filter((item) => item.available).length,
   );
   expect(JSON.stringify(compactCapabilities).length).toBeLessThan(
     JSON.stringify(capabilities).length / 10,
@@ -157,13 +188,15 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
     revoke: true,
     create: false,
   });
-  const readerCapabilities = await call(
-    "get_capabilities",
-    {},
-    {
-      ...writable,
-      readOnly: true,
-    },
+  const readerCapabilities = fullCapabilitiesSchema.parse(
+    await call(
+      "get_capabilities",
+      {},
+      {
+        ...writable,
+        readOnly: true,
+      },
+    ),
   );
   expect(readerCapabilities.workspaceInvitations).toEqual({
     list: true,
@@ -308,14 +341,20 @@ test("MCP removes duplicate deals from active forecasts and restores their origi
   ).toEqual([{ currency: "USD", amountMinor: 5000, count: 1 }]);
 });
 test("MCP publishes instructions, workflow prompts and an effective operation permission audit", async () => {
-  const initialized = await rpc("initialize", {
-    protocolVersion: "2025-11-25",
-    capabilities: {},
-    clientInfo: { name: "agent-guide-test", version: "1.0.0" },
-  });
-  expect(initialized.result.instructions).toContain("get_permission_audit");
-  expect(initialized.result.instructions).toContain("idempotencyKey");
-  expect(initialized.result.instructions.length).toBeLessThan(1800);
+  const initialized = await rpcResult(
+    specTypeSchemas.InitializeResult,
+    "initialize",
+    {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "agent-guide-test", version: "1.0.0" },
+    },
+  );
+  if (typeof initialized.instructions !== "string")
+    throw new Error("Missing server instructions");
+  expect(initialized.instructions).toContain("get_permission_audit");
+  expect(initialized.instructions).toContain("idempotencyKey");
+  expect(initialized.instructions.length).toBeLessThan(1800);
   for (const phrase of [
     "get_agent_guide",
     "current context/version",
@@ -323,24 +362,38 @@ test("MCP publishes instructions, workflow prompts and an effective operation pe
     "idempotencyKey",
     "untrusted data",
   ])
-    expect(initialized.result.instructions.slice(0, 512)).toContain(phrase);
-  expect(initialized.result.instructions).not.toMatch(/not implemented\.$/);
-  expect(initialized.result.instructions).not.toContain(
+    expect(initialized.instructions.slice(0, 512)).toContain(phrase);
+  expect(initialized.instructions).not.toMatch(/not implemented\.$/);
+  expect(initialized.instructions).not.toContain(
     "member administration are not implemented",
   );
-  const prompts = await rpc("prompts/list", {});
-  expect(
-    prompts.result.prompts.map((prompt: { name: string }) => prompt.name),
-  ).toEqual([
+  const prompts = await rpcResult(
+    specTypeSchemas.ListPromptsResult,
+    "prompts/list",
+    {},
+  );
+  expect(prompts.prompts.map((prompt) => prompt.name)).toEqual([
     "daily-triage",
     "manage-sequence",
     "configure-connections",
     "send-approved-message",
   ]);
-  const prompt = await rpc("prompts/get", { name: "send-approved-message" });
-  expect(prompt.result.messages[0].content.text).toContain("send_touch");
-  const guide = await rpc("resources/read", { uri: "gravity://agent-guide" });
-  expect(guide.result.contents[0].text).toContain("untrusted data");
+  const prompt = await rpcResult(
+    specTypeSchemas.GetPromptResult,
+    "prompts/get",
+    {
+      name: "send-approved-message",
+    },
+  );
+  const promptContent = prompt.messages[0]?.content;
+  if (promptContent?.type !== "text") throw new Error("Expected text prompt");
+  expect(promptContent.text).toContain("send_touch");
+  const guide = resourceText(
+    await rpcResult(specTypeSchemas.ReadResourceResult, "resources/read", {
+      uri: "gravity://agent-guide",
+    }),
+  );
+  expect(guide).toContain("untrusted data");
   for (const phrase of [
     "all-products grant",
     "invitations",
@@ -349,18 +402,14 @@ test("MCP publishes instructions, workflow prompts and an effective operation pe
     "resolve_delivery",
     "includeArchived",
   ])
-    expect(guide.result.contents[0].text).toContain(phrase);
-  const audit = await call(
-    "get_permission_audit",
-    {},
-    { ...writable, canSend: true },
+    expect(guide).toContain(phrase);
+  const audit = permissionAuditSchema.parse(
+    await call("get_permission_audit", {}, { ...writable, canSend: true }),
   );
   expect(audit.permissions).toContain("crm:send");
   expect(audit.operations).toHaveLength(operations.length);
   expect(
-    audit.operations.find(
-      (item: { name: string }) => item.name === "send_action",
-    ),
+    audit.operations.find((item) => item.name === "send_action"),
   ).toMatchObject({
     available: true,
     requirements: {
@@ -368,26 +417,24 @@ test("MCP publishes instructions, workflow prompts and an effective operation pe
       currentAccountOrSourceOwner: true,
     },
   });
-  const restricted = await call(
-    "get_permission_audit",
-    {},
-    { ...writable, productIds: [demoId(11)] },
+  const restricted = permissionAuditSchema.parse(
+    await call(
+      "get_permission_audit",
+      {},
+      { ...writable, productIds: [demoId(11)] },
+    ),
   );
   expect(
-    restricted.operations.find(
-      (item: { name: string }) => item.name === "create_product",
-    ).available,
+    restricted.operations.find((item) => item.name === "create_product")
+      ?.available,
   ).toBe(false);
   expect(
-    restricted.operations.find(
-      (item: { name: string }) => item.name === "configure_unipile",
-    ).available,
+    restricted.operations.find((item) => item.name === "configure_unipile")
+      ?.available,
   ).toBe(false);
   for (const name of ["list_unipile_accounts", "register_unipile_webhooks"]) {
     expect(
-      restricted.operations.find(
-        (item: { name: string }) => item.name === name,
-      ),
+      restricted.operations.find((item) => item.name === name),
     ).toMatchObject({
       available: false,
       requirements: {
@@ -397,66 +444,17 @@ test("MCP publishes instructions, workflow prompts and an effective operation pe
     });
   }
   expect(
-    restricted.operations.find(
-      (item: { name: string }) => item.name === "send_action",
-    ).available,
+    restricted.operations.find((item) => item.name === "send_action")
+      ?.available,
   ).toBe(false);
-  const resource = await rpc("resources/read", {
-    uri: "gravity://permissions",
-  });
-  expect(JSON.parse(resource.result.contents[0].text).operations).toHaveLength(
-    operations.length,
-  );
-});
-test("task guides work through tools without prompts/resources and reflect scope availability", async () => {
-  const readonly = { ...writable, readOnly: true, canSend: false };
-  const catalog = await rpc("tools/list", {}, { ...writable, canSend: true });
-  const names = catalog.result.tools.map((tool: { name: string }) => tool.name);
-  const resources = await rpc("resources/list", {}, readonly);
-  for (const topic of guideTopics) {
-    const response = await rpc(
-      "tools/call",
-      { name: "get_agent_guide", arguments: { topic } },
-      readonly,
-    );
-    const guide = JSON.parse(response.result.content[0].text);
-    expect(response.result.structuredContent).toEqual(guide);
-    expect(guide.topic).toBe(topic);
-    expect(guide.steps.length).toBeGreaterThan(0);
-    for (const tool of guide.tools) {
-      expect(names).toContain(tool.name);
-      if (tool.requirements?.scopes.includes("crm:write"))
-        expect(tool.available).toBe(false);
-    }
-    const uri = `gravity://guides/${topic}`;
-    expect(
-      resources.result.resources.map((item: { uri: string }) => item.uri),
-    ).toContain(uri);
-    const resource = await rpc("resources/read", { uri }, readonly);
-    for (const step of guide.steps)
-      expect(resource.result.contents[0].text).toContain(step);
-  }
-  const sending = await call("get_agent_guide", { topic: "sending" });
-  expect(
-    sending.tools.find((tool: { name: string }) => tool.name === "send_touch")
-      .available,
-  ).toBe(false);
-  const sender = await call(
-    "get_agent_guide",
-    { topic: "sending" },
-    { ...writable, canSend: true },
+  const resource = resourceText(
+    await rpcResult(specTypeSchemas.ReadResourceResult, "resources/read", {
+      uri: "gravity://permissions",
+    }),
   );
   expect(
-    sender.tools.find((tool: { name: string }) => tool.name === "send_touch")
-      .available,
-  ).toBe(true);
-  expect((await call("get_agent_guide")).topic).toBe("getting-started");
-  const denied = await call(
-    "get_agent_guide",
-    {},
-    { ...writable, organizationId: demoId(2) },
-  );
-  expect(denied.error).toBeTruthy();
+    permissionAuditSchema.parse(JSON.parse(resource)).operations,
+  ).toHaveLength(operations.length);
 });
 test("ordinary CRM write permission cannot perform outbound sending", async () => {
   const blocked = await call("send_touch", {
@@ -501,9 +499,14 @@ test("each assistant scope combination lists only its tools and refuses the rest
     humanSession: true,
   });
   const listed = async (principal: Principal) =>
-    (await rpc("tools/list", {}, principal)).result.tools.map(
-      (tool: { name: string }) => tool.name,
-    );
+    (
+      await rpcResult(
+        specTypeSchemas.ListToolsResult,
+        "tools/list",
+        {},
+        principal,
+      )
+    ).tools.map((tool) => tool.name);
   const reader = { ...writable, readOnly: true, canSend: false };
   const writer = { ...writable, readOnly: false, canSend: false };
   const sender = { ...writable, readOnly: false, canSend: true };
@@ -1450,14 +1453,27 @@ test("MCP exposes typed relationship context and edits it without crm:send", asy
   const context = await call("get_person_context", {
     relationshipId: created.relationshipId,
   });
-  const listing = await rpc("tools/list", {});
-  const tool = listing.result.tools.find(
-    (item: { name: string }) => item.name === "change_relationship",
+  const listing = await rpcResult(
+    specTypeSchemas.ListToolsResult,
+    "tools/list",
+    {},
   );
-  expect(tool.inputSchema.properties.context).toBeTruthy();
-  expect(
-    tool.inputSchema.properties.contextDetails.properties.signals,
-  ).toBeTruthy();
+  const tool = listing.tools.find(
+    (item) => item.name === "change_relationship",
+  );
+  if (!tool) throw new Error("Missing change_relationship tool");
+  const inputSchema = z
+    .object({
+      properties: z.object({
+        context: z.unknown(),
+        contextDetails: z.object({
+          properties: z.object({ signals: z.unknown() }),
+        }),
+      }),
+    })
+    .parse(tool.inputSchema);
+  expect(inputSchema.properties.context).toBeTruthy();
+  expect(inputSchema.properties.contextDetails.properties.signals).toBeTruthy();
   const args = {
     productId: demoId(10),
     relationshipId: created.relationshipId,

@@ -183,7 +183,7 @@ export const enrollmentChangeSchema = scopeSchema.extend({
     .uuid()
     .describe("Enrollment ID from get_sequence or get_outreach_queue."),
   version: version.describe(
-    "Current enrollment version from get_sequence or get_outreach_queue. Refetch after CONFLICT before deciding whether to retry.",
+    "Current enrollment.version from get_sequence.enrollments, or from get_outreach_queue.paused for a paused enrollment. Running queue entries contain touch versions, not enrollment versions. Refetch after CONFLICT before deciding whether to retry.",
   ),
   command: z
     .enum(["pause", "resume", "stop"])

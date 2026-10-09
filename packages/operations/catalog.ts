@@ -1491,7 +1491,7 @@ export const operations: Operation[] = [
     operation: "enrollment",
     name: "change_enrollment",
     description:
-      "Pause a running enrollment, resume a paused enrollment or permanently stop one using its current version from get_sequence or get_outreach_queue. Pause preserves open touches; stop expires open touches and clears their approvals. Resume requires an active product/sequence and a contact who is not do-not-contact, and may plan an eligible next touch. Never sends messages.",
+      "Pause a running enrollment, resume a paused enrollment or permanently stop one using its current enrollment.version from get_sequence.enrollments. get_outreach_queue.paused also supplies enrollment versions; running queue entries supply touch versions and cannot provide this version. Pause preserves open touches; stop expires open touches and clears their approvals. Resume requires an active product/sequence and a contact who is not do-not-contact, and may plan an eligible next touch. Never sends messages.",
     schema: enrollmentChangeSchema,
     run: (c, input) => outreach(c).changeEnrollment(c.principal, input),
   }),

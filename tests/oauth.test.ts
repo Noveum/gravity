@@ -13,23 +13,25 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { flowKey, withOAuthRequest } from "../packages/auth/flow";
 import { authPlugins } from "../packages/auth/options";
 import { CrmService } from "../packages/core/crm";
 import { errorResponse } from "../packages/core/http";
 import { createLocalDatabase } from "../packages/database/client";
 import * as schema from "../packages/database/schema";
+import { agentGuideOutputSchema } from "../packages/mcp/guidance";
 import {
   principalForGrant,
   principalForVerifiedToken,
 } from "../packages/mcp/server";
 
 vi.mock("@crm/auth/server", async (importOriginal) => ({
-  ...(await importOriginal<object>()),
+  ...(await importOriginal<typeof import("../packages/auth/server")>()),
   getAuth: async () => auth,
 }));
 vi.mock("@crm/database/client", async (importOriginal) => ({
-  ...(await importOriginal<object>()),
+  ...(await importOriginal<typeof import("../packages/database/client")>()),
   getDatabase: async () => local.db,
 }));
 
@@ -41,6 +43,33 @@ let origin: string;
 let cookie = "";
 let userId: string;
 let sessionId: string;
+const authPayloadSchema = z.looseObject({
+  url: z.string().optional(),
+  client_id: z.string().optional(),
+  error: z.string().optional(),
+  error_description: z.string().optional(),
+});
+const tokenSchema = z.object({
+  access_token: z.string().min(1),
+  scope: z.string().default(""),
+});
+const refreshableTokenSchema = tokenSchema.extend({
+  refresh_token: z.string().min(1),
+});
+const claimsSchema = z.object({
+  sub: z.string(),
+  crm_grant_id: z.uuid(),
+  client_id: z.string(),
+  sid: z.string(),
+  scope: z.string(),
+  aud: z.union([z.string(), z.array(z.string())]),
+});
+
+function tokenClaims(accessToken: string) {
+  return claimsSchema.parse(
+    JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString()),
+  );
+}
 const server = createServer(async (incoming, outgoing) => {
   try {
     const bytes: Uint8Array[] = [];
@@ -104,9 +133,9 @@ async function call(path: string, body?: object, session = true) {
     cookie = [...jar.values()].join("; ");
   }
   const text = await response.text();
-  let payload: Record<string, unknown> = {};
+  let payload: z.infer<typeof authPayloadSchema> = {};
   try {
-    payload = JSON.parse(text);
+    payload = authPayloadSchema.parse(JSON.parse(text));
   } catch {}
   return {
     response,
@@ -240,13 +269,8 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
     }),
   });
   expect(tokenResponse.status).toBe(200);
-  const token = await tokenResponse.json();
-  const claims = JSON.parse(
-    Buffer.from(
-      String(token.access_token).split(".")[1],
-      "base64url",
-    ).toString(),
-  );
+  const token = refreshableTokenSchema.parse(await tokenResponse.json());
+  const claims = tokenClaims(token.access_token);
   expect(claims.crm_grant_id).toBe(grantA.id);
   expect(await principalForVerifiedToken(local.db, claims)).toMatchObject({
     clientId: claims.client_id,
@@ -312,7 +336,7 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
     }),
   });
   expect(readTokenResponse.status).toBe(200);
-  const readToken = await readTokenResponse.json();
+  const readToken = tokenSchema.parse(await readTokenResponse.json());
   const readOnlyList = await fetch(`${origin}/mcp`, {
     method: "POST",
     headers: {
@@ -338,13 +362,8 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
     }),
   });
   expect(refreshed.status).toBe(200);
-  const refreshToken = await refreshed.json();
-  const refreshedClaims = JSON.parse(
-    Buffer.from(
-      String(refreshToken.access_token).split(".")[1],
-      "base64url",
-    ).toString(),
-  );
+  const refreshToken = tokenSchema.parse(await refreshed.json());
+  const refreshedClaims = tokenClaims(refreshToken.access_token);
   expect(refreshedClaims.crm_grant_id).toBe(grantA.id);
   await local.db
     .update(schema.oauthClient)
@@ -477,7 +496,7 @@ test("an MCP token without crm:read is refused with insufficient_scope", async (
     }),
   });
   expect(tokenResponse.status).toBe(200);
-  const token = await tokenResponse.json();
+  const token = tokenSchema.parse(await tokenResponse.json());
   expect(String(token.scope ?? "")).not.toContain("crm:read");
   const response = await fetch(`${origin}/mcp`, {
     method: "POST",
@@ -509,7 +528,13 @@ test("MCP requests without credentials receive OAuth discovery instead of data",
   expect(url).toBeTruthy();
   const metadataResponse = await fetch(url ?? "");
   expect(metadataResponse.status).toBe(200);
-  const metadata = await metadataResponse.json();
+  const metadata = z
+    .object({
+      resource: z.url(),
+      scopes_supported: z.array(z.string()),
+      authorization_servers: z.array(z.url()).min(1),
+    })
+    .parse(await metadataResponse.json());
   expect(metadata.resource).toBe(`${origin}/mcp`);
   expect(metadata.scopes_supported).toContain("crm:read");
   expect(metadata.scopes_supported).toContain("crm:write");
@@ -518,7 +543,12 @@ test("MCP requests without credentials receive OAuth discovery instead of data",
     `${issuer.origin}/.well-known/oauth-authorization-server${issuer.pathname}`,
   );
   expect(discovery.status).toBe(200);
-  const configuration = await discovery.json();
+  const configuration = z
+    .object({
+      issuer: z.url(),
+      code_challenge_methods_supported: z.array(z.string()),
+    })
+    .parse(await discovery.json());
   expect(configuration.issuer).toBe(metadata.authorization_servers[0]);
   expect(configuration.code_challenge_methods_supported).toContain("S256");
 });
@@ -674,10 +704,9 @@ test("official MCP client discovers OAuth, registers, completes PKCE and reads a
       arguments: { topic: "sequences" },
     });
     expect(guide.isError).not.toBe(true);
-    expect(guide.structuredContent).toMatchObject({
-      topic: "sequences",
-      steps: expect.any(Array),
-    });
+    const workflow = agentGuideOutputSchema.parse(guide.structuredContent);
+    expect(workflow.topic).toBe("sequences");
+    expect(workflow.steps.length).toBeGreaterThan(0);
     expect(
       tools.tools.some(
         (tool) =>

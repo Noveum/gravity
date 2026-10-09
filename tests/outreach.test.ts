@@ -1,5 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { ingestReply } from "../packages/connectors/replies";
 import { CrmService } from "../packages/core/crm";
 import {
@@ -18,6 +19,7 @@ import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { operations } from "../packages/operations/catalog";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let crm: CrmService;
@@ -1480,6 +1482,53 @@ describe("relationship stages", () => {
       nextStepDueAt: new Date("2026-11-01T09:00:00.000Z"),
       version: relationship.version + 1,
     });
+  });
+});
+
+describe("enrollment versions", () => {
+  test("get_sequence supplies enrollment versions for changes while running queue entries carry touch versions", async () => {
+    now = Date.parse("2026-10-23T06:00:00Z");
+    const f = await fixture();
+    await enroll(f);
+    const scope = { organizationId: org, productId: f.productId };
+    const queued = (await outreach.queue(admin, scope)).drafts[0];
+    if (!queued) throw new Error("missing queued touch");
+    const getSequence = operations.find((item) => item.name === "get_sequence");
+    if (!getSequence) throw new Error("missing get_sequence operation");
+    const result = z
+      .object({
+        enrollments: z.array(z.object({ id: z.uuid(), version: z.number() })),
+      })
+      .parse(
+        await getSequence.execute(
+          { db: local.db, principal: admin },
+          { ...scope, sequenceId: f.sequenceId },
+        ),
+      );
+    const enrollment = result.enrollments.find(
+      (item) => item.id === queued.enrollmentId,
+    );
+    if (!enrollment) throw new Error("missing sequence enrollment");
+    expect(queued.version).not.toBe(enrollment.version);
+
+    await expect(
+      outreach.changeEnrollment(admin, {
+        ...scope,
+        enrollmentId: enrollment.id,
+        version: queued.version,
+        command: "pause",
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    const paused = await outreach.changeEnrollment(admin, {
+      ...scope,
+      enrollmentId: enrollment.id,
+      version: enrollment.version,
+      command: "pause",
+    });
+    expect(paused.status).toBe("paused");
+    expect((await outreach.queue(admin, scope)).paused).toMatchObject([
+      { id: enrollment.id, version: paused.version },
+    ]);
   });
 });
 

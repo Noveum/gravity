@@ -49,6 +49,15 @@ export const agentGuideOutputSchema = z.object({
   ),
   permissionNote: z.string(),
 });
+export type AgentGuide = z.infer<typeof agentGuideOutputSchema>;
+
+const readOnlyGuideHelpers = new Set([
+  "get_me",
+  "list_products",
+  "get_capabilities",
+  "list_materials",
+  "read_material",
+]);
 
 // Business tools remain registered from the operation catalog. These references
 // connect that catalog to task guidance without adding another execution path.
@@ -74,6 +83,9 @@ export const guideTools: Record<GuideTopic, readonly string[]> = {
     "edit_touch_draft",
     "approve_touch",
     "change_enrollment",
+    "skip_touch",
+    "snooze_touch",
+    "reopen_touch",
   ],
   sending: [
     "get_me",
@@ -90,6 +102,7 @@ export const guideTools: Record<GuideTopic, readonly string[]> = {
     "get_delivery",
     "list_deliveries",
     "reconcile_delivery",
+    "record_touch_sent",
   ],
   connections: [
     "get_integrations",
@@ -97,6 +110,7 @@ export const guideTools: Record<GuideTopic, readonly string[]> = {
     "sync_integration",
     "link_import",
     "ignore_import",
+    "set_conversation_visibility",
     "update_connection",
     "disconnect_integration",
   ],
@@ -157,7 +171,7 @@ export async function agentGuide(
   principal: Principal,
   organizationId: string,
   topic: GuideTopic,
-) {
+): Promise<AgentGuide> {
   const { membership } = await authorize(db, principal, organizationId);
   return {
     topic,
@@ -179,7 +193,7 @@ export async function agentGuide(
             ),
             requirements: operationRequirements(operation),
           }
-        : { name, available: true };
+        : { name, available: readOnlyGuideHelpers.has(name) };
     }),
     permissionNote: t.mcpGuidePermissionNote,
   };

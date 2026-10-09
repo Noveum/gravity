@@ -361,7 +361,12 @@ describe("touch lifecycle", () => {
       version: approved.version,
       draft: "Hello, a fictional note.",
     });
-    expect(same).toMatchObject({ status: "approved", approvedBy: demoUser });
+    expect(same).toMatchObject({
+      status: "approved",
+      approvedBy: demoUser,
+      approvedHash: approved.approvedHash,
+      draftHash: approved.draftHash,
+    });
     const edited = await outreach.editDraft(admin, {
       organizationId: org,
       touchId: planned.id,

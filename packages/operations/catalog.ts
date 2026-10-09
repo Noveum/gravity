@@ -1433,7 +1433,7 @@ export const operations: Operation[] = [
     operation: "draft",
     name: "edit_touch_draft",
     description:
-      "Save a personalized outreach draft using the current touch.version from get_touch; editing clears prior approval. Sequence templates are copied verbatim: replace all placeholders in the draft before approve_touch. This does not send a message.",
+      "Save a personalized outreach draft using the current touch.version from get_touch. Approval is preserved only when the resulting draft hash still matches the approved hash; otherwise it is cleared. Saving an identical draft with an unchanged hash preserves approval. Sequence templates are copied verbatim: replace all placeholders in the draft before approve_touch. This does not send a message.",
     schema: touchDraftSchema,
     run: (c, input) => outreach(c).editDraft(c.principal, input),
   }),

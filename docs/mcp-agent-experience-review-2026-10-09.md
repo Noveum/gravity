@@ -6,7 +6,7 @@ Reviewed on 2026-10-09. This review combines current primary documentation with 
 
 Gravity already has server instructions, an agent-guide resource, four workflow prompts, authorization checks and a shared HTTP/MCP operation registry. The main usability gap is that agents receive a large inventory before receiving a useful explanation of how the tools work together.
 
-The following measurements describe the source **before this change**, using a read-only Bun import of `operations`, `operationInput` and the English translations. They are character counts, not model token estimates or production latency measurements.
+The following historical baseline measurements describe the source **before this change and subsequent main-branch updates**, using a read-only Bun import of `operations`, `operationInput` and the English translations. They are character counts, not model token estimates or production latency measurements.
 
 | Baseline measurement | Result | Source |
 | --- | --- | --- |
@@ -17,14 +17,14 @@ The following measurements describe the source **before this change**, using a r
 | One serialized full operation catalog | 63,979 characters | Names, HTTP mapping, availability, requirements and descriptions; measured with `available: true` |
 | Startup catalog duplication | Two full catalogs, about 128,000 characters before wrappers | Instructions request both `get_permission_audit` and `get_capabilities`; both return the catalog |
 
-The connected Codex integration currently exposes 128 Gravity tools and prepends the previous server instructions to each tool description: the descriptions total 855,856 characters (about 856 KB), excluding schemas. This is a host-exposed catalog measurement; it does not prove every description is loaded into model context at once. The hosted inventory has 125 business operations and lacks the new guide, so the local improvements are not yet published there.
+At the initial review, the connected Codex integration exposed 128 Gravity tools and prepended the previous server instructions to each tool description: the descriptions totaled 855,856 characters (about 856 KB), excluding schemas. This is a historical host-exposed catalog measurement; it does not prove every description is loaded into model context at once. That hosted inventory had 125 business operations and lacked the new guide; these counts do not describe the current local registry after subsequent main-branch updates.
 
 The first 512 characters of the previous instructions describe startup calls and compact reads. Version checks, explicit-send rules and recovery guidance appear later. `gravity://agent-guide` repeats the same long instructions, and each workflow prompt prepends them again. This is an inefficient route to an answer such as “set up a sequence.”
 
 | Priority | Improvement | Status in this change | Why it matters |
 | --- | --- | --- | --- |
 | P1 | Short startup instructions; a discoverable `get_agent_guide` tool with focused workflow topics and equivalent resources | Implemented in source | Works through ordinary tool discovery even when a client does not expose prompts or automatically load resources |
-| P1 | Compact capability discovery with explicit access to full catalog details | Implemented in source | Avoids repeatedly loading 125 descriptions and HTTP mappings at startup |
+| P1 | Compact capability discovery with explicit access to full catalog details | Implemented in source | Avoids repeatedly loading the full inventory of descriptions and HTTP mappings at startup |
 | P1 | Describe sequence parameters and improve sequence tool metadata | Implemented in source | Explains delay semantics, relationship IDs, draft personalization, versions and the preview/enroll/review boundary |
 | P1 | Honor selected product when advancing sequence plans | Implemented with isolation regression | A product-scoped request previously advanced other permitted products as well |
 | P1 | Preserve OAuth challenges when current-state authentication checks fail | Implemented in source | Helps a client distinguish expired or invalid authorization from a generic connection failure |
@@ -61,7 +61,7 @@ Important domain details were missing from parameter discovery:
 - `delayDays` is measured from enrollment for the initial step, then from the preceding touch's send or closure time. The planner can move the resulting due time to satisfy cooldown and quiet hours. See `packages/core/outreach-planner.ts`, `planEnrollment`.
 - `followUp` selects a queue group from 0 through 3. It is separate from the sequence step number and is not an automatic retry count. See `packages/core/outreach.ts`, `dueTouches`.
 - Templates are copied into touch drafts verbatim by the planner. The outbound service dispatches the saved draft verbatim. UI merge previews do not imply server interpolation. Agents must resolve placeholders in the saved recipient-specific draft before approval. See `packages/core/outreach.ts`, `advance`; `packages/connectors/outbound.ts`, `send`; `src/components/outreach/merge-fields.ts`.
-- Updating a sequence rewrites matching **planned** touches; already drafted or approved content is retained. Replacing steps is a full-array operation, so preserve wanted steps. See `packages/core/outreach.ts`, `updateSequence`.
+- Updating a sequence rewrites channel, template and `followUp` on matching **planned** touches and expires planned touches for removed steps. Drafted/approved content and existing due times are not rewritten, but removing steps can complete enrollments and expire remaining open touches, clearing their approvals. Replacing steps is a full-array operation, so preserve wanted steps and their numbers. See `packages/core/outreach.ts`, `updateSequence`.
 
 The previous MCP sequence fixture used `{{firstName}}`, while the UI preview parser recognizes single-brace labels such as `{first name}`. Neither syntax is currently rendered by the outbound service. Future template rendering needs a shared domain implementation and approval-hash tests; silently rendering after approval would change the approved content.
 
@@ -120,7 +120,7 @@ Measure task success, invalid calls, calls required, output characters, recovery
 
 - Extend registry metadata with typed output schemas and compatible structured results, beginning with discovery, sequence previews, readiness and delivery outcomes.
 - Provide shared safe recovery metadata for common domain errors: current version needed, exact invalid field/path, user action required, and whether the original outcome is unknown. Avoid generic retry advice on mutations or sends. `packages/core/http.ts` currently reduces many failures to short codes, and supplemental MCP helper tools do not share the registry callback's error wrapper.
-- Bound `search_records` and `list_next_actions`. Search currently loads a workspace snapshot and returns all permitted relationships alongside matching people/companies. Prefer paginated registry reads and targeted context fetches.
+- Bound `search_records`, which still loads a workspace snapshot and returns all permitted relationships alongside matching people/companies. `list_next_actions` now uses a paginated registry operation. Prefer paginated registry reads and targeted context fetches.
 - Move merge-field rendering into a shared domain facility only with an explicit preview/save contract. Approval must cover the exact resolved content actually dispatched.
 - Add sanitized transport metrics: request ID, method/tool, status, duration, protocol era and release identity. Keep tokens, drafts, private history and provider credentials out of logs.
 
@@ -128,6 +128,6 @@ All future business actions must remain defined in `packages/operations/catalog.
 
 ## Local verification
 
-The final local changes passed `bun run typecheck`, `bun run lint`, and `bun run build`. `bun run test` completed with 135 passing files, 1,233 passing tests and 11 skipped tests. After the last guidance refinements, the focused MCP/OAuth/product-scope run also passed all 36 tests. Startup instructions decreased from 6,235 to 869 characters; a regression requires the compact capability response to be less than one tenth of the full response. The official MCP client exercises the actual application OAuth route and the typed guide result.
+Automated regressions cover MCP discovery and guide contracts, OAuth challenges and Origin checks, selected-product advancement, and approval invalidation when removing the final unfinished sequence step. Startup instructions decreased from 6,235 to 869 characters; a regression requires the compact capability response to be less than one tenth of the full response. The official MCP client exercises the actual application OAuth route and the typed guide result. Run the repository verification commands above for the current branch; the pull request records the final results after integrating the latest main branch.
 
 This verifies protocol/domain behavior and metadata contracts, not an LLM task-success evaluation or long-idle hosted reconnect behavior. The connected hosted service answered identity and capability reads, but it does not yet expose the new guide. These changes are local and have not been deployed.

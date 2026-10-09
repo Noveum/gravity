@@ -1318,6 +1318,56 @@ describe("approval follows merge fields", () => {
 });
 
 describe("editing a sequence", () => {
+  test("removing the final unfinished step completes the enrollment and expires its approved touch", async () => {
+    now = Date.parse("2026-10-22T06:00:00Z");
+    const f = await fixture();
+    const sequence = await outreach.updateSequence(admin, {
+      organizationId: org,
+      sequenceId: f.sequenceId,
+      version: 1,
+      steps: steps.slice(0, 2).map((step) => ({ ...step, delayDays: 0 })),
+    });
+    await enroll(f);
+    const first = await firstTouch(f);
+    await outreach.skip(admin, {
+      organizationId: org,
+      touchId: first.id,
+      version: first.version,
+      reason: "Fictional skipped introduction",
+    });
+    const second = (await touchesOf(f.relationshipId))[1];
+    if (!second) throw new Error("missing second touch");
+    const drafted = await outreach.editDraft(admin, {
+      organizationId: org,
+      touchId: second.id,
+      version: second.version,
+      draft: "Subject: Fictional review\n\nReviewed follow-up.",
+    });
+    const approved = await outreach.approve(admin, {
+      organizationId: org,
+      touchId: second.id,
+      version: drafted.version,
+    });
+    expect(approved.status).toBe("approved");
+
+    await outreach.updateSequence(admin, {
+      organizationId: org,
+      sequenceId: f.sequenceId,
+      version: sequence.sequence.version,
+      steps: sequence.sequence.steps.slice(0, 1),
+    });
+
+    expect(await enrollmentOf(f.relationshipId)).toMatchObject({
+      status: "completed",
+    });
+    expect(await touchRow(second.id)).toMatchObject({
+      status: "expired",
+      draft: drafted.draft,
+      approvedHash: null,
+      approvedBy: null,
+    });
+  });
+
   test("only planned touches change, removed steps expire their planned touch, and the version bumps", async () => {
     now = Date.parse("2026-10-22T06:00:00Z");
     const brand = await product();

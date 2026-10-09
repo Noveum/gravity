@@ -280,7 +280,7 @@ export const sequenceUpdateSchema = scopeSchema.extend({
         new Set(steps.map((step) => step.number)).size === steps.length,
     )
     .describe(
-      "Complete replacement array of 1–10 steps with unique numbers, sorted by number on save. Include every step to retain; omitted steps are removed. Existing planned touches are updated or expired as appropriate; drafted/approved touches and existing due times are preserved.",
+      "Complete replacement array of 1–10 steps with unique numbers, sorted by number on save. Include every step to retain; omitted steps are removed. Planned touch channel/template/followUp may change, and removed planned steps expire. Drafted/approved content and existing due times are not rewritten, but removing steps can complete enrollments and expire remaining open touches, clearing their approvals.",
     ),
 });
 export const sequenceCreateSchema = scopeSchema.extend({

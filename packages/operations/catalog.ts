@@ -1511,7 +1511,7 @@ export const operations: Operation[] = [
     operation: "sequence",
     name: "update_sequence",
     description:
-      "Replace the complete steps array and optionally rename a sequence using its current sequence.version from get_sequence. Retain every step to keep and preserve its number. Updates channel/template/followUp only on planned touches and expires planned touches for removed steps; drafted/approved touches and existing due times are preserved. Then plans eligible next touches. Returns sequence and changedTouches; refetch after CONFLICT. Never sends messages.",
+      "Replace the complete steps array and optionally rename a sequence using its current sequence.version from get_sequence. Retain every step to keep and preserve its number. Updates channel/template/followUp only on planned touches and expires planned touches for removed steps. Drafted/approved content and existing due times are not rewritten, but removing steps can complete enrollments and expire remaining open touches, clearing their approvals. Then plans eligible next touches. Returns sequence and changedTouches; refetch after CONFLICT. Never sends messages.",
     schema: sequenceUpdateSchema,
     run: (c, input) => outreach(c).updateSequence(c.principal, input),
   }),

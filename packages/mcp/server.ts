@@ -23,6 +23,12 @@ import {
   permissionAudit,
 } from "../operations/catalog";
 import { downloadAsset } from "../storage/files";
+import {
+  agentGuide,
+  agentGuideOutputSchema,
+  guideText,
+  guideTopics,
+} from "./guidance";
 // Call only after the OAuth library has verified signature, issuer, audience and scope.
 export const mcpRequiredScopes = ["crm:read"];
 export const mcpChallengeScopes = ["crm:read", "crm:write", "crm:send"];
@@ -104,6 +110,9 @@ export function mcpHandler(
   const service = new CrmService(db);
   const result = (value: unknown) => ({
     content: [{ type: "text" as const, text: JSON.stringify(value) }],
+    ...(value !== null && typeof value === "object" && !Array.isArray(value)
+      ? { structuredContent: value as Record<string, unknown> }
+      : {}),
   });
   return createMcpHandler(
     () => {
@@ -119,7 +128,7 @@ export function mcpHandler(
       server.registerResource(
         "agent-guide",
         "gravity://agent-guide",
-        { mimeType: "text/plain", description: t.mcpInstructions },
+        { mimeType: "text/plain", description: t.mcpGuideDescription },
         async (uri) => {
           await authorize(db, principal, organizationId);
           return {
@@ -127,12 +136,34 @@ export function mcpHandler(
               {
                 uri: uri.href,
                 mimeType: "text/plain",
-                text: t.mcpInstructions,
+                text: t.mcpAgentReference,
               },
             ],
           };
         },
       );
+      for (const topic of guideTopics) {
+        server.registerResource(
+          `guide-${topic}`,
+          `gravity://guides/${topic}`,
+          {
+            mimeType: "text/plain",
+            description: t.mcpWorkflowGuides[topic].summary,
+          },
+          async (uri) => {
+            await authorize(db, principal, organizationId);
+            return {
+              contents: [
+                {
+                  uri: uri.href,
+                  mimeType: "text/plain",
+                  text: guideText(topic),
+                },
+              ],
+            };
+          },
+        );
+      }
       server.registerResource(
         "permissions",
         "gravity://permissions",
@@ -153,11 +184,11 @@ export function mcpHandler(
           ],
         }),
       );
-      for (const [name, key] of [
-        ["daily-triage", "triage"],
-        ["manage-sequence", "sequence"],
-        ["configure-connections", "connections"],
-        ["send-approved-message", "send"],
+      for (const [name, key, topic] of [
+        ["daily-triage", "triage", null],
+        ["manage-sequence", "sequence", "sequences"],
+        ["configure-connections", "connections", "connections"],
+        ["send-approved-message", "send", "sending"],
       ] as const) {
         server.registerPrompt(
           name,
@@ -170,7 +201,7 @@ export function mcpHandler(
                   role: "user" as const,
                   content: {
                     type: "text" as const,
-                    text: `${t.mcpInstructions}\n\n${t.mcpPrompts[key]}`,
+                    text: `${t.mcpInstructions}\n\n${topic ? guideText(topic) : t.mcpPrompts[key]}`,
                   },
                 },
               ],
@@ -178,6 +209,28 @@ export function mcpHandler(
           },
         );
       }
+      server.registerTool(
+        "get_agent_guide",
+        {
+          title: t.mcpWorkflowGuides["getting-started"].title,
+          description: t.mcpGuideDescription,
+          inputSchema: z.object({
+            topic: z
+              .enum(guideTopics)
+              .default("getting-started")
+              .describe(t.mcpGuideTopicDescription),
+          }),
+          outputSchema: agentGuideOutputSchema,
+          annotations: {
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          },
+        },
+        async ({ topic }) =>
+          result(await agentGuide(db, principal, organizationId, topic)),
+      );
       for (const operation of operations) {
         if (operation.method !== "GET" && !writable) continue;
         if (operation.permission === "crm:send" && !canSend) continue;
@@ -238,12 +291,16 @@ export function mcpHandler(
       server.registerTool(
         "get_capabilities",
         {
-          description:
-            "Discover every platform operation, its HTTP mapping and write availability. New business APIs automatically become MCP tools through the shared registry.",
-          inputSchema: z.object({}),
+          description: t.mcpCapabilitiesDescription,
+          inputSchema: z.object({
+            compact: z
+              .boolean()
+              .default(false)
+              .describe(t.mcpCapabilitiesCompactDescription),
+          }),
           annotations: { readOnlyHint: true },
         },
-        async () => {
+        async ({ compact }) => {
           const { membership } = await authorize(db, principal, organizationId);
           const available = (name: string) =>
             operations.some(
@@ -283,13 +340,18 @@ export function mcpHandler(
             calendarEventWrites: false,
             messageAttachments: false,
             serverInstructions: true,
+            agentGuides: guideTopics,
             prompts: [
               "daily-triage",
               "manage-sequence",
               "configure-connections",
               "send-approved-message",
             ],
-            resources: ["gravity://agent-guide", "gravity://permissions"],
+            resources: [
+              "gravity://agent-guide",
+              "gravity://permissions",
+              ...guideTopics.map((topic) => `gravity://guides/${topic}`),
+            ],
             gmailSync: integrationAvailability().gmail,
             linkedinSync: integrationAvailability().linkedin,
             calendarSync: integrationAvailability().calendar,
@@ -320,19 +382,27 @@ export function mcpHandler(
             structuredRelationshipContext: true,
             relationshipSignals: true,
             typedRelationshipFields: fieldKinds,
-            operations: operations.map((operation) => ({
-              name: operation.name,
-              api: `/api/${operation.api}`,
-              method: operation.method,
-              operation: operation.operation,
-              available: operationAvailable(
-                operation,
-                principal,
-                membership.role,
-              ),
-              requirements: operationRequirements(operation),
-              description: operation.description,
-            })),
+            operationCount: operations.length,
+            availableOperationCount: operations.filter((operation) =>
+              operationAvailable(operation, principal, membership.role),
+            ).length,
+            ...(!compact
+              ? {
+                  operations: operations.map((operation) => ({
+                    name: operation.name,
+                    api: `/api/${operation.api}`,
+                    method: operation.method,
+                    operation: operation.operation,
+                    available: operationAvailable(
+                      operation,
+                      principal,
+                      membership.role,
+                    ),
+                    requirements: operationRequirements(operation),
+                    description: operation.description,
+                  })),
+                }
+              : {}),
             protocolEndpoints: [
               "authentication",
               "OAuth consent and callbacks",

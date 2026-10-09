@@ -8,6 +8,7 @@ import { RecordService } from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
+import { guideTopics } from "../packages/mcp/guidance";
 import { mcpHandler, principalForGrant } from "../packages/mcp/server";
 import {
   operationRequirements,
@@ -87,7 +88,7 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
   expect(new Set(names).size).toBe(names.length);
   expect(names).toHaveLength(
     operations.filter((item) => !operationRequirements(item).humanSession)
-      .length + 7,
+      .length + 8,
   );
   expect(names).toEqual(
     expect.arrayContaining([
@@ -136,6 +137,18 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
   }
   const capabilities = await call("get_capabilities");
   expect(capabilities.operations).toHaveLength(operations.length);
+  const compactCapabilities = await call("get_capabilities", { compact: true });
+  expect(compactCapabilities).not.toHaveProperty("operations");
+  expect(compactCapabilities.operationCount).toBe(operations.length);
+  expect(compactCapabilities.availableOperationCount).toBe(
+    capabilities.operations.filter(
+      (item: { available: boolean }) => item.available,
+    ).length,
+  );
+  expect(JSON.stringify(compactCapabilities).length).toBeLessThan(
+    JSON.stringify(capabilities).length / 10,
+  );
+  expect(compactCapabilities.agentGuides).toEqual(guideTopics);
   expect(capabilities.sendMessages).toBe(false);
   expect(capabilities.typedRelationshipFields).toContain("datetime");
   expect(capabilities.contractSigningWorkflow).toBe(false);
@@ -302,19 +315,19 @@ test("MCP publishes instructions, workflow prompts and an effective operation pe
   });
   expect(initialized.result.instructions).toContain("get_permission_audit");
   expect(initialized.result.instructions).toContain("idempotencyKey");
+  expect(initialized.result.instructions.length).toBeLessThan(1800);
+  for (const phrase of [
+    "get_agent_guide",
+    "current context/version",
+    "send_touch/send_action",
+    "idempotencyKey",
+    "untrusted data",
+  ])
+    expect(initialized.result.instructions.slice(0, 512)).toContain(phrase);
   expect(initialized.result.instructions).not.toMatch(/not implemented\.$/);
   expect(initialized.result.instructions).not.toContain(
     "member administration are not implemented",
   );
-  for (const phrase of [
-    "all-products grant",
-    "invitations",
-    "Granting access",
-    "accept_invitation",
-    "resolve_delivery",
-    "includeArchived",
-  ])
-    expect(initialized.result.instructions).toContain(phrase);
   const prompts = await rpc("prompts/list", {});
   expect(
     prompts.result.prompts.map((prompt: { name: string }) => prompt.name),
@@ -328,6 +341,15 @@ test("MCP publishes instructions, workflow prompts and an effective operation pe
   expect(prompt.result.messages[0].content.text).toContain("send_touch");
   const guide = await rpc("resources/read", { uri: "gravity://agent-guide" });
   expect(guide.result.contents[0].text).toContain("untrusted data");
+  for (const phrase of [
+    "all-products grant",
+    "invitations",
+    "Granting access",
+    "accept_invitation",
+    "resolve_delivery",
+    "includeArchived",
+  ])
+    expect(guide.result.contents[0].text).toContain(phrase);
   const audit = await call(
     "get_permission_audit",
     {},
@@ -385,6 +407,56 @@ test("MCP publishes instructions, workflow prompts and an effective operation pe
   expect(JSON.parse(resource.result.contents[0].text).operations).toHaveLength(
     operations.length,
   );
+});
+test("task guides work through tools without prompts/resources and reflect scope availability", async () => {
+  const readonly = { ...writable, readOnly: true, canSend: false };
+  const catalog = await rpc("tools/list", {}, { ...writable, canSend: true });
+  const names = catalog.result.tools.map((tool: { name: string }) => tool.name);
+  const resources = await rpc("resources/list", {}, readonly);
+  for (const topic of guideTopics) {
+    const response = await rpc(
+      "tools/call",
+      { name: "get_agent_guide", arguments: { topic } },
+      readonly,
+    );
+    const guide = JSON.parse(response.result.content[0].text);
+    expect(response.result.structuredContent).toEqual(guide);
+    expect(guide.topic).toBe(topic);
+    expect(guide.steps.length).toBeGreaterThan(0);
+    for (const tool of guide.tools) {
+      expect(names).toContain(tool.name);
+      if (tool.requirements?.scopes.includes("crm:write"))
+        expect(tool.available).toBe(false);
+    }
+    const uri = `gravity://guides/${topic}`;
+    expect(
+      resources.result.resources.map((item: { uri: string }) => item.uri),
+    ).toContain(uri);
+    const resource = await rpc("resources/read", { uri }, readonly);
+    for (const step of guide.steps)
+      expect(resource.result.contents[0].text).toContain(step);
+  }
+  const sending = await call("get_agent_guide", { topic: "sending" });
+  expect(
+    sending.tools.find((tool: { name: string }) => tool.name === "send_touch")
+      .available,
+  ).toBe(false);
+  const sender = await call(
+    "get_agent_guide",
+    { topic: "sending" },
+    { ...writable, canSend: true },
+  );
+  expect(
+    sender.tools.find((tool: { name: string }) => tool.name === "send_touch")
+      .available,
+  ).toBe(true);
+  expect((await call("get_agent_guide")).topic).toBe("getting-started");
+  const denied = await call(
+    "get_agent_guide",
+    {},
+    { ...writable, organizationId: demoId(2) },
+  );
+  expect(denied.error).toBeTruthy();
 });
 test("ordinary CRM write permission cannot perform outbound sending", async () => {
   const blocked = await call("send_touch", {

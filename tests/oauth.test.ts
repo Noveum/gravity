@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import { requireMcpAuth } from "@better-auth/mcp";
 import {
   Client,
   type OAuthClientProvider,
@@ -21,12 +20,20 @@ import { errorResponse } from "../packages/core/http";
 import { createLocalDatabase } from "../packages/database/client";
 import * as schema from "../packages/database/schema";
 import {
-  mcpChallengeScopes,
-  mcpHandler,
-  mcpRequiredScopes,
   principalForGrant,
   principalForVerifiedToken,
 } from "../packages/mcp/server";
+
+vi.mock("@crm/auth/server", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getAuth: async () => auth,
+}));
+vi.mock("@crm/database/client", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getDatabase: async () => local.db,
+}));
+
+import { POST as mcpPost } from "../src/app/mcp/route";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let auth: ReturnType<typeof createTestAuth>;
@@ -56,22 +63,7 @@ const server = createServer(async (incoming, outgoing) => {
         headers: { Allow: "POST" },
       });
     else if (incoming.url?.startsWith("/mcp"))
-      response = await requireMcpAuth(
-        auth,
-        async (request, claims) => {
-          const principal = await principalForVerifiedToken(local.db, claims);
-          return mcpHandler(
-            local.db,
-            principal,
-            principal.organizationId ?? "",
-          ).fetch(request);
-        },
-        {
-          resource: `${origin}/mcp`,
-          requiredScopes: mcpRequiredScopes,
-          challengeScopes: mcpChallengeScopes,
-        },
-      )(request);
+      response = await mcpPost(request);
     else
       response = await withOAuthRequest(request, () => auth.handler(request));
     outgoing.statusCode = response.status;
@@ -361,6 +353,7 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
   await expect(
     principalForVerifiedToken(local.db, claims),
   ).rejects.toMatchObject({ status: 401 });
+  await expectAuthenticationRecovery(token.access_token);
   await local.db
     .update(schema.oauthClient)
     .set({ disabled: false })
@@ -372,6 +365,7 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
   await expect(
     principalForVerifiedToken(local.db, claims),
   ).rejects.toMatchObject({ status: 401 });
+  await expectAuthenticationRecovery(token.access_token);
   await local.db
     .update(schema.session)
     .set({ expiresAt: new Date(Date.now() + 86400000) })
@@ -392,7 +386,33 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
     body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
   });
   expect(revoked.status).toBe(403);
+  expect(revoked.headers.has("www-authenticate")).toBe(false);
 });
+
+async function expectAuthenticationRecovery(accessToken: string) {
+  const response = await fetch(`${origin}/mcp`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+  });
+  expect(response.status).toBe(401);
+  expect(await response.json()).toEqual({ error: "UNAUTHORIZED" });
+  const challenge = response.headers.get("www-authenticate") ?? "";
+  expect(challenge).toContain('error="invalid_token"');
+  expect(challenge).toContain('scope="crm:read crm:write crm:send"');
+  expect(challenge).toContain(
+    `resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
+  );
+  const metadata = await fetch(
+    `${origin}/.well-known/oauth-protected-resource/mcp`,
+  );
+  expect(metadata.status).toBe(200);
+  expect(await metadata.json()).toMatchObject({ resource: `${origin}/mcp` });
+}
 test("an MCP token without crm:read is refused with insufficient_scope", async () => {
   const service = new CrmService(local.db);
   const organization = await service.createOrganization(
@@ -501,6 +521,35 @@ test("MCP requests without credentials receive OAuth discovery instead of data",
   const configuration = await discovery.json();
   expect(configuration.issuer).toBe(metadata.authorization_servers[0]);
   expect(configuration.code_challenge_methods_supported).toContain("S256");
+});
+
+test.each(["https://untrusted.example.test", "null"])(
+  "MCP rejects the invalid browser Origin %s without a login challenge",
+  async (requestOrigin) => {
+    const response = await fetch(`${origin}/mcp`, {
+      method: "POST",
+      headers: {
+        Origin: requestOrigin,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+    expect(response.status).toBe(403);
+    expect(response.headers.has("www-authenticate")).toBe(false);
+    expect(await response.json()).toEqual({ error: "FORBIDDEN" });
+  },
+);
+
+test("MCP accepts its configured browser Origin and returns OAuth discovery", async () => {
+  const response = await fetch(`${origin}/mcp`, {
+    method: "POST",
+    headers: { Origin: origin, "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+  });
+  expect(response.status).toBe(401);
+  expect(response.headers.get("www-authenticate")).toContain(
+    "resource_metadata",
+  );
 });
 
 test("official MCP client discovers OAuth, registers, completes PKCE and reads and writes only its selected product", async () => {
@@ -616,6 +665,19 @@ test("official MCP client discovers OAuth, registers, completes PKCE and reads a
     await connected.connect(authenticatedTransport);
     const tools = await connected.listTools();
     expect(tools.tools.map((tool) => tool.name)).toContain("list_products");
+    expect(
+      tools.tools.find((tool) => tool.name === "get_agent_guide")?.outputSchema
+        ?.type,
+    ).toBe("object");
+    const guide = await connected.callTool({
+      name: "get_agent_guide",
+      arguments: { topic: "sequences" },
+    });
+    expect(guide.isError).not.toBe(true);
+    expect(guide.structuredContent).toMatchObject({
+      topic: "sequences",
+      steps: expect.any(Array),
+    });
     expect(
       tools.tools.some(
         (tool) =>

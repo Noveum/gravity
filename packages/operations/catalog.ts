@@ -843,8 +843,14 @@ export const operations: Operation[] = [
     operation: "sequence",
     name: "get_sequence",
     description:
-      "Read a permitted sequence, its ordered steps and current enrollments.",
-    schema: scopeSchema.extend({ sequenceId: z.uuid() }),
+      "Read an authorized sequence's steps, current sequence.version and enrollments with their versions. Find sequence IDs with list_records(entity=sequences). Read this before update_sequence, archive_sequence or restore_sequence; use enrollment versions for change_enrollment.",
+    schema: scopeSchema.extend({
+      sequenceId: z
+        .uuid()
+        .describe(
+          "Sequence ID from list_records with entity=sequences or get_workspace.",
+        ),
+    }),
     run: async (c, input) => {
       const snapshot = await crm(c).snapshot(c.principal, input);
       const sequence = snapshot.sequences.find(
@@ -865,7 +871,7 @@ export const operations: Operation[] = [
     operation: "create-sequence",
     name: "create_sequence",
     description:
-      "Create a product sequence with ordered steps, delays, channels and templates. This never sends messages.",
+      "Create a reusable outreach sequence in an active product with write access. Supply 1–10 steps; number controls order, delayDays controls timing and followUp labels the display group. Templates are copied verbatim, so personalize each touch with edit_touch_draft before approval. Next preview enrollment with enroll_in_sequence(dryRun=true). Creating a sequence does not enroll contacts or send messages.",
     schema: sequenceCreateSchema,
     destructive: false,
     run: (c, input) => outreach(c).createSequence(c.principal, input),
@@ -1405,7 +1411,7 @@ export const operations: Operation[] = [
     operation: "advance",
     name: "advance_sequences",
     description:
-      "Plan the next eligible sequence touches. Does not send messages.",
+      "Advance running enrollments in productId, or across all authorized products in the organization when productId is omitted. Plans the next eligible touch only after the previous step is sent, skipped or expired and its delay has elapsed; may also complete enrollments or pause do-not-contact enrollments. Returns created/completed/paused counts. Next inspect get_outreach_queue or list_due_touches. Never sends messages.",
     schema: scopeSchema,
     destructive: false,
     run: (c, input) => outreach(c).advanceEnrollments(c.principal, input),
@@ -1416,7 +1422,7 @@ export const operations: Operation[] = [
     operation: "enroll",
     name: "enroll_in_sequence",
     description:
-      "Enroll product relationships in an outreach sequence; dryRun previews eligibility without creating enrollments.",
+      "Enroll relationship IDs in an active sequence belonging to the same product, with product write access. Get relationship IDs from list_records(entity=relationships) or get_person_context; do not pass person IDs. Use dryRun=true first to preview eligibility and skipped reasons. A real enrollment creates running enrollments and immediately plans eligible first touches. Next inspect get_outreach_queue and personalize copied templates with edit_touch_draft. Never sends messages.",
     schema: enrollSchema,
     destructive: false,
     run: (c, input) => outreach(c).enroll(c.principal, input),
@@ -1427,7 +1433,7 @@ export const operations: Operation[] = [
     operation: "draft",
     name: "edit_touch_draft",
     description:
-      "Save an outreach draft using its current version; editing clears prior approval.",
+      "Save a personalized outreach draft using the current touch.version from get_touch; editing clears prior approval. Sequence templates are copied verbatim: replace all placeholders in the draft before approve_touch. This does not send a message.",
     schema: touchDraftSchema,
     run: (c, input) => outreach(c).editDraft(c.principal, input),
   }),
@@ -1437,7 +1443,7 @@ export const operations: Operation[] = [
     operation: "approve",
     name: "approve_touch",
     description:
-      "Approve the current draft, recipient and channel with its current version. Approval does not dispatch anything.",
+      "Approve the current draft, recipient and channel using the current touch.version from get_touch. Review the latest conversation and replace any template placeholders with edit_touch_draft first; the server sends draft text verbatim. Approval never dispatches a message. Check get_send_readiness before a separately authorized send_touch.",
     schema: touchApproveSchema,
     run: (c, input) => outreach(c).approve(c.principal, input),
   }),
@@ -1485,7 +1491,7 @@ export const operations: Operation[] = [
     operation: "enrollment",
     name: "change_enrollment",
     description:
-      "Pause, resume or stop an enrollment using its current version.",
+      "Pause a running enrollment, resume a paused enrollment or permanently stop one using its current version from get_sequence or get_outreach_queue. Pause preserves open touches; stop expires open touches and clears their approvals. Resume requires an active product/sequence and a contact who is not do-not-contact, and may plan an eligible next touch. Never sends messages.",
     schema: enrollmentChangeSchema,
     run: (c, input) => outreach(c).changeEnrollment(c.principal, input),
   }),
@@ -1505,7 +1511,7 @@ export const operations: Operation[] = [
     operation: "sequence",
     name: "update_sequence",
     description:
-      "Edit a sequence's ordered steps, delays, channels, templates and name using its current version. Pending drafts/approvals are recomputed.",
+      "Replace the complete steps array and optionally rename a sequence using its current sequence.version from get_sequence. Retain every step to keep and preserve its number. Updates channel/template/followUp only on planned touches and expires planned touches for removed steps; drafted/approved touches and existing due times are preserved. Then plans eligible next touches. Returns sequence and changedTouches; refetch after CONFLICT. Never sends messages.",
     schema: sequenceUpdateSchema,
     run: (c, input) => outreach(c).updateSequence(c.principal, input),
   }),

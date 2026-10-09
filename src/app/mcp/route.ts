@@ -1,7 +1,8 @@
 import { requireMcpAuth } from "@better-auth/mcp";
 import { resourceUrl } from "@crm/auth/options";
-import { getAuth } from "@crm/auth/server";
+import { assertMutationOrigin, getAuth } from "@crm/auth/server";
 import { errorResponse, limitedBody } from "@crm/core/http";
+import { DomainError } from "@crm/core/policy";
 import { getDatabase } from "@crm/database/client";
 import {
   mcpChallengeScopes,
@@ -14,6 +15,7 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 export async function POST(request: Request) {
   try {
+    if (request.headers.has("origin")) assertMutationOrigin(request);
     const auth = await getAuth();
     return await requireMcpAuth(
       auth,
@@ -40,6 +42,21 @@ export async function POST(request: Request) {
       },
     )(request);
   } catch (error) {
-    return errorResponse(error);
+    const response = errorResponse(error);
+    if (
+      error instanceof DomainError &&
+      error.code === "UNAUTHORIZED" &&
+      error.status === 401
+    ) {
+      // A valid JWT can outlive its user session or disabled OAuth client.
+      // Preserve the OAuth discovery challenge for these current-state checks.
+      const metadataUrl = new URL(resourceUrl());
+      metadataUrl.pathname = `/.well-known/oauth-protected-resource${metadataUrl.pathname}`;
+      response.headers.set(
+        "WWW-Authenticate",
+        `Bearer error="invalid_token", resource_metadata=${JSON.stringify(metadataUrl.href)}, scope=${JSON.stringify(mcpChallengeScopes.join(" "))}`,
+      );
+    }
+    return response;
   }
 }

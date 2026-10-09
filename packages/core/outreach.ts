@@ -70,9 +70,24 @@ const version = z.number().int().positive();
 const touchScope = scopeSchema.extend({ touchId: z.uuid() });
 
 export const enrollSchema = scopeSchema.extend({
-  sequenceId: z.uuid(),
-  relationshipIds: z.array(z.uuid()).min(1).max(200),
-  dryRun: z.boolean().default(false),
+  sequenceId: z
+    .uuid()
+    .describe(
+      "An active sequence ID from get_sequence or list_records with entity=sequences.",
+    ),
+  relationshipIds: z
+    .array(z.uuid())
+    .min(1)
+    .max(200)
+    .describe(
+      "Product relationship IDs from list_records with entity=relationships or get_person_context; these are not person IDs. Each relationship must belong to the sequence's product. Duplicate IDs are deduplicated.",
+    ),
+  dryRun: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Use true first to preview eligible and skipped relationships without writes; eligible entries have enrollmentId=null. False creates running enrollments and immediately plans any first touch whose delay has elapsed, without sending.",
+    ),
 });
 export const touchQuerySchema = touchScope;
 export const outreachListSchema = scopeSchema
@@ -164,9 +179,17 @@ export const touchSnoozeSchema = touchScope.extend({
   dueAt: z.iso.datetime(),
 });
 export const enrollmentChangeSchema = scopeSchema.extend({
-  enrollmentId: z.uuid(),
-  version,
-  command: z.enum(["pause", "resume", "stop"]),
+  enrollmentId: z
+    .uuid()
+    .describe("Enrollment ID from get_sequence or get_outreach_queue."),
+  version: version.describe(
+    "Current enrollment.version from get_sequence.enrollments, or from get_outreach_queue.paused for a paused enrollment. Running queue entries contain touch versions, not enrollment versions. Refetch after CONFLICT before deciding whether to retry.",
+  ),
+  command: z
+    .enum(["pause", "resume", "stop"])
+    .describe(
+      "Pause a running enrollment, resume a paused enrollment, or permanently stop it and expire its open touches. Resume requires an active product/sequence and a contact who is not do-not-contact; it may plan the next eligible touch but never sends.",
+    ),
 });
 export const relationshipChangeSchema = scopeSchema
   .extend({
@@ -192,17 +215,62 @@ export const relationshipChangeSchema = scopeSchema
   )
   .refine(fitsRelationshipInput);
 const stepSchema = z.object({
-  number: z.number().int().min(1).max(20),
-  name: z.string().trim().min(1).max(100),
-  delayDays: z.number().int().min(0).max(365),
-  channel: z.enum(["gmail", "linkedin"]),
-  template: z.string().max(20000).default(""),
-  followUp: z.number().int().min(0).max(3),
+  number: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .describe(
+      "Unique step number used for ascending execution order and matching existing touches. Preserve the number when editing the same step; numbers need not be consecutive.",
+    ),
+  name: z.string().trim().min(1).max(100).describe("Human-readable step name."),
+  delayDays: z
+    .number()
+    .int()
+    .min(0)
+    .max(365)
+    .describe(
+      "Elapsed 24-hour days from enrollment for the first step, or from the previous step's sent/closed time for later steps. Zero makes the step immediately eligible; contact cooldown and quiet hours may move its due time later.",
+    ),
+  channel: z
+    .enum(["gmail", "linkedin"])
+    .describe(
+      "Channel for the planned touch. Provider connection/consent and current send readiness are checked separately when explicitly sending.",
+    ),
+  template: z
+    .string()
+    .max(20000)
+    .default("")
+    .describe(
+      "Initial draft text copied verbatim to planned touches; template variables are not rendered. Personalize with edit_touch_draft before approval and explicit sending.",
+    ),
+  followUp: z
+    .number()
+    .int()
+    .min(0)
+    .max(3)
+    .describe(
+      "Outreach display group: 0=first touch, 1=follow-up 1, 2=follow-up 2, 3=follow-up 3. Independent of number and delayDays; this label does not control execution order or timing.",
+    ),
 });
 export const sequenceUpdateSchema = scopeSchema.extend({
-  sequenceId: z.uuid(),
-  version,
-  name: z.string().trim().min(1).max(100).optional(),
+  sequenceId: z
+    .uuid()
+    .describe(
+      "Sequence ID from get_sequence or list_records with entity=sequences.",
+    ),
+  version: version.describe(
+    "Current sequence.version from get_sequence. Refetch after CONFLICT and review the latest sequence before resubmitting changes.",
+  ),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe(
+      "Replacement sequence name; omit to keep the current name. The complete steps array is still required.",
+    ),
   steps: z
     .array(stepSchema)
     .min(1)
@@ -210,16 +278,36 @@ export const sequenceUpdateSchema = scopeSchema.extend({
     .refine(
       (steps) =>
         new Set(steps.map((step) => step.number)).size === steps.length,
+    )
+    .describe(
+      "Complete replacement array of 1–10 steps with unique numbers, sorted by number on save. Include every step to retain; omitted steps are removed. Planned touch channel/template/followUp may change, and removed planned steps expire. Drafted/approved content and existing due times are not rewritten, but removing steps can complete enrollments and expire remaining open touches, clearing their approvals.",
     ),
 });
 export const sequenceCreateSchema = scopeSchema.extend({
-  productId: z.uuid(),
-  name: z.string().trim().min(1).max(100),
-  steps: sequenceUpdateSchema.shape.steps,
+  productId: z
+    .uuid()
+    .describe(
+      "Active product ID to own this sequence; requires write access to that product.",
+    ),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .describe("Human-readable sequence name."),
+  steps: sequenceUpdateSchema.shape.steps.describe(
+    "Initial array of 1–10 steps with unique numbers, sorted by number on save. Creating the sequence does not enroll relationships or send messages.",
+  ),
 });
 export const sequenceArchiveSchema = scopeSchema.extend({
-  sequenceId: z.uuid(),
-  version,
+  sequenceId: z
+    .uuid()
+    .describe(
+      "Sequence ID from get_sequence or list_records with entity=sequences.",
+    ),
+  version: version.describe(
+    "Current sequence.version from get_sequence; refetch after CONFLICT.",
+  ),
 });
 export const sequenceRestoreSchema = sequenceArchiveSchema;
 export const contactRulesSchema = z.object({
@@ -953,14 +1041,15 @@ export class OutreachService {
 
   async advanceEnrollments(
     principal: Principal,
-    input: { organizationId: string },
+    input: z.infer<typeof scopeSchema>,
   ) {
+    input = scopeSchema.parse(input);
     requireWriteActor(principal);
     const permission = await authorize(
       this.db,
       principal,
       input.organizationId,
-      undefined,
+      input.productId,
       true,
     );
     return this.db.transaction((tx) =>
@@ -968,7 +1057,11 @@ export class OutreachService {
         tx,
         principal,
         input.organizationId,
-        permission.products.map((product) => product.id),
+        permission.products
+          .filter(
+            (product) => !input.productId || product.id === input.productId,
+          )
+          .map((product) => product.id),
         this.clock(),
       ),
     );

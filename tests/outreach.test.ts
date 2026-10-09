@@ -1,5 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { ingestReply } from "../packages/connectors/replies";
 import { CrmService } from "../packages/core/crm";
 import {
@@ -18,6 +19,7 @@ import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { operations } from "../packages/operations/catalog";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let crm: CrmService;
@@ -359,7 +361,12 @@ describe("touch lifecycle", () => {
       version: approved.version,
       draft: "Hello, a fictional note.",
     });
-    expect(same).toMatchObject({ status: "approved", approvedBy: demoUser });
+    expect(same).toMatchObject({
+      status: "approved",
+      approvedBy: demoUser,
+      approvedHash: approved.approvedHash,
+      draftHash: approved.draftHash,
+    });
     const edited = await outreach.editDraft(admin, {
       organizationId: org,
       touchId: planned.id,
@@ -1318,6 +1325,56 @@ describe("approval follows merge fields", () => {
 });
 
 describe("editing a sequence", () => {
+  test("removing the final unfinished step completes the enrollment and expires its approved touch", async () => {
+    now = Date.parse("2026-10-22T06:00:00Z");
+    const f = await fixture();
+    const sequence = await outreach.updateSequence(admin, {
+      organizationId: org,
+      sequenceId: f.sequenceId,
+      version: 1,
+      steps: steps.slice(0, 2).map((step) => ({ ...step, delayDays: 0 })),
+    });
+    await enroll(f);
+    const first = await firstTouch(f);
+    await outreach.skip(admin, {
+      organizationId: org,
+      touchId: first.id,
+      version: first.version,
+      reason: "Fictional skipped introduction",
+    });
+    const second = (await touchesOf(f.relationshipId))[1];
+    if (!second) throw new Error("missing second touch");
+    const drafted = await outreach.editDraft(admin, {
+      organizationId: org,
+      touchId: second.id,
+      version: second.version,
+      draft: "Subject: Fictional review\n\nReviewed follow-up.",
+    });
+    const approved = await outreach.approve(admin, {
+      organizationId: org,
+      touchId: second.id,
+      version: drafted.version,
+    });
+    expect(approved.status).toBe("approved");
+
+    await outreach.updateSequence(admin, {
+      organizationId: org,
+      sequenceId: f.sequenceId,
+      version: sequence.sequence.version,
+      steps: sequence.sequence.steps.slice(0, 1),
+    });
+
+    expect(await enrollmentOf(f.relationshipId)).toMatchObject({
+      status: "completed",
+    });
+    expect(await touchRow(second.id)).toMatchObject({
+      status: "expired",
+      draft: drafted.draft,
+      approvedHash: null,
+      approvedBy: null,
+    });
+  });
+
   test("only planned touches change, removed steps expire their planned touch, and the version bumps", async () => {
     now = Date.parse("2026-10-22T06:00:00Z");
     const brand = await product();
@@ -1430,6 +1487,53 @@ describe("relationship stages", () => {
       nextStepDueAt: new Date("2026-11-01T09:00:00.000Z"),
       version: relationship.version + 1,
     });
+  });
+});
+
+describe("enrollment versions", () => {
+  test("get_sequence supplies enrollment versions for changes while running queue entries carry touch versions", async () => {
+    now = Date.parse("2026-10-23T06:00:00Z");
+    const f = await fixture();
+    await enroll(f);
+    const scope = { organizationId: org, productId: f.productId };
+    const queued = (await outreach.queue(admin, scope)).drafts[0];
+    if (!queued) throw new Error("missing queued touch");
+    const getSequence = operations.find((item) => item.name === "get_sequence");
+    if (!getSequence) throw new Error("missing get_sequence operation");
+    const result = z
+      .object({
+        enrollments: z.array(z.object({ id: z.uuid(), version: z.number() })),
+      })
+      .parse(
+        await getSequence.execute(
+          { db: local.db, principal: admin },
+          { ...scope, sequenceId: f.sequenceId },
+        ),
+      );
+    const enrollment = result.enrollments.find(
+      (item) => item.id === queued.enrollmentId,
+    );
+    if (!enrollment) throw new Error("missing sequence enrollment");
+    expect(queued.version).not.toBe(enrollment.version);
+
+    await expect(
+      outreach.changeEnrollment(admin, {
+        ...scope,
+        enrollmentId: enrollment.id,
+        version: queued.version,
+        command: "pause",
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    const paused = await outreach.changeEnrollment(admin, {
+      ...scope,
+      enrollmentId: enrollment.id,
+      version: enrollment.version,
+      command: "pause",
+    });
+    expect(paused.status).toBe("paused");
+    expect((await outreach.queue(admin, scope)).paused).toMatchObject([
+      { id: enrollment.id, version: paused.version },
+    ]);
   });
 });
 

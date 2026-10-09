@@ -2,6 +2,7 @@ import {
   and,
   asc,
   count,
+  desc,
   eq,
   exists,
   getTableColumns,
@@ -19,50 +20,43 @@ import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { readableAttribution } from "./contact-attribution";
 import { scopeSchema } from "./crm";
-import {
-  type FieldFilter,
-  fieldFiltersSchema,
-  fieldLabelWhitespace,
-  normalizeFieldLabel,
-  normalizeFieldText,
-} from "./field-filters";
-import { fieldTextCaseSources, fieldTextCaseTargets } from "./field-text-case";
+import { fieldFilterConditions } from "./field-filter-sql";
+import { fieldFiltersSchema } from "./field-filters";
 import { authorize, type Principal } from "./policy";
+import {
+  recordFactConditions,
+  recordFilterFields,
+  relationshipFactSql,
+  type SqlRecordFacts,
+} from "./record-filters";
 
-function normalizedFieldSql(value: SQL) {
-  // Most labels and prose are ASCII. Avoid scanning the full Unicode mapping
-  // for those strings while keeping both branches independent of DB locale.
-  return sql`CASE WHEN octet_length(${value}) = char_length(${value}) THEN translate(${value}, ${fieldTextCaseSources.slice(0, 26)}, ${fieldTextCaseTargets.slice(0, 26)}) ELSE translate(${value}, ${fieldTextCaseSources}, ${fieldTextCaseTargets}) END`;
-}
-
-export const recordListSchema = scopeSchema
-  .extend({
-    entity: z.enum([
-      "people",
-      "companies",
-      "relationships",
-      "opportunities",
-      "meetings",
-      "sequences",
-      "folders",
-      "assets",
-      "actions",
-    ]),
-    submittedBy: z.string().min(1).max(200).optional(),
-    sourceMemberId: z.string().min(1).max(200).optional(),
-    attribution: z.enum(["recorded", "unknown", "shared"]).optional(),
-    query: z.string().trim().max(200).default(""),
-    fieldFilters: fieldFiltersSchema,
-    tag: z.string().trim().max(50).optional(),
-    currency: z
-      .string()
-      .regex(/^[A-Z]{3}$/)
-      .optional(),
-    minimum: z.coerce.number().int().min(0).max(2147483647).optional(),
-    maximum: z.coerce.number().int().min(0).max(2147483647).optional(),
-    offset: z.coerce.number().int().min(0).max(1000000).default(0),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
-  })
+const recordListObject = scopeSchema.extend({
+  entity: z.enum([
+    "people",
+    "companies",
+    "relationships",
+    "opportunities",
+    "meetings",
+    "sequences",
+    "folders",
+    "assets",
+    "actions",
+  ]),
+  submittedBy: z.string().min(1).max(200).optional(),
+  sourceMemberId: z.string().min(1).max(200).optional(),
+  attribution: z.enum(["recorded", "unknown", "shared"]).optional(),
+  ...recordFilterFields,
+  fieldFilters: fieldFiltersSchema,
+  pipelineId: z.uuid().optional(),
+  stageId: z.uuid().optional(),
+  kind: z
+    .enum(["reply", "approval", "review", "commitment", "research"])
+    .optional(),
+  owedBy: z.enum(["us", "them", "unknown"]).optional(),
+  offset: z.coerce.number().int().min(0).max(1000000).default(0),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export const recordListSchema = recordListObject
   .refine(
     (input) =>
       input.entity === "people" ||
@@ -88,19 +82,79 @@ export const recordListSchema = scopeSchema
   )
   .refine(
     (input) =>
-      ["people", "companies", "relationships", "opportunities"].includes(
-        input.entity,
-      ) ||
+      [
+        "people",
+        "companies",
+        "relationships",
+        "opportunities",
+        "actions",
+        "meetings",
+      ].includes(input.entity) ||
       (!input.tag &&
         !input.currency &&
         input.minimum === undefined &&
-        input.maximum === undefined),
+        input.maximum === undefined &&
+        !input.size &&
+        !input.qualification &&
+        !input.ownerId &&
+        !input.sort.startsWith("amount_")),
+  )
+  .refine(
+    (input) =>
+      !input.pipelineId ||
+      ["relationships", "opportunities"].includes(input.entity),
+  )
+  .refine(
+    (input) =>
+      !input.stageId ||
+      ["relationships", "opportunities"].includes(input.entity),
+  )
+  .refine(
+    (input) => (!input.kind && !input.owedBy) || input.entity === "actions",
+  )
+  .refine(
+    (input) =>
+      !input.status ||
+      (input.entity === "actions" &&
+        ["open", "completed", "blocked"].includes(input.status)) ||
+      (input.entity === "meetings" &&
+        ["scheduled", "held", "canceled"].includes(input.status)) ||
+      (input.entity === "opportunities" &&
+        ["open", "won", "lost"].includes(input.status)) ||
+      (input.entity === "assets" &&
+        ["draft", "approved", "archived"].includes(input.status)),
+  )
+  .refine((input) => !input.ownerId || input.entity !== "companies")
+  .refine((input) => !input.qualification || input.entity !== "companies");
+
+export const nextActionsSchema = recordListObject
+  .omit({
+    entity: true,
+    pipelineId: true,
+    stageId: true,
+    submittedBy: true,
+    sourceMemberId: true,
+    attribution: true,
+  })
+  .extend({
+    includeCompleted: z.enum(["true", "false"]).default("false"),
+    status: z.enum(["open", "completed", "blocked"]).optional(),
+  })
+  .refine(
+    (input) =>
+      input.minimum === undefined ||
+      input.maximum === undefined ||
+      input.minimum <= input.maximum,
   );
 
 export class RecordListService {
   constructor(private db: Database) {}
 
-  async page(principal: Principal, input: z.infer<typeof recordListSchema>) {
+  async page(
+    principal: Principal,
+    input: z.infer<typeof recordListSchema>,
+    pendingOnly = false,
+  ) {
     const permission = await authorize(
       this.db,
       principal,
@@ -277,41 +331,10 @@ export class RecordListService {
       const relationshipConditions: (SQL | undefined)[] = [
         eq(filteredRelationship.organizationId, input.organizationId),
         inArray(filteredRelationship.productId, ids),
-        ...input.fieldFilters.map((filter: FieldFilter) => {
-          const matchingName = sql`${normalizedFieldSql(sql`btrim(field.value->>'label', ${fieldLabelWhitespace})`)} = ${normalizeFieldLabel(filter.label)} AND field.value->>'type' = ${filter.type}`;
-          let comparison: SQL | undefined;
-          const value = filter.value;
-          const stored =
-            filter.type === "number"
-              ? sql`CASE WHEN jsonb_typeof(field.value->'value') = 'number' THEN (field.value->>'value')::numeric END`
-              : filter.type === "datetime"
-                ? sql`CASE WHEN field.value->>'type' = 'datetime' THEN (field.value->>'value')::timestamptz END`
-                : filter.type === "text" || filter.type === "url"
-                  ? normalizedFieldSql(sql`field.value->>'value'`)
-                  : sql`field.value->>'value'`;
-          const expected =
-            typeof value === "string"
-              ? normalizeFieldText(value)
-              : typeof value === "boolean"
-                ? String(value)
-                : value;
-          if (filter.operator === "eq")
-            comparison = sql`${stored} = ${expected}`;
-          if (filter.operator === "contains")
-            comparison = sql`position(${expected} in ${stored}) > 0`;
-          if (filter.operator === "gt")
-            comparison = sql`${stored} > ${expected}`;
-          if (filter.operator === "gte")
-            comparison = sql`${stored} >= ${expected}`;
-          if (filter.operator === "lt")
-            comparison = sql`${stored} < ${expected}`;
-          if (filter.operator === "lte")
-            comparison = sql`${stored} <= ${expected}`;
-          const matching = sql`EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(${filteredRelationship.contextDetails}->'fields', '[]'::jsonb)) AS field(value) WHERE ${matchingName}${comparison ? sql` AND ${comparison}` : sql``})`;
-          return filter.operator === "missing"
-            ? sql`NOT (${matching})`
-            : matching;
-        }),
+        ...fieldFilterConditions(
+          sql`${filteredRelationship.contextDetails}`,
+          input.fieldFilters,
+        ),
       ];
       if (input.entity === "relationships")
         relationshipConditions.push(
@@ -356,6 +379,11 @@ export class RecordListService {
         : "title" in table
           ? table.title
           : s.relationships.nextStep;
+    // Relationship cards identify the person; next-step text remains searchable.
+    const sortLabel =
+      input.entity === "relationships"
+        ? sql`(SELECT ${s.people.name} FROM ${s.people} WHERE ${s.people.id} = ${s.relationships.personId} AND ${s.people.organizationId} = ${input.organizationId} AND ${s.people.archivedAt} IS NULL)`
+        : label;
     if (input.query) {
       const term = `%${input.query.replace(/[\\%_]/g, "\\$&")}%`;
       const alternatives: (SQL | undefined)[] = [ilike(label, term)];
@@ -378,6 +406,8 @@ export class RecordListService {
         );
       if (input.entity === "companies")
         alternatives.push(ilike(s.companies.domain, term));
+      if (input.entity === "meetings")
+        alternatives.push(ilike(s.meetings.summary, term));
       if (input.entity === "relationships" || "relationshipId" in table) {
         const related = alias(s.relationships, "searched_relationship");
         const relationshipId =
@@ -412,18 +442,99 @@ export class RecordListService {
       }
       conditions.push(or(...alternatives));
     }
-    if ("tags" in table && input.tag)
-      conditions.push(
-        sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(${table.tags}) AS tag(value) WHERE lower(tag.value) = ${input.tag.toLowerCase()})`,
+    let facts: SqlRecordFacts = {
+      ...("tags" in table ? { tags: sql`${table.tags}` } : {}),
+      ...("amountMinor" in table
+        ? {
+            amount: sql`${table.amountMinor}`,
+            currency: sql`${table.currency}`,
+          }
+        : {}),
+      ...("status" in table ? { status: sql`${table.status}` } : {}),
+    };
+    if (input.entity === "relationships" || "relationshipId" in table) {
+      const relationshipId =
+        "relationshipId" in table
+          ? sql`${table.relationshipId}`
+          : sql`${s.relationships.id}`;
+      const inherited = relationshipFactSql(
+        relationshipId,
+        input.organizationId,
+        ids,
       );
-    if ("amountMinor" in table) {
-      if (input.currency) conditions.push(eq(table.currency, input.currency));
-      if (input.minimum !== undefined || input.maximum !== undefined)
-        conditions.push(eq(table.currency, input.currency ?? "USD"));
-      if (input.minimum !== undefined)
-        conditions.push(sql`${table.amountMinor} >= ${input.minimum}`);
-      if (input.maximum !== undefined)
-        conditions.push(sql`${table.amountMinor} <= ${input.maximum}`);
+      facts = { ...inherited, ...facts };
+      if (input.entity === "relationships") facts = inherited;
+      if (input.entity === "opportunities") {
+        facts.tags = sql`coalesce(${inherited.tags}, '[]'::jsonb) || ${s.opportunities.tags}`;
+        facts.owner = sql`coalesce(${s.opportunities.ownerId}, ${inherited.owner})`;
+      }
+      if (input.entity === "actions") facts.owner = sql`${s.actions.ownerId}`;
+    }
+    if (input.entity === "people") {
+      const relatedFilter = (condition: SQL) =>
+        exists(
+          this.db
+            .select({ id: s.relationships.id })
+            .from(s.relationships)
+            .where(
+              and(
+                eq(s.relationships.organizationId, input.organizationId),
+                eq(s.relationships.personId, s.people.id),
+                inArray(s.relationships.productId, ids),
+                condition,
+              ),
+            ),
+        );
+      if (input.ownerId)
+        conditions.push(
+          relatedFilter(eq(s.relationships.ownerId, input.ownerId)),
+        );
+      if (input.qualification)
+        conditions.push(
+          relatedFilter(eq(s.relationships.qualification, input.qualification)),
+        );
+    }
+    conditions.push(...recordFactConditions(input, facts));
+    if (
+      (input.entity === "opportunities" || input.entity === "relationships") &&
+      input.stageId
+    )
+      conditions.push(
+        eq(
+          input.entity === "opportunities"
+            ? s.opportunities.stageId
+            : s.relationships.stageId,
+          input.stageId,
+        ),
+      );
+    if (
+      (input.entity === "opportunities" || input.entity === "relationships") &&
+      input.pipelineId
+    ) {
+      const stageId =
+        input.entity === "opportunities"
+          ? s.opportunities.stageId
+          : s.relationships.stageId;
+      conditions.push(
+        exists(
+          this.db
+            .select({ id: s.stages.id })
+            .from(s.stages)
+            .where(
+              and(
+                eq(s.stages.id, stageId),
+                eq(s.stages.organizationId, input.organizationId),
+                eq(s.stages.pipelineId, input.pipelineId),
+                inArray(s.stages.productId, ids),
+              ),
+            ),
+        ),
+      );
+    }
+    if (input.entity === "actions") {
+      if (input.kind) conditions.push(eq(s.actions.kind, input.kind));
+      if (input.owedBy) conditions.push(eq(s.actions.owedBy, input.owedBy));
+      if (pendingOnly) conditions.push(sql`${s.actions.status} <> 'completed'`);
     }
     const where = and(...conditions);
     const columns =
@@ -441,12 +552,37 @@ export class RecordListService {
             createdAt: s.assets.createdAt,
           }
         : getTableColumns(table);
+    const defaultOrder =
+      input.entity === "actions"
+        ? [asc(s.actions.dueAt), asc(table.id)]
+        : input.entity === "meetings"
+          ? [desc(s.meetings.startsAt), asc(table.id)]
+          : ["people", "relationships", "opportunities"].includes(input.entity)
+            ? [asc(table.id)]
+            : [asc(label), asc(table.id)];
+    const order =
+      input.sort === "default"
+        ? defaultOrder
+        : input.sort.startsWith("amount_") && facts.amount && facts.currency
+          ? [
+              sql`${facts.amount} IS NULL ASC`,
+              asc(facts.currency),
+              input.sort === "amount_desc"
+                ? desc(facts.amount)
+                : asc(facts.amount),
+              asc(sortLabel),
+              asc(table.id),
+            ]
+          : [
+              input.sort === "name_desc" ? desc(sortLabel) : asc(sortLabel),
+              asc(table.id),
+            ];
     const [items, totals] = await Promise.all([
       this.db
         .select(columns)
         .from(table)
         .where(where)
-        .orderBy(asc(label), asc(table.id))
+        .orderBy(...order)
         .limit(input.limit)
         .offset(input.offset),
       this.db.select({ total: count() }).from(table).where(where),

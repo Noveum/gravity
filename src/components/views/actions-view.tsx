@@ -21,7 +21,7 @@ import {
   useRecordIndex,
 } from "../records/list-browser";
 import { rowKeys } from "../records/peek-keys";
-import { actionFilters, personPath, sectionPath } from "../routes";
+import { actionFilters, actionsPath, personPath, sectionPath } from "../routes";
 import { initials } from "../shell/workspace-menu";
 import { EmptyState } from "../ui/states";
 
@@ -64,10 +64,31 @@ export function ActionsView() {
   );
   usePruneSelection(browser.page.items.map((action) => action.id));
   const now = Date.now();
+  const filtered =
+    !!search ||
+    !!filters.owner ||
+    browser.fieldInvalid ||
+    browser.fieldDrafts.some((draft) => !!draft.key) ||
+    Object.entries(browser.filters).some(
+      ([key, value]) => value && key !== "sort",
+    );
+  const emptyCopy = filters.waiting
+    ? { title: t.actionEmpty.waitingTitle, detail: t.actionEmpty.waitingDetail }
+    : filters.kind === "reply"
+      ? {
+          title: t.actionEmpty.repliesTitle,
+          detail: t.actionEmpty.repliesDetail,
+        }
+      : filters.kind === "commitment"
+        ? {
+            title: t.actionEmpty.promisesTitle,
+            detail: t.actionEmpty.promisesDetail,
+          }
+        : { title: t.actionEmpty.allTitle, detail: t.actionEmpty.allDetail };
   return (
     <>
+      <RecordFilters browser={browser} hiddenFields={["ownerId"]} />
       <InternalTasks />
-      <RecordFilters browser={browser} />
       {["now", "upcoming"].map((group) => {
         const list = browser.page.items.filter((action) =>
           group === "now"
@@ -230,7 +251,40 @@ export function ActionsView() {
             }
           />
         ) : data.products.length ? (
-          <EmptyState title={t.noResults} compact />
+          <EmptyState
+            title={filtered ? t.noResults : emptyCopy.title}
+            description={
+              filtered ? t.actionEmpty.filteredDetail : emptyCopy.detail
+            }
+            action={
+              <>
+                {filtered && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      browser.clear();
+                      crm.clearSearch();
+                    }}
+                  >
+                    {t.clearFilters}
+                  </button>
+                )}
+                {crm.productId && (
+                  <button type="button" onClick={() => crm.switchProduct("")}>
+                    {t.actionEmpty.viewAllProducts}
+                  </button>
+                )}
+                {(filters.kind || filters.waiting) && (
+                  <Link className="button" href={actionsPath()}>
+                    {t.actionEmpty.viewAll}
+                  </Link>
+                )}
+                <Link className="button" href={sectionPath("people")}>
+                  {t.actionEmpty.reviewPeople}
+                </Link>
+              </>
+            }
+          />
         ) : null)}
     </>
   );

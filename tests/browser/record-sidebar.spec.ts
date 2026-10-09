@@ -39,6 +39,7 @@ test("records and files share a persistent resizable inspector", async ({
   request,
 }) => {
   await page.goto("/people");
+  await expect(page.locator(".live-status")).toHaveClass(/sync-live/);
   const list = page.locator("#records-panel table");
   await list.evaluate((element) =>
     element.setAttribute("data-preserved", "true"),

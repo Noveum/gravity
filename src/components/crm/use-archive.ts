@@ -2,6 +2,7 @@
 import t from "@crm/i18n/translations/en.json";
 import { useRef } from "react";
 import { companyPath, personPath } from "../routes";
+import { currentViewQuery } from "../view-query";
 import { useCrm } from "./crm-context";
 
 interface Archivable {
@@ -52,12 +53,16 @@ export function useArchive() {
     await crm.refresh();
     return result as { version: number };
   }
-  const recordPath = (kind: Kind, id: string) =>
-    kind === "person"
-      ? personPath(id)
-      : kind === "company"
-        ? companyPath(id)
-        : `/opportunities?deal=${encodeURIComponent(id)}`;
+  const recordPath = (kind: Kind, id: string) => {
+    if (kind === "person") return personPath(id);
+    if (kind === "company") return companyPath(id);
+    const query =
+      crm.pathname === "/opportunities"
+        ? currentViewQuery()
+        : new URLSearchParams();
+    query.set("deal", id);
+    return `/opportunities?${query}`;
+  };
   async function restore(kind: Kind, record: Archivable, stageId?: string) {
     const restored = await change(kind, record, false, stageId);
     if (restored)
@@ -66,6 +71,7 @@ export function useArchive() {
   }
   async function archive(kind: Kind, record: Archivable) {
     if (!crm.canLeaveEditor()) return false;
+    const returnPath = recordPath(kind, record.id);
     const archived = await change(kind, crm.currentRecord(record), true);
     if (!archived) return false;
     crm.closePeek(true);
@@ -84,7 +90,7 @@ export function useArchive() {
           void restore(kind, { ...record, version: archived.version }).then(
             (ok) => {
               if (ok && current.current.organizationId === crm.organizationId)
-                current.current.go(recordPath(kind, record.id));
+                current.current.go(returnPath);
             },
           );
         },

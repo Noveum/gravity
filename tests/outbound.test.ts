@@ -285,6 +285,7 @@ test("an in-flight send reserves the sender's last daily slot across different p
     .select({ timezone: s.organizations.timezone })
     .from(s.organizations)
     .where(eq(s.organizations.id, org));
+  // Match the policy's workspace day, including seeded sends near UTC midnight.
   const [dayStart, dayEnd] = zonedDayBounds(now, organization.timezone);
   const [baseline] = await local.db
     .select({ count: sql<number>`count(*)::int` })

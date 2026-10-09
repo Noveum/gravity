@@ -2,12 +2,14 @@
 import { shortcutLabel } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
 import { Plus, Search, Send, X } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import type { RefObject } from "react";
 import { label } from "../client-api";
 import { useCrm } from "../crm/crm-context";
-import { type ActionFilters, actionFilters, actionsPath } from "../routes";
+import { type ActionFilters, actionFilters } from "../routes";
+import { Select } from "../ui/select";
 import { ShortcutHint } from "../ui/shortcut-hint";
+import { currentViewQuery, replaceViewQuery } from "../view-query";
 
 const actionKinds = ["reply", "approval", "review", "commitment", "research"];
 
@@ -21,8 +23,8 @@ export function ViewToolbar({
   onCreateProduct: () => boolean;
 }) {
   const crm = useCrm();
-  const router = useRouter();
-  const filters = actionFilters(useSearchParams());
+  const query = useSearchParams();
+  const filters = actionFilters(query);
   const section = crm.route?.section ?? "actions";
   const products = (crm.data?.products ?? []).filter(
     (product) => product.organizationId === crm.organizationId,
@@ -31,25 +33,42 @@ export function ViewToolbar({
     "{count}",
     String(crm.selection.selected.length),
   );
-  const filter = (change: Partial<ActionFilters>) =>
-    router.replace(actionsPath({ ...filters, ...change }), { scroll: false });
+  const filter = (change: Partial<ActionFilters>) => {
+    const next = currentViewQuery();
+    for (const [key, value] of Object.entries(change)) {
+      if (value) next.set(key, String(value));
+      else next.delete(key);
+    }
+    replaceViewQuery(next);
+  };
   return (
     <div className="toolbar">
       <div className="product-picker">
-        <select
-          aria-label={t.product}
+        <Select
+          label={t.product}
           aria-keyshortcuts="P"
           title={`${t.product} (${shortcutLabel("product")})`}
           value={crm.productId}
-          onChange={(event) => crm.switchProduct(event.target.value)}
-        >
-          <option value="">{t.allProducts}</option>
-          {products.map((product) => (
-            <option key={product.id} value={product.id}>
-              {product.name}
-            </option>
-          ))}
-        </select>
+          onChange={crm.switchProduct}
+          options={[
+            { value: "", label: t.allProducts },
+            ...products.map((product) => ({
+              value: product.id,
+              label: product.name,
+            })),
+          ]}
+        />
+        {crm.productId && (
+          <button
+            type="button"
+            className="ghost product-reset"
+            aria-label={t.uiRefresh.clearProduct}
+            title={t.allProducts}
+            onClick={() => crm.switchProduct("")}
+          >
+            <X size={14} aria-hidden />
+          </button>
+        )}
         <ShortcutHint id="product" />
       </div>
       {crm.isAdmin && (
@@ -69,10 +88,15 @@ export function ViewToolbar({
         <label className="search">
           <Search size={14} aria-hidden />
           <input
+            className="toolbar-search-input"
             ref={searchInput}
             type="search"
             aria-label={t.search}
-            placeholder={t.searchPlaceholder}
+            placeholder={
+              section === "opportunities"
+                ? t.uiRefresh.searchDeals
+                : t.searchPlaceholder
+            }
             value={crm.search}
             onChange={(event) => crm.setSearch(event.target.value)}
           />
@@ -99,33 +123,30 @@ export function ViewToolbar({
       </span>
       {section === "actions" && (
         <>
-          <select
-            aria-label={t.owner}
+          <Select
+            label={t.owner}
             value={filters.owner}
-            onChange={(event) => filter({ owner: event.target.value })}
-          >
-            <option value="">{t.everyone}</option>
-            <option value={crm.userId}>{t.mine}</option>
-            {crm.data?.members
-              .filter((member) => member.id !== crm.userId)
-              .map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-          </select>
-          <select
-            aria-label={t.actionType}
+            onChange={(value) => filter({ owner: value })}
+            options={[
+              { value: "", label: t.everyone },
+              { value: crm.userId, label: t.mine },
+              ...(crm.data?.members ?? [])
+                .filter((member) => member.id !== crm.userId)
+                .map((member) => ({ value: member.id, label: member.name })),
+            ]}
+          />
+          <Select
+            label={t.actionType}
             value={filters.kind}
-            onChange={(event) => filter({ kind: event.target.value })}
-          >
-            <option value="">{t.allTypes}</option>
-            {actionKinds.map((kind) => (
-              <option key={kind} value={kind}>
-                {label(kind)}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => filter({ kind: value })}
+            options={[
+              { value: "", label: t.allTypes },
+              ...actionKinds.map((kind) => ({
+                value: kind,
+                label: label(kind),
+              })),
+            ]}
+          />
           {filters.waiting && (
             <button
               type="button"

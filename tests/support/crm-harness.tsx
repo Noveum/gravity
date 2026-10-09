@@ -356,6 +356,7 @@ export function installCrmHarness() {
       "ResizeObserver",
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );

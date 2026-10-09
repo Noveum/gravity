@@ -1,5 +1,5 @@
 "use client";
-import { money, overview, totals } from "@crm/core/analytics";
+import { money, overview, totals, weightedAmount } from "@crm/core/analytics";
 import type { ClientSnapshot } from "@crm/core/dto";
 import { productColorToken } from "@crm/core/product-colors";
 import t from "@crm/i18n/translations/en.json";
@@ -20,6 +20,8 @@ import { dateLabel, errorText, requestJson } from "../client-api";
 import { useWorkspaceData } from "../crm/crm-context";
 import { followUpLabel } from "../outreach/touch-labels";
 import { Pagination, useListPage } from "../records/list-browser";
+import { Select } from "../ui/select";
+import "./overview.css";
 
 interface Drill {
   title: string;
@@ -28,11 +30,19 @@ interface Drill {
   ownerId?: string;
   direction?: "inbound" | "outbound";
   day?: string;
+  revenue?: "open" | "weighted";
 }
 const values = (rows: ReturnType<typeof totals>) =>
   rows.length
     ? rows.map((r) => money(r.amountMinor, r.currency)).join(" · ")
     : "—";
+const reportDayLabel = (day: string) =>
+  new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${day}T12:00:00Z`));
 export function OverviewView() {
   const crm = useWorkspaceData();
   const [days, setDays] = useState(30);
@@ -52,10 +62,17 @@ export function OverviewView() {
       overview(crm.data, { days, timeZone: crm.timeZone, ownerId, channel }),
     [crm.data, days, crm.timeZone, ownerId, channel],
   );
-  const activityMaximum = Math.max(
+  const activityCount = report.sent + report.received;
+  const rawMaximum = Math.max(
     1,
-    ...report.days.map((day) => day.inbound + day.outbound),
+    ...report.days.map((day) => Math.max(day.inbound, day.outbound)),
   );
+  const activityStep = Math.max(1, Math.ceil(rawMaximum / 4));
+  const activityTicks =
+    rawMaximum <= 4
+      ? Array.from({ length: rawMaximum + 1 }, (_, index) => rawMaximum - index)
+      : [4, 3, 2, 1, 0].map((step) => step * activityStep);
+  const activityMaximum = activityTicks[0];
   const open = (
     title: string,
     kind: Drill["kind"],
@@ -104,12 +121,15 @@ export function OverviewView() {
       title: t.pipelineValue,
       value: values(report.pipelineValue),
       icon: BriefcaseBusiness,
-      action: () => open(t.openPipeline, "deals", report.open),
+      className: "metric-money",
+      action: () =>
+        open(t.openPipeline, "deals", report.open, { revenue: "open" }),
     },
     {
       title: t.expectedRevenue,
       value: values(report.weightedValue),
       icon: ChartNoAxesCombined,
+      className: "metric-money",
       action: () =>
         open(
           t.expectedRevenue,
@@ -117,6 +137,7 @@ export function OverviewView() {
           report.open.filter(
             (deal) => deal.amountMinor !== null && deal.probability !== null,
           ),
+          { revenue: "weighted" },
         ),
     },
   ];
@@ -128,45 +149,56 @@ export function OverviewView() {
           <p className="muted">{t.analyticsFresh}</p>
         </div>
         <div className="overview-filters">
-          <label className="sr-only" htmlFor="overview-period">
-            {t.reportingPeriod}
-          </label>
-          <select
-            id="overview-period"
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-          >
-            <option value={7}>{t.last7Days}</option>
-            <option value={30}>{t.last30Days}</option>
-            <option value={90}>{t.last90Days}</option>
-          </select>
-          <label className="sr-only" htmlFor="overview-owner">
-            {t.reportOwner}
-          </label>
-          <select
-            id="overview-owner"
-            value={ownerId}
-            onChange={(e) => setOwner(e.target.value)}
-          >
-            <option value="">{t.allTeamMembers}</option>
-            {crm.data.members.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-          <label className="sr-only" htmlFor="overview-channel">
-            {t.channel}
-          </label>
-          <select
-            id="overview-channel"
-            value={channel}
-            onChange={(e) => setChannel(e.target.value)}
-          >
-            <option value="">{t.allChannels}</option>
-            <option value="gmail">{t.gmail}</option>
-            <option value="linkedin">{t.linkedin}</option>
-          </select>
+          <div className="overview-filter">
+            <span>{t.reportingPeriod}</span>
+            <Select
+              label={t.reportingPeriod}
+              value={String(days)}
+              onChange={(value) => {
+                setDays(Number(value));
+                setDrill(null);
+              }}
+              options={[
+                { value: "7", label: t.last7Days },
+                { value: "30", label: t.last30Days },
+                { value: "90", label: t.last90Days },
+              ]}
+            />
+          </div>
+          <div className="overview-filter">
+            <span>{t.reportOwner}</span>
+            <Select
+              label={t.reportOwner}
+              value={ownerId}
+              onChange={(value) => {
+                setOwner(value);
+                setDrill(null);
+              }}
+              options={[
+                { value: "", label: t.allTeamMembers },
+                ...crm.data.members.map((member) => ({
+                  value: member.id,
+                  label: member.name,
+                })),
+              ]}
+            />
+          </div>
+          <div className="overview-filter">
+            <span>{t.channel}</span>
+            <Select
+              label={t.channel}
+              value={channel}
+              onChange={(value) => {
+                setChannel(value);
+                setDrill(null);
+              }}
+              options={[
+                { value: "", label: t.allChannels },
+                { value: "gmail", label: t.gmail },
+                { value: "linkedin", label: t.linkedin },
+              ]}
+            />
+          </div>
           <button
             type="button"
             className="primary"
@@ -229,51 +261,111 @@ export function OverviewView() {
             </h2>
             <div className="chart-legend">
               <span className="sent-dot" />
-              {t.messagesSent}
+              {t.messagesSent} <strong>{report.sent}</strong>
               <span className="received-dot" />
-              {t.repliesReceived}
+              {t.repliesReceived} <strong>{report.received}</strong>
             </div>
           </div>
-          <div className="activity-chart">
-            {report.days.map((day) => {
-              return (
-                <button
-                  type="button"
-                  key={day.day}
-                  className="chart-day"
-                  title={`${day.day}: ${t.messagesSent} ${day.outbound}, ${t.repliesReceived} ${day.inbound}`}
-                  aria-label={`${day.day}: ${t.messagesSent} ${day.outbound}, ${t.repliesReceived} ${day.inbound}`}
-                  onClick={() =>
-                    setDrill({
-                      title: day.day,
-                      kind: "messages",
-                      day: day.day,
-                      ownerId,
-                    })
-                  }
-                >
-                  <span className="bar-stack">
-                    <span
-                      className="activity-bar received"
-                      style={{
-                        height: `${(day.inbound / activityMaximum) * 100}%`,
-                      }}
-                    />
-                    <span
-                      className="activity-bar sent"
-                      style={{
-                        height: `${(day.outbound / activityMaximum) * 100}%`,
-                      }}
-                    />
-                  </span>
-                </button>
-              );
-            })}
+          <div className="activity-summary">
+            <div>
+              <span>{t.activityTotal}</span>
+              <strong>{activityCount}</strong>
+            </div>
+            <div>
+              <span>{t.activityActiveDays}</span>
+              <strong>
+                {
+                  report.days.filter((day) => day.inbound + day.outbound > 0)
+                    .length
+                }
+                <small> / {days}</small>
+              </strong>
+            </div>
+            <p className="muted">
+              {reportDayLabel(report.from)} – {reportDayLabel(report.through)}
+            </p>
           </div>
-          <div className="chart-axis">
-            <span>{report.from}</span>
-            <span>{report.through}</span>
-          </div>
+          {activityCount ? (
+            <fieldset className="activity-plot" aria-label={t.messageActivity}>
+              <div className="activity-y-axis" aria-hidden>
+                {activityTicks.map((count) => (
+                  <span key={count}>{count}</span>
+                ))}
+              </div>
+              <div className="activity-plot-body">
+                <div className="activity-gridlines" aria-hidden>
+                  {activityTicks.map((count) => (
+                    <span key={count} />
+                  ))}
+                </div>
+                <div className="activity-chart">
+                  {report.days.map((day) => (
+                    <button
+                      type="button"
+                      key={day.day}
+                      className="chart-day"
+                      title={`${day.day}: ${t.messagesSent} ${day.outbound}, ${t.repliesReceived} ${day.inbound}`}
+                      aria-label={`${day.day}: ${t.messagesSent} ${day.outbound}, ${t.repliesReceived} ${day.inbound}`}
+                      onClick={() =>
+                        setDrill({
+                          title: reportDayLabel(day.day),
+                          kind: "messages",
+                          day: day.day,
+                          ownerId,
+                        })
+                      }
+                    >
+                      <span className="activity-series">
+                        {(
+                          [
+                            ["sent", day.outbound],
+                            ["received", day.inbound],
+                          ] as const
+                        ).map(([series, count]) => (
+                          <span
+                            key={series}
+                            className={`activity-bar ${series}`}
+                            style={{
+                              height: `${(count / activityMaximum) * 100}%`,
+                            }}
+                          >
+                            {count > 0 && days <= 30 && (
+                              <span className="activity-bar-count" aria-hidden>
+                                {count}
+                              </span>
+                            )}
+                          </span>
+                        ))}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="chart-axis" aria-hidden>
+                  {[0, Math.floor((days - 1) / 2), days - 1].map((index) => (
+                    <span key={index}>
+                      {new Intl.DateTimeFormat("en", {
+                        month: "short",
+                        day: "numeric",
+                        timeZone: "UTC",
+                      }).format(
+                        new Date(`${report.days[index].day}T12:00:00Z`),
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </fieldset>
+          ) : (
+            <div className="activity-empty">
+              <Mail size={24} aria-hidden />
+              <strong>{t.activityEmptyTitle}</strong>
+              <p>{t.activityEmptyDescription}</p>
+              <Link className="text-button" href="/settings/connections">
+                {t.reviewConnections}
+                <ArrowUpRight size={14} aria-hidden />
+              </Link>
+            </div>
+          )}
           <p className="muted report-note">{t.messageHistoryNote}</p>
         </section>
         <section className="report-card">
@@ -518,7 +610,10 @@ export function OverviewView() {
                           <button
                             type="button"
                             className="text-button"
-                            onClick={() => setOwner(member.id)}
+                            onClick={() => {
+                              setOwner(member.id);
+                              setDrill(null);
+                            }}
                           >
                             {member.name}
                           </button>
@@ -653,21 +748,16 @@ function ReportDrawer({
   const crm = useWorkspaceData();
   const heading = useRef<HTMLHeadingElement>(null);
   const [page, setPage] = useState(0);
-  const [messages, setMessages] = useState<MessageRow[]>([]);
-  const [more, setMore] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    heading.current?.focus({ preventScroll: true });
-    heading.current?.scrollIntoView({ block: "nearest" });
-  }, []);
-  useEffect(() => {
-    if (drill.kind !== "messages") return;
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    setMessages([]);
-    const q = new URLSearchParams({
+  const [messageResponse, setMessageResponse] = useState<{
+    scope: string;
+    items: MessageRow[];
+    hasMore: boolean;
+    loading: boolean;
+    error: string;
+  } | null>(null);
+  const messageScope = useMemo(() => {
+    if (drill.kind !== "messages") return "";
+    const query = new URLSearchParams({
       operation: "messageActivity",
       organizationId: crm.organizationId,
       from: drill.day ?? from,
@@ -675,28 +765,16 @@ function ReportDrawer({
       page: String(page),
       _snapshot: crm.data.asOf,
     });
-    if (crm.productId) q.set("productId", crm.productId);
-    if (drill.ownerId) q.set("ownerId", drill.ownerId);
-    if (drill.direction) q.set("direction", drill.direction);
-    if (channel) q.set("channel", channel);
-    requestJson<{ items: MessageRow[]; hasMore: boolean }>(`/api/crm?${q}`, {
-      signal: controller.signal,
-    })
-      .then((result) => {
-        if (!controller.signal.aborted) {
-          setMessages(result.items);
-          setMore(result.hasMore);
-        }
-      })
-      .catch((cause) => {
-        if (!controller.signal.aborted) setError(errorText(cause));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
+    if (crm.productId) query.set("productId", crm.productId);
+    if (drill.ownerId) query.set("ownerId", drill.ownerId);
+    if (drill.direction) query.set("direction", drill.direction);
+    if (channel) query.set("channel", channel);
+    return query.toString();
   }, [
-    drill,
+    drill.kind,
+    drill.day,
+    drill.ownerId,
+    drill.direction,
     from,
     through,
     channel,
@@ -705,10 +783,76 @@ function ReportDrawer({
     crm.productId,
     crm.data.asOf,
   ]);
+  // A refreshed snapshot may revoke access before the fetch effect runs.
+  const currentResponse =
+    messageResponse?.scope === messageScope ? messageResponse : null;
+  const messages = currentResponse?.items ?? [];
+  const more = currentResponse?.hasMore ?? false;
+  const loading = !!messageScope && (currentResponse?.loading ?? true);
+  const error = currentResponse?.error ?? "";
+  useEffect(() => {
+    const dismiss = (event: KeyboardEvent) => {
+      if (
+        event.key === "Escape" &&
+        event.target instanceof Node &&
+        heading.current?.closest("section")?.contains(event.target)
+      ) {
+        event.stopPropagation();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", dismiss);
+    return () => document.removeEventListener("keydown", dismiss);
+  }, [onClose]);
+  useEffect(() => {
+    const previous = document.activeElement;
+    heading.current?.focus({ preventScroll: true });
+    heading.current?.scrollIntoView({ block: "nearest" });
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected)
+        previous.focus({ preventScroll: true });
+    };
+  }, []);
+  useEffect(() => {
+    if (!messageScope) return;
+    const controller = new AbortController();
+    setMessageResponse({
+      scope: messageScope,
+      items: [],
+      hasMore: false,
+      loading: true,
+      error: "",
+    });
+    requestJson<{ items: MessageRow[]; hasMore: boolean }>(
+      `/api/crm?${messageScope}`,
+      { signal: controller.signal },
+    )
+      .then((result) => {
+        if (!controller.signal.aborted)
+          setMessageResponse({
+            scope: messageScope,
+            ...result,
+            loading: false,
+            error: "",
+          });
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setMessageResponse({
+            scope: messageScope,
+            items: [],
+            hasMore: false,
+            loading: false,
+            error: errorText(cause),
+          });
+      });
+    return () => controller.abort();
+  }, [messageScope]);
   const ids = new Set(drill.ids ?? []);
+  const deals = crm.data.opportunities.filter((deal) => ids.has(deal.id));
   const rows =
     drill.kind === "deals"
-      ? crm.data.opportunities.filter((r) => ids.has(r.id))
+      ? deals
       : drill.kind === "actions"
         ? crm.data.actions.filter((r) => ids.has(r.id))
         : drill.kind === "meetings"
@@ -721,8 +865,8 @@ function ReportDrawer({
     <section className="inline-report" aria-labelledby="report-title">
       <div className="section-heading">
         <h2 ref={heading} tabIndex={-1} id="report-title">
-          {drill.title}{" "}
-          <span className="muted">
+          {drill.title}
+          <span className="report-record-count">
             {drill.kind === "messages" ? "" : rows.length}
           </span>
         </h2>
@@ -730,66 +874,247 @@ function ReportDrawer({
           <X size={16} aria-hidden />
         </button>
       </div>
+      {drill.kind === "deals" && drill.revenue && (
+        <>
+          <div className="revenue-summary">
+            <div>
+              <span>
+                {drill.revenue === "weighted"
+                  ? t.expectedRevenue
+                  : t.pipelineValue}
+              </span>
+              <strong>
+                {values(totals(deals, drill.revenue === "weighted"))}
+              </strong>
+            </div>
+            <div>
+              <span>
+                {drill.revenue === "weighted"
+                  ? t.forecastIncludedDeals
+                  : t.openDeals}
+              </span>
+              <strong>{deals.length}</strong>
+            </div>
+            <div>
+              <span>
+                {drill.revenue === "weighted" ? t.pipelineValue : t.pricedDeals}
+              </span>
+              <strong>
+                {drill.revenue === "weighted"
+                  ? values(totals(deals))
+                  : deals.filter((deal) => deal.amountMinor !== null).length}
+              </strong>
+            </div>
+          </div>
+          {drill.revenue && (
+            <p className="muted report-description">
+              {drill.revenue === "weighted"
+                ? t.forecastFormula
+                : t.pipelineValueNote}
+            </p>
+          )}
+        </>
+      )}
       {loading && <p role="status">{t.loading}</p>}
       {error && <p role="alert">{error}</p>}
-      {drill.kind === "messages"
-        ? messages.map((message) => (
-            <button
-              type="button"
-              className="drill-row"
-              key={message.id}
-              onClick={() => {
-                crm.openPerson(message.relationshipId);
-              }}
-            >
-              <strong>{crm.personFor(message.relationshipId)?.name}</strong>
-              <span>{message.preview}</span>
-              <small>
-                {message.channel} ·{" "}
-                {message.direction === "outbound"
-                  ? t.messagesSent
-                  : t.repliesReceived}{" "}
-                · {dateLabel(message.occurredAt, crm.timeZone)}
-              </small>
-            </button>
-          ))
-        : rowPage.items.map((row) => (
-            <button
-              type="button"
-              className="drill-row"
-              key={row.id}
-              onClick={() => {
-                if (drill.kind === "deals")
-                  crm.openRecordDialog({ kind: "opportunity", id: row.id });
-                else if (drill.kind === "touches" && "status" in row)
-                  crm.openPerson(row.relationshipId);
-                else if (drill.kind === "actions")
-                  crm.openPerson(row.relationshipId, row.id);
-                else crm.openRecordDialog({ kind: "meeting", id: row.id });
-              }}
-            >
-              <strong>
-                {"name" in row
-                  ? row.name
-                  : "title" in row
-                    ? row.title
-                    : followUpLabel(row.followUp)}
-              </strong>
-              <span>
-                {crm.personFor(row.relationshipId)?.name} ·{" "}
-                {crm.product(row.productId)?.name}
-              </span>
-              <small>
-                {"amountMinor" in row
-                  ? row.amountMinor === null
-                    ? ""
-                    : money(row.amountMinor, row.currency)
-                  : "dueAt" in row
-                    ? dateLabel(row.dueAt, crm.timeZone)
-                    : dateLabel(row.startsAt, crm.timeZone)}
-              </small>
-            </button>
-          ))}
+      {drill.kind === "deals" && rows.length > 0 && (
+        <div className="report-table drill-table">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">{t.dealName}</th>
+                <th scope="col">{t.product}</th>
+                <th scope="col">{t.stage}</th>
+                <th scope="col">{t.owner}</th>
+                <th scope="col" className="numeric">
+                  {t.dealAmount}
+                </th>
+                <th scope="col" className="numeric">
+                  {t.forecastProbability}
+                </th>
+                <th scope="col" className="numeric">
+                  {t.expectedRevenue}
+                </th>
+                <th scope="col">{t.expectedCloseDate}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(rowPage.items as ClientSnapshot["opportunities"]).map(
+                (deal) => {
+                  const expected = weightedAmount(
+                    deal.amountMinor,
+                    deal.probability,
+                  );
+                  const dealOwner =
+                    deal.ownerId ??
+                    crm.data.relationships.find(
+                      (relationship) => relationship.id === deal.relationshipId,
+                    )?.ownerId;
+                  return (
+                    <tr key={deal.id}>
+                      <td className="drill-identity">
+                        <button
+                          type="button"
+                          className="text-button drill-record-button"
+                          onClick={() =>
+                            crm.openRecordDialog({
+                              kind: "opportunity",
+                              id: deal.id,
+                            })
+                          }
+                        >
+                          {deal.name}
+                        </button>
+                        <span className="muted">
+                          {crm.personFor(deal.relationshipId)?.name}
+                        </span>
+                      </td>
+                      <td>
+                        {crm.product(deal.productId)?.name ?? t.unspecified}
+                      </td>
+                      <td>
+                        {crm.data.stages.find(
+                          (stage) => stage.id === deal.stageId,
+                        )?.name ?? t.unspecified}
+                      </td>
+                      <td>
+                        {crm.data.members.find(
+                          (member) => member.id === dealOwner,
+                        )?.name ?? t.unspecified}
+                      </td>
+                      <td
+                        className="numeric"
+                        title={
+                          deal.amountMinor === null
+                            ? t.amountUnknown
+                            : undefined
+                        }
+                      >
+                        {deal.amountMinor === null
+                          ? "—"
+                          : money(deal.amountMinor, deal.currency)}
+                      </td>
+                      <td className="numeric">
+                        {deal.probability === null
+                          ? "—"
+                          : `${deal.probability}%`}
+                      </td>
+                      <td
+                        className="numeric forecast-cell"
+                        title={
+                          expected === null ? t.forecastUnknown : undefined
+                        }
+                      >
+                        {expected === null
+                          ? "—"
+                          : money(expected, deal.currency)}
+                      </td>
+                      <td>
+                        {deal.expectedCloseDate
+                          ? reportDayLabel(deal.expectedCloseDate)
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                },
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {drill.kind === "messages" && messages.length > 0 && (
+        <div className="report-table drill-table">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">{t.person}</th>
+                <th scope="col">{t.messageActivity}</th>
+                <th scope="col">{t.channel}</th>
+                <th scope="col">{t.activityDate}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {messages.map((message) => (
+                <tr key={message.id}>
+                  <td>
+                    <button
+                      type="button"
+                      className="text-button drill-record-button"
+                      onClick={() => crm.openPerson(message.relationshipId)}
+                    >
+                      {crm.personFor(message.relationshipId)?.name}
+                    </button>
+                  </td>
+                  <td className="drill-message">
+                    <span>{message.preview}</span>
+                    <small className="muted">
+                      {message.direction === "outbound"
+                        ? t.messagesSent
+                        : t.repliesReceived}
+                    </small>
+                  </td>
+                  <td>{message.channel === "gmail" ? t.gmail : t.linkedin}</td>
+                  <td>{dateLabel(message.occurredAt, crm.timeZone)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {drill.kind !== "messages" &&
+        drill.kind !== "deals" &&
+        rows.length > 0 && (
+          <div className="report-table drill-table">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">{t.name}</th>
+                  <th scope="col">{t.person}</th>
+                  <th scope="col">{t.product}</th>
+                  <th scope="col">{t.activityDate}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rowPage.items.map((row) => (
+                  <tr key={row.id}>
+                    <td>
+                      <button
+                        type="button"
+                        className="text-button drill-record-button"
+                        onClick={() => {
+                          if (drill.kind === "touches")
+                            crm.openPerson(row.relationshipId);
+                          else if (drill.kind === "actions")
+                            crm.openPerson(row.relationshipId, row.id);
+                          else
+                            crm.openRecordDialog({
+                              kind: "meeting",
+                              id: row.id,
+                            });
+                        }}
+                      >
+                        {"name" in row
+                          ? row.name
+                          : "title" in row
+                            ? row.title
+                            : followUpLabel(row.followUp)}
+                      </button>
+                    </td>
+                    <td>{crm.personFor(row.relationshipId)?.name}</td>
+                    <td>{crm.product(row.productId)?.name}</td>
+                    <td>
+                      {"dueAt" in row
+                        ? dateLabel(row.dueAt, crm.timeZone)
+                        : "startsAt" in row
+                          ? dateLabel(row.startsAt, crm.timeZone)
+                          : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       {!loading &&
         !error &&
         !(drill.kind === "messages" ? messages.length : rows.length) && (

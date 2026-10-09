@@ -501,13 +501,30 @@ test("precise custom fields and product-wide filters preserve numeric zero, fals
   );
   await page.goto("/people");
   await page.getByRole("button", { name: t.allProducts, exact: true }).click();
-  await page.locator(".record-filters > summary").click();
-  const filters = page.locator(".record-filters");
+  await page
+    .getByRole("button", { name: t.uiRefresh.customFields, exact: true })
+    .click();
+  const filters = page.getByRole("dialog", {
+    name: t.uiRefresh.customFields,
+    exact: true,
+  });
+  const chooseFilter = async (control: Locator, label: string) => {
+    await control.click();
+    await page.getByRole("option", { name: label, exact: true }).click();
+  };
   for (const [index, field] of [
-    { key: `number:seats ${suffix}`, type: "number", value: "0" },
-    { key: `boolean:verified ${suffix}`, type: "boolean", value: "false" },
     {
-      key: `datetime:review time ${suffix}`,
+      label: `Seats ${suffix} · ${t.contextFields.fieldTypes.number}`,
+      type: "number",
+      value: "0",
+    },
+    {
+      label: `Verified ${suffix} · ${t.contextFields.fieldTypes.boolean}`,
+      type: "boolean",
+      value: "false",
+    },
+    {
+      label: `Review time ${suffix} · ${t.contextFields.fieldTypes.datetime}`,
       type: "datetime",
       value: localInput("2030-03-04T04:30:18.125Z", zone),
     },
@@ -519,13 +536,18 @@ test("precise custom fields and product-wide filters preserve numeric zero, fals
       name: `${t.fieldFilters.field} ${index + 1}`,
       exact: true,
     });
-    await group
-      .getByRole("combobox", { name: t.fieldFilters.field, exact: true })
-      .selectOption(field.key);
+    await chooseFilter(
+      group.getByRole("combobox", { name: t.fieldFilters.field, exact: true }),
+      field.label,
+    );
     if (field.type === "boolean")
-      await group
-        .getByRole("combobox", { name: t.fieldFilters.value, exact: true })
-        .selectOption(field.value);
+      await chooseFilter(
+        group.getByRole("combobox", {
+          name: t.fieldFilters.value,
+          exact: true,
+        }),
+        t.contextFields.no,
+      );
     else
       await group
         .getByLabel(t.fieldFilters.value, { exact: true })
@@ -542,10 +564,51 @@ test("precise custom fields and product-wide filters preserve numeric zero, fals
     .getByLabel(t.fieldFilters.value, { exact: true })
     .fill(localInput("2030-03-04T04:30:18.124Z", zone));
   await expect(list.getByRole("link", { name, exact: true })).toHaveCount(0);
-  await datetimeFilter
-    .getByRole("combobox", { name: t.fieldFilters.operator, exact: true })
-    .selectOption("gt");
+  await chooseFilter(
+    datetimeFilter.getByRole("combobox", {
+      name: t.fieldFilters.operator,
+      exact: true,
+    }),
+    t.fieldFilters.gt,
+  );
   await expect(list.getByRole("link", { name, exact: true })).toBeVisible();
+  const fieldRules = new URL(page.url()).searchParams.get("fieldFilters");
+  expect(fieldRules).toBeTruthy();
+  await page.reload();
+  await expect(list.getByRole("link", { name, exact: true })).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("fieldFilters")).toBe(fieldRules);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const filterRow = page.getByRole("region", { name: t.filters, exact: true });
+  const geometry = await filterRow.evaluate((element) => {
+    const controls = element.querySelector(".record-filter-controls");
+    const sort = element.querySelector(".record-sort");
+    if (!controls || !sort) throw new Error("Missing populated filter row");
+    const row = element.getBoundingClientRect();
+    const controlsBox = controls.getBoundingClientRect();
+    const sortBox = sort.getBoundingClientRect();
+    return {
+      controlsFit: controls.scrollWidth <= controls.clientWidth + 1,
+      sortFits: sortBox.left >= row.left && sortBox.right <= row.right,
+      controlsBeforeSort: controlsBox.right <= sortBox.left,
+      pageFits: document.documentElement.scrollWidth <= window.innerWidth,
+    };
+  });
+  expect(geometry).toEqual({
+    controlsFit: true,
+    sortFits: true,
+    controlsBeforeSort: true,
+    pageFits: true,
+  });
+  await page.goto(
+    `/opportunities?${new URLSearchParams({ fieldFilters: fieldRules ?? "" })}`,
+  );
+  await expect(page.getByText(t.noResults, { exact: true })).toBeVisible();
+  const empty = page.locator(".empty-state");
+  await empty
+    .getByRole("button", { name: t.clearFilters, exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/opportunities$/);
+  await expect(page.locator(".opportunity-card")).toHaveCount(2);
   expect(monitored.errors).toEqual([]);
 });
 
@@ -611,6 +674,39 @@ test("deal removal is reversible through list Undo and persisted board archival 
         exact: true,
       });
       await expect(confirmation).toBeVisible();
+      if ((await record.evaluate((element) => element.tagName)) === "ARTICLE") {
+        const fits = await confirmation.evaluate((element) => {
+          const card = element.closest("article")?.getBoundingClientRect();
+          const group = element.getBoundingClientRect();
+          return (
+            !!card &&
+            group.left >= card.left &&
+            group.right <= card.right &&
+            element.scrollWidth <= element.clientWidth + 1
+          );
+        });
+        expect(fits).toBe(true);
+        const headerFits = await record
+          .locator(".deal-card-head")
+          .evaluate((element) => {
+            const controls = [
+              ...element.querySelectorAll(
+                ":scope > .text-button, :scope > .deal-card-edit, :scope > .record-actions > .icon-button",
+              ),
+            ].map((control) => control.getBoundingClientRect());
+            return (
+              controls.length === 3 &&
+              Math.max(...controls.map((control) => control.top)) -
+                Math.min(...controls.map((control) => control.top)) <=
+                1
+            );
+          });
+        expect(headerFits).toBe(true);
+        await page.screenshot({
+          animations: "disabled",
+          path: ".data/ui-review-board-archive.png",
+        });
+      }
       await confirmation
         .getByRole("button", {
           name: t.inlineEditing.confirmArchive,
@@ -622,7 +718,7 @@ test("deal removal is reversible through list Undo and persisted board archival 
       ).toBeVisible();
     }
 
-    await page.goto("/opportunities");
+    await page.goto("/opportunities?layout=list");
     await page
       .getByRole("button", { name: t.allProducts, exact: true })
       .click();
@@ -700,7 +796,7 @@ test("deal removal is reversible through list Undo and persisted board archival 
       .getByRole("button", { name: `${t.restore}: ${name}`, exact: true })
       .click();
     await expect(archivedRow).toHaveCount(0);
-    await expect(listRow).toBeVisible();
+    await expect(card).toBeVisible();
     const after = await read<ClientSnapshot>(request, "snapshot");
     const restored = after.opportunities.find(
       (deal) => deal.id === original.id,

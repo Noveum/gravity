@@ -95,9 +95,16 @@ export function useOutreachSend() {
 }
 
 export function useOutreachData() {
-  const { organizationId, productId, sourceData, notify, timeZone } = useCrm();
+  const { userId, organizationId, productId, sourceData, notify, timeZone } =
+    useCrm();
   const asOf = sourceData?.asOf;
-  const key = `${organizationId}/${productId}`;
+  const readableProducts = [
+    ...(sourceData?.products.map((product) => product.id) ?? []),
+    ...(sourceData?.archivedProducts.map((product) => product.id) ?? []),
+  ]
+    .sort()
+    .join(",");
+  const key = `${userId}/${organizationId}/${productId}/${readableProducts}`;
   const [loaded, setLoaded] = useState<Loaded>(
     () => remembered.get(key) ?? { key, due: null, queue: null, failed: false },
   );
@@ -107,29 +114,55 @@ export function useOutreachData() {
     const current = ++generation.current;
     const scope = new URLSearchParams({ organizationId });
     if (productId) scope.set("productId", productId);
-    try {
-      await postOutreach({ operation: "advance", organizationId });
-      const [due, queue] = await Promise.all([
-        requestJson<Due>(`/api/outreach?operation=due&${scope}`),
-        requestJson<Queue>(`/api/outreach?operation=queue&${scope}`),
-      ]);
-      if (current !== generation.current) return;
-      const next = {
-        key,
-        due: distinctDue(due),
-        queue: distinctQueue(queue),
-        failed: false,
-      };
-      remembered.set(key, next);
-      setLoaded(next);
-    } catch (error) {
-      if (current !== generation.current) return;
-      notify(errorText(error, timeZone), "danger");
-      setLoaded((previous) => ({ ...previous, key, failed: true }));
-    }
+    // Existing records load immediately, even when planning is slow or forbidden.
+    const planning = postOutreach({
+      operation: "advance",
+      organizationId,
+    }).then(
+      () => true,
+      (error) => {
+        if (
+          current === generation.current &&
+          !(error instanceof RequestError && error.message === "FORBIDDEN")
+        )
+          notify(errorText(error, timeZone), "danger");
+        return false;
+      },
+    );
+    const read = async () => {
+      try {
+        const [due, queue] = await Promise.all([
+          requestJson<Due>(`/api/outreach?operation=due&${scope}`),
+          requestJson<Queue>(`/api/outreach?operation=queue&${scope}`),
+        ]);
+        if (current !== generation.current) return;
+        const next = {
+          key,
+          due: distinctDue(due),
+          queue: distinctQueue(queue),
+          failed: false,
+        };
+        remembered.set(key, next);
+        setLoaded(next);
+      } catch (error) {
+        if (current !== generation.current) return;
+        notify(errorText(error, timeZone), "danger");
+        setLoaded((previous) => ({
+          ...(previous.key === key
+            ? previous
+            : (remembered.get(key) ?? { key, due: null, queue: null })),
+          failed: true,
+        }));
+      }
+    };
+    await read();
+    if ((await planning) && current === generation.current) await read();
   }, [organizationId, productId, key, notify, timeZone]);
   useEffect(() => {
     if (asOf) void reload();
+    return () => {
+      generation.current += 1;
+    };
   }, [reload, asOf]);
   const current = loaded.key === key ? loaded : remembered.get(key);
   return {

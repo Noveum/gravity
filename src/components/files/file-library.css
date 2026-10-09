@@ -13,7 +13,7 @@
 }
 .library-product select {
   min-height: 28px;
-  padding: 0 8px;
+  padding: 0 30px 0 8px;
 }
 .library-product a {
   margin-left: auto;

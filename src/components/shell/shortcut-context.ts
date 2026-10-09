@@ -38,6 +38,9 @@ export function shellShortcutScopes({
     ...(showPeek ? (["peek", "detail"] as const) : []),
     ...(recordId ? (["detail"] as const) : []),
     ...(hasData && editable ? (["record"] as const) : []),
+    ...(listed && !showPeek && section === "opportunities"
+      ? (["opportunities"] as const)
+      : []),
     ...(listed && (section === "opportunities" || tab === "pipeline")
       ? (["board"] as const)
       : []),

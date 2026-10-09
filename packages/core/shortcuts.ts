@@ -27,7 +27,8 @@ export type ShortcutScope =
   | "pipeline"
   | "outreach"
   | "row"
-  | "dialog";
+  | "dialog"
+  | "opportunities";
 export type ShortcutSection =
   | "navigation"
   | "general"
@@ -66,13 +67,13 @@ const repeatable = { repeatable: true };
 
 const definitions = {
   "go-overview": goTo("v", "overview"),
+  "go-opportunities": goTo("o", "opportunities"),
   "go-actions": goTo("a", "actions"),
   "go-meetings": goTo("m", "meetings"),
   "go-outreach": goTo("r", "outreach"),
   "go-sequences": goTo("s", "sequences"),
   "go-people": goTo("p", "people"),
   "go-companies": goTo("c", "companies"),
-  "go-opportunities": goTo("o", "opportunities"),
   "go-materials": goTo("f", "materials"),
   "go-integrations": goTo("i", "integrations"),
   "go-assistants": goTo("x", "assistants"),
@@ -128,6 +129,8 @@ const definitions = {
     "lists",
     labels.movePrevious,
   ),
+  "board-layout": define(["b"], "opportunities", "lists", labels.boardLayout),
+  "list-layout": define(["l"], "opportunities", "lists", labels.listLayout),
   "move-to": define(["m"], "pipeline", "lists", labels.moveTo),
   done: define(["d"], "actions", "actions", labels.done),
   snooze: define(["s"], "actions", "actions", labels.snooze),

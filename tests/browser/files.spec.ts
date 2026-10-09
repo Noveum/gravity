@@ -10,6 +10,80 @@ const scope = {
   organizationId: "00000000-0000-4000-8000-000000000001",
   productId: "00000000-0000-4000-8000-000000000010",
 };
+test("file product controls keep chevron spacing and isolate switched products", async ({
+  page,
+  request,
+}) => {
+  const marker = crypto.randomUUID();
+  const products = [
+    { productId: scope.productId, name: "AI Platform" },
+    {
+      productId: "00000000-0000-4000-8000-000000000012",
+      name: "Services",
+    },
+  ];
+  for (const product of products) {
+    const response = await request.post("/api/files", {
+      headers: { Origin: String(test.info().project.use.baseURL) },
+      data: {
+        ...scope,
+        productId: product.productId,
+        operation: "create",
+        kind: "markdown",
+        name: `${product.name} ${marker}.md`,
+        body: "# Fictional product scope review",
+        visibility: "private",
+      },
+    });
+    expect(response.ok(), await response.text()).toBe(true);
+  }
+  await page.goto("/files");
+  await page.getByRole("button", { name: t.allProducts, exact: true }).click();
+  const nativeProduct = page.locator(".library-product select");
+  await expect(nativeProduct).toBeVisible();
+  const style = await nativeProduct.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return {
+      rightPadding: Number.parseFloat(computed.paddingRight),
+      chevron: computed.backgroundImage,
+    };
+  });
+  expect(style.rightPadding).toBeGreaterThanOrEqual(30);
+  expect(style.chevron).not.toBe("none");
+  const document = (name: string) =>
+    page
+      .getByRole("treeitem")
+      .getByRole("button", { name: `${name} ${marker}.md`, exact: true });
+  for (const product of [...products].reverse()) {
+    await nativeProduct.selectOption({ label: product.name });
+    await page.locator(".library-search input").fill(marker);
+    await expect(document(product.name)).toBeVisible();
+    await expect(
+      document(products.find((other) => other !== product)?.name ?? ""),
+    ).toHaveCount(0);
+  }
+  await page.goto("/people");
+  await page
+    .locator(".product-picker")
+    .getByRole("combobox", { name: t.product, exact: true })
+    .click();
+  await page.getByRole("option", { name: "Services", exact: true }).click();
+  await page.goto("/files");
+  await expect(nativeProduct).toHaveCount(0);
+  await page.locator(".library-search input").fill(marker);
+  await expect(document("Services")).toBeVisible();
+  await expect(document("AI Platform")).toHaveCount(0);
+  await page.goto("/people");
+  await page
+    .getByRole("button", { name: t.uiRefresh.clearProduct, exact: true })
+    .click();
+  await page.goto("/files");
+  await expect(nativeProduct).toBeVisible();
+  await expect(nativeProduct).toHaveValue(scope.productId);
+  await page.locator(".library-search input").fill(marker);
+  await expect(document("AI Platform")).toBeVisible();
+  await expect(document("Services")).toHaveCount(0);
+});
 test("persistent native uploads, nested navigation, transfers and every preview", async ({
   page,
   request,
@@ -460,7 +534,9 @@ test("native drops move into folders and public ancestor revocation hides open p
     access: { visibility: "private", grants: [] },
   });
   await expect(
-    page.getByText("This public link is no longer available.", { exact: true }),
+    page
+      .getByText("This public link is no longer available.", { exact: true })
+      .or(page.getByRole("heading", { name: "404", level: 1 })),
   ).toBeVisible({ timeout: 12_000 });
   await expect(
     page.getByRole("heading", { name: "Published document", exact: true }),

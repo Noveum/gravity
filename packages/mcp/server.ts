@@ -362,20 +362,6 @@ export function mcpHandler(
         },
       );
       server.registerTool(
-        "list_next_actions",
-        {
-          description: "Read pending next actions without executing them.",
-          inputSchema: z.object({ productId: z.uuid().optional() }),
-          annotations: { readOnlyHint: true },
-        },
-        async ({ productId }) =>
-          result(
-            (
-              await service.snapshot(principal, { organizationId, productId })
-            ).actions.filter((action) => action.status !== "completed"),
-          ),
-      );
-      server.registerTool(
         "search_records",
         {
           description:

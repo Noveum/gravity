@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { eq } from "drizzle-orm";
 import { expect, test, vi } from "vitest";
@@ -7,6 +13,7 @@ import {
   createInternalTaskSchema,
   InternalTaskService,
 } from "../packages/core/internal-tasks";
+import { OrganizationSettingsService } from "../packages/core/organization-settings";
 import {
   RecordListService,
   recordListSchema,
@@ -15,7 +22,9 @@ import { emptyRelationshipDetails } from "../packages/core/relationship-context"
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { requestJson } from "../src/components/client-api";
 import { installCrmHarness, mountCrm } from "./support/crm-harness";
+import { chooseSelect } from "./support/select-control";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
 vi.mock("next/link", () => import("./support/memory-router"));
@@ -52,8 +61,10 @@ test("product-wide custom field filters preserve false, zero and exact milliseco
     })
     .where(eq(s.relationships.id, demoId(300)));
   await mountCrm(harness, "/people", { compact: true });
-  fireEvent.click(screen.getByText(t.filters));
-  const addFilter = (position: number, key: string) => {
+  fireEvent.click(
+    screen.getByRole("button", { name: t.uiRefresh.customFields }),
+  );
+  const addFilter = async (position: number, option: string) => {
     fireEvent.click(
       screen.getByRole("button", { name: t.contextFields.addField }),
     );
@@ -62,30 +73,38 @@ test("product-wide custom field filters preserve false, zero and exact milliseco
         name: `${t.fieldFilters.field} ${position}`,
       }),
     );
-    fireEvent.change(group.getByLabelText(t.fieldFilters.field), {
-      target: { value: key },
-    });
+    await chooseSelect(group.getByLabelText(t.fieldFilters.field), option);
     return group;
   };
-  const number = addFilter(1, "number:seats");
+  const number = await addFilter(
+    1,
+    `Seats · ${t.contextFields.fieldTypes.number}`,
+  );
   fireEvent.change(number.getByLabelText(t.fieldFilters.value), {
     target: { value: "0" },
   });
   expect(screen.getByRole("link", { name: "Mira Chen" })).toBeTruthy();
-  const boolean = addFilter(2, "boolean:verified");
-  expect(boolean.getByLabelText(t.fieldFilters.value)).toHaveProperty(
-    "value",
-    "false",
+  const boolean = await addFilter(
+    2,
+    `Verified · ${t.contextFields.fieldTypes.boolean}`,
+  );
+  expect(boolean.getByLabelText(t.fieldFilters.value).textContent).toContain(
+    t.contextFields.no,
   );
   expect(screen.getByRole("link", { name: "Mira Chen" })).toBeTruthy();
-  fireEvent.change(boolean.getByLabelText(t.fieldFilters.value), {
-    target: { value: "true" },
-  });
+  await chooseSelect(
+    boolean.getByLabelText(t.fieldFilters.value),
+    t.contextFields.yes,
+  );
   expect(screen.queryByRole("link", { name: "Mira Chen" })).toBeNull();
-  fireEvent.change(boolean.getByLabelText(t.fieldFilters.value), {
-    target: { value: "false" },
-  });
-  const datetime = addFilter(3, "datetime:review time");
+  await chooseSelect(
+    boolean.getByLabelText(t.fieldFilters.value),
+    t.contextFields.no,
+  );
+  const datetime = await addFilter(
+    3,
+    `Review time · ${t.contextFields.fieldTypes.datetime}`,
+  );
   expect(datetime.getByLabelText(t.fieldFilters.value)).toHaveProperty(
     "step",
     "0.001",
@@ -103,10 +122,46 @@ test("product-wide custom field filters preserve false, zero and exact milliseco
     target: { value: "2030-03-04T04:30:18.124" },
   });
   expect(screen.queryByRole("link", { name: "Mira Chen" })).toBeNull();
-  fireEvent.change(datetime.getByLabelText(t.fieldFilters.operator), {
-    target: { value: "gt" },
-  });
+  await chooseSelect(
+    datetime.getByLabelText(t.fieldFilters.operator),
+    t.fieldFilters.gt,
+  );
   expect(screen.getByRole("link", { name: "Mira Chen" })).toBeTruthy();
+  expect(
+    JSON.parse(
+      new URLSearchParams(window.location.search).get("fieldFilters") ?? "[]",
+    ),
+  ).toEqual([
+    { label: "Seats", type: "number", operator: "eq", value: 0 },
+    { label: "Verified", type: "boolean", operator: "eq", value: false },
+    {
+      label: "Review time",
+      type: "datetime",
+      operator: "gt",
+      value: "2030-03-04T04:30:18.124Z",
+    },
+  ]);
+  act(() => {
+    fireEvent.change(number.getByLabelText(t.fieldFilters.value), {
+      target: { value: "1" },
+    });
+    fireEvent.change(number.getByLabelText(t.fieldFilters.value), {
+      target: { value: "0" },
+    });
+  });
+  expect(
+    JSON.parse(
+      new URLSearchParams(window.location.search).get("fieldFilters") ?? "[]",
+    ),
+  ).toHaveLength(3);
+  expect(screen.getByRole("link", { name: "Mira Chen" })).toBeTruthy();
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "No fictional match" },
+  });
+  expect(screen.queryByRole("link", { name: "Mira Chen" })).toBeNull();
+  expect(
+    screen.getByRole("button", { name: t.uiRefresh.customFields }),
+  ).toBeTruthy();
 });
 
 test("UTC datetime filters reach an exact second occurrence in a repeated workspace hour", async () => {
@@ -132,27 +187,27 @@ test("UTC datetime filters reach an exact second occurrence in a repeated worksp
     })
     .where(eq(s.relationships.id, demoId(300)));
   await mountCrm(harness, "/people", { compact: true });
-  fireEvent.click(screen.getByText(t.filters));
+  fireEvent.click(
+    screen.getByRole("button", { name: t.uiRefresh.customFields }),
+  );
   fireEvent.click(
     screen.getByRole("button", { name: t.contextFields.addField }),
   );
   const filter = within(
     screen.getByRole("group", { name: `${t.fieldFilters.field} 1` }),
   );
-  fireEvent.change(filter.getByLabelText(t.fieldFilters.field), {
-    target: { value: "datetime:review time" },
-  });
-  expect(filter.getByLabelText(t.timezone)).toHaveProperty(
-    "value",
+  await chooseSelect(
+    filter.getByLabelText(t.fieldFilters.field),
+    `Review time · ${t.contextFields.fieldTypes.datetime}`,
+  );
+  expect(filter.getByLabelText(t.timezone).textContent).toContain(
     "America/New_York",
   );
   fireEvent.change(filter.getByLabelText(t.fieldFilters.value), {
     target: { value: "2026-11-01T01:30:18.125" },
   });
   expect(screen.queryByRole("link", { name: "Mira Chen" })).toBeNull();
-  fireEvent.change(filter.getByLabelText(t.timezone), {
-    target: { value: "UTC" },
-  });
+  await chooseSelect(filter.getByLabelText(t.timezone), "UTC");
   fireEvent.change(filter.getByLabelText(t.fieldFilters.value), {
     target: { value: "2026-11-01T06:30:18.125" },
   });
@@ -177,6 +232,252 @@ test("UTC datetime filters reach an exact second occurrence in a repeated worksp
     target: { value: "2026-11-01T06:30:18.124" },
   });
   expect(screen.queryByRole("link", { name: "Mira Chen" })).toBeNull();
+});
+
+test("a live workspace timezone change preserves the canonical datetime filter instant", async () => {
+  const instant = "2030-03-04T04:30:18.125Z";
+  await harness.local.db
+    .update(s.relationships)
+    .set({
+      contextDetails: {
+        ...emptyRelationshipDetails(),
+        fields: [
+          {
+            id: demoId(8956),
+            label: "Review time",
+            type: "datetime",
+            value: instant,
+          },
+        ],
+      },
+    })
+    .where(eq(s.relationships.id, demoId(300)));
+  await mountCrm(harness, "/people", { compact: true });
+  fireEvent.click(
+    screen.getByRole("button", { name: t.uiRefresh.customFields }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: t.contextFields.addField }),
+  );
+  const group = within(
+    screen.getByRole("group", { name: `${t.fieldFilters.field} 1` }),
+  );
+  await chooseSelect(
+    group.getByLabelText(t.fieldFilters.field),
+    `Review time · ${t.contextFields.fieldTypes.datetime}`,
+  );
+  fireEvent.change(group.getByLabelText(t.fieldFilters.value), {
+    target: { value: "2030-03-04T04:30:18.125" },
+  });
+  expect(screen.getByRole("link", { name: "Mira Chen" })).toBeTruthy();
+  const saved = new URLSearchParams(window.location.search).get("fieldFilters");
+  fireEvent.click(
+    within(
+      screen.getByRole("dialog", { name: t.uiRefresh.customFields }),
+    ).getByRole("button", { name: t.close }),
+  );
+  await new OrganizationSettingsService(harness.local.db).updateOrganization(
+    principal,
+    {
+      organizationId: scope.organizationId,
+      name: "Northstar Collective",
+      timezone: "America/New_York",
+    },
+  );
+  const request = vi.mocked(requestJson);
+  request.mockClear();
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  fireEvent.click(screen.getByRole("option", { name: t.refresh }));
+  await waitFor(() =>
+    expect(
+      request.mock.calls.some(
+        ([url]) => url.startsWith("/api/crm?") && !url.includes("operation="),
+      ),
+    ).toBe(true),
+  );
+  await act(async () => {
+    await Promise.all(request.mock.results.map((result) => result.value));
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: t.uiRefresh.customFields }),
+  );
+  const updated = within(
+    screen.getByRole("group", { name: `${t.fieldFilters.field} 1` }),
+  );
+  expect(updated.getByLabelText(t.timezone).textContent).toContain("UTC");
+  expect(updated.getByLabelText(t.fieldFilters.value)).toHaveProperty(
+    "value",
+    "2030-03-04T04:30:18.125",
+  );
+  expect(new URLSearchParams(window.location.search).get("fieldFilters")).toBe(
+    saved,
+  );
+  expect(screen.getByRole("link", { name: "Mira Chen" })).toBeTruthy();
+});
+
+test("URL custom field rules reload typed values and combine atomically with amount filters until cleared", async () => {
+  await harness.local.db
+    .update(s.relationships)
+    .set({
+      contextDetails: {
+        ...emptyRelationshipDetails(),
+        fields: [
+          { id: demoId(8954), label: "Seats", type: "number", value: 0 },
+          {
+            id: demoId(8955),
+            label: "Verified",
+            type: "boolean",
+            value: false,
+          },
+        ],
+      },
+    })
+    .where(eq(s.relationships.id, demoId(300)));
+  const rules = [
+    { label: "Seats", type: "number", operator: "eq", value: 0 },
+    { label: "Verified", type: "boolean", operator: "eq", value: false },
+  ];
+  const query = new URLSearchParams({
+    fieldFilters: JSON.stringify(rules),
+    sort: "name_desc",
+  });
+  await mountCrm(harness, `/people?${query}`, { compact: true });
+  expect(screen.getByRole("link", { name: "Mira Chen" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Noor Haddad" })).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: t.uiRefresh.customFields }),
+  );
+  const fields = within(
+    screen.getByRole("dialog", { name: t.uiRefresh.customFields }),
+  );
+  expect(
+    within(
+      fields.getByRole("group", { name: `${t.fieldFilters.field} 1` }),
+    ).getByLabelText(t.fieldFilters.value),
+  ).toHaveProperty("value", "0");
+  expect(
+    within(
+      fields.getByRole("group", { name: `${t.fieldFilters.field} 2` }),
+    ).getByLabelText(t.fieldFilters.value).textContent,
+  ).toContain(t.contextFields.no);
+  fireEvent.click(fields.getByRole("button", { name: t.close }));
+  fireEvent.click(screen.getByRole("button", { name: t.uiRefresh.dealValue }));
+  act(() => {
+    fireEvent.change(screen.getByLabelText(t.minimumDealSize), {
+      target: { value: "100" },
+    });
+    fireEvent.change(screen.getByLabelText(t.maximumDealSize), {
+      target: { value: "200" },
+    });
+  });
+  expect(
+    Object.fromEntries(new URLSearchParams(window.location.search)),
+  ).toEqual({
+    fieldFilters: JSON.stringify(rules),
+    sort: "name_desc",
+    minimum: "100",
+    maximum: "200",
+  });
+  fireEvent.click(
+    within(
+      screen.getByRole("dialog", { name: t.uiRefresh.dealValue }),
+    ).getByRole("button", { name: t.close }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: t.clearFilters }));
+  expect(window.location.search).toBe("");
+  expect(screen.getByRole("link", { name: "Mira Chen" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Noor Haddad" })).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: t.uiRefresh.customFields }),
+  );
+  expect(screen.queryAllByRole("group", { name: /^Field \d+$/ })).toHaveLength(
+    0,
+  );
+});
+
+test("malformed URL field rules show a recoverable error and clear preserves unrelated view parameters", async () => {
+  await mountCrm(harness, "/people?fieldFilters=invalid&layout=list", {
+    compact: true,
+  });
+  expect(screen.getByText(t.fieldFilters.invalid)).toHaveProperty(
+    "role",
+    "alert",
+  );
+  expect(screen.queryByRole("link", { name: "Mira Chen" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: t.clearFilters }));
+  expect(window.location.search).toBe("?layout=list");
+  expect(screen.queryByText(t.fieldFilters.invalid)).toBeNull();
+  expect(screen.getByRole("link", { name: "Mira Chen" })).toBeTruthy();
+});
+
+test("a malformed typed rule cannot silently coerce into a valid boolean filter", async () => {
+  const fieldFilters = JSON.stringify([
+    { label: "Verified", type: "boolean", operator: "eq", value: "oops" },
+  ]);
+  await mountCrm(harness, `/people?${new URLSearchParams({ fieldFilters })}`, {
+    compact: true,
+  });
+  expect(screen.getByText(t.fieldFilters.invalid)).toHaveProperty(
+    "role",
+    "alert",
+  );
+  expect(screen.queryByRole("link", { name: "Mira Chen" })).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: t.uiRefresh.customFields }),
+  );
+  const filter = within(
+    screen.getByRole("group", { name: `${t.fieldFilters.field} 1` }),
+  );
+  await chooseSelect(
+    filter.getByLabelText(t.fieldFilters.value),
+    t.contextFields.yes,
+  );
+  expect(screen.queryByText(t.fieldFilters.invalid)).toBeNull();
+  expect(
+    JSON.parse(
+      new URLSearchParams(window.location.search).get("fieldFilters") ?? "[]",
+    )[0].value,
+  ).toBe(true);
+});
+
+test("an unknown active rule stays recoverable and changing product clears the rule", async () => {
+  const fieldFilters = JSON.stringify([
+    {
+      label: "Old qualification note",
+      type: "text",
+      operator: "contains",
+      value: "old",
+    },
+  ]);
+  await mountCrm(harness, `/people?${new URLSearchParams({ fieldFilters })}`, {
+    compact: true,
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: t.uiRefresh.customFields }),
+  );
+  const popup = within(
+    screen.getByRole("dialog", { name: t.uiRefresh.customFields }),
+  );
+  const filter = within(
+    popup.getByRole("group", { name: `${t.fieldFilters.field} 1` }),
+  );
+  expect(filter.getByLabelText(t.fieldFilters.field).textContent).toContain(
+    "Old qualification note",
+  );
+  expect(
+    filter.getByRole("button", { name: t.contextFields.removeField }),
+  ).toBeTruthy();
+  fireEvent.click(popup.getByRole("button", { name: t.close }));
+  await chooseSelect(
+    screen.getByRole("combobox", { name: t.product }),
+    "API Marketplace",
+  );
+  expect(new URLSearchParams(window.location.search).has("fieldFilters")).toBe(
+    false,
+  );
+  expect(
+    screen.queryByRole("button", { name: t.uiRefresh.customFields }),
+  ).toBeNull();
 });
 
 test("internal tasks create and complete precise calendar occurrences through the registry without dispatch", async () => {

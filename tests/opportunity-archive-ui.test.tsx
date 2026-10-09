@@ -47,7 +47,10 @@ async function confirmArchive(container: HTMLElement) {
 
 test("list archive confirms, removes only the deal, and Undo restores the original deal", async () => {
   const original = await deal();
-  await mountCrm(harness, "/opportunities");
+  await mountCrm(
+    harness,
+    "/opportunities?layout=list&sort=name_desc&status=open",
+  );
   const row = await screen.findByRole("row", { name: new RegExp(name) });
   fireEvent.click(within(row).getByRole("button", { name }));
   const editor = await screen.findByRole("region", { name: t.editOpportunity });
@@ -81,6 +84,15 @@ test("list archive confirms, removes only the deal, and Undo restores the origin
   await waitFor(() =>
     expect(screen.getByRole("row", { name: new RegExp(name) })).toBeTruthy(),
   );
+  const retainedQuery = new URLSearchParams(window.location.search);
+  expect(retainedQuery.get("layout")).toBe("list");
+  expect(retainedQuery.get("sort")).toBe("name_desc");
+  expect(retainedQuery.get("status")).toBe("open");
+  expect(
+    screen
+      .getByRole("button", { name: t.inlineEditing.list })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
   expect(await deal()).toEqual({ ...original, version: original.version + 2 });
   expect(
     harness.posts.find((post) => post.operation === "opportunity-restore"),
@@ -143,14 +155,16 @@ test("restoring after a stage retires asks for a compatible replacement without 
   const stage = within(list).getByRole("combobox", {
     name: `${t.stage}: ${name}`,
   });
-  const choices = within(stage)
-    .getAllByRole("option")
-    .map((option) => (option as HTMLOptionElement).value);
-  expect(choices).toContain(demoId(800));
-  expect(choices).not.toContain(original.stageId);
-  expect(choices).not.toContain(demoId(803));
-  expect(choices).not.toContain(demoId(804));
-  fireEvent.change(stage, { target: { value: demoId(800) } });
+  fireEvent.keyDown(stage, { key: "ArrowDown" });
+  const choices = await screen.findAllByRole("option");
+  // Only the remaining active open stages in this deal's product appear. The
+  // retired original, closed outcomes and other-product stages stay excluded.
+  expect(choices.map((option) => option.textContent)).toEqual([
+    t.unspecified,
+    "Discovery",
+    "Proposal",
+  ]);
+  fireEvent.click(screen.getByRole("option", { name: "Discovery" }));
   fireEvent.click(restore);
   await screen.findByText(t.recordRestored.replace("{name}", name));
   expect(await deal()).toEqual({

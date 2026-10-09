@@ -10,7 +10,11 @@ import {
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
-import { apiOperation, operations } from "../packages/operations/catalog";
+import {
+  apiOperation,
+  executeMcpOperation,
+  operations,
+} from "../packages/operations/catalog";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 const scope = { organizationId: demoId(1) };
@@ -333,6 +337,69 @@ test("archived outreach history has the UI's unknown amount and USD fallback", a
       .where(eq(s.people.id, demoId(200)));
   }
 });
+
+test.each(["HTTP", "MCP"] as const)(
+  "%s next-action status overrides the pending default while includeCompleted stays compatible",
+  async (transport) => {
+    const operation = apiOperation("crm", "GET", "next-actions");
+    const statuses = ["open", "blocked", "completed"] as const;
+    const rows = statuses.map((status, index) => ({
+      id: demoId(9800 + index),
+      ...scope,
+      productId: demoId(10),
+      relationshipId: demoId(300),
+      ownerId: demoUser,
+      kind: "research" as const,
+      channel: "research" as const,
+      owedBy: "us" as const,
+      title: `Status filter fixture ${status}`,
+      reason: "Fictional status-filter regression fixture",
+      dueAt: new Date("2030-01-01T00:00:00Z"),
+      status,
+    }));
+    await local.db.insert(s.actions).values(rows);
+    const call = async (filters: Record<string, unknown>) => {
+      const input = { query: "Status filter fixture", ...filters };
+      const context = { db: local.db, principal: readAssistant };
+      return (
+        transport === "HTTP"
+          ? await operation.execute(context, { ...scope, ...input })
+          : await executeMcpOperation(
+              operation,
+              context,
+              scope.organizationId,
+              input,
+            )
+      ) as { items: { id: string; status: string }[]; total: number };
+    };
+    try {
+      for (const includeCompleted of [undefined, "false", "true"]) {
+        const options =
+          includeCompleted === undefined ? {} : { includeCompleted };
+        const defaults = await call(options);
+        expect(defaults.items.map((row) => row.status).sort()).toEqual(
+          includeCompleted === "true"
+            ? ["blocked", "completed", "open"]
+            : ["blocked", "open"],
+        );
+        for (const status of statuses) {
+          const result = await call({ ...options, status });
+          expect(result.total).toBe(1);
+          expect(result.items).toMatchObject([{ status }]);
+        }
+      }
+      await expect(call({ status: "sent" })).rejects.toThrow();
+      await expect(call({ includeCompleted: true })).rejects.toThrow();
+    } finally {
+      await local.db.delete(s.actions).where(
+        inArray(
+          s.actions.id,
+          rows.map((row) => row.id),
+        ),
+      );
+    }
+  },
+);
 
 test("saved views expose only actual pending actions and preserve private history", async () => {
   const operation = apiOperation("crm", "GET", "next-actions");

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { eq } from "drizzle-orm";
 import { expect, test, vi } from "vitest";
+import { emptyRelationshipDetails } from "../packages/core/relationship-context";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
@@ -174,5 +175,131 @@ test("hiding the bar preserves active filters and clear remains available", asyn
   );
   expect(
     screen.getByRole("button", { name: t.uiRefresh.dealValue }),
+  ).toBeTruthy();
+});
+
+test.each([
+  { draft: "unselected", layout: "list", nextLayout: "board" },
+  { draft: "invalid", layout: "board", nextLayout: "list" },
+])(
+  "the opportunities empty-state reset clears an $draft custom field draft and preserves a pending $nextLayout layout",
+  async ({ draft, layout, nextLayout }) => {
+    await harness.local.db
+      .update(s.relationships)
+      .set({
+        contextDetails: {
+          ...emptyRelationshipDetails(),
+          fields: [
+            { id: demoId(8960), label: "Seats", type: "number", value: 0 },
+          ],
+        },
+      })
+      .where(eq(s.relationships.id, demoId(300)));
+    await mountCrm(
+      harness,
+      `/opportunities?${new URLSearchParams({ layout, sort: "name_desc", pipeline: demoId(1210), stage: demoId(801), owner: demoUser })}`,
+    );
+    fireEvent.change(screen.getByRole("searchbox"), {
+      target: { value: "No fictional matching deal" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: t.uiRefresh.customFields }),
+    );
+    const popup = within(
+      screen.getByRole("dialog", { name: t.uiRefresh.customFields }),
+    );
+    fireEvent.click(
+      popup.getByRole("button", { name: t.contextFields.addField }),
+    );
+    if (draft === "invalid") {
+      await chooseSelect(
+        popup.getByRole("combobox", { name: t.fieldFilters.field }),
+        `Seats · ${t.contextFields.fieldTypes.number}`,
+      );
+      expect(screen.getByText(t.fieldFilters.invalid)).toBeTruthy();
+    } else {
+      expect(
+        new URLSearchParams(window.location.search).has("fieldFilters"),
+      ).toBe(false);
+    }
+    fireEvent.click(popup.getByRole("button", { name: t.close }));
+    const empty = screen
+      .getByText(t.uiRefresh.noMatchingDeals)
+      .closest<HTMLElement>(".empty-state");
+    if (!empty) throw new Error("Missing opportunities empty-state recovery");
+    const clear = within(empty).getByRole("button", { name: t.clearFilters });
+    act(() => {
+      fireEvent.click(
+        screen.getByRole("button", {
+          name:
+            nextLayout === "list"
+              ? t.inlineEditing.list
+              : t.inlineEditing.board,
+        }),
+      );
+      fireEvent.click(clear);
+    });
+    expect(
+      Object.fromEntries(new URLSearchParams(window.location.search)),
+    ).toEqual(nextLayout === "list" ? { layout: "list" } : {});
+    expect(screen.getByRole("searchbox")).toHaveProperty("value", "");
+    expect(
+      screen.getByRole("combobox", { name: t.sortBy }).textContent,
+    ).toContain(t.defaultOrder);
+    expect(
+      screen
+        .getByRole("button", {
+          name:
+            nextLayout === "list"
+              ? t.inlineEditing.list
+              : t.inlineEditing.board,
+        })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      screen.getByRole("button", { name: "Northstar evaluation project" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Cedar workflow pilot" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(t.fieldFilters.invalid)).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: t.uiRefresh.customFields }),
+    );
+    const reset = within(
+      screen.getByRole("dialog", { name: t.uiRefresh.customFields }),
+    );
+    expect(reset.queryAllByRole("group")).toHaveLength(0);
+    fireEvent.click(
+      reset.getByRole("button", { name: t.contextFields.addField }),
+    );
+    expect(
+      reset.getByRole("group", { name: `${t.fieldFilters.field} 1` }),
+    ).toBeTruthy();
+    expect(
+      reset.queryByRole("group", { name: `${t.fieldFilters.field} 2` }),
+    ).toBeNull();
+    expect(screen.queryByText(t.fieldFilters.invalid)).toBeNull();
+  },
+);
+
+test("malformed custom-field rules alone expose the opportunities empty-state reset and recover the list", async () => {
+  await mountCrm(harness, "/opportunities?layout=list&fieldFilters=invalid");
+  expect(screen.getByText(t.fieldFilters.invalid)).toBeTruthy();
+  const empty = screen
+    .getByText(t.uiRefresh.noMatchingDeals)
+    .closest<HTMLElement>(".empty-state");
+  if (!empty)
+    throw new Error("Missing invalid custom-field empty-state recovery");
+  fireEvent.click(within(empty).getByRole("button", { name: t.clearFilters }));
+  expect(
+    Object.fromEntries(new URLSearchParams(window.location.search)),
+  ).toEqual({ layout: "list" });
+  expect(screen.queryByText(t.fieldFilters.invalid)).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Northstar evaluation project" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Cedar workflow pilot" }),
   ).toBeTruthy();
 });

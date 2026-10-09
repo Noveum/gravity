@@ -189,16 +189,15 @@ export function OpportunitiesView() {
     !!pipelineFilter ||
     !!stageFilter ||
     !!browser.fieldDrafts.length ||
+    browser.fieldInvalid ||
     Object.entries(browser.filters).some(
       ([key, value]) => value && !(key === "sort" && value === "default"),
     );
   function clearFilters() {
+    browser.clear();
     const next = currentViewQuery();
-    for (const key of Object.keys(browser.filters))
-      next.delete(key === "ownerId" ? "owner" : key);
     next.delete("pipeline");
     next.delete("stage");
-    next.delete("fieldFilters");
     crm.clearSearch();
     replaceViewQuery(next);
   }

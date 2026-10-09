@@ -828,13 +828,13 @@ export const operations: Operation[] = [
     operation: "next-actions",
     name: "list_next_actions",
     description:
-      "Page pending next actions using the same search, owner, relationship tags/qualification/deal-size, status, fieldFilters and sort filters as the UI. Custom field predicates match within one permitted relationship using the same typed operators as list_records. Use kind=reply for replies to handle, kind=commitment for promises, or owedBy=them for awaiting them. Only scheduled actions qualify: contact tags and imported prose are not promises, replies or sends. Completed actions are excluded unless includeCompleted is the string true. Private source actions remain visible only to their conversation owner or the product when shared.",
+      "Page next actions using the same search, owner, relationship tags/qualification/deal-size, status, fieldFilters and sort filters as the UI. Custom field predicates match within one permitted relationship using the same typed operators as list_records. Use kind=reply for replies to handle, kind=commitment for promises, or owedBy=them for awaiting them. Only scheduled actions qualify: contact tags and imported prose are not promises, replies or sends. An explicit status takes precedence over includeCompleted. Without a status, completed actions are excluded unless includeCompleted is the string true. Private source actions remain visible only to their conversation owner or the product when shared.",
     schema: nextActionsSchema,
     run: (c, input) =>
       new RecordListService(c.db).page(
         c.principal,
         recordListSchema.parse({ ...input, entity: "actions" }),
-        input.includeCompleted !== "true",
+        !input.status && input.includeCompleted !== "true",
       ),
   }),
   operation({

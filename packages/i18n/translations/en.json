@@ -2452,5 +2452,24 @@
     "edit": "Edit action reason",
     "original": "Original action reason",
     "hint": "Replace imported JSON with readable notes after reviewing the source. The original is kept, and editing clears any message approval."
-  }
+  },
+  "merge": "Merge",
+  "mergeDuplicate": "Merge duplicate…",
+  "mergePerson": "Merge person",
+  "mergeCompany": "Merge company",
+  "mergeRecords": "Merge records",
+  "mergeRecordsSubtitle": "Review conflicting fields and pick which values to keep.",
+  "recordsMerged": "Records merged",
+  "canonicalRecord": "Canonical record (kept)",
+  "duplicateRecord": "Duplicate record (merged & removed)",
+  "selectDuplicateRecord": "Select record to merge…",
+  "swapCanonical": "Swap canonical record",
+  "mergeNotice": "Relationships, actions, conversations, meetings, and deals from both records will be moved to the canonical record. Private conversations remain private to their owners. The duplicate record will be removed.",
+  "mergeFieldConflict": "Conflicting field",
+  "mergeUseLeft": "Keep canonical value",
+  "mergeUseRight": "Use duplicate value",
+  "mergeSubmit": "Confirm & merge",
+  "mergeSelectPrompt": "Choose a duplicate record to merge into this one",
+  "cannotMergeSelf": "Cannot merge a record into itself",
+  "searchRecordPlaceholder": "Type to search records…"
 }

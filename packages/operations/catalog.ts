@@ -149,6 +149,7 @@ import {
   companyArchiveSchema,
   companySchema,
   meetingSchema,
+  mergeRecordsSchema,
   opportunityChangeSchema,
   opportunityCreateSchema,
   opportunityRemovalSchema,
@@ -1243,6 +1244,16 @@ export const operations: Operation[] = [
     description: "Archive or restore a company using its current version.",
     schema: companyArchiveSchema,
     run: (c, input) => records(c).archiveCompany(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "merge-records",
+    name: "merge_records",
+    description:
+      "Merge duplicate person or company records into a single canonical record within the same organization. Moves relationships, conversations, actions, meetings, and deals atomically inside one transaction. Overwrites canonical fields with chosen values. Preserves private conversation ownership and records the merge in change_events.",
+    schema: mergeRecordsSchema,
+    run: (c, input) => records(c).mergeRecords(c.principal, input),
   }),
   operation({
     api: "crm",

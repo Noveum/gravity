@@ -1,6 +1,12 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
-import { Archive, ArchiveRestore, MoreHorizontal, Pencil } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  GitMerge,
+  MoreHorizontal,
+  Pencil,
+} from "lucide-react";
 import { useState } from "react";
 import { DropdownMenu, MenuItem } from "../ui/dropdown-menu";
 
@@ -8,6 +14,7 @@ export function RecordActions({
   busy,
   onEdit,
   onArchive,
+  onMerge,
   inlineEditing = false,
   archiveLabel = t.archive,
   archiveConfirm = t.inlineEditing.archiveConfirm,
@@ -15,6 +22,7 @@ export function RecordActions({
   busy: boolean;
   onEdit: () => void;
   onArchive: () => void;
+  onMerge?: () => void;
   inlineEditing?: boolean;
   archiveLabel?: string;
   archiveConfirm?: string;
@@ -40,6 +48,12 @@ export function RecordActions({
           <MenuItem disabled={busy} onSelect={onEdit}>
             <Pencil size={13} aria-hidden />
             {t.edit}
+          </MenuItem>
+        )}
+        {onMerge && (
+          <MenuItem disabled={busy} onSelect={onMerge}>
+            <GitMerge size={13} aria-hidden />
+            {t.mergeDuplicate}
           </MenuItem>
         )}
         <MenuItem disabled={busy} onSelect={() => setConfirming(true)}>

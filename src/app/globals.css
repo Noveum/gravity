@@ -6279,3 +6279,163 @@ nav.list-pagination > label:has(select) {
     flex: 1 1 200px;
   }
 }
+
+.merge-dialog {
+  width: min(760px, 92vw);
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.merge-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.merge-dialog-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.merge-select-step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.candidate-list {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.candidate-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--duration-fast);
+}
+.candidate-item:last-child {
+  border-bottom: none;
+}
+.candidate-item:hover {
+  background: var(--surface-hover);
+}
+.candidate-name {
+  font-weight: 500;
+}
+.empty-candidates {
+  padding: 16px;
+  text-align: center;
+  margin: 0;
+}
+.merge-records-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.record-header-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.record-header-card h3 {
+  margin: 0;
+  font-size: var(--text-base);
+  word-break: break-word;
+}
+.swap-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-dense);
+  white-space: nowrap;
+}
+.change-candidate-btn {
+  align-self: flex-start;
+  font-size: var(--text-dense);
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.field-comparisons-table {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.comparison-row {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  border-bottom: 1px solid var(--border-color);
+  padding: 8px 12px;
+  align-items: center;
+  gap: 12px;
+}
+.comparison-row:last-child {
+  border-bottom: none;
+}
+.comparison-row.conflict {
+  background: var(--surface-subtle);
+}
+.field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-dense);
+  font-weight: 500;
+}
+.conflict-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--amber);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.field-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.field-option {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  color: inherit;
+  font-size: var(--text-dense);
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--duration-fast);
+}
+.field-option.selected {
+  border-color: var(--color-brand);
+  background: var(--brand-wash);
+  font-weight: 500;
+}
+.option-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.merge-notice {
+  font-size: var(--text-dense);
+  line-height: 1.5;
+  margin-top: 12px;
+}

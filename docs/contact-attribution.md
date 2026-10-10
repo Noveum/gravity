@@ -54,8 +54,7 @@ membership, grants, product, version and retry rules. A batch belongs to its
 authenticated submitter; another member cannot reuse it. Stable keys identify
 retries, not authorization. The source form retains retry keys for unchanged
 declarations after a partial failure. Correcting the batch label, kind or declared source creates a new batch;
-existing batches remain immutable. No general CSV parser or new bulk upload UI is
-included; agents can submit parsed rows using these operations.
+existing batches remain immutable. Reviewed CSV imports with preview, column mapping, and duplicate review are documented in [CSV imports](csv-imports.md); agents can also submit parsed rows using these operations.
 
 ## Provider sources and privacy
 

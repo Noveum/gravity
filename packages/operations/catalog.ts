@@ -62,6 +62,11 @@ import {
   workspaceSchema,
 } from "../core/crm";
 import {
+  CsvImportService,
+  csvImportPreviewSchema,
+  csvImportSchema,
+} from "../core/csv-import";
+import {
   changeInternalTaskSchema,
   createInternalTaskSchema,
   InternalTaskService,
@@ -949,6 +954,31 @@ export const operations: Operation[] = [
     schema: attributionListSchema,
     run: (c, input) =>
       new ContactAttributionService(c.db).list(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "csv-import-preview",
+    name: "preview_csv_import",
+    idempotent: true,
+    destructive: false,
+    publish: false,
+    description:
+      "Preview a CSV import of people and companies. Detects column mappings, validates fields, and checks for existing duplicate emails or company domains for explicit review without silent merging.",
+    schema: csvImportPreviewSchema,
+    run: (c, input) => new CsvImportService(c.db).preview(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "csv-import",
+    name: "import_contacts_csv",
+    idempotent: false,
+    destructive: true,
+    description:
+      "Import people and companies from CSV with product relationships. Rows with duplicate emails or company domains must be explicitly reviewed; by default duplicates reject with PERSON_EXISTS or COMPANY_EXISTS rather than silently merging. Pass skipDuplicates to import valid rows while skipping reviewed duplicates.",
+    schema: csvImportSchema,
+    run: (c, input) => new CsvImportService(c.db).importCsv(c.principal, input),
   }),
   operation({
     api: "crm",

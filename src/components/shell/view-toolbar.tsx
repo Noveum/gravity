@@ -1,7 +1,7 @@
 "use client";
 import { shortcutLabel } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
-import { Plus, Search, Send, X } from "lucide-react";
+import { Plus, Search, Send, Upload, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import type { RefObject } from "react";
 import { label } from "../client-api";
@@ -172,32 +172,56 @@ export function ViewToolbar({
         </>
       )}
       {section === "people" && (
-        <button
-          type="button"
-          className="primary toolbar-primary"
-          aria-label={t.addPerson}
-          aria-keyshortcuts="C"
-          disabled={!crm.data?.products.length}
-          onClick={() => crm.setPersonDialog(true)}
-        >
-          <Plus size={14} aria-hidden />
-          {t.addPerson}
-          <ShortcutHint id="create" />
-        </button>
+        <>
+          <button
+            type="button"
+            className="toolbar-button"
+            aria-label={t.importCsv}
+            disabled={!crm.data?.products.length}
+            onClick={() => crm.setImportDialog(true)}
+          >
+            <Upload size={14} aria-hidden />
+            {t.importCsv}
+          </button>
+          <button
+            type="button"
+            className="primary toolbar-primary"
+            aria-label={t.addPerson}
+            aria-keyshortcuts="C"
+            disabled={!crm.data?.products.length}
+            onClick={() => crm.setPersonDialog(true)}
+          >
+            <Plus size={14} aria-hidden />
+            {t.addPerson}
+            <ShortcutHint id="create" />
+          </button>
+        </>
       )}
       {section === "companies" && (
-        <button
-          type="button"
-          className="primary toolbar-primary"
-          aria-label={t.newCompany}
-          aria-keyshortcuts="C"
-          disabled={!crm.data?.products.length}
-          onClick={() => crm.openRecordDialog({ kind: "company" })}
-        >
-          <Plus size={14} aria-hidden />
-          {t.newCompany}
-          <ShortcutHint id="create" />
-        </button>
+        <>
+          <button
+            type="button"
+            className="toolbar-button"
+            aria-label={t.importCsv}
+            disabled={!crm.data?.products.length}
+            onClick={() => crm.setImportDialog(true)}
+          >
+            <Upload size={14} aria-hidden />
+            {t.importCsv}
+          </button>
+          <button
+            type="button"
+            className="primary toolbar-primary"
+            aria-label={t.newCompany}
+            aria-keyshortcuts="C"
+            disabled={!crm.data?.products.length}
+            onClick={() => crm.openRecordDialog({ kind: "company" })}
+          >
+            <Plus size={14} aria-hidden />
+            {t.newCompany}
+            <ShortcutHint id="create" />
+          </button>
+        </>
       )}
       {section === "meetings" && (
         <button

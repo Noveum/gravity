@@ -29,7 +29,7 @@ export const archiveProductSchema = productScope;
 export const restoreProductSchema = productScope;
 
 export async function assertProductActive(
-  tx: Transaction,
+  tx: Reader,
   organizationId: string,
   productId: string,
 ) {

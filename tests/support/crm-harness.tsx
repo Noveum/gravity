@@ -35,6 +35,7 @@ import {
   companyArchiveSchema,
   companySchema,
   meetingSchema,
+  mergeRecordsSchema,
   opportunityChangeSchema,
   opportunityCreateSchema,
   personArchiveSchema,
@@ -289,6 +290,8 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
           principal,
           opportunityChangeSchema.parse(body),
         ),
+      "merge-records": () =>
+        records.mergeRecords(principal, mergeRecordsSchema.parse(body)),
     };
     const run = operations[body.operation];
     if (run) return serialize(await run());

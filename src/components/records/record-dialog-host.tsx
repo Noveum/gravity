@@ -4,6 +4,7 @@ import { useCrm } from "../crm/crm-context";
 import { usePersonContext } from "../crm/record-context";
 import { companyPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
+import { MergeDialog } from "./merge-dialog";
 import { RecordDialog } from "./record-dialog";
 import {
   CompanyDialog,
@@ -18,6 +19,16 @@ export function RecordDialogHost() {
   const data = crm.sourceData;
   if (!dialog || !data) return null;
   const close = crm.closeRecordDialog;
+  if (dialog.kind === "merge" && dialog.id) {
+    return (
+      <MergeDialog
+        key={`merge-${dialog.id}`}
+        entity={dialog.entity ?? "person"}
+        initialTargetId={dialog.id}
+        onClose={close}
+      />
+    );
+  }
   if (dialog.kind === "person") {
     const person = data.people.find((item) => item.id === dialog.id);
     if (person && data.compact)

@@ -75,9 +75,10 @@ export type ViewVerb =
   | "list-layout";
 export type ViewVerbs = Partial<Record<ViewVerb, () => boolean>>;
 export interface RecordDialogState {
-  kind: "person" | "company" | "meeting" | "opportunity";
+  kind: "person" | "company" | "meeting" | "opportunity" | "merge";
   id?: string;
   relationshipId?: string;
+  entity?: "person" | "company";
 }
 interface Origin {
   path: string;
@@ -794,7 +795,8 @@ function useCrmState({
 }
 
 export type Crm = ReturnType<typeof useCrmState>;
-const CrmContext = createContext<Crm | null>(null);
+export type CrmContextValue = Crm;
+export const CrmContext = createContext<Crm | null>(null);
 
 function CrmState({ children, ...props }: CrmProps & { children: ReactNode }) {
   const crm = useCrmState(props);

@@ -61,6 +61,13 @@ export function CompanyRecord({ companyId }: { companyId: string }) {
               crm.openRecordDialog({ kind: "company", id: active.id })
             }
             onArchive={() => void archive.archive("company", active)}
+            onMerge={() =>
+              crm.openRecordDialog({
+                kind: "merge",
+                id: active.id,
+                entity: "company",
+              })
+            }
           />
         ) : (
           <ArchivedNotice

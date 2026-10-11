@@ -1,11 +1,14 @@
+import { specTypeSchemas } from "@modelcontextprotocol/server";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { CrmService } from "../packages/core/crm";
 import { OutreachService } from "../packages/core/outreach";
 import type { Principal } from "../packages/core/policy";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
+import { createMcpHarness } from "./support/mcp-harness";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let crm: CrmService;
@@ -120,6 +123,52 @@ test("advancing a selected product leaves another authorized product's eligible 
   ]);
   expect(await touches(other.enrollmentId)).toEqual([]);
   expect(await enrollment(other.enrollmentId)).toEqual(before);
+});
+
+test("MCP advance_sequences preserves selected product scope within a multi-product grant", async () => {
+  const selected = await delayedEnrollment();
+  const other = await delayedEnrollment();
+  const before = await enrollment(other.enrollmentId);
+  const { rpcResult } = createMcpHarness(
+    () => local.db,
+    organizationId,
+    assistant([selected.productId, other.productId]),
+  );
+  now += day;
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+  try {
+    const response = await rpcResult(
+      specTypeSchemas.CallToolResult,
+      "tools/call",
+      {
+        name: "advance_sequences",
+        arguments: { productId: selected.productId },
+      },
+    );
+    expect(response.isError).not.toBe(true);
+    const counts = z
+      .object({
+        created: z.number().int().nonnegative(),
+        completed: z.number().int().nonnegative(),
+        paused: z.number().int().nonnegative(),
+      })
+      .parse(response.structuredContent);
+    expect(counts).toEqual({ created: 1, completed: 0, paused: 0 });
+    expect(await touches(selected.enrollmentId)).toMatchObject([
+      {
+        organizationId,
+        productId: selected.productId,
+        relationshipId: selected.relationshipId,
+        enrollmentId: selected.enrollmentId,
+        status: "planned",
+        stepNumber: 1,
+      },
+    ]);
+    expect(await touches(other.enrollmentId)).toEqual([]);
+    expect(await enrollment(other.enrollmentId)).toEqual(before);
+  } finally {
+    clock.mockRestore();
+  }
 });
 
 test("advancing an ungranted or foreign product is rejected without changing enrollments", async () => {

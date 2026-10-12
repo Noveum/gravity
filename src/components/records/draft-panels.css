@@ -120,7 +120,13 @@
   line-height: 1.6;
 }
 
-@container draft-composer (max-width: 349px) {
+@container draft-composer (min-width: 330px) and (max-width: 399px) {
+  .draft-actions > button > svg {
+    display: none;
+  }
+}
+
+@container draft-composer (max-width: 329px) {
   .draft-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

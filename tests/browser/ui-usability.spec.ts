@@ -589,10 +589,22 @@ test("draft actions share a compact toolbar and stay usable while scheduling at 
   const expectToolbarFit = async (oneRow: boolean) => {
     const geometry = await toolbar.evaluate((element) => {
       const bounds = element.getBoundingClientRect();
-      const buttons = [...element.querySelectorAll("button")].map((button) =>
-        button.getBoundingClientRect(),
-      );
+      const buttons = [...element.querySelectorAll("button")].map((button) => {
+        const rect = button.getBoundingClientRect();
+        return {
+          label: button.textContent,
+          top: rect.top,
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+          height: rect.height,
+        };
+      });
       return {
+        composerWidth: element.closest(".draft-panel")?.clientWidth,
+        toolbarWidth: bounds.width,
+        display: getComputedStyle(element).display,
+        buttons,
         oneRow:
           Math.max(...buttons.map((button) => button.top)) -
             Math.min(...buttons.map((button) => button.top)) <=
@@ -606,9 +618,11 @@ test("draft actions share a compact toolbar and stay usable while scheduling at 
         pageFits: document.documentElement.scrollWidth <= window.innerWidth,
       };
     });
-    expect(geometry.fits).toBe(true);
-    expect(geometry.pageFits).toBe(true);
-    if (oneRow) expect(geometry.oneRow).toBe(true);
+    const detail = JSON.stringify(geometry);
+    expect(geometry.fits, detail).toBe(true);
+    expect(geometry.pageFits, detail).toBe(true);
+    expect(geometry.oneRow, detail).toBe(oneRow);
+    if (!oneRow) expect(geometry.display, detail).toBe("grid");
   };
   const resize = page.getByRole("separator", { name: t.resizeInspector });
   await resize.dblclick();
@@ -616,6 +630,20 @@ test("draft actions share a compact toolbar and stay usable while scheduling at 
     while (Number(await resize.getAttribute("aria-valuenow")) > width)
       await resize.press("ArrowRight");
     await expectToolbarFit(true);
+    if (width === 400) {
+      const originalPadding = await inspector.evaluate((element) => {
+        const previous = element.style.paddingRight;
+        element.style.paddingRight = `${Number.parseFloat(getComputedStyle(element).paddingRight) + 15}px`;
+        return previous;
+      });
+      try {
+        await expectToolbarFit(true);
+      } finally {
+        await inspector.evaluate((element, padding) => {
+          element.style.paddingRight = padding;
+        }, originalPadding);
+      }
+    }
     if (width === 480) {
       await expect(
         inspector.getByRole("tab", { name: t.draft, exact: true }),

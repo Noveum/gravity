@@ -296,16 +296,20 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
         id="message-draft"
         value={draft.draft}
         onChange={(event) => draft.edit(event.target.value)}
-        rows={9}
+        rows={7}
       />
       <div className="draft-editor-status">
         <div className="draft-state" aria-live="polite">
-          {!dirty && <Check size={13} aria-hidden="true" />}
+          {!dirty && !!draft.draft.trim() && (
+            <Check size={13} aria-hidden="true" />
+          )}
           {dirty
             ? t.draftChanged
-            : action.approvedHash
-              ? t.approved
-              : t.draftFlow.saved}
+            : !draft.draft.trim()
+              ? t.draftFlow.empty
+              : action.approvedHash
+                ? t.approved
+                : t.draftFlow.saved}
         </div>
         <span className="draft-scheduled-date">
           <CalendarClock size={13} aria-hidden="true" />
@@ -323,7 +327,7 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
           </button>
         </div>
       )}
-      <div className="draft-save-actions">
+      <fieldset className="draft-actions" aria-label={t.draftFlow.actions}>
         {action.status === "blocked" ? (
           <button
             type="button"
@@ -338,6 +342,7 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
             <button
               data-save-draft
               type="button"
+              className={dirty ? "primary" : undefined}
               disabled={busy || stale || !dirty}
               onClick={() => change("save", { draft: draft.draft })}
             >
@@ -346,7 +351,8 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
             {!action.approvedHash && (
               <button
                 type="button"
-                className="primary"
+                className={!dirty ? "primary" : undefined}
+                aria-label={t.approveDraft}
                 disabled={
                   busy ||
                   stale ||
@@ -356,48 +362,53 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
                 }
                 onClick={() => change("approve")}
               >
-                {t.approveDraft}
+                {t.draftFlow.approve}
               </button>
             )}
           </>
         )}
+        {action.status === "open" && (
+          <>
+            <button
+              type="button"
+              disabled={busy || dirty || stale || !draft.draft.trim()}
+              onClick={() =>
+                setSchedule({
+                  actionId: action.id,
+                  version: draft.version,
+                  dueAt: action.dueAt,
+                  timeZone,
+                })
+              }
+            >
+              <CalendarClock size={15} aria-hidden="true" />
+              {t.draftFlow.schedule}
+            </button>
+            {sendableAction &&
+              (action.channel === "gmail" || action.channel === "linkedin") && (
+                <button
+                  type="button"
+                  className={canSend ? "primary" : undefined}
+                  aria-label={t.touchVerbs.send}
+                  disabled={busy || !canSend}
+                  title={!canSend ? t.draftFlow.sendHint : undefined}
+                  onClick={() => setSending(true)}
+                >
+                  <Send size={15} aria-hidden="true" />
+                  {t.draftFlow.send}
+                </button>
+              )}
+          </>
+        )}
+      </fieldset>
+      <div className="draft-action-help">
+        <span>{t.draftSaveHint}</span>
+        <details>
+          <summary>{t.draftFlow.approvalHelp}</summary>
+          <p>{t.approvalNote}</p>
+          <p>{t.sendingNote}</p>
+        </details>
       </div>
-      <p className="muted draft-approval-note">{t.approvalNote}</p>
-      {action.status === "open" && (
-        <div className="draft-next-actions">
-          <button
-            type="button"
-            disabled={busy || dirty || stale || !draft.draft.trim()}
-            onClick={() =>
-              setSchedule({
-                actionId: action.id,
-                version: draft.version,
-                dueAt: action.dueAt,
-                timeZone,
-              })
-            }
-          >
-            <CalendarClock size={15} aria-hidden="true" />
-            {t.draftFlow.schedule}
-          </button>
-          {sendableAction &&
-            (action.channel === "gmail" || action.channel === "linkedin") && (
-              <button
-                type="button"
-                className="primary"
-                disabled={busy || !canSend}
-                title={!canSend ? t.draftFlow.sendHint : undefined}
-                onClick={() => setSending(true)}
-              >
-                <Send size={15} aria-hidden="true" />
-                {t.touchVerbs.send}
-              </button>
-            )}
-        </div>
-      )}
-      <p className="coverage-note">
-        {t.draftSaveHint} · {t.sendingNote}
-      </p>
       {sending && (
         <SendDialog
           source={{

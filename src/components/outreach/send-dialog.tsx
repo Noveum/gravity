@@ -8,7 +8,7 @@ import type { JsonValue } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { Send } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { errorText, label, RequestError, requestJson } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { useModalLifecycle } from "../modal-lifecycle";
@@ -128,6 +128,7 @@ export function SendDialog({
   const crm = useCrm();
   const modal = useRef<HTMLDialogElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
+  const history = useRef<HTMLElement>(null);
   const titleId = useId();
   const statusId = useId();
   const sending = useRef(false);
@@ -152,6 +153,10 @@ export function SendDialog({
     source,
     connection?.id ?? "",
   );
+  useLayoutEffect(() => {
+    if (readiness?.history && history.current)
+      history.current.scrollTop = history.current.scrollHeight;
+  }, [readiness]);
   const ready = !!readiness?.ready && !busy;
   async function send() {
     if (!readiness?.ready || !connection || sending.current) return;
@@ -304,6 +309,7 @@ export function SendDialog({
           </summary>
           {readiness.history.messages.length ? (
             <section
+              ref={history}
               className="send-history-scroll"
               aria-label={t.nativeIngestion.sendHistory}
               // biome-ignore lint/a11y/noNoninteractiveTabindex: The scrollable history needs keyboard focus so arrow keys can reach earlier messages.

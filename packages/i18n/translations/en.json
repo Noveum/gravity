@@ -2244,6 +2244,10 @@
   },
   "draftFlow": {
     "reply": "Your reply",
+    "actions": "Draft actions",
+    "approve": "Approve",
+    "approvalHelp": "Approval and sending",
+    "empty": "No draft yet",
     "saved": "Saved draft",
     "schedule": "Schedule",
     "scheduleTitle": "Schedule draft",

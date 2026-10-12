@@ -511,3 +511,246 @@ test("contact preparation separates notes, conversations, context and properties
     path: ".data/contact-preparation-full.png",
   });
 });
+
+test("draft actions share a compact toolbar and stay usable while scheduling at every width", async ({
+  page,
+  request,
+}) => {
+  const title = `Fictional toolbar review ${crypto.randomUUID().slice(0, 8)}`;
+  const headers = { Origin: String(test.info().project.use.baseURL) };
+  const created = await request.post("/api/crm", {
+    headers,
+    data: {
+      operation: "person",
+      organizationId: demoId(1),
+      productId: demoId(10),
+      name: title,
+      purpose: "buyer",
+      review: false,
+    },
+  });
+  expect(created.ok(), await created.text()).toBe(true);
+  const { relationshipId } = await created.json();
+  const scheduled = await request.post("/api/crm", {
+    headers,
+    data: {
+      operation: "schedule",
+      organizationId: demoId(1),
+      productId: demoId(10),
+      relationshipId,
+      ownerId: "demo-you",
+      kind: "reply",
+      channel: "gmail",
+      owedBy: "us",
+      title,
+      dueAt: new Date().toISOString(),
+    },
+  });
+  expect(scheduled.ok(), await scheduled.text()).toBe(true);
+
+  await page.goto("/actions");
+  await expect(page.locator(".live-status")).toHaveClass(/sync-live/);
+  await page
+    .getByRole("button", { name: new RegExp(title) })
+    .first()
+    .click();
+  const inspector = page.locator("#record-inspector");
+  const draftTab = inspector.getByRole("tab", { name: t.draft, exact: true });
+  await draftTab.click();
+  await expect(draftTab).toHaveAttribute("aria-selected", "true");
+  const panel = inspector.locator(".draft-panel");
+  const toolbar = panel.getByRole("group", { name: t.draftFlow.actions });
+  const save = toolbar.getByRole("button", { name: t.saveDraft, exact: true });
+  const approve = toolbar.getByRole("button", {
+    name: t.approveDraft,
+    exact: true,
+  });
+  const schedule = toolbar.getByRole("button", {
+    name: t.draftFlow.schedule,
+    exact: true,
+  });
+  const send = toolbar.getByRole("button", {
+    name: t.touchVerbs.send,
+    exact: true,
+  });
+  const editor = panel.getByRole("textbox", { name: t.draftLabel });
+  await expect(panel.locator(".draft-state")).toHaveText(t.draftFlow.empty);
+  await editor.fill("Hello, here is the fictional review agenda we discussed.");
+  await expect(save).toBeEnabled();
+  await expect(approve).toBeDisabled();
+  await expect(schedule).toBeDisabled();
+  await expect(send).toBeDisabled();
+  await editor.press("ControlOrMeta+Enter");
+  await expect(approve).toBeEnabled();
+  await expect(schedule).toBeEnabled();
+  await expect(save).toBeDisabled();
+  await expect(send).toBeDisabled();
+
+  const expectToolbarFit = async (oneRow: boolean) => {
+    const geometry = await toolbar.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const buttons = [...element.querySelectorAll("button")].map((button) =>
+        button.getBoundingClientRect(),
+      );
+      return {
+        oneRow:
+          Math.max(...buttons.map((button) => button.top)) -
+            Math.min(...buttons.map((button) => button.top)) <=
+          1,
+        fits:
+          element.scrollWidth <= element.clientWidth + 1 &&
+          buttons.every(
+            (button) =>
+              button.left >= bounds.left && button.right <= bounds.right + 1,
+          ),
+        pageFits: document.documentElement.scrollWidth <= window.innerWidth,
+      };
+    });
+    expect(geometry.fits).toBe(true);
+    expect(geometry.pageFits).toBe(true);
+    if (oneRow) expect(geometry.oneRow).toBe(true);
+  };
+  const resize = page.getByRole("separator", { name: t.resizeInspector });
+  await resize.dblclick();
+  for (const width of [480, 440, 400]) {
+    while (Number(await resize.getAttribute("aria-valuenow")) > width)
+      await resize.press("ArrowRight");
+    await expectToolbarFit(true);
+    if (width === 480) {
+      await expect(
+        inspector.getByRole("tab", { name: t.draft, exact: true }),
+      ).toHaveAttribute("aria-selected", "true");
+      await page.screenshot({
+        animations: "disabled",
+        type: "jpeg",
+        quality: 85,
+        path: ".data/draft-toolbar-inspector-light.jpg",
+      });
+    }
+  }
+  await page.setViewportSize({ width: 945, height: 900 });
+  await expectToolbarFit(true);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await inspector.getByRole("button", { name: t.expandInspector }).click();
+  await expectToolbarFit(true);
+  const workspace = inspector.locator(".contact-draft-workspace");
+  const history = workspace.getByRole("region", {
+    name: t.contactWorkspace.history,
+    exact: true,
+  });
+  const emptyWorkspace = await workspace.boundingBox();
+  const emptyComposer = await panel.boundingBox();
+  if (!emptyWorkspace || !emptyComposer)
+    throw new Error("Missing empty draft workspace");
+  expect(emptyComposer.width).toBeGreaterThanOrEqual(emptyWorkspace.width - 2);
+  await page.screenshot({
+    animations: "disabled",
+    path: ".data/draft-toolbar-expanded-empty.png",
+  });
+  const imported = await request.post("/api/crm", {
+    headers,
+    data: {
+      operation: "ingest-history",
+      organizationId: demoId(1),
+      productId: demoId(10),
+      relationshipId,
+      channel: "gmail",
+      sourceThreadId: title,
+      messages: [
+        {
+          sourceMessageId: `${title}-outgoing`,
+          direction: "outbound",
+          body: "Could we review the fictional rollout agenda together?",
+          occurredAt: new Date(Date.now() - 120_000).toISOString(),
+        },
+        {
+          sourceMessageId: `${title}-incoming`,
+          direction: "inbound",
+          body: "Yes, please include the rollout plan in our review.",
+          occurredAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      ],
+    },
+  });
+  expect(imported.ok(), await imported.text()).toBe(true);
+  await expect(history.locator("article")).toHaveCount(2, { timeout: 10_000 });
+  const populatedHistory = await history.boundingBox();
+  const populatedComposer = await panel.boundingBox();
+  if (!populatedHistory || !populatedComposer)
+    throw new Error("Missing populated draft workspace");
+  expect(populatedComposer.x).toBeGreaterThan(
+    populatedHistory.x + populatedHistory.width,
+  );
+  await expectToolbarFit(true);
+  await expect(draftTab).toHaveAttribute("aria-selected", "true");
+  await page.screenshot({
+    animations: "disabled",
+    type: "jpeg",
+    quality: 85,
+    path: ".data/draft-toolbar-expanded-light.jpg",
+  });
+  await page.setViewportSize({ width: 1100, height: 900 });
+  const navigationResize = page.getByRole("separator", {
+    name: t.resizeNavigation,
+  });
+  await navigationResize.press("End");
+  const narrowWorkspace = await workspace.boundingBox();
+  const narrowComposer = await panel.boundingBox();
+  const narrowHistory = await history.boundingBox();
+  if (!narrowWorkspace || !narrowComposer || !narrowHistory)
+    throw new Error("Missing narrow draft workspace");
+  expect(narrowWorkspace.width).toBeLessThan(800);
+  expect(narrowComposer.width).toBeGreaterThanOrEqual(
+    narrowWorkspace.width - 2,
+  );
+  expect(narrowComposer.y).toBeGreaterThan(
+    narrowHistory.y + narrowHistory.height,
+  );
+  await expectToolbarFit(true);
+  await page.screenshot({
+    animations: "disabled",
+    path: ".data/draft-toolbar-narrow-workspace.png",
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await navigationResize.dblclick();
+  await page.getByRole("button", { name: t.toggleTheme }).click();
+  await expectToolbarFit(true);
+  for (const width of [700, 480, 360, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expectToolbarFit(width >= 480);
+    await schedule.scrollIntoViewIfNeeded();
+    await schedule.click();
+    const dialog = page.getByRole("dialog", {
+      name: t.draftFlow.scheduleTitle,
+    });
+    const due = dialog.getByLabel(t.nativeIngestion.dueAt, { exact: true });
+    await expect(due).toBeFocused();
+    const fit = await dialog.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        width: element.scrollWidth <= element.clientWidth + 1,
+        viewport: rect.left >= 0 && rect.right <= window.innerWidth,
+      };
+    });
+    expect(fit.width).toBe(true);
+    expect(fit.viewport).toBe(true);
+    await due.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(schedule).toBeFocused();
+  }
+  await expect(draftTab).toHaveAttribute("aria-selected", "true");
+  await page.screenshot({
+    animations: "disabled",
+    type: "jpeg",
+    quality: 85,
+    path: ".data/draft-toolbar-mobile-dark.jpg",
+  });
+  await approve.click();
+  await expect(approve).toHaveCount(0);
+  await expect(send).toBeEnabled();
+  await expectToolbarFit(false);
+  await editor.fill("A changed fictional agenda that needs fresh approval.");
+  await expect(save).toBeEnabled();
+  await expect(schedule).toBeDisabled();
+  await expect(send).toBeDisabled();
+});

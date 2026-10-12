@@ -95,6 +95,77 @@ async function openSendFromApproved() {
 }
 
 describe("sending an approved touch", () => {
+  test("asynchronously loaded confirmation history starts at the newest message and keeps manual scrolling until the account changes", async () => {
+    const otherGmail = demoId(1952);
+    const responses: ((value: typeof readiness) => void)[] = [];
+    const harnessed = vi.mocked(requestJson).getMockImplementation();
+    vi.mocked(requestJson).mockImplementation(async (url, init) => {
+      const address = String(url);
+      if (address.startsWith("/api/integrations"))
+        return {
+          connections: [gmail, otherGmail].map((id, index) => ({
+            id,
+            provider: "gmail",
+            status: "connected",
+            displayName: `Fictional mailbox ${index + 1}`,
+            canSend: true,
+          })),
+        };
+      if (address.startsWith("/api/outreach?operation=send-readiness"))
+        return new Promise((resolve) => responses.push(resolve));
+      if (!harnessed) throw new Error("harness");
+      return harnessed(url, init);
+    });
+    const height = vi
+      .spyOn(Element.prototype, "scrollHeight", "get")
+      .mockReturnValue(1000);
+    try {
+      const dialog = await openSendFromApproved();
+      await waitFor(() => expect(responses).toHaveLength(1));
+      expect(
+        within(dialog).queryByRole("region", {
+          name: t.nativeIngestion.sendHistory,
+        }),
+      ).toBeNull();
+      const response = {
+        ...readiness,
+        history: {
+          messages: Array.from({ length: 10 }, (_, index) => ({
+            id: `fictional-message-${index}`,
+            direction: index % 2 ? "inbound" : "outbound",
+            channel: "gmail",
+            body: `Fictional message ${index}`,
+            occurredAt: `2026-01-02T12:${String(index).padStart(2, "0")}:00.000Z`,
+          })),
+          coverage: "partial",
+        },
+      };
+      await act(async () => responses[0]?.(response));
+      const history = within(dialog).getByRole("region", {
+        name: t.nativeIngestion.sendHistory,
+      });
+      expect(history.scrollTop).toBe(1000);
+      history.scrollTop = 200;
+      fireEvent.change(within(dialog).getByLabelText(t.sendAccount), {
+        target: { value: gmail },
+      });
+      expect(history.scrollTop).toBe(200);
+      fireEvent.change(within(dialog).getByLabelText(t.sendAccount), {
+        target: { value: otherGmail },
+      });
+      await waitFor(() => expect(responses).toHaveLength(2));
+      await act(async () => responses[1]?.(response));
+      expect(
+        within(dialog).getByRole("region", {
+          name: t.nativeIngestion.sendHistory,
+        }).scrollTop,
+      ).toBe(1000);
+      expect(sends).toHaveLength(0);
+    } finally {
+      height.mockRestore();
+    }
+  });
+
   test("confirmation previews the exact approved draft with a chronological two-sided conversation", async () => {
     readiness = {
       ...readiness,

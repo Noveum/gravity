@@ -1,3 +1,7 @@
+.contact-workspace {
+  container: contact-workspace / inline-size;
+}
+
 .contact-overview,
 .contact-draft-workspace {
   display: grid;
@@ -61,23 +65,23 @@
   max-height: 180px;
 }
 
-@media (min-width: 1100px) {
-  :is(.record-page, .inspector-expanded) .contact-overview {
+@container contact-workspace (min-width: 800px) {
+  .contact-overview {
     grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
     align-items: start;
   }
 
-  :is(.record-page, .inspector-expanded) .contact-overview-support {
+  .contact-overview-support {
     grid-column: 2;
     grid-row: 1 / span 2;
   }
 
-  :is(.record-page, .inspector-expanded) .contact-overview-drafts {
+  .contact-overview-drafts {
     grid-column: 1;
   }
 
-  :is(.record-page, .inspector-expanded) .contact-draft-workspace {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  .contact-draft-workspace:not(:has(> .conversation-history[data-empty])) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
   }
 }

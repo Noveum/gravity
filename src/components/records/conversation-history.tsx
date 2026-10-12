@@ -40,6 +40,7 @@ export function ConversationHistory({
   const pending = useRef(false);
   const scroll = useRef<HTMLDivElement>(null);
   const previousScrollScope = useRef<string | null>(null);
+  const oldestVisibleId = useRef<string | undefined>(undefined);
   const followLatest = useRef(true);
   const preserveScroll = useRef<{ height: number; top: number } | null>(null);
   const rememberScroll = () => {
@@ -102,7 +103,6 @@ export function ConversationHistory({
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
-  const visible = all ? filtered : filtered.slice(0, 8);
   const scrollScope = JSON.stringify([
     context?.relationship.organizationId,
     context?.relationship.productId,
@@ -110,8 +110,25 @@ export function ConversationHistory({
     search,
     channel,
   ]);
+  // Incoming messages must not evict the message being read from the latest-eight window.
+  // Keep only its boundary ID; every rendered body still comes from the current authorized data.
+  const retainedIndex =
+    previousScrollScope.current === scrollScope &&
+    !followLatest.current &&
+    !preserveScroll.current
+      ? filtered.findIndex((message) => message.id === oldestVisibleId.current)
+      : -1;
+  const visible = all
+    ? filtered
+    : filtered.slice(0, Math.max(8, retainedIndex + 1));
   useLayoutEffect(() => {
-    if (!scroll.current) return;
+    if (!scroll.current) {
+      previousScrollScope.current = null;
+      oldestVisibleId.current = undefined;
+      followLatest.current = true;
+      preserveScroll.current = null;
+      return;
+    }
     if (previousScrollScope.current !== scrollScope) {
       scroll.current.scrollTop = scroll.current.scrollHeight;
       previousScrollScope.current = scrollScope;
@@ -126,6 +143,7 @@ export function ConversationHistory({
         scroll.current.clientHeight -
         scroll.current.scrollTop <=
       1;
+    oldestVisibleId.current = visible.at(-1)?.id;
     preserveScroll.current = null;
   });
   const filters = (
@@ -166,38 +184,42 @@ export function ConversationHistory({
       className="conversation-history"
       aria-label={t.contactWorkspace.history}
       data-compact={compact || undefined}
+      data-empty={!messages.length || undefined}
     >
       <div className="section-heading">
         <h3>{t.contactWorkspace.history}</h3>
         <span className="muted">{messages.length}</span>
       </div>
-      {compact ? (
-        <details className="conversation-history-filters">
-          <summary>{t.filters}</summary>
-          {filters}
-        </details>
-      ) : (
-        filters
+      {!!messages.length &&
+        (compact ? (
+          <details className="conversation-history-filters">
+            <summary>{t.filters}</summary>
+            {filters}
+          </details>
+        ) : (
+          filters
+        ))}
+      {!!visible.length && (
+        <div
+          className="conversation-history-scroll"
+          ref={scroll}
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: The scrollable history needs keyboard focus so arrow keys can reach earlier messages.
+          tabIndex={0}
+          onScroll={(event) => {
+            const element = event.currentTarget;
+            followLatest.current =
+              element.scrollHeight - element.clientHeight - element.scrollTop <=
+              1;
+          }}
+        >
+          <ConversationThread
+            messages={visible}
+            timeZone={timeZone}
+            personName={person?.name}
+            compact={compact}
+          />
+        </div>
       )}
-      <div
-        className="conversation-history-scroll"
-        ref={scroll}
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: The scrollable history needs keyboard focus so arrow keys can reach earlier messages.
-        tabIndex={0}
-        onScroll={(event) => {
-          const element = event.currentTarget;
-          followLatest.current =
-            element.scrollHeight - element.clientHeight - element.scrollTop <=
-            1;
-        }}
-      >
-        <ConversationThread
-          messages={visible}
-          timeZone={timeZone}
-          personName={person?.name}
-          compact={compact}
-        />
-      </div>
       {!filtered.length && (
         <p className="muted">
           {messages.length

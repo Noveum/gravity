@@ -232,6 +232,9 @@ test("same-thread refreshes and incoming messages preserve the reader's position
   const scroller = historyScroller(mounted.container);
   scroller.scrollTop = 200;
   fireEvent.scroll(scroller);
+  const bodyAtViewportTop = () =>
+    bodies(mounted.container)[Math.floor(scroller.scrollTop / 100)];
+  expect(bodyAtViewportTop()).toBe("Fictional message 4");
   mounted.rerender(
     <ConversationHistory
       context={{ ...fixture, asOf: "2026-10-12T01:00:00.000Z" }}
@@ -239,6 +242,7 @@ test("same-thread refreshes and incoming messages preserve the reader's position
     />,
   );
   expect(scroller.scrollTop).toBe(200);
+  expect(bodyAtViewportTop()).toBe("Fictional message 4");
   mounted.rerender(
     <ConversationHistory
       context={{
@@ -250,6 +254,124 @@ test("same-thread refreshes and incoming messages preserve the reader's position
     />,
   );
   expect(scroller.scrollTop).toBe(200);
+  expect(bodyAtViewportTop()).toBe("Fictional message 4");
+  expect(bodies(mounted.container)).toEqual(
+    Array.from({ length: 9 }, (_, index) => `Fictional message ${index + 2}`),
+  );
+  mounted.rerender(
+    <ConversationHistory
+      context={{
+        ...fixture,
+        asOf: "2026-10-12T03:00:00.000Z",
+        messages: [message(11), message(10), ...fixture.messages],
+      }}
+      timeZone="UTC"
+    />,
+  );
+  expect(bodyAtViewportTop()).toBe("Fictional message 4");
+  expect(bodies(mounted.container)[0]).toBe("Fictional message 2");
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: t.contactWorkspace.showAll.replace("{count}", "12"),
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: t.contactWorkspace.showLess }),
+  );
+  expect(bodies(mounted.container)).toEqual(
+    Array.from({ length: 8 }, (_, index) => `Fictional message ${index + 4}`),
+  );
+});
+
+test("a retained reading window uses only messages still present in the authorized context", async () => {
+  const fixture = await context();
+  const mounted = render(
+    <ConversationHistory context={fixture} timeZone="UTC" />,
+  );
+  const scroller = historyScroller(mounted.container);
+  scroller.scrollTop = 200;
+  fireEvent.scroll(scroller);
+  mounted.rerender(
+    <ConversationHistory
+      context={{
+        ...fixture,
+        asOf: "2026-10-12T01:00:00.000Z",
+        messages: [message(10), ...fixture.messages],
+      }}
+      timeZone="UTC"
+    />,
+  );
+  expect(screen.getByText("Fictional message 2")).toBeTruthy();
+  mounted.rerender(
+    <ConversationHistory
+      context={{
+        ...fixture,
+        asOf: "2026-10-12T02:00:00.000Z",
+        messages: [message(10), ...fixture.messages.slice(0, 7)],
+      }}
+      timeZone="UTC"
+    />,
+  );
+  expect(screen.queryByText("Fictional message 2")).toBeNull();
+  expect(bodies(mounted.container)).toHaveLength(8);
+});
+
+test("a reader at the newest message keeps the latest-eight limit as messages arrive", async () => {
+  const fixture = await context();
+  const mounted = render(
+    <ConversationHistory context={fixture} timeZone="UTC" />,
+  );
+  const scroller = historyScroller(mounted.container);
+  scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
+  fireEvent.scroll(scroller);
+  mounted.rerender(
+    <ConversationHistory
+      context={{
+        ...fixture,
+        asOf: "2026-10-12T01:00:00.000Z",
+        messages: [message(10), ...fixture.messages],
+      }}
+      timeZone="UTC"
+    />,
+  );
+  expect(bodies(mounted.container)).toEqual(
+    Array.from({ length: 8 }, (_, index) => `Fictional message ${index + 3}`),
+  );
+  expect(scroller.scrollTop).toBe(600);
+});
+
+test("empty history omits filters and the empty keyboard stop while keeping coverage and paging", async () => {
+  const fixture = await context();
+  const mounted = render(
+    <ConversationHistory
+      context={{ ...fixture, messages: [] }}
+      timeZone="UTC"
+      compact
+    />,
+  );
+  expect(
+    screen.getByRole("heading", { name: t.contactWorkspace.history }),
+  ).toBeTruthy();
+  expect(screen.getByText(t.noMessages)).toBeTruthy();
+  expect(screen.getByText(t.partialHistory)).toBeTruthy();
+  expect(screen.queryByLabelText(t.contactWorkspace.searchHistory)).toBeNull();
+  expect(mounted.container.querySelector("details")).toBeNull();
+  expect(
+    mounted.container.querySelector(".conversation-history-scroll"),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: t.nativeIngestion.loadEarlier }),
+  ).toBeTruthy();
+  mounted.rerender(<ConversationHistory context={fixture} timeZone="UTC" />);
+  fireEvent.change(screen.getByLabelText(t.contactWorkspace.searchHistory), {
+    target: { value: "missing phrase" },
+  });
+  expect(screen.getByText(t.contactWorkspace.noMatchingHistory)).toBeTruthy();
+  expect(screen.getByLabelText(t.contactWorkspace.searchHistory)).toBeTruthy();
+  expect(screen.getByLabelText(t.channel)).toBeTruthy();
+  expect(
+    mounted.container.querySelector(".conversation-history-scroll"),
+  ).toBeNull();
 });
 
 test("incoming messages follow the newest message when the reader is already at the bottom", async () => {

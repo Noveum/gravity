@@ -61,6 +61,28 @@ function bodies(container: HTMLElement) {
   );
 }
 
+function historyScroller(container: HTMLElement) {
+  const element = container.querySelector<HTMLElement>(
+    ".conversation-history-scroll",
+  );
+  if (!element) throw new Error("Missing local conversation scroller");
+  let top = 0;
+  Object.defineProperties(element, {
+    clientHeight: { get: () => 200 },
+    scrollHeight: { get: () => bodies(container).length * 100 },
+    scrollTop: {
+      get: () => top,
+      set: (value: number) => {
+        top = Math.max(
+          0,
+          Math.min(value, element.scrollHeight - element.clientHeight),
+        );
+      },
+    },
+  });
+  return element;
+}
+
 test("thread reads oldest to newest with two sides and compact times while retaining precise instants", () => {
   const messages: ConversationThreadMessage[] = [
     {
@@ -202,6 +224,100 @@ test("history keeps the latest eight, search, channel filtering and import dedup
   expect(screen.getByText(t.contactWorkspace.noMatchingHistory)).toBeTruthy();
 });
 
+test("same-thread refreshes and incoming messages preserve the reader's position in earlier history", async () => {
+  const fixture = await context();
+  const mounted = render(
+    <ConversationHistory context={fixture} timeZone="UTC" />,
+  );
+  const scroller = historyScroller(mounted.container);
+  scroller.scrollTop = 200;
+  fireEvent.scroll(scroller);
+  mounted.rerender(
+    <ConversationHistory
+      context={{ ...fixture, asOf: "2026-10-12T01:00:00.000Z" }}
+      timeZone="UTC"
+    />,
+  );
+  expect(scroller.scrollTop).toBe(200);
+  mounted.rerender(
+    <ConversationHistory
+      context={{
+        ...fixture,
+        asOf: "2026-10-12T02:00:00.000Z",
+        messages: [message(10), ...fixture.messages],
+      }}
+      timeZone="UTC"
+    />,
+  );
+  expect(scroller.scrollTop).toBe(200);
+});
+
+test("incoming messages follow the newest message when the reader is already at the bottom", async () => {
+  const fixture = await context();
+  fixture.messages = fixture.messages.slice(0, 6);
+  const mounted = render(
+    <ConversationHistory context={fixture} timeZone="UTC" />,
+  );
+  const scroller = historyScroller(mounted.container);
+  scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
+  fireEvent.scroll(scroller);
+  expect(scroller.scrollTop).toBe(400);
+  mounted.rerender(
+    <ConversationHistory
+      context={{
+        ...fixture,
+        asOf: "2026-10-12T01:00:00.000Z",
+        messages: [message(10), ...fixture.messages],
+      }}
+      timeZone="UTC"
+    />,
+  );
+  expect(scroller.scrollTop).toBe(500);
+});
+
+test.each(["organizationId", "productId", "id"] as const)(
+  "changing thread %s starts at the newest message",
+  async (field) => {
+    const fixture = await context();
+    const mounted = render(
+      <ConversationHistory context={fixture} timeZone="UTC" />,
+    );
+    const scroller = historyScroller(mounted.container);
+    scroller.scrollTop = 200;
+    fireEvent.scroll(scroller);
+    mounted.rerender(
+      <ConversationHistory
+        context={{
+          ...fixture,
+          relationship: { ...fixture.relationship, [field]: demoId(999) },
+        }}
+        timeZone="UTC"
+      />,
+    );
+    expect(scroller.scrollTop).toBe(600);
+  },
+);
+
+test("changing history search or channel starts at the newest matching message", async () => {
+  const fixture = await context();
+  const mounted = render(
+    <ConversationHistory context={fixture} timeZone="UTC" />,
+  );
+  const scroller = historyScroller(mounted.container);
+  scroller.scrollTop = 200;
+  fireEvent.scroll(scroller);
+  fireEvent.change(screen.getByLabelText(t.contactWorkspace.searchHistory), {
+    target: { value: "message" },
+  });
+  expect(scroller.scrollTop).toBe(600);
+  scroller.scrollTop = 200;
+  fireEvent.scroll(scroller);
+  fireEvent.change(screen.getByLabelText(t.channel), {
+    target: { value: "gmail" },
+  });
+  expect(scroller.scrollTop).toBe(300);
+});
+
 test("loading earlier keeps organization and product scope, deduplicates pages and preserves local scroll", async () => {
   const fixture = await context();
   const older = {
@@ -218,14 +334,9 @@ test("loading earlier keeps organization and product scope, deduplicates pages a
   const mounted = render(
     <ConversationHistory context={fixture} timeZone="UTC" />,
   );
-  const scroller = mounted.container.querySelector<HTMLElement>(
-    ".conversation-history-scroll",
-  );
-  if (!scroller) throw new Error("Missing local conversation scroller");
-  Object.defineProperty(scroller, "scrollHeight", {
-    get: () => bodies(mounted.container).length * 100,
-  });
+  const scroller = historyScroller(mounted.container);
   scroller.scrollTop = 200;
+  fireEvent.scroll(scroller);
   await act(async () =>
     fireEvent.click(
       screen.getByRole("button", { name: t.nativeIngestion.loadEarlier }),

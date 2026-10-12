@@ -233,7 +233,12 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
   const { busy, mutate, send, organizationId, userId, personFor, timeZone } =
     useCrm();
   const [sending, setSending] = useState(false);
-  const [scheduleZone, setScheduleZone] = useState<string | null>(null);
+  const [schedule, setSchedule] = useState<{
+    actionId: string;
+    version: number;
+    dueAt: string;
+    timeZone: string;
+  } | null>(null);
   const dirty = draft.draft !== action.draft;
   const stale = draft.version !== action.version;
   const sendableAction =
@@ -363,7 +368,14 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
           <button
             type="button"
             disabled={busy || dirty || stale || !draft.draft.trim()}
-            onClick={() => setScheduleZone(timeZone)}
+            onClick={() =>
+              setSchedule({
+                actionId: action.id,
+                version: draft.version,
+                dueAt: action.dueAt,
+                timeZone,
+              })
+            }
           >
             <CalendarClock size={15} aria-hidden="true" />
             {t.draftFlow.schedule}
@@ -400,11 +412,11 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
           onSent={() => setSending(false)}
         />
       )}
-      {scheduleZone !== null && (
+      {schedule !== null && (
         <RecordDialog
           title={t.draftFlow.scheduleTitle}
           submitLabel={t.draftFlow.schedule}
-          onClose={() => setScheduleZone(null)}
+          onClose={() => setSchedule(null)}
           onSubmit={async (fields) => {
             const dueAt = instantFromZonedInput(
               String(fields.get("dueAt") ?? ""),
@@ -415,7 +427,13 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
               {
                 operation: "plan",
                 organizationId,
-                items: [{ actionId: action.id, version: draft.version, dueAt }],
+                items: [
+                  {
+                    actionId: schedule.actionId,
+                    version: schedule.version,
+                    dueAt,
+                  },
+                ],
               },
               false,
               false,
@@ -431,7 +449,11 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
               data-primary-field
               type="datetime-local"
               step="0.001"
-              defaultValue={zonedInputValue(action.dueAt, timeZone, true)}
+              defaultValue={zonedInputValue(
+                schedule.dueAt,
+                schedule.timeZone,
+                true,
+              )}
               required
             />
           </label>
@@ -439,18 +461,22 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
             {t.timezone}
             <select
               name="timeZone"
-              value={scheduleZone}
-              onChange={(event) => setScheduleZone(event.target.value)}
+              value={schedule.timeZone}
+              onChange={(event) =>
+                setSchedule({ ...schedule, timeZone: event.target.value })
+              }
             >
-              {[...new Set([timeZone, "UTC"])].map((zone) => (
-                <option key={zone} value={zone}>
-                  {zone}
-                </option>
-              ))}
+              {[...new Set([timeZone, schedule.timeZone, "UTC"])].map(
+                (zone) => (
+                  <option key={zone} value={zone}>
+                    {zone}
+                  </option>
+                ),
+              )}
             </select>
           </label>
           <p className="field-hint">
-            {t.nativeIngestion.zone.replace("{zone}", scheduleZone)}
+            {t.nativeIngestion.zone.replace("{zone}", schedule.timeZone)}
           </p>
         </RecordDialog>
       )}

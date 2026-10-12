@@ -1,11 +1,18 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { eq } from "drizzle-orm";
 import { expect, test, vi } from "vitest";
 import { NativeIngestionService } from "../packages/core/native-ingestion";
 import * as s from "../packages/database/schema";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { dateLabel, requestJson } from "../src/components/client-api";
 import { installCrmHarness, mountCrm, principal } from "./support/crm-harness";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
@@ -16,6 +23,130 @@ vi.mock("../src/components/client-api", async (importOriginal) => ({
 }));
 
 const harness = installCrmHarness();
+
+test.each(["success", "failure"])(
+  "leaving native draft review ignores its late %s response",
+  async (outcome) => {
+    await new NativeIngestionService(harness.local.db).draft(principal, {
+      organizationId: demoId(1),
+      productId: demoId(10),
+      relationshipId: demoId(300),
+      channel: "linkedin",
+      sourceId: "fictional-late-review",
+      title: "Fictional late review",
+      reason: "",
+      body: "A fictional draft with a delayed review response.",
+    });
+    await mountCrm(
+      harness,
+      `/people/${demoId(200)}?relationship=${demoId(300)}`,
+    );
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = vi.mocked(requestJson).getMockImplementation();
+    if (!original) throw new Error("Missing CRM harness");
+    let preparation: Promise<unknown> | undefined;
+    vi.mocked(requestJson).mockImplementation((url, init) => {
+      if (
+        init?.method === "POST" &&
+        JSON.parse(String(init.body)).operation === "schedule-native-draft"
+      ) {
+        preparation = (async () => {
+          await pending;
+          if (outcome === "failure") throw new Error("NETWORK_ERROR");
+          return original(url, init);
+        })();
+        return preparation;
+      }
+      return original(url, init);
+    });
+    const library = await screen.findByRole("region", {
+      name: t.nativeIngestion.title,
+    });
+    fireEvent.click(
+      await within(library).findByRole("button", { name: t.draftFlow.send }),
+    );
+    fireEvent.click(
+      screen.getByRole("tab", { name: t.contactWorkspace.context }),
+    );
+    expect(
+      screen.queryByRole("region", { name: t.nativeIngestion.title }),
+    ).toBeNull();
+    const snapshotCalls = () =>
+      vi
+        .mocked(requestJson)
+        .mock.calls.filter(([url]) =>
+          String(url).startsWith(
+            `/api/crm?organizationId=${demoId(1)}&compact=true`,
+          ),
+        ).length;
+    const priorSnapshots = snapshotCalls();
+    await act(async () => {
+      release();
+      await preparation?.catch(() => undefined);
+    });
+    expect(snapshotCalls()).toBe(priorSnapshots);
+    expect(
+      screen
+        .getByRole("tab", { name: t.contactWorkspace.context })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(window.location.search).not.toContain("action=");
+    expect(screen.queryByText(t.errors.NETWORK_ERROR)).toBeNull();
+    expect(harness.posts.map((post) => post.operation)).toEqual(
+      outcome === "success" ? ["schedule-native-draft"] : [],
+    );
+  },
+);
+
+test("an open action scheduler keeps its original version after a live reschedule", async () => {
+  await mountCrm(
+    harness,
+    `/people/${demoId(202)}?relationship=${demoId(302)}&action=${demoId(602)}`,
+  );
+  fireEvent.click(await screen.findByRole("tab", { name: t.draft }));
+  fireEvent.click(screen.getByRole("button", { name: t.draftFlow.schedule }));
+  const scheduler = await screen.findByRole("dialog", {
+    name: t.draftFlow.scheduleTitle,
+  });
+  const dateInput = within(scheduler).getByLabelText(t.nativeIngestion.dueAt);
+  fireEvent.change(dateInput, { target: { value: "2026-11-02T10:30" } });
+  const [before] = await harness.local.db
+    .select()
+    .from(s.actions)
+    .where(eq(s.actions.id, demoId(602)));
+  const externalDueAt = "2026-11-03T11:45:00.000Z";
+  await harness.service.planActions(principal, {
+    organizationId: demoId(1),
+    items: [
+      { actionId: before.id, version: before.version, dueAt: externalDueAt },
+    ],
+  });
+  fireEvent.focus(window);
+  await screen.findByText(
+    t.draftFlow.scheduledFor.replace("{date}", dateLabel(externalDueAt, "UTC")),
+  );
+  expect(dateInput).toHaveProperty("value", "2026-11-02T10:30");
+  fireEvent.click(
+    within(scheduler).getByRole("button", { name: t.draftFlow.schedule }),
+  );
+  await waitFor(() => expect(harness.posts).toHaveLength(1));
+  expect(harness.posts).toMatchObject([
+    {
+      operation: "plan",
+      items: [{ actionId: before.id, version: before.version }],
+    },
+  ]);
+  expect(await within(scheduler).findByText(t.errors.CONFLICT)).toBeTruthy();
+  const [stored] = await harness.local.db
+    .select()
+    .from(s.actions)
+    .where(eq(s.actions.id, before.id));
+  expect(stored.dueAt.toISOString()).toBe(externalDueAt);
+  expect(stored.version).toBe(before.version + 1);
+});
 
 test("scheduling a saved action keeps its draft and removes approval without dispatch", async () => {
   await harness.local.db

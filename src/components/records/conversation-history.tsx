@@ -40,6 +40,7 @@ export function ConversationHistory({
   const pending = useRef(false);
   const scroll = useRef<HTMLDivElement>(null);
   const previousScrollScope = useRef<string | null>(null);
+  const followLatest = useRef(true);
   const preserveScroll = useRef<{ height: number; top: number } | null>(null);
   const rememberScroll = () => {
     if (scroll.current)
@@ -102,7 +103,13 @@ export function ConversationHistory({
         .includes(search.toLowerCase()),
   );
   const visible = all ? filtered : filtered.slice(0, 8);
-  const scrollScope = JSON.stringify([scope || person?.id, search, channel]);
+  const scrollScope = JSON.stringify([
+    context?.relationship.organizationId,
+    context?.relationship.productId,
+    context?.relationship.id ?? person?.id,
+    search,
+    channel,
+  ]);
   useLayoutEffect(() => {
     if (!scroll.current) return;
     if (previousScrollScope.current !== scrollScope) {
@@ -111,7 +118,14 @@ export function ConversationHistory({
     } else if (preserveScroll.current) {
       const { height, top } = preserveScroll.current;
       scroll.current.scrollTop = top + scroll.current.scrollHeight - height;
+    } else if (followLatest.current) {
+      scroll.current.scrollTop = scroll.current.scrollHeight;
     }
+    followLatest.current =
+      scroll.current.scrollHeight -
+        scroll.current.clientHeight -
+        scroll.current.scrollTop <=
+      1;
     preserveScroll.current = null;
   });
   const filters = (
@@ -165,8 +179,18 @@ export function ConversationHistory({
       ) : (
         filters
       )}
-      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: The scrollable history needs keyboard focus so arrow keys can reach earlier messages. */}
-      <div className="conversation-history-scroll" ref={scroll} tabIndex={0}>
+      <div
+        className="conversation-history-scroll"
+        ref={scroll}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: The scrollable history needs keyboard focus so arrow keys can reach earlier messages.
+        tabIndex={0}
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          followLatest.current =
+            element.scrollHeight - element.clientHeight - element.scrollTop <=
+            1;
+        }}
+      >
         <ConversationThread
           messages={visible}
           timeZone={timeZone}

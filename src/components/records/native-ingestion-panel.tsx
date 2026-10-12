@@ -52,6 +52,13 @@ export function NativeIngestionPanel({
   const requestKey = `${crm.organizationId}:${relationshipId}:${productId}:${generation}`;
   const activeKey = useRef(requestKey);
   activeKey.current = requestKey;
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const pending = useRef<AbortController | null>(null);
   const drafts = loaded.key === requestKey ? loaded.items : [];
   const error = loaded.key === requestKey ? loaded.error : "";
@@ -152,6 +159,7 @@ export function NativeIngestionPanel({
     if (preparingRef.current || crm.busy || !crm.canLeaveEditor()) return;
     preparingRef.current = true;
     setPreparing(draft.id);
+    const current = () => mounted.current && activeKey.current === requestKey;
     try {
       let actionId = draft.scheduledActionId;
       if (!actionId) {
@@ -173,19 +181,19 @@ export function NativeIngestionPanel({
         });
         actionId = result.actionId;
       }
+      if (!current()) return;
       await crm.refresh();
-      if (activeKey.current !== requestKey) return;
+      if (!current()) return;
       setGeneration((value) => value + 1);
       if (!crm.canLeaveEditor()) return;
       if (onAction) onAction(relationshipId, actionId);
       else crm.openPerson(relationshipId, actionId);
       crm.setTab("draft");
     } catch (cause) {
-      if (activeKey.current === requestKey)
-        crm.notify(errorText(cause, crm.timeZone), "danger");
+      if (current()) crm.notify(errorText(cause, crm.timeZone), "danger");
     } finally {
       preparingRef.current = false;
-      setPreparing("");
+      if (mounted.current) setPreparing("");
     }
   }
   async function submit(fields: FormData) {

@@ -463,6 +463,19 @@ test("contact preparation separates notes, conversations, context and properties
   await page.setViewportSize({ width: 700, height: 900 });
   await expect(notes).toBeVisible();
   await expect(inspector).toBeVisible();
+  const supportingWork = inspector.getByRole("heading", {
+    name: t.actions,
+    exact: true,
+  });
+  const narrowHistoryBox = await history.boundingBox();
+  const narrowWorkBox = await supportingWork.boundingBox();
+  const narrowNotesBox = await notes.boundingBox();
+  if (!narrowHistoryBox || !narrowWorkBox || !narrowNotesBox)
+    throw new Error("Missing narrow preparation layout");
+  expect(narrowWorkBox.y).toBeGreaterThan(
+    narrowHistoryBox.y + narrowHistoryBox.height,
+  );
+  expect(narrowNotesBox.y).toBeGreaterThan(narrowWorkBox.y);
   await page.screenshot({
     animations: "disabled",
     path: ".data/contact-preparation-narrow.png",
@@ -470,12 +483,14 @@ test("contact preparation separates notes, conversations, context and properties
   await page.setViewportSize({ width: 1280, height: 900 });
 
   await inspector.getByRole("button", { name: t.expandInspector }).click();
+  const historyBox = await history.boundingBox();
   const notesBox = await notes.boundingBox();
-  const workBox = await inspector
-    .getByRole("heading", { name: t.actions, exact: true })
-    .boundingBox();
-  if (!notesBox || !workBox) throw new Error("Missing preparation layout");
-  expect(workBox.x).toBeGreaterThan(notesBox.x + notesBox.width);
+  const workBox = await supportingWork.boundingBox();
+  if (!historyBox || !notesBox || !workBox)
+    throw new Error("Missing preparation layout");
+  expect(workBox.x).toBeGreaterThan(historyBox.x + historyBox.width);
+  expect(notesBox.x).toBeGreaterThan(historyBox.x + historyBox.width);
+  expect(notesBox.y).toBeGreaterThan(workBox.y);
   await page.screenshot({
     animations: "disabled",
     path: ".data/contact-preparation-expanded.png",

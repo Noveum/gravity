@@ -1,8 +1,9 @@
 "use client";
+import { instantFromZonedInput, zonedInputValue } from "@crm/core/calendar";
 import type { ClientContext, ClientSnapshot } from "@crm/core/dto";
 import { shortcutFor } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
-import { Check } from "lucide-react";
+import { CalendarClock, Check, Send } from "lucide-react";
 import { useState } from "react";
 import { dateLabel, label } from "../client-api";
 import { type RecordTab, useCrm } from "../crm/crm-context";
@@ -16,8 +17,10 @@ import { PersonFields } from "./contact-fields";
 import { ConversationHistory } from "./conversation-history";
 import { ConversationSharing } from "./conversation-sharing";
 import { NativeIngestionPanel } from "./native-ingestion-panel";
+import { RecordDialog } from "./record-dialog";
 import { RelationshipContext } from "./relationship-context";
 import { YoduLifecyclePanel } from "./yodu-lifecycle";
+import "./draft-panels.css";
 
 type Action = ClientSnapshot["actions"][number];
 type DraftState = ReturnType<typeof useDraft>;
@@ -220,15 +223,19 @@ export function PersonActivity({
         </>
       )}
       {current === "draft" && action && (
-        <DraftPanel action={action} draft={draft} />
+        <DraftPanel key={action.id} action={action} draft={draft} />
       )}
     </>
   );
 }
 
 function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
-  const { busy, mutate, organizationId, userId, personFor } = useCrm();
+  const { busy, mutate, send, organizationId, userId, personFor, timeZone } =
+    useCrm();
   const [sending, setSending] = useState(false);
+  const [scheduleZone, setScheduleZone] = useState<string | null>(null);
+  const dirty = draft.draft !== action.draft;
+  const stale = draft.version !== action.version;
   const sendableAction =
     ["reply", "approval", "commitment"].includes(action.kind) &&
     action.owedBy === "us";
@@ -251,7 +258,13 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
     });
   return (
     <div className="draft-panel">
-      <h3>{action.title}</h3>
+      <header className="draft-panel-heading">
+        <div>
+          <span className="draft-eyebrow">{t.draftFlow.reply}</span>
+          <h3>{action.title}</h3>
+        </div>
+        <span className="badge">{label(action.channel)}</span>
+      </header>
       {action.status === "blocked" && (
         <p className="callout warning-text">{t.blockedDetail}</p>
       )}
@@ -267,7 +280,8 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
         onKeyDown={(event) => {
           if (shortcutFor(keyInput(event), ["dialog"], true) === "save") {
             event.preventDefault();
-            event.currentTarget.parentElement
+            event.currentTarget
+              .closest(".draft-panel")
               ?.querySelector<HTMLButtonElement>(
                 "[data-save-draft]:not(:disabled)",
               )
@@ -279,14 +293,24 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
         onChange={(event) => draft.edit(event.target.value)}
         rows={9}
       />
-      <div className="draft-state">
-        {draft.draft !== action.draft
-          ? t.draftChanged
-          : action.approvedHash
-            ? t.approved
-            : t.draft}
+      <div className="draft-editor-status">
+        <div className="draft-state" aria-live="polite">
+          {!dirty && <Check size={13} aria-hidden="true" />}
+          {dirty
+            ? t.draftChanged
+            : action.approvedHash
+              ? t.approved
+              : t.draftFlow.saved}
+        </div>
+        <span className="draft-scheduled-date">
+          <CalendarClock size={13} aria-hidden="true" />
+          {t.draftFlow.scheduledFor.replace(
+            "{date}",
+            dateLabel(action.dueAt, timeZone),
+          )}
+        </span>
       </div>
-      {draft.version !== action.version && (
+      {stale && (
         <div className="callout warning-text">
           {t.errors.CONFLICT}
           <button type="button" onClick={draft.reload}>
@@ -294,15 +318,12 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
           </button>
         </div>
       )}
-      <p className="muted">{t.approvalNote}</p>
-      <div className="button-row">
+      <div className="draft-save-actions">
         {action.status === "blocked" ? (
           <button
             type="button"
             className="primary"
-            disabled={
-              busy || !draft.draft.trim() || draft.draft === action.draft
-            }
+            disabled={busy || stale || !draft.draft.trim() || !dirty}
             onClick={() => change("rework", { draft: draft.draft })}
           >
             {t.rework}
@@ -312,37 +333,56 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
             <button
               data-save-draft
               type="button"
-              disabled={busy || draft.draft === action.draft}
+              disabled={busy || stale || !dirty}
               onClick={() => change("save", { draft: draft.draft })}
             >
               {t.saveDraft}
             </button>
-            <button
-              type="button"
-              className="primary"
-              disabled={
-                busy ||
-                !draft.draft.trim() ||
-                draft.draft !== action.draft ||
-                !!action.approvedHash
-              }
-              onClick={() => change("approve")}
-            >
-              {t.approveDraft}
-            </button>
-            {canSend && (
+            {!action.approvedHash && (
               <button
                 type="button"
                 className="primary"
-                disabled={busy}
-                onClick={() => setSending(true)}
+                disabled={
+                  busy ||
+                  stale ||
+                  !draft.draft.trim() ||
+                  dirty ||
+                  action.status !== "open"
+                }
+                onClick={() => change("approve")}
               >
-                {t.touchVerbs.send}
+                {t.approveDraft}
               </button>
             )}
           </>
         )}
       </div>
+      <p className="muted draft-approval-note">{t.approvalNote}</p>
+      {action.status === "open" && (
+        <div className="draft-next-actions">
+          <button
+            type="button"
+            disabled={busy || dirty || stale || !draft.draft.trim()}
+            onClick={() => setScheduleZone(timeZone)}
+          >
+            <CalendarClock size={15} aria-hidden="true" />
+            {t.draftFlow.schedule}
+          </button>
+          {sendableAction &&
+            (action.channel === "gmail" || action.channel === "linkedin") && (
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || !canSend}
+                title={!canSend ? t.draftFlow.sendHint : undefined}
+                onClick={() => setSending(true)}
+              >
+                <Send size={15} aria-hidden="true" />
+                {t.touchVerbs.send}
+              </button>
+            )}
+        </div>
+      )}
       <p className="coverage-note">
         {t.draftSaveHint} · {t.sendingNote}
       </p>
@@ -359,6 +399,60 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
           onClose={() => setSending(false)}
           onSent={() => setSending(false)}
         />
+      )}
+      {scheduleZone !== null && (
+        <RecordDialog
+          title={t.draftFlow.scheduleTitle}
+          submitLabel={t.draftFlow.schedule}
+          onClose={() => setScheduleZone(null)}
+          onSubmit={async (fields) => {
+            const dueAt = instantFromZonedInput(
+              String(fields.get("dueAt") ?? ""),
+              String(fields.get("timeZone") ?? ""),
+            );
+            if (!dueAt) return t.errors.INVALID_INPUT;
+            const result = await send(
+              {
+                operation: "plan",
+                organizationId,
+                items: [{ actionId: action.id, version: draft.version, dueAt }],
+              },
+              false,
+              false,
+            );
+            return result.ok ? null : (result.error ?? t.errors.INTERNAL_ERROR);
+          }}
+        >
+          <p className="field-hint">{t.draftFlow.scheduleHint}</p>
+          <label>
+            {t.nativeIngestion.dueAt}
+            <input
+              name="dueAt"
+              data-primary-field
+              type="datetime-local"
+              step="0.001"
+              defaultValue={zonedInputValue(action.dueAt, timeZone, true)}
+              required
+            />
+          </label>
+          <label>
+            {t.timezone}
+            <select
+              name="timeZone"
+              value={scheduleZone}
+              onChange={(event) => setScheduleZone(event.target.value)}
+            >
+              {[...new Set([timeZone, "UTC"])].map((zone) => (
+                <option key={zone} value={zone}>
+                  {zone}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="field-hint">
+            {t.nativeIngestion.zone.replace("{zone}", scheduleZone)}
+          </p>
+        </RecordDialog>
       )}
     </div>
   );

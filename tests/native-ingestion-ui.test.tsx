@@ -66,8 +66,9 @@ test("the person UI imports native history with an exact instant and private sou
   expect(message.occurredAt.toISOString()).toBe("2025-01-01T12:34:56.789Z");
   await waitFor(() =>
     expect(
-      document.querySelector('time[datetime="2025-01-01T12:34:56.789Z"]')
-        ?.textContent,
+      document
+        .querySelector('time[datetime="2025-01-01T12:34:56.789Z"]')
+        ?.getAttribute("title"),
     ).toContain("56.789"),
   );
 });

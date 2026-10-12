@@ -3,14 +3,19 @@ import { instantFromZonedInput } from "@crm/core/calendar";
 import type { JsonValue } from "@crm/core/dto";
 import type { NativeIngestionService } from "@crm/core/native-ingestion";
 import t from "@crm/i18n/translations/en.json";
+import { CalendarClock, Check, FilePenLine, Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorText, label, requestJson } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { RecordDialog } from "./record-dialog";
+import "./draft-panels.css";
 
 type Draft = JsonValue<Awaited<ReturnType<NativeIngestionService["draft"]>>>;
 type DraftPage = JsonValue<
   Awaited<ReturnType<NativeIngestionService["drafts"]>>
+>;
+type ScheduledDraft = JsonValue<
+  Awaited<ReturnType<NativeIngestionService["schedule"]>>
 >;
 type Editor = {
   kind: "history" | "draft" | "schedule";
@@ -23,12 +28,18 @@ const field = (fields: FormData, name: string) =>
 export function NativeIngestionPanel({
   relationshipId,
   productId,
+  onAction,
 }: {
   relationshipId: string;
   productId: string;
+  onAction?: (relationshipId: string, actionId: string) => void;
 }) {
   const crm = useCrm();
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [savedDraftId, setSavedDraftId] = useState("");
+  const [preparing, setPreparing] = useState("");
+  const preparingRef = useRef(false);
+  const sendDates = useRef(new Map<string, string>());
   const inputTimeZone = editor?.timeZone ?? crm.timeZone;
   const [loaded, setLoaded] = useState<{
     key: string;
@@ -137,6 +148,46 @@ export function NativeIngestionPanel({
     setGeneration((value) => value + 1);
     void crm.refresh();
   };
+  async function reviewAndSend(draft: Draft) {
+    if (preparingRef.current || crm.busy || !crm.canLeaveEditor()) return;
+    preparingRef.current = true;
+    setPreparing(draft.id);
+    try {
+      let actionId = draft.scheduledActionId;
+      if (!actionId) {
+        const key = `${draft.id}:${draft.version}`;
+        const dueAt = sendDates.current.get(key) ?? new Date().toISOString();
+        sendDates.current.set(key, dueAt);
+        const result = await requestJson<ScheduledDraft>("/api/crm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            operation: "schedule-native-draft",
+            organizationId: crm.organizationId,
+            relationshipId,
+            productId,
+            draftId: draft.id,
+            version: draft.version,
+            dueAt,
+          }),
+        });
+        actionId = result.actionId;
+      }
+      await crm.refresh();
+      if (activeKey.current !== requestKey) return;
+      setGeneration((value) => value + 1);
+      if (!crm.canLeaveEditor()) return;
+      if (onAction) onAction(relationshipId, actionId);
+      else crm.openPerson(relationshipId, actionId);
+      crm.setTab("draft");
+    } catch (cause) {
+      if (activeKey.current === requestKey)
+        crm.notify(errorText(cause, crm.timeZone), "danger");
+    } finally {
+      preparingRef.current = false;
+      setPreparing("");
+    }
+  }
   async function submit(fields: FormData) {
     if (!editor) return t.errors.INVALID_INPUT;
     const scope = {
@@ -192,11 +243,12 @@ export function NativeIngestionPanel({
       };
     }
     try {
-      await requestJson("/api/crm", {
+      const result = await requestJson<Draft>("/api/crm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
+      if (editor.kind === "draft") setSavedDraftId(result.id);
       changed();
       return null;
     } catch (cause) {
@@ -205,7 +257,7 @@ export function NativeIngestionPanel({
   }
   return (
     <section
-      className="conversation-history"
+      className="conversation-history native-draft-library"
       aria-label={t.nativeIngestion.title}
     >
       <div className="section-heading">
@@ -229,27 +281,48 @@ export function NativeIngestionPanel({
         </button>
       </div>
       {error && <p role="alert">{error}</p>}
-      {!drafts.length && !error && (
+      {!drafts.length && !error && loaded.key === requestKey && (
         <p className="muted">{t.nativeIngestion.noDrafts}</p>
       )}
       {drafts.map((draft) => (
-        <article className="conversation-card" key={draft.id}>
+        <article
+          className="native-draft-card"
+          data-saved={savedDraftId === draft.id || undefined}
+          key={draft.id}
+        >
           <header>
-            <strong>{draft.title}</strong>
-            <span>{label(draft.channel)}</span>
+            <div>
+              <span className="draft-eyebrow">
+                <FilePenLine size={13} aria-hidden="true" />
+                {savedDraftId === draft.id ? t.draftFlow.saved : t.draft}
+              </span>
+              <strong>{draft.title}</strong>
+            </div>
+            <span className="badge">{label(draft.channel)}</span>
           </header>
-          <p>{draft.body}</p>
-          {draft.reason && <p className="muted">{draft.reason}</p>}
-          <p className="muted">
+          <p className="native-draft-body">{draft.body}</p>
+          {draft.reason && (
+            <details className="native-draft-notes">
+              <summary>{t.draftFlow.notes}</summary>
+              <p>{draft.reason}</p>
+            </details>
+          )}
+          <p className="native-draft-status muted">
+            {draft.scheduledActionId ? (
+              <CalendarClock size={13} aria-hidden="true" />
+            ) : (
+              <Check size={13} aria-hidden="true" />
+            )}
             {draft.scheduledActionId
               ? t.nativeIngestion.scheduled
               : t.nativeIngestion.undated}
           </p>
           {!draft.scheduledActionId && (
-            <div className="record-actions">
+            <div className="native-draft-actions">
               <button
                 type="button"
                 className="small"
+                disabled={!!preparing || crm.busy}
                 onClick={() => setEditor({ kind: "draft", draft })}
               >
                 {t.nativeIngestion.edit}
@@ -257,11 +330,40 @@ export function NativeIngestionPanel({
               <button
                 type="button"
                 className="small"
+                disabled={!!preparing || crm.busy}
                 onClick={() => setEditor({ kind: "schedule", draft })}
               >
+                <CalendarClock size={14} aria-hidden="true" />
                 {t.nativeIngestion.schedule}
               </button>
+              <button
+                type="button"
+                className="small primary"
+                disabled={!!preparing || crm.busy}
+                title={t.draftFlow.sendHint}
+                onClick={() => void reviewAndSend(draft)}
+              >
+                <Send size={14} aria-hidden="true" />
+                {preparing === draft.id ? t.loading : t.draftFlow.send}
+              </button>
             </div>
+          )}
+          {draft.scheduledActionId && (
+            <div className="native-draft-actions">
+              <button
+                type="button"
+                className="small"
+                disabled={!!preparing || crm.busy}
+                onClick={() => void reviewAndSend(draft)}
+              >
+                {preparing === draft.id ? t.loading : t.draftFlow.reviewAndSend}
+              </button>
+            </div>
+          )}
+          {!draft.scheduledActionId && (
+            <p className="field-hint native-send-hint">
+              {t.draftFlow.sendHint}
+            </p>
           )}
         </article>
       ))}

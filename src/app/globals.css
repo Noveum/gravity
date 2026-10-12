@@ -911,7 +911,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
-  overflow: hidden;
+  /* Each pane scrolls independently; focusing a draft must not scroll this grid. */
+  overflow: clip;
   position: relative;
 }
 .workspace-content.with-inspector {

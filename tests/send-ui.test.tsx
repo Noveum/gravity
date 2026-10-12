@@ -95,6 +95,52 @@ async function openSendFromApproved() {
 }
 
 describe("sending an approved touch", () => {
+  test("confirmation previews the exact approved draft with a chronological two-sided conversation", async () => {
+    readiness = {
+      ...readiness,
+      approved: true,
+      draft:
+        "Subject: Fictional next step\n\nAn approved fictional reply.\n\nA second paragraph.",
+      history: {
+        messages: [
+          {
+            id: "fictional-recent-reply",
+            direction: "inbound",
+            channel: "gmail",
+            body: "Fictional incoming reply.",
+            occurredAt: "2026-01-02T12:05:00.000Z",
+          },
+          {
+            id: "fictional-original-message",
+            direction: "outbound",
+            channel: "gmail",
+            body: "Fictional original message.",
+            occurredAt: "2026-01-02T12:00:00.000Z",
+          },
+        ],
+        coverage: "partial",
+      },
+    };
+    const dialog = await openSendFromApproved();
+    const preview = await within(dialog).findByRole("region", {
+      name: t.draftFlow.messagePreview,
+    });
+    expect(preview.querySelector("p")?.textContent).toBe(readiness.draft);
+    const messages = dialog.querySelectorAll(".message-thread-row");
+    expect(
+      Array.from(messages, (message) => message.getAttribute("data-direction")),
+    ).toEqual(["outbound", "inbound"]);
+    expect(messages[0]?.textContent).toContain(t.outgoing);
+    expect(messages[1]?.textContent).toContain("Amara Stone");
+    const history = within(dialog).getByRole("region", {
+      name: t.nativeIngestion.sendHistory,
+    });
+    expect(history.tabIndex).toBe(0);
+    history.focus();
+    expect(document.activeElement).toBe(history);
+    expect(sends).toHaveLength(0);
+  });
+
   test("the confirmation names recipient, account and channel from readiness and a double click sends once", async () => {
     let release!: (value: typeof delivery) => void;
     const pending = new Promise<typeof delivery>((resolve) => {

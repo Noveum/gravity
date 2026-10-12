@@ -1,0 +1,220 @@
+.draft-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--gravity-border);
+  border-radius: var(--gravity-radius-xl);
+  background: var(--gravity-surface);
+}
+
+.draft-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--gravity-border-subtle);
+}
+
+.draft-panel-heading > div {
+  min-width: 0;
+}
+
+.draft-panel-heading h3 {
+  margin: 5px 0 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.draft-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--gravity-muted);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+}
+
+.draft-panel > textarea {
+  display: block;
+  width: 100%;
+  min-height: 240px;
+  padding: 18px;
+  border: 0;
+  border-radius: 0;
+  outline-offset: -3px;
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  resize: vertical;
+  background: var(--gravity-surface);
+}
+
+.draft-editor-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 18px;
+  border-block: 1px solid var(--gravity-border-subtle);
+  background: var(--gravity-surface-2);
+}
+
+.draft-editor-status .draft-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: var(--text-2xs);
+}
+
+.draft-scheduled-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--gravity-muted);
+  font-size: var(--text-2xs);
+}
+
+.draft-save-actions,
+.draft-next-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 18px 0;
+}
+
+.draft-save-actions > button {
+  font-size: var(--text-xs);
+}
+
+.draft-next-actions {
+  justify-content: flex-end;
+  padding-top: 14px;
+  border-top: 1px solid var(--gravity-border-subtle);
+}
+
+.draft-next-actions > button {
+  min-height: 34px;
+  padding-inline: 12px;
+}
+
+.draft-panel > .draft-approval-note,
+.draft-panel > .coverage-note {
+  margin: 0;
+  padding: 10px 18px 14px;
+  font-size: var(--text-2xs);
+}
+
+.draft-panel > .callout {
+  margin: 12px 18px;
+}
+
+.native-draft-library > .section-heading h3 {
+  font-size: var(--text-sm);
+}
+
+.native-draft-card {
+  margin-top: 14px;
+  border: 1px solid var(--gravity-border);
+  border-radius: var(--gravity-radius-xl);
+  background: var(--gravity-surface);
+  overflow: hidden;
+}
+
+.native-draft-card[data-saved] {
+  border-color: var(--gravity-accent);
+}
+
+.native-draft-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--gravity-border-subtle);
+}
+
+.native-draft-card > header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.native-draft-card > header strong {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.native-draft-card .native-draft-body {
+  margin: 0;
+  padding: 16px;
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.native-draft-notes {
+  padding: 0 16px 12px;
+  color: var(--gravity-muted);
+  font-size: var(--text-2xs);
+}
+
+.native-draft-notes summary {
+  cursor: pointer;
+}
+
+.native-draft-notes p {
+  margin: 10px 0 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.native-draft-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 0 16px 12px;
+  font-size: var(--text-2xs);
+}
+
+.native-draft-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--gravity-border-subtle);
+}
+
+.native-draft-actions > button:first-child:not(:last-child) {
+  margin-right: auto;
+}
+
+.native-draft-card .native-send-hint {
+  margin: 0;
+  padding: 0 16px 12px;
+  font-size: var(--text-2xs);
+}
+
+@media (max-width: 600px) {
+  .draft-panel-heading,
+  .draft-panel > textarea,
+  .draft-editor-status {
+    padding-inline: 14px;
+  }
+
+  .draft-next-actions > button {
+    flex: 1;
+    justify-content: center;
+  }
+}

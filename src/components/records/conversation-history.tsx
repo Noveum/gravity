@@ -1,36 +1,26 @@
 "use client";
-import { preciseDateLabel } from "@crm/core/calendar";
 import type { ClientContext, JsonValue } from "@crm/core/dto";
 import type { MessageHistoryService } from "@crm/core/message-history";
 import t from "@crm/i18n/translations/en.json";
-import {
-  ArrowDownLeft,
-  ArrowUpRight,
-  Mail,
-  MessageSquare,
-  MessagesSquare,
-} from "lucide-react";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { errorText, label, requestJson } from "../client-api";
+import { ConversationThread } from "./conversation-thread";
 import { splitImportedConversation } from "./imported-conversation";
-
-function paragraphs(body: string) {
-  let offset = 0;
-  return body.split(/\n\s*\n/).map((text) => {
-    const paragraph = { text, offset };
-    offset += text.length + 1;
-    return paragraph;
-  });
-}
 
 export function ConversationHistory({
   context,
   person,
   timeZone,
+  compact = false,
+  viewerId,
+  memberName,
 }: {
   context?: ClientContext;
   person?: ClientContext["person"];
   timeZone: string;
+  compact?: boolean;
+  viewerId?: string;
+  memberName?: (id: string) => string;
 }) {
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState("");
@@ -48,6 +38,16 @@ export function ConversationHistory({
   const [historyError, setHistoryError] = useState({ scope: "", message: "" });
   const error = historyError.scope === scope ? historyError.message : "";
   const pending = useRef(false);
+  const scroll = useRef<HTMLDivElement>(null);
+  const previousScrollScope = useRef<string | null>(null);
+  const preserveScroll = useRef<{ height: number; top: number } | null>(null);
+  const rememberScroll = () => {
+    if (scroll.current)
+      preserveScroll.current = {
+        height: scroll.current.scrollHeight,
+        top: scroll.current.scrollTop,
+      };
+  };
   const page = historyPage?.scope === scope ? historyPage.page : null;
   person = context?.person ?? person;
   const native = [
@@ -58,13 +58,20 @@ export function ConversationHistory({
       messages.findIndex((other) => other.id === message.id) === index,
   );
   const imported = splitImportedConversation(person?.summary ?? "").messages;
+  const senderFor = (conversationId: string) => {
+    const ownerId = context?.conversations?.find(
+      (conversation) => conversation.id === conversationId,
+    )?.ownerId;
+    if (ownerId && ownerId === viewerId) return t.you;
+    return (ownerId && memberName?.(ownerId)) || t.outgoing;
+  };
   const messages = [
     ...native.map((message) => ({
       ...message,
       sender:
         message.direction === "inbound"
           ? (person?.name ?? t.incoming)
-          : t.outgoing,
+          : senderFor(message.conversationId),
       sourceId: message.providerMessageId,
       native: message.provenance === "native",
       imported: false,
@@ -95,99 +102,77 @@ export function ConversationHistory({
         .includes(search.toLowerCase()),
   );
   const visible = all ? filtered : filtered.slice(0, 8);
+  const scrollScope = JSON.stringify([scope || person?.id, search, channel]);
+  useLayoutEffect(() => {
+    if (!scroll.current) return;
+    if (previousScrollScope.current !== scrollScope) {
+      scroll.current.scrollTop = scroll.current.scrollHeight;
+      previousScrollScope.current = scrollScope;
+    } else if (preserveScroll.current) {
+      const { height, top } = preserveScroll.current;
+      scroll.current.scrollTop = top + scroll.current.scrollHeight - height;
+    }
+    preserveScroll.current = null;
+  });
+  const filters = (
+    <div className="history-toolbar">
+      <input
+        type="search"
+        aria-label={t.contactWorkspace.searchHistory}
+        placeholder={t.contactWorkspace.searchHistory}
+        value={search}
+        onChange={(event) => {
+          setSearch(event.target.value);
+          setAll(false);
+        }}
+      />
+      <select
+        aria-label={t.channel}
+        value={channel}
+        onChange={(event) => {
+          setChannel(event.target.value);
+          setAll(false);
+        }}
+      >
+        <option value="">{t.contactWorkspace.allChannels}</option>
+        {[...new Set(messages.map((message) => message.channel))].map(
+          (value) => (
+            <option key={value} value={value}>
+              {value === "imported"
+                ? t.contactWorkspace.unknownChannel
+                : label(value)}
+            </option>
+          ),
+        )}
+      </select>
+    </div>
+  );
   return (
     <section
       className="conversation-history"
       aria-label={t.contactWorkspace.history}
+      data-compact={compact || undefined}
     >
       <div className="section-heading">
         <h3>{t.contactWorkspace.history}</h3>
         <span className="muted">{messages.length}</span>
       </div>
-      <div className="history-toolbar">
-        <input
-          type="search"
-          aria-label={t.contactWorkspace.searchHistory}
-          placeholder={t.contactWorkspace.searchHistory}
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-            setAll(false);
-          }}
+      {compact ? (
+        <details className="conversation-history-filters">
+          <summary>{t.filters}</summary>
+          {filters}
+        </details>
+      ) : (
+        filters
+      )}
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: The scrollable history needs keyboard focus so arrow keys can reach earlier messages. */}
+      <div className="conversation-history-scroll" ref={scroll} tabIndex={0}>
+        <ConversationThread
+          messages={visible}
+          timeZone={timeZone}
+          personName={person?.name}
+          compact={compact}
         />
-        <select
-          aria-label={t.channel}
-          value={channel}
-          onChange={(event) => {
-            setChannel(event.target.value);
-            setAll(false);
-          }}
-        >
-          <option value="">{t.contactWorkspace.allChannels}</option>
-          {[...new Set(messages.map((message) => message.channel))].map(
-            (value) => (
-              <option key={value} value={value}>
-                {value === "imported"
-                  ? t.contactWorkspace.unknownChannel
-                  : label(value)}
-              </option>
-            ),
-          )}
-        </select>
-      </div>
-      <div className="conversation-cards">
-        {visible.map((message) => (
-          <article
-            key={message.id}
-            className="conversation-card"
-            data-direction={message.direction}
-          >
-            <header>
-              <span className="conversation-channel">
-                {message.channel === "gmail" ? (
-                  <Mail size={15} />
-                ) : message.channel === "linkedin" ? (
-                  <MessagesSquare size={15} />
-                ) : (
-                  <MessageSquare size={15} />
-                )}
-                {message.channel === "imported"
-                  ? t.contactWorkspace.imported
-                  : label(message.channel)}
-              </span>
-              <time dateTime={message.occurredAt}>
-                {preciseDateLabel(message.occurredAt, timeZone)}
-              </time>
-            </header>
-            <div className="conversation-sender">
-              {message.direction === "inbound" ? (
-                <ArrowDownLeft size={14} />
-              ) : (
-                <ArrowUpRight size={14} />
-              )}
-              <strong>{message.sender}</strong>
-              {message.native && (
-                <span className="badge">{t.nativeIngestion.historySource}</span>
-              )}
-              <span>
-                {message.direction === "inbound" ? t.incoming : t.outgoing}
-              </span>
-            </div>
-            <div className="conversation-body">
-              {paragraphs(message.body).map((paragraph) => (
-                <p key={`${message.id}-${paragraph.offset}`}>
-                  {paragraph.text}
-                </p>
-              ))}
-            </div>
-            {message.sourceId && (
-              <details className="conversation-source">
-                <summary>{t.contactWorkspace.sourceDetails}</summary>
-                <code>{message.sourceId}</code>
-              </details>
-            )}
-          </article>
-        ))}
       </div>
       {!filtered.length && (
         <p className="muted">
@@ -200,7 +185,10 @@ export function ConversationHistory({
         <button
           type="button"
           className="small ghost"
-          onClick={() => setAll(!all)}
+          onClick={() => {
+            rememberScroll();
+            setAll(!all);
+          }}
         >
           {all
             ? t.contactWorkspace.showLess
@@ -231,6 +219,7 @@ export function ConversationHistory({
             try {
               const result = await requestJson<Page>(`/api/crm?${query}`);
               if (currentScope.current === scope) {
+                rememberScroll();
                 setHistoryPage({
                   scope,
                   page: {

@@ -4,17 +4,19 @@ import type {
   ConnectionOverview,
   PublicConnection,
 } from "@crm/connectors/service";
-import { preciseDateLabel } from "@crm/core/calendar";
 import type { JsonValue } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
+import { Send } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { errorText, label, RequestError, requestJson } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { useModalLifecycle } from "../modal-lifecycle";
+import { ConversationThread } from "../records/conversation-thread";
 import { personPath } from "../routes";
 import { ErrorState, LoadingState } from "../ui/states";
 import { gateReason } from "./touch-labels";
+import "./send-dialog.css";
 
 type Readiness = JsonValue<Awaited<ReturnType<OutboundService["readiness"]>>>;
 type Delivery = { id: string; status: string; errorCode: string | null };
@@ -36,10 +38,12 @@ function newIdempotencyKey() {
 
 function useSendConnections(channel: string, enabled: boolean) {
   const { organizationId } = useCrm();
+  const key = `${organizationId}:${channel}`;
   const [state, setState] = useState<{
+    key: string;
     connections: PublicConnection[] | null;
     error: string;
-  }>({ connections: null, error: "" });
+  }>({ key: "", connections: null, error: "" });
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
@@ -50,6 +54,7 @@ function useSendConnections(channel: string, enabled: boolean) {
       .then((overview) => {
         if (controller.signal.aborted) return;
         setState({
+          key,
           connections: overview.connections.filter(
             (connection) => connection.provider === providerFor(channel),
           ),
@@ -58,11 +63,11 @@ function useSendConnections(channel: string, enabled: boolean) {
       })
       .catch((error) => {
         if (!controller.signal.aborted)
-          setState({ connections: null, error: errorText(error) });
+          setState({ key, connections: null, error: errorText(error) });
       });
     return () => controller.abort();
-  }, [organizationId, channel, enabled]);
-  return state;
+  }, [organizationId, channel, enabled, key]);
+  return state.key === key ? state : { connections: null, error: "" };
 }
 
 function useReadiness(source: SendSource, connectionId: string) {
@@ -72,7 +77,13 @@ function useReadiness(source: SendSource, connectionId: string) {
     readiness: Readiness | null;
     error: string;
   }>({ key: "", readiness: null, error: "" });
-  const key = `${connectionId}:${source.version}`;
+  const key = JSON.stringify([
+    organizationId,
+    source.kind,
+    source.id,
+    source.version,
+    connectionId,
+  ]);
   useEffect(() => {
     if (!connectionId) return;
     const controller = new AbortController();
@@ -83,20 +94,25 @@ function useReadiness(source: SendSource, connectionId: string) {
       version: String(source.version),
       connectionId,
     });
-    const current = `${connectionId}:${source.version}`;
     requestJson<Readiness>(`/api/outreach?${query}`, {
       signal: controller.signal,
     })
       .then((readiness) => {
-        if (!controller.signal.aborted)
-          setState({ key: current, readiness, error: "" });
+        if (!controller.signal.aborted) setState({ key, readiness, error: "" });
       })
       .catch((error) => {
         if (!controller.signal.aborted)
-          setState({ key: current, readiness: null, error: errorText(error) });
+          setState({ key, readiness: null, error: errorText(error) });
       });
     return () => controller.abort();
-  }, [organizationId, source.kind, source.id, source.version, connectionId]);
+  }, [
+    organizationId,
+    source.kind,
+    source.id,
+    source.version,
+    connectionId,
+    key,
+  ]);
   return state.key === key ? state : { readiness: null, error: "" };
 }
 
@@ -268,24 +284,38 @@ export function SendDialog({
             ? t.sendReady
             : blockedReason(readiness)}
       </p>
+      {readiness?.draft && (
+        <section
+          className="send-message-preview"
+          aria-label={t.draftFlow.messagePreview}
+        >
+          <div className="section-heading">
+            <h3>{t.draftFlow.messagePreview}</h3>
+            {readiness.approved && <span className="badge">{t.approved}</span>}
+          </div>
+          <p>{readiness.draft}</p>
+        </section>
+      )}
       {readiness?.history && (
-        <details className="conversation-source" open>
-          <summary>{t.nativeIngestion.sendHistory}</summary>
+        <details className="send-history" open>
+          <summary>
+            {t.nativeIngestion.sendHistory}
+            <span className="badge">{readiness.history.messages.length}</span>
+          </summary>
           {readiness.history.messages.length ? (
-            readiness.history.messages.map((message) => (
-              <article className="conversation-card" key={message.id}>
-                <header>
-                  <span>
-                    {label(message.channel)} ·{" "}
-                    {message.direction === "inbound" ? t.incoming : t.outgoing}
-                  </span>
-                  <time dateTime={message.occurredAt}>
-                    {preciseDateLabel(message.occurredAt, crm.timeZone)}
-                  </time>
-                </header>
-                <p>{message.body.slice(0, 1000)}</p>
-              </article>
-            ))
+            <section
+              className="send-history-scroll"
+              aria-label={t.nativeIngestion.sendHistory}
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: The scrollable history needs keyboard focus so arrow keys can reach earlier messages.
+              tabIndex={0}
+            >
+              <ConversationThread
+                messages={readiness.history.messages}
+                personName={source.name}
+                timeZone={crm.timeZone}
+                compact
+              />
+            </section>
           ) : (
             <p className="muted">{t.nativeIngestion.noVisibleHistory}</p>
           )}
@@ -318,26 +348,33 @@ export function SendDialog({
         else onClose();
       }}
     >
-      <h2 id={titleId}>{t.sendTitle.replace("{name}", source.name)}</h2>
-      {body}
-      {error && (
-        <p role="alert">
-          {error}
-          {threadLinked && recipient && (
-            <>
-              {" "}
-              <Link
-                href={personPath(recipient.id, {
-                  relationshipId: source.relationshipId,
-                })}
-                onClick={onClose}
-              >
-                {t.openPersonRecord.replace("{name}", recipient.name)}
-              </Link>
-            </>
-          )}
-        </p>
-      )}
+      <header className="send-dialog-heading">
+        <span className="send-dialog-icon">
+          <Send size={20} aria-hidden />
+        </span>
+        <h2 id={titleId}>{t.sendTitle.replace("{name}", source.name)}</h2>
+      </header>
+      <div className="send-dialog-content">
+        {body}
+        {error && (
+          <p role="alert">
+            {error}
+            {threadLinked && recipient && (
+              <>
+                {" "}
+                <Link
+                  href={personPath(recipient.id, {
+                    relationshipId: source.relationshipId,
+                  })}
+                  onClick={onClose}
+                >
+                  {t.openPersonRecord.replace("{name}", recipient.name)}
+                </Link>
+              </>
+            )}
+          </p>
+        )}
+      </div>
       <div className="dialog-actions">
         <button
           ref={cancel}

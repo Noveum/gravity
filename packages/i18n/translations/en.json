@@ -2237,10 +2237,24 @@
     "imported": "Imported conversation",
     "unknownChannel": "Imported source",
     "sourceDetails": "Import details",
-    "notesHint": "Keep meeting preparation, decisions and personal reminders here. Conversation history appears below.",
+    "notesHint": "Keep meeting preparation, decisions and personal reminders here.",
     "newAction": "Add next action",
     "showAll": "Show all ({count})",
     "showLess": "Show less"
+  },
+  "draftFlow": {
+    "reply": "Your reply",
+    "saved": "Saved draft",
+    "schedule": "Schedule",
+    "scheduleTitle": "Schedule draft",
+    "scheduledFor": "Review scheduled for {date}",
+    "scheduleHint": "Choose when to review this draft. Scheduling never sends a message and clears any current approval.",
+    "send": "Send",
+    "sendHint": "Review and approve this draft before confirming the send.",
+    "reviewAndSend": "Review and send",
+    "review": "Review draft",
+    "notes": "Draft notes",
+    "messagePreview": "Message to send"
   },
   "uiRefresh": {
     "clearProduct": "Clear product filter",

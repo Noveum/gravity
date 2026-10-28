@@ -12,8 +12,20 @@ describe("money helpers", () => {
   test.each([
     { currency: "USD", digits: 2, step: "0.01", major: "12.34", minor: 1234 },
     { currency: "JPY", digits: 0, step: "1", major: "1234", minor: 1234 },
-    { currency: "KWD", digits: 3, step: "0.001", major: "12.345", minor: 12345 },
-    { currency: "BHD", digits: 3, step: "0.001", major: "12.345", minor: 12345 },
+    {
+      currency: "KWD",
+      digits: 3,
+      step: "0.001",
+      major: "12.345",
+      minor: 12345,
+    },
+    {
+      currency: "BHD",
+      digits: 3,
+      step: "0.001",
+      major: "12.345",
+      minor: 12345,
+    },
   ])(
     "uses $currency precision for conversions and input steps",
     ({ currency, digits, step, major, minor }) => {
@@ -41,13 +53,13 @@ describe("money helpers", () => {
     expect(toMinor(input, currency)).toBe(minor);
   });
 
-  // Display labels currently round to whole major units, unlike conversions.
+  // Display labels retain each currency's minor-unit precision.
   test.each([
-    ["USD", 12345, "$123"],
+    ["USD", 12345, "$123.45"],
     ["JPY", 12345, "¥12,345"],
-    ["KWD", 12345, "KWD\u00a012"],
-    ["BHD", 12345, "BHD\u00a012"],
-    ["USD", 1250, "$13"],
+    ["KWD", 12345, "KWD\u00a012.345"],
+    ["BHD", 12345, "BHD\u00a012.345"],
+    ["USD", 1250, "$12.50"],
   ])("formats %s minor amount %i", (currency, minor, formatted) => {
     expect(formatMoney(minor, currency)).toBe(formatted);
   });
@@ -75,6 +87,6 @@ describe("money helpers", () => {
     expect(minorStep("invalid")).toBe("0.01");
     expect(toMinor("12.34", "invalid")).toBe(1234);
     expect(fromMinor(1234, "invalid")).toBe("12.34");
-    expect(formatMoney(1234, "invalid")).toBe("invalid 12");
+    expect(formatMoney(1234, "invalid")).toBe("invalid 12.34");
   });
 });

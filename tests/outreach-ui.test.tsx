@@ -347,9 +347,7 @@ describe("touch rows, the draft drawer and paused work", () => {
       .where(eq(s.enrollments.id, demoId(500)));
     expect(before?.status).toBe("paused");
     fireEvent.click(within(dialog).getByRole("button", { name: t.stop }));
-    await screen.findByText(
-      t.enrollmentStopped.replace("{name}", "Mira Chen"),
-    );
+    await screen.findByText(t.enrollmentStopped.replace("{name}", "Mira Chen"));
     const [after] = await harness.local.db
       .select()
       .from(s.enrollments)

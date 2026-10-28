@@ -91,7 +91,7 @@ accounts from **Connections**. There is nothing to install and no card to enter.
 
 ## Quick start
 
-To run Gravity locally you need **Node.js 22.12+** and **[Bun](https://bun.sh) 1.3.14**.
+To run Gravity locally you need **Node.js 22.22.2+ (Node 22)** and **[Bun](https://bun.sh) 1.3.14**.
 No Docker, database or API keys.
 
 ```bash

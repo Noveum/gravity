@@ -48,7 +48,15 @@ const steps = [0, 3, 5, 5].map((delayDays, index) => ({
 
 beforeAll(async () => {
   local = await createLocalDatabase();
-  await seedDemo(local.db);
+  // Demo history is relative to its seed date; keep it on this suite's clock
+  // so real-world dates cannot add unrelated sends to a tested calendar day.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(now);
+  try {
+    await seedDemo(local.db);
+  } finally {
+    vi.useRealTimers();
+  }
   crm = new CrmService(local.db);
   records = new RecordService(local.db);
   outreach = new OutreachService(local.db, () => now);

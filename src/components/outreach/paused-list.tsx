@@ -10,9 +10,11 @@ import type { PausedEnrollment } from "./outreach-data";
 export function PausedRow({
   enrollment,
   onResume,
+  onStop,
 }: {
   enrollment: PausedEnrollment;
   onResume: (enrollment: PausedEnrollment) => void;
+  onStop: (enrollment: PausedEnrollment) => void;
 }) {
   const crm = useCrm();
   const reason = label(`paused_${enrollment.pauseReason ?? "manual"}`);
@@ -66,6 +68,14 @@ export function PausedRow({
           onClick={() => onResume(enrollment)}
         >
           {t.resume}
+        </button>
+        <button
+          type="button"
+          className="ghost"
+          aria-label={`${t.stop}: ${enrollment.person.name}`}
+          onClick={() => onStop(enrollment)}
+        >
+          {t.stop}
         </button>
       </span>
     </div>

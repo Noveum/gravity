@@ -36,7 +36,7 @@ You do not need to write TypeScript to make Gravity better.
 
 ## Set up your machine
 
-You need **Node.js 22.12 or newer** and **[Bun](https://bun.sh) 1.3.14**. No
+You need **Node.js 22.22.2+ (Node 22)** and **[Bun](https://bun.sh) 1.3.14**. No
 Docker, database, cloud account or API key is required.
 
 ```bash

@@ -268,7 +268,9 @@ test("one opportunity board keeps filters compact, applies range controls and re
   await value
     .getByRole("slider", { name: t.uiRefresh.minimumSlider })
     .press("ArrowRight");
-  expect(Number(await minimum.inputValue())).toBeGreaterThan(0);
+  await expect
+    .poll(async () => Number(await minimum.inputValue()))
+    .toBeGreaterThan(0);
   await expect(cards).toHaveCount(1);
   await maximum.fill("6000");
   await minimum.fill("1000");
@@ -277,8 +279,10 @@ test("one opportunity board keeps filters compact, applies range controls and re
   await value
     .getByRole("slider", { name: t.uiRefresh.maximumSlider })
     .press("ArrowLeft");
-  expect(Number(await maximum.inputValue())).toBeLessThan(6000);
-  expect(Number(await minimum.inputValue())).toBe(1000);
+  await expect
+    .poll(async () => Number(await maximum.inputValue()))
+    .toBeLessThan(6000);
+  await expect.poll(async () => Number(await minimum.inputValue())).toBe(1000);
   await expect(names).toHaveText(["Cedar workflow pilot"]);
   await maximum.fill("4000");
   await expect(board).toHaveCount(0);

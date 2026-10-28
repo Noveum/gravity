@@ -7,7 +7,7 @@ The button clones this public source and creates your Vercel project. It never s
 ## Database
 
 1. Create a dedicated PostgreSQL database and review its backup/recovery policy.
-2. Clone the repository and install the locked dependencies with Bun 1.3.14 and Node.js 22.12+.
+2. Clone the repository and install the locked dependencies with Bun 1.3.14 and Node.js 22.22.2+ (Node 22).
 3. Put a migration connection in ignored `.env.local` as `DATABASE_MIGRATION_URL`. Configure TLS and the provider CA if needed. Run `bun run db:migrate`.
 4. Create a separate login role inheriting `gravity_app`; follow [Supabase setup](supabase.md) for the reviewed role pattern. Set `DATABASE_URL` to that restricted runtime connection and run `bun run db:check`.
 5. Give Vercel only the runtime credentials. Do not deploy `DATABASE_MIGRATION_URL`, seed fictional records, or use a table-owning/bypass-RLS account as the application user.

@@ -1,3 +1,4 @@
+import { createReadStream } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
@@ -20,6 +21,7 @@ export interface FileStorage {
     mimeType?: string,
   ): Promise<string>;
   readText(key: string): Promise<string>;
+  readChunks(key: string): AsyncIterable<Uint8Array>;
 }
 export class UnsupportedTextEncoding extends Error {}
 function decodeText(bytes: Uint8Array) {
@@ -51,7 +53,7 @@ export async function readLocalObject(key: string) {
 let connection:
   | { client: S3Client; bucket: string; fingerprint: string }
   | undefined;
-function storageConnection() {
+export function storageConnection() {
   const {
     S3_BUCKET,
     S3_ACCESS_KEY_ID,
@@ -90,11 +92,13 @@ function storageConnection() {
     };
   return connection;
 }
-export function objectStorage(): FileStorage {
+export function objectStorage(
+  endpoint: "files" | "materials" = "files",
+): FileStorage {
   if (isDemoMode())
     return {
       uploadUrl: async (key) =>
-        `/api/files?operation=upload-bytes&uploadId=${key.split("/").at(-1)}`,
+        `/api/${endpoint}?operation=upload-bytes&uploadId=${key.split("/").at(-1)}`,
       sealUpload: async (source, target, size) => {
         const bytes = await readLocalObject(source);
         if (bytes.length !== size) throw new DomainError("FILE_SIZE", 413);
@@ -102,6 +106,12 @@ export function objectStorage(): FileStorage {
       },
       downloadUrl: async (key) => `local:${key}`,
       readText: async (key) => decodeText(await readLocalObject(key)),
+      readChunks: async function* (key) {
+        for await (const chunk of createReadStream(path(key), {
+          highWaterMark: 64 * 1024,
+        }))
+          yield chunk;
+      },
     };
   const { client, bucket: Bucket } = storageConnection();
   return {
@@ -167,6 +177,20 @@ export function objectStorage(): FileStorage {
         }),
         { expiresIn: 60 },
       ),
+    readChunks: async function* (Key) {
+      const result = await client.send(new GetObjectCommand({ Bucket, Key }));
+      if (!result.Body) throw new DomainError("NOT_FOUND", 404);
+      const reader = result.Body.transformToWebStream().getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          yield value;
+        }
+      } finally {
+        await reader.cancel();
+      }
+    },
     readText: async (Key) => {
       const result = await client.send(new GetObjectCommand({ Bucket, Key }));
       if (!result.Body) throw new DomainError("NOT_FOUND", 404);

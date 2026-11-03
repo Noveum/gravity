@@ -140,6 +140,7 @@ function useCrmState({
   const [expanded, setExpanded] = useState(false);
   const [searchState, setSearchState] = useState({ path: pathname, text: "" });
   const [personDialog, setPersonDialogState] = useState(false);
+  const [importDialog, setImportDialogState] = useState(false);
   const [recordDialog, setRecordDialog] = useState<RecordDialogState | null>(
     null,
   );
@@ -208,6 +209,10 @@ function useCrmState({
   const setPersonDialog = (open: boolean) => {
     if (open && !canLeaveEditor()) return;
     setPersonDialogState(open);
+  };
+  const setImportDialog = (open: boolean) => {
+    if (open && !canLeaveEditor()) return;
+    setImportDialogState(open);
   };
   const setSearch = (text: string) => setSearchState({ path: pathname, text });
   const currentOrg =
@@ -763,6 +768,8 @@ function useCrmState({
     setExpanded,
     personDialog,
     setPersonDialog,
+    importDialog,
+    setImportDialog,
     recordDialog,
     openRecordDialog,
     closeRecordDialog: () => setRecordDialog(null),

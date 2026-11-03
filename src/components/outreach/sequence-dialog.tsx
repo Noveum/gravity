@@ -18,17 +18,19 @@ export function SequenceDialog({ onClose }: { onClose: () => void }) {
 export function StopEnrollmentDialog({
   name,
   sequenceName,
+  inline = false,
   onClose,
   onSubmit,
 }: {
   name: string;
   sequenceName: string;
+  inline?: boolean;
   onClose: () => void;
   onSubmit: () => Promise<string | null>;
 }) {
   return (
     <RecordDialog
-      inline
+      inline={inline}
       title={t.stopEnrollmentTitle.replace("{name}", name)}
       submitLabel={t.stop}
       onClose={onClose}

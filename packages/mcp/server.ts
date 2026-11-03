@@ -22,7 +22,7 @@ import {
   operations,
   permissionAudit,
 } from "../operations/catalog";
-import { downloadAsset } from "../storage/files";
+import { readAssetContent } from "../storage/files";
 import {
   agentGuide,
   agentGuideOutputSchema,
@@ -535,13 +535,13 @@ export function mcpHandler(
         "read_material",
         {
           description:
-            "Read private text/Markdown material with source/version. PDF text extraction is not implemented; download_material returns PDF bytes.",
+            "Read private text/Markdown material with source/version. PDF text extraction is not implemented; download_material returns a signed download URL.",
           inputSchema: z.object({ assetId: z.uuid() }),
           annotations: { readOnlyHint: true },
         },
         async ({ assetId }) =>
           toolResult(async () => {
-            const { asset, bytes } = await downloadAsset(
+            const { asset, bytes } = await readAssetContent(
               db,
               principal,
               organizationId,
@@ -567,13 +567,13 @@ export function mcpHandler(
             });
           }),
       );
-      // Preserve the original text-material tool while all file types use the shared upload operation.
+      // Preserve the original text-material tool while large file types use the shared direct upload operations.
       if (writable)
         server.registerTool(
           "create_material",
           {
             description:
-              "Upload a private plain-text or Markdown draft to a product folder. Use upload_material for PDF/base64 files.",
+              "Upload a private plain-text or Markdown draft to a product folder. Use reserve_material_upload / complete_material_upload for large files.",
             inputSchema: z.object({
               productId: z.uuid(),
               folderId: z.uuid(),

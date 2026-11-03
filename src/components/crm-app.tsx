@@ -21,6 +21,7 @@ import { focusedRecord, navigableRecords } from "./keyboard-navigation";
 import { EnrollDialog } from "./outreach/enroll-dialog";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
 import { ProductDialog } from "./product-dialog";
+import { CsvImportDialog } from "./records/csv-import-dialog";
 import { PeekPanel } from "./records/peek-panel";
 import {
   actionFilters,
@@ -710,6 +711,13 @@ function CrmShell({ children }: { children: ReactNode }) {
                     },
                   ]
                 : []),
+              {
+                id: "import-csv",
+                title: t.importCsv,
+                shortcut: "",
+                disabled: !data?.products.length,
+                run: () => crm.setImportDialog(true),
+              },
               ...(section === "sequences" || outreachTab === "sequences"
                 ? [
                     {
@@ -755,6 +763,19 @@ function CrmShell({ children }: { children: ReactNode }) {
                 : (result.error ?? t.errors.INTERNAL_ERROR);
             }}
             onClose={() => setProductDialog("")}
+          />
+        )}
+        {crm.importDialog && data && (
+          <CsvImportDialog
+            initialMode={section === "companies" ? "companies" : "contacts"}
+            data={data}
+            organizationId={organizationId}
+            productId={crm.productId}
+            onClose={() => crm.setImportDialog(false)}
+            onImported={async () => {
+              await crm.refresh();
+              crm.notify(t.updated, "success");
+            }}
           />
         )}
         {!data ? (

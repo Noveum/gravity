@@ -9,6 +9,7 @@ import { lockContactDirectory } from "./contact-history";
 import { scopeSchema } from "./crm";
 import { authorize, DomainError, type Principal } from "./policy";
 import { assertProductActive } from "./products";
+import { recordMetadataSchema } from "./record-metadata";
 import { tagsSchema } from "./record-tags";
 import {
   activeCompany,
@@ -162,7 +163,13 @@ export const mergeRecordsSchema = scopeSchema.extend({
   name: z.string().trim().min(1).max(100).optional(),
   title: z.string().trim().max(150).optional(),
   email: emailAddress.nullable().optional(),
-  otherEmails: z.array(emailAddress).max(10).optional(),
+  otherEmails: z
+    .array(emailAddress)
+    .max(10)
+    .optional()
+    .describe(
+      "Additional aliases. Both original primary and secondary addresses are retained; merge rejects a union exceeding 10 secondary addresses. Review aliases with update_person before retrying.",
+    ),
   phone: z
     .string()
     .trim()
@@ -176,10 +183,54 @@ export const mergeRecordsSchema = scopeSchema.extend({
   timeZone: ianaTimeZoneSchema.nullable().optional(),
   domain: companyDomain.nullable().optional(),
   description: z.string().trim().max(2000).optional(),
-  tags: tagsSchema.optional(),
+  tags: tagsSchema
+    .optional()
+    .describe(
+      "Additional tags. Both records’ tags are retained; merge rejects a union exceeding 30 tags. Review tags with update_record_metadata before retrying.",
+    ),
   amountMinor: amountMinor.optional(),
   currency: currency.optional(),
 });
+
+/** Merge lists are additive: removing identities/tags needs a separate reviewed edit. */
+function mergeTags(
+  target: string[],
+  source: string[],
+  additions: string[] = [],
+) {
+  const unique = new Map<string, string>();
+  for (const tag of [...target, ...source, ...additions]) {
+    if (!unique.has(tag.toLowerCase())) unique.set(tag.toLowerCase(), tag);
+  }
+  const parsed = tagsSchema.safeParse([...unique.values()]);
+  if (!parsed.success) throw new DomainError("MERGE_TAG_LIMIT", 409);
+  return parsed.data;
+}
+
+function mergeEstimate(
+  target: { amountMinor: number | null; currency: string },
+  source: { amountMinor: number | null; currency: string },
+  input: { amountMinor?: number | null; currency?: string },
+) {
+  const selected =
+    target.amountMinor === null && source.amountMinor !== null
+      ? source
+      : target;
+  const estimate = {
+    amountMinor:
+      input.amountMinor !== undefined
+        ? input.amountMinor
+        : selected.amountMinor,
+    currency: input.currency ?? selected.currency,
+  };
+  if (
+    !recordMetadataSchema
+      .pick({ amountMinor: true, currency: true })
+      .safeParse(estimate).success
+  )
+    throw new DomainError("MERGE_REVIEW_REQUIRED", 409);
+  return estimate;
+}
 
 function requireWriteActor(principal: Principal) {
   if (principal.source === "mcp" && principal.readOnly !== false)
@@ -1150,19 +1201,24 @@ export class RecordService {
             ? input.email
             : target.email || source.email || null;
         const mergedOther = [
-          ...new Set([
-            ...(input.otherEmails ?? target.otherEmails),
-            ...source.otherEmails,
-            ...(target.email && target.email !== chosenEmail
-              ? [target.email]
-              : []),
-            ...(source.email && source.email !== chosenEmail
-              ? [source.email]
-              : []),
-          ]),
-        ].filter((e) => e && e !== chosenEmail);
-        const chosenOtherEmails =
-          input.otherEmails !== undefined ? input.otherEmails : mergedOther;
+          ...new Set(
+            [
+              ...target.otherEmails,
+              ...source.otherEmails,
+              ...(input.otherEmails ?? []),
+              ...(target.email && target.email !== chosenEmail
+                ? [target.email]
+                : []),
+              ...(source.email && source.email !== chosenEmail
+                ? [source.email]
+                : []),
+            ].map((email) => email.trim().toLowerCase()),
+          ),
+        ].filter((email) => email && email !== chosenEmail?.toLowerCase());
+        const aliases =
+          personUpdateSchema.shape.otherEmails.safeParse(mergedOther);
+        if (!aliases.success) throw new DomainError("MERGE_EMAIL_LIMIT", 409);
+        const chosenOtherEmails = aliases.data;
         const chosenPhone =
           input.phone !== undefined
             ? input.phone
@@ -1187,16 +1243,26 @@ export class RecordService {
           input.timeZone !== undefined
             ? input.timeZone
             : target.timeZone || source.timeZone || null;
-        const chosenTags =
-          input.tags !== undefined
-            ? input.tags
-            : [...new Set([...target.tags, ...source.tags])];
-        const chosenAmount =
-          input.amountMinor !== undefined
-            ? input.amountMinor
-            : (target.amountMinor ?? source.amountMinor);
-        const chosenCurrency =
-          input.currency ?? target.currency ?? source.currency ?? "USD";
+        const chosenTags = mergeTags(target.tags, source.tags, input.tags);
+        const { amountMinor: chosenAmount, currency: chosenCurrency } =
+          mergeEstimate(target, source, input);
+
+        if (
+          !personUpdateSchema.safeParse({
+            organizationId: input.organizationId,
+            personId: target.id,
+            version: target.version,
+            name: chosenName,
+            title: chosenTitle,
+            email: chosenEmail,
+            otherEmails: chosenOtherEmails,
+            phone: chosenPhone,
+            linkedinUrl: chosenLinkedin,
+            companyId: chosenCompanyId,
+            summary: chosenSummary,
+          }).success
+        )
+          throw new DomainError("MERGE_REVIEW_REQUIRED", 409);
 
         const allEmails = [
           ...new Set([
@@ -1610,16 +1676,21 @@ export class RecordService {
         input.description !== undefined
           ? input.description
           : target.description || source.description;
-      const chosenTags =
-        input.tags !== undefined
-          ? input.tags
-          : [...new Set([...target.tags, ...source.tags])];
-      const chosenAmount =
-        input.amountMinor !== undefined
-          ? input.amountMinor
-          : (target.amountMinor ?? source.amountMinor);
-      const chosenCurrency =
-        input.currency ?? target.currency ?? source.currency ?? "USD";
+      const chosenTags = mergeTags(target.tags, source.tags, input.tags);
+      const { amountMinor: chosenAmount, currency: chosenCurrency } =
+        mergeEstimate(target, source, input);
+
+      if (
+        !companySchema.safeParse({
+          organizationId: input.organizationId,
+          companyId: target.id,
+          version: target.version,
+          name: chosenName,
+          domain: chosenDomain ?? "",
+          description: chosenDescription,
+        }).success
+      )
+        throw new DomainError("MERGE_REVIEW_REQUIRED", 409);
 
       if (chosenDomain) {
         const [duplicateDomain] = await tx

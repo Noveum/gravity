@@ -1307,7 +1307,7 @@ export const operations: Operation[] = [
     operation: "merge-records",
     name: "merge_records",
     description:
-      "Merge duplicate people or companies atomically using current versions and write access to every affected source and target product, including archived products. Fetch full person/company context before choosing fields; compact empty fields are not evidence of absent notes. Empty relationship notes are filled from the source; conflicting original values are retained in product-shared mergeHistory. Preserves creator attribution, private owners, all child history and durable delivery claims. Stops duplicate active sequence enrollments and skips their pending touches. Invalidates approvals; never sends or retries messages.",
+      "Merge duplicate people or companies atomically using current versions and write access to every affected source and target product, including archived products. Fetch full person/company context before choosing fields; compact empty fields are not evidence of absent notes. Empty relationship notes are filled from the source; conflicting original values are retained in product-shared mergeHistory. Preserves creator attribution, private owners, all child history and durable delivery claims. Stops duplicate active sequence enrollments and skips their pending touches. Preserves the union of email aliases and tags; over-limit unions reject without changes. Review aliases with update_person and tags with update_record_metadata before retrying. Amounts retain the selected record’s currency. Invalidates approvals; never sends or retries messages.",
     schema: mergeRecordsSchema,
     run: (c, input) => records(c).mergeRecords(c.principal, input),
   }),

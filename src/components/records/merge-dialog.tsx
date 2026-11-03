@@ -30,6 +30,7 @@ export function MergeDialog({
 }) {
   const crm = useCrm();
   const modal = useRef<HTMLDialogElement>(null);
+  const submitting = useRef(false);
   const titleId = useId();
   useModalLifecycle(modal);
 
@@ -179,14 +180,6 @@ export function MergeDialog({
         sourceDisplay: sourcePerson.email || "—",
       },
       {
-        key: "otherEmails",
-        label: t.otherEmails,
-        targetVal: targetPerson.otherEmails.join(", "),
-        sourceVal: sourcePerson.otherEmails.join(", "),
-        targetDisplay: targetPerson.otherEmails.join(", ") || "—",
-        sourceDisplay: sourcePerson.otherEmails.join(", ") || "—",
-      },
-      {
         key: "phone",
         label: t.phone,
         targetVal: targetPerson.phone,
@@ -261,7 +254,8 @@ export function MergeDialog({
   }
 
   async function handleMerge() {
-    if (!ready || !targetRecord || !sourceRecord) return;
+    if (submitting.current || !ready || !targetRecord || !sourceRecord) return;
+    submitting.current = true;
     setBusy(true);
     setError("");
 
@@ -278,9 +272,6 @@ export function MergeDialog({
 
       if (entity === "person" && targetPerson && sourcePerson) {
         for (const comp of comparisons) {
-          // Preserve the service's alias union unless the user explicitly
-          // chooses one list during review.
-          if (comp.key === "otherEmails" && !fieldChoices.otherEmails) continue;
           const choice =
             fieldChoices[comp.key] ??
             (comp.targetVal ? "target" : comp.sourceVal ? "source" : "target");
@@ -288,8 +279,6 @@ export function MergeDialog({
             if (comp.key === "name") payload.name = sourcePerson.name;
             else if (comp.key === "title") payload.title = sourcePerson.title;
             else if (comp.key === "email") payload.email = sourcePerson.email;
-            else if (comp.key === "otherEmails")
-              payload.otherEmails = sourcePerson.otherEmails;
             else if (comp.key === "phone") payload.phone = sourcePerson.phone;
             else if (comp.key === "linkedinUrl")
               payload.linkedinUrl = sourcePerson.linkedinUrl;
@@ -303,8 +292,6 @@ export function MergeDialog({
             if (comp.key === "name") payload.name = targetPerson.name;
             else if (comp.key === "title") payload.title = targetPerson.title;
             else if (comp.key === "email") payload.email = targetPerson.email;
-            else if (comp.key === "otherEmails")
-              payload.otherEmails = targetPerson.otherEmails;
             else if (comp.key === "phone") payload.phone = targetPerson.phone;
             else if (comp.key === "linkedinUrl")
               payload.linkedinUrl = targetPerson.linkedinUrl;
@@ -349,8 +336,9 @@ export function MergeDialog({
         setError(result.error ?? t.errors.INTERNAL_ERROR);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -360,6 +348,22 @@ export function MergeDialog({
       ref={modal}
       className="dialog merge-dialog"
       aria-labelledby={titleId}
+      data-dirty={busy || undefined}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!submitting.current) onClose();
+      }}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!submitting.current) onClose();
+      }}
+      onClose={(event) => {
+        if (submitting.current) {
+          if (!event.currentTarget.open) event.currentTarget.showModal();
+        } else onClose();
+      }}
     >
       <div className="merge-dialog-content">
         <div className="merge-dialog-header">
@@ -515,8 +519,26 @@ export function MergeDialog({
               })}
             </div>
 
+            {targetPerson && sourcePerson && (
+              <div className="record-section">
+                <h3>{t.mergeEmailsPreserved}</h3>
+                <p>
+                  {[
+                    ...new Set(
+                      [
+                        targetPerson.email,
+                        ...targetPerson.otherEmails,
+                        sourcePerson.email,
+                        ...sourcePerson.otherEmails,
+                      ].filter(Boolean),
+                    ),
+                  ].join(", ") || "—"}
+                </p>
+              </div>
+            )}
             <div className="callout merge-notice" role="note">
               <p>{t.mergeNotice}</p>
+              <p>{t.mergeLimitsHint}</p>
             </div>
           </div>
         )}

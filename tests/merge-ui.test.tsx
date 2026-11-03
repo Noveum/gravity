@@ -6,6 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { mergeRecordsSchema } from "../packages/core/records";
 import { demoId } from "../packages/database/seed";
@@ -337,4 +338,64 @@ test("relationship merge history exposes conflicting notes and structured fields
   expect(screen.getByText("Original background")).toBeDefined();
   expect(screen.getByText("Original custom value")).toBeDefined();
   expect(screen.queryByRole("textbox")).toBeNull();
+});
+
+test("Escape closes mounted merge state and permits reopening the same record", () => {
+  function Host() {
+    const [open, setOpen] = useState(true);
+    const context = {
+      organizationId: demoId(1),
+      sourceData: mockSourceData,
+    } as CrmContextValue;
+    return (
+      <CrmContext.Provider value={context}>
+        <button type="button" onClick={() => setOpen(true)}>
+          Reopen fixture
+        </button>
+        {open && (
+          <MergeDialog
+            entity="person"
+            initialTargetId={personA.id}
+            onClose={() => setOpen(false)}
+          />
+        )}
+      </CrmContext.Provider>
+    );
+  }
+  render(<Host />);
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByText("Reopen fixture"));
+  expect((screen.getByRole("dialog") as HTMLDialogElement).open).toBe(true);
+  fireEvent(
+    screen.getByRole("dialog"),
+    new Event("cancel", { cancelable: true }),
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("pending merges cannot be dismissed by Escape or native cancel", async () => {
+  let resolveSend!: (value: { ok: boolean }) => void;
+  const send = vi.fn(
+    () =>
+      new Promise<{ ok: boolean }>((resolve) => {
+        resolveSend = resolve;
+      }),
+  );
+  const { close } = renderMergeDialog({ send });
+  fireEvent.click(screen.getByText("Alice Duplicate"));
+  fireEvent.click(screen.getByText(t.mergeSubmit));
+  const dialog = screen.getByRole("dialog");
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  const cancellation = new Event("cancel", { cancelable: true });
+  fireEvent(dialog, cancellation);
+  expect(cancellation.defaultPrevented).toBe(true);
+  expect(close).not.toHaveBeenCalled();
+  expect((dialog as HTMLDialogElement).open).toBe(true);
+  (dialog as HTMLDialogElement).close();
+  fireEvent(dialog, new Event("close"));
+  expect((dialog as HTMLDialogElement).open).toBe(true);
+  expect(close).not.toHaveBeenCalled();
+  resolveSend({ ok: true });
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
 });

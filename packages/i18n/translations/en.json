@@ -202,6 +202,9 @@
   "errors": {
     "FORBIDDEN": "You do not have access to this organization or product.",
     "NOT_FOUND": "This record is not available.",
+    "MERGE_EMAIL_LIMIT": "The merged contact would exceed 10 secondary email addresses. Nothing was changed. Review and edit email addresses on the original contacts before merging; no addresses are removed automatically.",
+    "MERGE_TAG_LIMIT": "The merged record would exceed 30 tags. Nothing was changed. Review and edit tags on the original records before merging; no tags are removed automatically.",
+    "MERGE_REVIEW_REQUIRED": "Some merged values do not meet the normal record limits. Nothing was changed. Review the original records and correct those values before merging.",
     "CONFLICT": "This record changed. Refresh and review the latest version.",
     "REPLY_BLOCKED": "A reply paused this follow-up. Replace it with a relevant reply first.",
     "DRAFT_REQUIRED": "Write and save a draft first.",
@@ -2672,6 +2675,8 @@
   "cannotMergeSelf": "Cannot merge a record into itself",
   "searchRecordPlaceholder": "Type to search records…",
   "mergeDuplicateEnrollmentReason": "Stopped duplicate sequence enrollment after merging contacts",
+  "mergeEmailsPreserved": "Email addresses retained",
+  "mergeLimitsHint": "Both records’ email addresses and tags are kept. A merge exceeding 10 secondary addresses or 30 tags is blocked so you can review the original records first.",
   "mergeOriginalPerson": "Original person before merge",
   "mergeHistoryTitle": "Merge history",
   "mergeHistoryHint": "Original product relationship values retained when duplicates were merged. Canonical values take precedence where both records had a value.",

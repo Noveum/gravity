@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { ContactAttributionService } from "../packages/core/contact-attribution";
 import { CrmService } from "../packages/core/crm";
-import { RecordService } from "../packages/core/records";
+import { recordMetadataSchema } from "../packages/core/record-metadata";
+import { personUpdateSchema, RecordService } from "../packages/core/records";
 import {
   emptyRelationshipDetails,
   relationshipDetailsSchema,
@@ -115,48 +116,51 @@ test("transfers a source LinkedIn identity safely", async () => {
     linkedinUrl: p.source.linkedinUrl,
   });
 });
-test("retains unknown delivery claims while moving history", async () => {
-  const p = await pair();
-  const [action] = await local.db
-    .insert(s.actions)
-    .values({
-      organizationId: org,
-      productId: product,
-      relationshipId: p.sr.id,
-      ownerId: demoUser,
-      kind: "reply",
-      title: "Fictional action",
-      reason: "Review",
-      owedBy: "us",
-      channel: "gmail",
-      dueAt: new Date(),
-    })
-    .returning();
-  const [delivery] = await local.db
-    .insert(s.deliveries)
-    .values({
-      organizationId: org,
-      productId: product,
-      relationshipId: p.sr.id,
-      ownerId: demoUser,
-      connectionId: demoId(700),
-      actionId: action.id,
-      sourceVersion: 1,
-      idempotencyKey: randomUUID(),
-      requestHash: "review",
-      channel: "gmail",
-      recipient: "fictional-review@example.test",
-      draft: "Fictional body",
-      status: "unknown",
-    })
-    .returning();
-  await new RecordService(local.db).mergeRecords(admin, p.input);
-  const [after] = await local.db
-    .select()
-    .from(s.deliveries)
-    .where(eq(s.deliveries.id, delivery.id));
-  expect(after).toEqual({ ...delivery, relationshipId: p.tr.id });
-});
+test.each(["unknown", "sending", "accepted"] as const)(
+  "retains %s delivery claims while moving history",
+  async (status) => {
+    const p = await pair();
+    const [action] = await local.db
+      .insert(s.actions)
+      .values({
+        organizationId: org,
+        productId: product,
+        relationshipId: p.sr.id,
+        ownerId: demoUser,
+        kind: "reply",
+        title: "Fictional action",
+        reason: "Review",
+        owedBy: "us",
+        channel: "gmail",
+        dueAt: new Date(),
+      })
+      .returning();
+    const [delivery] = await local.db
+      .insert(s.deliveries)
+      .values({
+        organizationId: org,
+        productId: product,
+        relationshipId: p.sr.id,
+        ownerId: demoUser,
+        connectionId: demoId(700),
+        actionId: action.id,
+        sourceVersion: 1,
+        idempotencyKey: randomUUID(),
+        requestHash: "review",
+        channel: "gmail",
+        recipient: "fictional-review@example.test",
+        draft: "Fictional body",
+        status,
+      })
+      .returning();
+    await new RecordService(local.db).mergeRecords(admin, p.input);
+    const [after] = await local.db
+      .select()
+      .from(s.deliveries)
+      .where(eq(s.deliveries.id, delivery.id));
+    expect(after).toEqual({ ...delivery, relationshipId: p.tr.id });
+  },
+);
 test("retains source relationship context and activity", async () => {
   const p = await pair();
   await local.db
@@ -818,4 +822,290 @@ test("merge keeps editable structured fields valid while retaining overflow in h
       contextDetails: expect.objectContaining({ fields }),
     }),
   ]);
+});
+
+test.each(["person", "company"] as const)(
+  "%s merge keeps the source estimate and currency together",
+  async (entity) => {
+    const p = await pair({ amountMinor: 12500, currency: "JPY" });
+    let input: Parameters<RecordService["mergeRecords"]>[1] = p.input;
+    if (entity === "company") {
+      const [target, source] = await local.db
+        .insert(s.companies)
+        .values([
+          {
+            organizationId: org,
+            name: "Canonical",
+            amountMinor: null,
+            currency: "USD",
+          },
+          {
+            organizationId: org,
+            name: "Duplicate",
+            amountMinor: 12500,
+            currency: "JPY",
+          },
+        ])
+        .returning();
+      input = {
+        organizationId: org,
+        entity,
+        targetId: target.id,
+        sourceId: source.id,
+        targetVersion: 1,
+        sourceVersion: 1,
+      };
+    }
+    const merged = await new RecordService(local.db).mergeRecords(admin, input);
+    expect(merged).toMatchObject({ amountMinor: 12500, currency: "JPY" });
+  },
+);
+
+test("merge rejects oversized email unions without silently discarding original identities", async () => {
+  const p = await pair({
+    otherEmails: Array.from(
+      { length: 5 },
+      (_, i) => `source-${randomUUID()}-${i}@example.test`,
+    ),
+  });
+  await local.db
+    .update(s.people)
+    .set({
+      otherEmails: Array.from(
+        { length: 5 },
+        (_, i) => `target-${randomUUID()}-${i}@example.test`,
+      ),
+    })
+    .where(eq(s.people.id, p.target.id));
+  const before = await local.db
+    .select()
+    .from(s.people)
+    .where(inArray(s.people.id, [p.target.id, p.source.id]))
+    .orderBy(s.people.id);
+  await expect(
+    new RecordService(local.db).mergeRecords(admin, p.input),
+  ).rejects.toMatchObject({ code: "MERGE_EMAIL_LIMIT" });
+  await expect(
+    new RecordService(local.db).mergeRecords(admin, {
+      ...p.input,
+      otherEmails: [],
+    }),
+  ).rejects.toMatchObject({ code: "MERGE_EMAIL_LIMIT" });
+  expect(
+    await local.db
+      .select()
+      .from(s.people)
+      .where(inArray(s.people.id, [p.target.id, p.source.id]))
+      .orderBy(s.people.id),
+  ).toEqual(before);
+});
+
+test.each(["person", "company"] as const)(
+  "%s merge rejects oversized tag unions without removing source records",
+  async (entity) => {
+    const p = await pair({
+      tags: Array.from({ length: 16 }, (_, i) => `source-${i}`),
+    });
+    let input: Parameters<RecordService["mergeRecords"]>[1] = p.input;
+    if (entity === "person")
+      await local.db
+        .update(s.people)
+        .set({ tags: Array.from({ length: 16 }, (_, i) => `target-${i}`) })
+        .where(eq(s.people.id, p.target.id));
+    else {
+      const [target, source] = await local.db
+        .insert(s.companies)
+        .values([
+          {
+            organizationId: org,
+            name: "Canonical",
+            tags: Array.from({ length: 16 }, (_, i) => `target-${i}`),
+          },
+          {
+            organizationId: org,
+            name: "Duplicate",
+            tags: Array.from({ length: 16 }, (_, i) => `source-${i}`),
+          },
+        ])
+        .returning();
+      input = {
+        organizationId: org,
+        entity,
+        targetId: target.id,
+        sourceId: source.id,
+        targetVersion: 1,
+        sourceVersion: 1,
+      };
+    }
+    await expect(
+      new RecordService(local.db).mergeRecords(admin, input),
+    ).rejects.toMatchObject({ code: "MERGE_TAG_LIMIT" });
+    await expect(
+      new RecordService(local.db).mergeRecords(admin, { ...input, tags: [] }),
+    ).rejects.toMatchObject({ code: "MERGE_TAG_LIMIT" });
+    const table = entity === "person" ? s.people : s.companies;
+    expect(
+      await local.db
+        .select()
+        .from(table)
+        .where(inArray(table.id, [input.sourceId, input.targetId])),
+    ).toHaveLength(2);
+  },
+);
+
+test("bounded merged people remain valid for normal contact and metadata editing", async () => {
+  const p = await pair({
+    otherEmails: ["source-alias@example.test"],
+    tags: ["SOURCE"],
+    amountMinor: 125,
+    currency: "EUR",
+  });
+  await local.db
+    .update(s.people)
+    .set({
+      otherEmails: ["target-alias@example.test"],
+      tags: ["source", "TARGET"],
+    })
+    .where(eq(s.people.id, p.target.id));
+  const merged = await new RecordService(local.db).mergeRecords(admin, {
+    ...p.input,
+    otherEmails: [],
+    tags: [],
+  });
+  expect("otherEmails" in merged && merged.otherEmails).toEqual(
+    expect.arrayContaining([
+      p.source.email,
+      "source-alias@example.test",
+      "target-alias@example.test",
+    ]),
+  );
+  expect(
+    personUpdateSchema.safeParse({
+      ...merged,
+      organizationId: org,
+      personId: merged.id,
+    }).success,
+  ).toBe(true);
+  expect(
+    recordMetadataSchema.safeParse({
+      ...merged,
+      organizationId: org,
+      entity: "person",
+      recordId: merged.id,
+    }).success,
+  ).toBe(true);
+});
+
+test("a database failure after child transfer rolls back the entire merge", async () => {
+  const p = await pair({
+    linkedinUrl: `https://linkedin.com/in/fixture-${randomUUID()}`,
+  });
+  const [action] = await local.db
+    .insert(s.actions)
+    .values({
+      organizationId: org,
+      productId: product,
+      relationshipId: p.sr.id,
+      ownerId: demoUser,
+      kind: "reply",
+      title: "Rollback fixture",
+      reason: "Fixture",
+      owedBy: "us",
+      channel: "gmail",
+      dueAt: new Date(),
+      draft: "Fixture body",
+      draftHash: "hash",
+      approvedHash: "hash",
+      approvedBy: demoUser,
+    })
+    .returning();
+  const [delivery] = await local.db
+    .insert(s.deliveries)
+    .values({
+      organizationId: org,
+      productId: product,
+      relationshipId: p.sr.id,
+      ownerId: demoUser,
+      connectionId: demoId(700),
+      actionId: action.id,
+      sourceVersion: action.version,
+      idempotencyKey: randomUUID(),
+      requestHash: "rollback-fixture",
+      channel: "gmail",
+      recipient: "fixture@example.test",
+      draft: "Fixture body",
+      status: "unknown",
+    })
+    .returning();
+  const beforePeople = await local.db
+    .select()
+    .from(s.people)
+    .where(inArray(s.people.id, [p.target.id, p.source.id]))
+    .orderBy(s.people.id);
+  const beforeRelationships = await local.db
+    .select()
+    .from(s.relationships)
+    .where(inArray(s.relationships.id, [p.tr.id, p.sr.id]))
+    .orderBy(s.relationships.id);
+  const beforeContributions = await local.db
+    .select()
+    .from(s.contactContributions)
+    .where(inArray(s.contactContributions.personId, [p.target.id, p.source.id]))
+    .orderBy(s.contactContributions.id);
+  await local.db.execute(
+    sql.raw(
+      `CREATE FUNCTION fixture_merge_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture merge rollback'; END $$`,
+    ),
+  );
+  await local.db.execute(
+    sql.raw(
+      `CREATE TRIGGER fixture_merge_failure BEFORE DELETE ON people FOR EACH ROW WHEN (OLD.id = '${p.source.id}'::uuid) EXECUTE FUNCTION fixture_merge_failure()`,
+    ),
+  );
+  try {
+    await expect(
+      new RecordService(local.db).mergeRecords(admin, p.input),
+    ).rejects.toMatchObject({ cause: { message: "fixture merge rollback" } });
+  } finally {
+    await local.db.execute(
+      sql.raw("DROP TRIGGER fixture_merge_failure ON people"),
+    );
+    await local.db.execute(sql.raw("DROP FUNCTION fixture_merge_failure()"));
+  }
+  expect(
+    await local.db
+      .select()
+      .from(s.people)
+      .where(inArray(s.people.id, [p.target.id, p.source.id]))
+      .orderBy(s.people.id),
+  ).toEqual(beforePeople);
+  expect(
+    await local.db
+      .select()
+      .from(s.relationships)
+      .where(inArray(s.relationships.id, [p.tr.id, p.sr.id]))
+      .orderBy(s.relationships.id),
+  ).toEqual(beforeRelationships);
+  expect(
+    await local.db
+      .select()
+      .from(s.contactContributions)
+      .where(
+        inArray(s.contactContributions.personId, [p.target.id, p.source.id]),
+      )
+      .orderBy(s.contactContributions.id),
+  ).toEqual(beforeContributions);
+  expect(
+    (
+      await local.db.select().from(s.actions).where(eq(s.actions.id, action.id))
+    )[0],
+  ).toEqual(action);
+  expect(
+    (
+      await local.db
+        .select()
+        .from(s.deliveries)
+        .where(eq(s.deliveries.id, delivery.id))
+    )[0],
+  ).toEqual(delivery);
 });

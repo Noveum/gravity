@@ -363,6 +363,7 @@ export function SequencesView() {
       )}
       {stopping && (
         <StopEnrollmentDialog
+          inline
           name={stopping.name}
           sequenceName={stopping.sequence.name}
           onClose={() => setStopping(null)}

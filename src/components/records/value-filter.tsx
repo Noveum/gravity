@@ -121,12 +121,17 @@ export function ValueFilter({
             ? [0, limit]
             : [number(filters.minimum, 0), number(filters.maximum, limit)]
         }
-        onValueChange={([minimum = 0, maximum = limit]) =>
-          onChange({
-            minimum: minimum <= 0 ? "" : minimum.toFixed(digits),
-            maximum: maximum >= upperEndpoint ? "" : maximum.toFixed(digits),
-          })
-        }
+        onValueChange={([minimum = 0, maximum = limit]) => {
+          // URL-derived props can lag a recent numeric edit. Only replace
+          // bounds this slider event changed; preserve the other current URL bound.
+          const changed: Partial<ValueFilters> = {};
+          if (minimum !== number(filters.minimum, 0))
+            changed.minimum = minimum <= 0 ? "" : minimum.toFixed(digits);
+          if (maximum !== number(filters.maximum, limit))
+            changed.maximum =
+              maximum >= upperEndpoint ? "" : maximum.toFixed(digits);
+          if (Object.keys(changed).length) onChange(changed);
+        }}
       >
         <Slider.Track className="value-range-track">
           <Slider.Range className="value-range-fill" />

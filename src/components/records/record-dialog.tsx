@@ -121,7 +121,10 @@ export function RecordDialog({
       className={`dialog ${className}`}
       aria-labelledby={titleId}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && !busy) onClose();
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!busy) onClose();
       }}
       onCancel={(event) => {
         if (busy) event.preventDefault();

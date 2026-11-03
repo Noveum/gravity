@@ -68,27 +68,27 @@
     "@napi-rs/canvas-linux-x64-musl@1.0.10",
     "@napi-rs/canvas-win32-arm64-msvc@1.0.10",
     "@napi-rs/canvas-win32-x64-msvc@1.0.10",
-    "@next/swc-darwin-x64@16.3.8",
-    "@next/swc-linux-arm64-gnu@16.3.8",
-    "@next/swc-linux-arm64-musl@16.3.8",
-    "@next/swc-linux-x64-gnu@16.3.8",
-    "@next/swc-linux-x64-musl@16.3.8",
-    "@next/swc-win32-arm64-msvc@16.3.8",
-    "@next/swc-win32-x64-msvc@16.3.8",
-    "@rolldown/binding-android-arm-eabi@1.2.12",
-    "@rolldown/binding-android-arm64@1.2.12",
-    "@rolldown/binding-darwin-x64@1.2.12",
-    "@rolldown/binding-freebsd-x64@1.2.12",
-    "@rolldown/binding-linux-arm-gnueabihf@1.2.12",
-    "@rolldown/binding-linux-arm64-gnu@1.2.12",
-    "@rolldown/binding-linux-arm64-musl@1.2.12",
-    "@rolldown/binding-linux-ppc64-gnu@1.2.12",
-    "@rolldown/binding-linux-s390x-gnu@1.2.12",
-    "@rolldown/binding-linux-x64-gnu@1.2.12",
-    "@rolldown/binding-linux-x64-musl@1.2.12",
-    "@rolldown/binding-openharmony-arm64@1.2.12",
-    "@rolldown/binding-win32-arm64-msvc@1.2.12",
-    "@rolldown/binding-win32-x64-msvc@1.2.12",
+    "@next/swc-darwin-x64@16.4.3",
+    "@next/swc-linux-arm64-gnu@16.4.3",
+    "@next/swc-linux-arm64-musl@16.4.3",
+    "@next/swc-linux-x64-gnu@16.4.3",
+    "@next/swc-linux-x64-musl@16.4.3",
+    "@next/swc-win32-arm64-msvc@16.4.3",
+    "@next/swc-win32-x64-msvc@16.4.3",
+    "@rolldown/binding-android-arm-eabi@1.2.15",
+    "@rolldown/binding-android-arm64@1.2.15",
+    "@rolldown/binding-darwin-x64@1.2.15",
+    "@rolldown/binding-freebsd-x64@1.2.15",
+    "@rolldown/binding-linux-arm-gnueabihf@1.2.15",
+    "@rolldown/binding-linux-arm64-gnu@1.2.15",
+    "@rolldown/binding-linux-arm64-musl@1.2.15",
+    "@rolldown/binding-linux-ppc64-gnu@1.2.15",
+    "@rolldown/binding-linux-s390x-gnu@1.2.15",
+    "@rolldown/binding-linux-x64-gnu@1.2.15",
+    "@rolldown/binding-linux-x64-musl@1.2.15",
+    "@rolldown/binding-openharmony-arm64@1.2.15",
+    "@rolldown/binding-win32-arm64-msvc@1.2.15",
+    "@rolldown/binding-win32-x64-msvc@1.2.15",
     "@typescript/typescript-aix-ppc64@7.0.2",
     "@typescript/typescript-darwin-x64@7.0.2",
     "@typescript/typescript-freebsd-arm64@7.0.2",
@@ -150,7 +150,7 @@
     },
     {
       "name": "@aws-sdk/client-s3",
-      "version": "3.1146.0",
+      "version": "3.1147.0",
       "license": "Apache-2.0",
       "direct": true,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
@@ -234,7 +234,7 @@
     },
     {
       "name": "@aws-sdk/s3-request-presigner",
-      "version": "3.1146.0",
+      "version": "3.1147.0",
       "license": "Apache-2.0",
       "direct": true,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
@@ -612,14 +612,14 @@
     },
     {
       "name": "@next/env",
-      "version": "16.3.8",
+      "version": "16.4.3",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/vercel/next.js"
     },
     {
       "name": "@next/swc-darwin-arm64",
-      "version": "16.3.8",
+      "version": "16.4.3",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/vercel/next.js"
@@ -647,14 +647,14 @@
     },
     {
       "name": "@oxc-project/types",
-      "version": "0.152.0",
+      "version": "0.155.0",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/oxc-project/oxc.git"
     },
     {
       "name": "@playwright/test",
-      "version": "1.62.1",
+      "version": "1.64.0",
       "license": "Apache-2.0",
       "direct": true,
       "repository": "git+https://github.com/microsoft/playwright.git"
@@ -885,7 +885,7 @@
     },
     {
       "name": "@rolldown/binding-darwin-arm64",
-      "version": "1.2.12",
+      "version": "1.2.15",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/rolldown/rolldown.git"
@@ -1565,7 +1565,7 @@
     },
     {
       "name": "dompurify",
-      "version": "3.4.16",
+      "version": "3.4.17",
       "license": "(MPL-2.0 OR Apache-2.0)",
       "direct": true,
       "repository": "git://github.com/cure53/DOMPurify.git"
@@ -1709,13 +1709,6 @@
       "license": "ISC",
       "direct": false,
       "repository": "git+https://github.com/isaacs/fs.realpath.git"
-    },
-    {
-      "name": "fsevents",
-      "version": "2.3.2",
-      "license": "MIT",
-      "direct": false,
-      "repository": "https://github.com/fsevents/fsevents.git"
     },
     {
       "name": "fsevents",
@@ -2055,7 +2048,7 @@
     },
     {
       "name": "lucide-react",
-      "version": "1.51.0",
+      "version": "1.52.0",
       "license": "ISC",
       "direct": true,
       "repository": "https://github.com/lucide-icons/lucide.git"
@@ -2439,6 +2432,13 @@
       "repository": "ai/nanoid"
     },
     {
+      "name": "nanoid",
+      "version": "3.3.20",
+      "license": "MIT",
+      "direct": false,
+      "repository": "ai/nanoid"
+    },
+    {
       "name": "nanostores",
       "version": "1.5.4",
       "license": "MIT",
@@ -2447,7 +2447,7 @@
     },
     {
       "name": "next",
-      "version": "16.3.8",
+      "version": "16.4.3",
       "license": "MIT",
       "direct": true,
       "repository": "vercel/next.js"
@@ -2538,14 +2538,14 @@
     },
     {
       "name": "playwright",
-      "version": "1.62.1",
+      "version": "1.64.0",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "git+https://github.com/microsoft/playwright.git"
     },
     {
       "name": "playwright-core",
-      "version": "1.62.1",
+      "version": "1.64.0",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "git+https://github.com/microsoft/playwright.git"
@@ -2559,7 +2559,7 @@
     },
     {
       "name": "postcss",
-      "version": "8.5.28",
+      "version": "8.5.32",
       "license": "MIT",
       "direct": false,
       "repository": "postcss/postcss"
@@ -2720,7 +2720,7 @@
     },
     {
       "name": "rolldown",
-      "version": "1.2.12",
+      "version": "1.2.15",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/rolldown/rolldown.git"
@@ -3000,7 +3000,7 @@
     },
     {
       "name": "undici",
-      "version": "8.11.2",
+      "version": "8.12.3",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/nodejs/undici.git"
@@ -3105,9 +3105,9 @@
     },
     {
       "name": "vite",
-      "version": "8.3.2",
+      "version": "8.3.5",
       "license": "MIT",
-      "direct": false,
+      "direct": true,
       "repository": "git+https://github.com/vitejs/vite.git"
     },
     {
@@ -3196,7 +3196,7 @@
     },
     {
       "name": "zod",
-      "version": "4.6.5",
+      "version": "4.6.7",
       "license": "MIT",
       "direct": true,
       "repository": "git+https://github.com/colinhacks/zod.git"

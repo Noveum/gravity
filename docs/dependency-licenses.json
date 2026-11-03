@@ -555,6 +555,13 @@
       "repository": "git+https://github.com/lovell/sharp-libvips.git"
     },
     {
+      "name": "@isaacs/nonrecursive-glob-match",
+      "version": "1.0.3",
+      "license": "BlueOak-1.0.0",
+      "direct": false,
+      "repository": null
+    },
+    {
       "name": "@jridgewell/resolve-uri",
       "version": "3.1.2",
       "license": "MIT",
@@ -1228,7 +1235,7 @@
     },
     {
       "name": "balanced-match",
-      "version": "1.0.2",
+      "version": "4.0.4",
       "license": "MIT",
       "direct": false,
       "repository": "git://github.com/juliangruber/balanced-match.git"
@@ -1305,17 +1312,10 @@
     },
     {
       "name": "brace-expansion",
-      "version": "1.1.21",
+      "version": "5.0.12",
       "license": "MIT",
       "direct": false,
-      "repository": "git://github.com/juliangruber/brace-expansion.git"
-    },
-    {
-      "name": "brace-expansion",
-      "version": "2.1.7",
-      "license": "MIT",
-      "direct": false,
-      "repository": "git://github.com/juliangruber/brace-expansion.git"
+      "repository": "git+https://github.com/juliangruber/brace-expansion.git"
     },
     {
       "name": "buffer",
@@ -1429,13 +1429,6 @@
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/archiverjs/node-compress-commons.git"
-    },
-    {
-      "name": "concat-map",
-      "version": "0.0.1",
-      "license": "MIT",
-      "direct": false,
-      "repository": "git://github.com/substack/node-concat-map.git"
     },
     {
       "name": "core-util-is",
@@ -2391,17 +2384,10 @@
     },
     {
       "name": "minimatch",
-      "version": "3.1.5",
-      "license": "ISC",
+      "version": "11.0.1",
+      "license": "BlueOak-1.0.0",
       "direct": false,
-      "repository": "git://github.com/isaacs/minimatch.git"
-    },
-    {
-      "name": "minimatch",
-      "version": "5.1.9",
-      "license": "ISC",
-      "direct": false,
-      "repository": "git://github.com/isaacs/minimatch.git"
+      "repository": "git@github.com:isaacs/minimatch"
     },
     {
       "name": "mkdirp",

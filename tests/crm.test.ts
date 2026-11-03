@@ -16,7 +16,11 @@ import { createLocalDatabase, isDemoMode } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import { mcpHandler, principalForGrant } from "../packages/mcp/server";
-import { downloadAsset, uploadAsset } from "../packages/storage/files";
+import {
+  downloadAsset,
+  readAssetContent,
+  uploadAsset,
+} from "../packages/storage/files";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let service: CrmService;
@@ -593,7 +597,12 @@ describe("materials and assistant access", () => {
       }),
     ).rejects.toMatchObject({ code: "FILE_TYPE" });
     const asset = await uploadAsset(local.db, admin, input);
-    const content = await downloadAsset(local.db, admin, demoId(1), asset.id);
+    const content = await readAssetContent(
+      local.db,
+      admin,
+      demoId(1),
+      asset.id,
+    );
     expect(new TextDecoder().decode(content.bytes)).toBe(
       "Fictional product overview",
     );

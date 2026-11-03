@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { useRef } from "react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
+import { useRef, useState } from "react";
 import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import { useModalLifecycle } from "../src/components/modal-lifecycle";
+import { RecordDialog } from "../src/components/records/record-dialog";
 
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
@@ -100,4 +107,75 @@ test("search terms do not become unsaved work, while a pending confirmation cann
   view.rerender(<Modal search busy close={close} />);
   outside();
   expect(close).not.toHaveBeenCalled();
+});
+
+function RecordModal({ submit }: { submit: () => Promise<string | null> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Open fictional editor
+      </button>
+      {open && (
+        <RecordDialog
+          title="Fictional editor"
+          submitLabel="Save fictional editor"
+          onClose={() => setOpen(false)}
+          onSubmit={submit}
+        >
+          <input aria-label="Fictional field" data-primary-field />
+        </RecordDialog>
+      )}
+    </>
+  );
+}
+
+test("Escape closes only the record modal, consumes the workspace shortcut and restores trigger focus", () => {
+  const workspaceKey = vi.fn();
+  window.addEventListener("keydown", workspaceKey);
+  try {
+    render(<RecordModal submit={async () => null} />);
+    const trigger = screen.getByRole("button", {
+      name: "Open fictional editor",
+    });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(
+      fireEvent.keyDown(screen.getByLabelText("Fictional field"), {
+        key: "Escape",
+      }),
+    ).toBe(false);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(workspaceKey).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(trigger);
+  } finally {
+    window.removeEventListener("keydown", workspaceKey);
+  }
+});
+
+test("Escape during a pending record save stays in the modal and never reaches workspace shortcuts", async () => {
+  let finish!: (value: string | null) => void;
+  const pending = new Promise<string | null>((resolve) => {
+    finish = resolve;
+  });
+  const workspaceKey = vi.fn();
+  window.addEventListener("keydown", workspaceKey);
+  try {
+    render(<RecordModal submit={() => pending} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open fictional editor" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save fictional editor" }),
+    );
+    expect(
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" }),
+    ).toBe(false);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(workspaceKey).not.toHaveBeenCalled();
+    await act(async () => finish(null));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  } finally {
+    window.removeEventListener("keydown", workspaceKey);
+  }
 });

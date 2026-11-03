@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import { requireMcpAuth } from "@better-auth/mcp";
 import {
   Client,
   type OAuthClientProvider,
@@ -14,19 +13,29 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { flowKey, withOAuthRequest } from "../packages/auth/flow";
 import { authPlugins } from "../packages/auth/options";
 import { CrmService } from "../packages/core/crm";
 import { errorResponse } from "../packages/core/http";
 import { createLocalDatabase } from "../packages/database/client";
 import * as schema from "../packages/database/schema";
+import { agentGuideOutputSchema } from "../packages/mcp/guidance";
 import {
-  mcpChallengeScopes,
-  mcpHandler,
-  mcpRequiredScopes,
   principalForGrant,
   principalForVerifiedToken,
 } from "../packages/mcp/server";
+
+vi.mock("@crm/auth/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../packages/auth/server")>()),
+  getAuth: async () => auth,
+}));
+vi.mock("@crm/database/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../packages/database/client")>()),
+  getDatabase: async () => local.db,
+}));
+
+import { POST as mcpPost } from "../src/app/mcp/route";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let auth: ReturnType<typeof createTestAuth>;
@@ -34,6 +43,33 @@ let origin: string;
 let cookie = "";
 let userId: string;
 let sessionId: string;
+const authPayloadSchema = z.looseObject({
+  url: z.string().optional(),
+  client_id: z.string().optional(),
+  error: z.string().optional(),
+  error_description: z.string().optional(),
+});
+const tokenSchema = z.object({
+  access_token: z.string().min(1),
+  scope: z.string().default(""),
+});
+const refreshableTokenSchema = tokenSchema.extend({
+  refresh_token: z.string().min(1),
+});
+const claimsSchema = z.object({
+  sub: z.string(),
+  crm_grant_id: z.uuid(),
+  client_id: z.string(),
+  sid: z.string(),
+  scope: z.string(),
+  aud: z.union([z.string(), z.array(z.string())]),
+});
+
+function tokenClaims(accessToken: string) {
+  return claimsSchema.parse(
+    JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString()),
+  );
+}
 const server = createServer(async (incoming, outgoing) => {
   try {
     const bytes: Uint8Array[] = [];
@@ -56,22 +92,7 @@ const server = createServer(async (incoming, outgoing) => {
         headers: { Allow: "POST" },
       });
     else if (incoming.url?.startsWith("/mcp"))
-      response = await requireMcpAuth(
-        auth,
-        async (request, claims) => {
-          const principal = await principalForVerifiedToken(local.db, claims);
-          return mcpHandler(
-            local.db,
-            principal,
-            principal.organizationId ?? "",
-          ).fetch(request);
-        },
-        {
-          resource: `${origin}/mcp`,
-          requiredScopes: mcpRequiredScopes,
-          challengeScopes: mcpChallengeScopes,
-        },
-      )(request);
+      response = await mcpPost(request);
     else
       response = await withOAuthRequest(request, () => auth.handler(request));
     outgoing.statusCode = response.status;
@@ -112,9 +133,9 @@ async function call(path: string, body?: object, session = true) {
     cookie = [...jar.values()].join("; ");
   }
   const text = await response.text();
-  let payload: Record<string, unknown> = {};
+  let payload: z.infer<typeof authPayloadSchema> = {};
   try {
-    payload = JSON.parse(text);
+    payload = authPayloadSchema.parse(JSON.parse(text));
   } catch {}
   return {
     response,
@@ -248,13 +269,8 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
     }),
   });
   expect(tokenResponse.status).toBe(200);
-  const token = await tokenResponse.json();
-  const claims = JSON.parse(
-    Buffer.from(
-      String(token.access_token).split(".")[1],
-      "base64url",
-    ).toString(),
-  );
+  const token = refreshableTokenSchema.parse(await tokenResponse.json());
+  const claims = tokenClaims(token.access_token);
   expect(claims.crm_grant_id).toBe(grantA.id);
   expect(await principalForVerifiedToken(local.db, claims)).toMatchObject({
     clientId: claims.client_id,
@@ -320,7 +336,7 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
     }),
   });
   expect(readTokenResponse.status).toBe(200);
-  const readToken = await readTokenResponse.json();
+  const readToken = tokenSchema.parse(await readTokenResponse.json());
   const readOnlyList = await fetch(`${origin}/mcp`, {
     method: "POST",
     headers: {
@@ -346,13 +362,8 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
     }),
   });
   expect(refreshed.status).toBe(200);
-  const refreshToken = await refreshed.json();
-  const refreshedClaims = JSON.parse(
-    Buffer.from(
-      String(refreshToken.access_token).split(".")[1],
-      "base64url",
-    ).toString(),
-  );
+  const refreshToken = tokenSchema.parse(await refreshed.json());
+  const refreshedClaims = tokenClaims(refreshToken.access_token);
   expect(refreshedClaims.crm_grant_id).toBe(grantA.id);
   await local.db
     .update(schema.oauthClient)
@@ -361,6 +372,7 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
   await expect(
     principalForVerifiedToken(local.db, claims),
   ).rejects.toMatchObject({ status: 401 });
+  await expectAuthenticationRecovery(token.access_token);
   await local.db
     .update(schema.oauthClient)
     .set({ disabled: false })
@@ -372,6 +384,7 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
   await expect(
     principalForVerifiedToken(local.db, claims),
   ).rejects.toMatchObject({ status: 401 });
+  await expectAuthenticationRecovery(token.access_token);
   await local.db
     .update(schema.session)
     .set({ expiresAt: new Date(Date.now() + 86400000) })
@@ -392,7 +405,33 @@ test("OAuth PKCE binds each simultaneous flow to its own organization and produc
     body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
   });
   expect(revoked.status).toBe(403);
+  expect(revoked.headers.has("www-authenticate")).toBe(false);
 });
+
+async function expectAuthenticationRecovery(accessToken: string) {
+  const response = await fetch(`${origin}/mcp`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+  });
+  expect(response.status).toBe(401);
+  expect(await response.json()).toEqual({ error: "UNAUTHORIZED" });
+  const challenge = response.headers.get("www-authenticate") ?? "";
+  expect(challenge).toContain('error="invalid_token"');
+  expect(challenge).toContain('scope="crm:read crm:write crm:send"');
+  expect(challenge).toContain(
+    `resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
+  );
+  const metadata = await fetch(
+    `${origin}/.well-known/oauth-protected-resource/mcp`,
+  );
+  expect(metadata.status).toBe(200);
+  expect(await metadata.json()).toMatchObject({ resource: `${origin}/mcp` });
+}
 test("an MCP token without crm:read is refused with insufficient_scope", async () => {
   const service = new CrmService(local.db);
   const organization = await service.createOrganization(
@@ -457,7 +496,7 @@ test("an MCP token without crm:read is refused with insufficient_scope", async (
     }),
   });
   expect(tokenResponse.status).toBe(200);
-  const token = await tokenResponse.json();
+  const token = tokenSchema.parse(await tokenResponse.json());
   expect(String(token.scope ?? "")).not.toContain("crm:read");
   const response = await fetch(`${origin}/mcp`, {
     method: "POST",
@@ -489,7 +528,13 @@ test("MCP requests without credentials receive OAuth discovery instead of data",
   expect(url).toBeTruthy();
   const metadataResponse = await fetch(url ?? "");
   expect(metadataResponse.status).toBe(200);
-  const metadata = await metadataResponse.json();
+  const metadata = z
+    .object({
+      resource: z.url(),
+      scopes_supported: z.array(z.string()),
+      authorization_servers: z.array(z.url()).min(1),
+    })
+    .parse(await metadataResponse.json());
   expect(metadata.resource).toBe(`${origin}/mcp`);
   expect(metadata.scopes_supported).toContain("crm:read");
   expect(metadata.scopes_supported).toContain("crm:write");
@@ -498,9 +543,43 @@ test("MCP requests without credentials receive OAuth discovery instead of data",
     `${issuer.origin}/.well-known/oauth-authorization-server${issuer.pathname}`,
   );
   expect(discovery.status).toBe(200);
-  const configuration = await discovery.json();
+  const configuration = z
+    .object({
+      issuer: z.url(),
+      code_challenge_methods_supported: z.array(z.string()),
+    })
+    .parse(await discovery.json());
   expect(configuration.issuer).toBe(metadata.authorization_servers[0]);
   expect(configuration.code_challenge_methods_supported).toContain("S256");
+});
+
+test.each(["https://untrusted.example.test", "null"])(
+  "MCP rejects the invalid browser Origin %s without a login challenge",
+  async (requestOrigin) => {
+    const response = await fetch(`${origin}/mcp`, {
+      method: "POST",
+      headers: {
+        Origin: requestOrigin,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+    expect(response.status).toBe(403);
+    expect(response.headers.has("www-authenticate")).toBe(false);
+    expect(await response.json()).toEqual({ error: "FORBIDDEN" });
+  },
+);
+
+test("MCP accepts its configured browser Origin and returns OAuth discovery", async () => {
+  const response = await fetch(`${origin}/mcp`, {
+    method: "POST",
+    headers: { Origin: origin, "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+  });
+  expect(response.status).toBe(401);
+  expect(response.headers.get("www-authenticate")).toContain(
+    "resource_metadata",
+  );
 });
 
 test("official MCP client discovers OAuth, registers, completes PKCE and reads and writes only its selected product", async () => {
@@ -616,6 +695,18 @@ test("official MCP client discovers OAuth, registers, completes PKCE and reads a
     await connected.connect(authenticatedTransport);
     const tools = await connected.listTools();
     expect(tools.tools.map((tool) => tool.name)).toContain("list_products");
+    expect(
+      tools.tools.find((tool) => tool.name === "get_agent_guide")?.outputSchema
+        ?.type,
+    ).toBe("object");
+    const guide = await connected.callTool({
+      name: "get_agent_guide",
+      arguments: { topic: "sequences" },
+    });
+    expect(guide.isError).not.toBe(true);
+    const workflow = agentGuideOutputSchema.parse(guide.structuredContent);
+    expect(workflow.topic).toBe("sequences");
+    expect(workflow.steps.length).toBeGreaterThan(0);
     expect(
       tools.tools.some(
         (tool) =>

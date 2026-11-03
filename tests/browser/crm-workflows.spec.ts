@@ -179,9 +179,12 @@ test("native history and undated drafts persist through the UI, and legacy reaso
     name: t.contactWorkspace.history,
     exact: true,
   });
-  await expect(history.locator(`time[datetime="${occurredAt}"]`)).toContainText(
-    "56.789",
-  );
+  const historyTime = history.locator("time");
+  await expect(historyTime).toHaveAttribute("datetime", occurredAt);
+  await expect(historyTime).toHaveAttribute("title", /56\.789/);
+  await history
+    .getByText(t.contactWorkspace.sourceDetails, { exact: true })
+    .click();
   await expect(
     history.getByText(t.nativeIngestion.historySource, { exact: true }),
   ).toBeVisible();
@@ -289,6 +292,29 @@ test("native history and undated drafts persist through the UI, and legacy reaso
   await page.goto(
     `/people/${person.personId}?relationship=${person.relationshipId}&action=${scheduled.scheduledActionId}`,
   );
+  await page.getByRole("tab", { name: t.draft, exact: true }).click();
+  const draftHistory = page.getByRole("region", {
+    name: t.contactWorkspace.history,
+    exact: true,
+  });
+  const draftPanel = page.locator(".draft-panel");
+  await expect(
+    draftPanel.getByLabel(t.draftLabel, { exact: true }),
+  ).toHaveValue(editedBody);
+  const draftHistoryBox = await draftHistory.boundingBox();
+  const draftPanelBox = await draftPanel.boundingBox();
+  if (!draftHistoryBox || !draftPanelBox)
+    throw new Error("Missing conversation and draft layout");
+  expect(draftPanelBox.x).toBeGreaterThan(
+    draftHistoryBox.x + draftHistoryBox.width,
+  );
+  expect(Math.abs(draftPanelBox.y - draftHistoryBox.y)).toBeLessThan(1);
+  await expect(
+    draftPanel.getByRole("button", { name: t.draftFlow.schedule, exact: true }),
+  ).toBeVisible();
+  await expect(
+    draftPanel.getByRole("button", { name: t.touchVerbs.send, exact: true }),
+  ).toBeDisabled();
   await page
     .getByRole("tab", { name: t.contactWorkspace.overview, exact: true })
     .click();

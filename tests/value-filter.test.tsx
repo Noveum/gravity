@@ -117,25 +117,67 @@ test("keyboard sliders emit one atomic range update and restoring the full range
   expect(changed).toHaveBeenCalledTimes(1);
   expect(changed).toHaveBeenLastCalledWith({
     minimum: "100.00",
-    maximum: "",
   });
   maximum.focus();
   await keyboard.keyboard("{ArrowLeft}");
   expect(changed).toHaveBeenCalledTimes(2);
   expect(changed).toHaveBeenLastCalledWith({
-    minimum: "100.00",
     maximum: "9900.00",
   });
   minimum.focus();
   await keyboard.keyboard("{Home}");
   maximum.focus();
   await keyboard.keyboard("{End}");
-  expect(changed).toHaveBeenLastCalledWith({ minimum: "", maximum: "" });
+  expect(changed).toHaveBeenLastCalledWith({ maximum: "" });
   expect(controls.getByLabelText(t.minimumDealSize)).toHaveProperty(
     "value",
     "",
   );
   expect(controls.getByLabelText(t.maximumDealSize)).toHaveProperty(
+    "value",
+    "",
+  );
+});
+
+test("a slider preserves a numeric edit before URL-derived filter props catch up", async () => {
+  let latest = { ...empty, minimum: "50", maximum: "6000" };
+  const changed = vi.fn((change: Partial<ValueFilters>) => {
+    latest = { ...latest, ...change };
+  });
+  render(
+    <ValueFilter
+      filters={{ ...empty, minimum: "50", maximum: "6000" }}
+      amountMaximum={10000}
+      currencies={["USD"]}
+      invalid={false}
+      onChange={changed}
+    />,
+  );
+  const controls = open();
+  fireEvent.change(controls.getByLabelText(t.minimumDealSize), {
+    target: { value: "1000" },
+  });
+  controls.getByRole("slider", { name: t.uiRefresh.maximumSlider }).focus();
+  await userEvent.setup().keyboard("{ArrowLeft}");
+  expect(latest.minimum).toBe("1000");
+  expect(latest.maximum).toBe("5900.00");
+});
+
+test("an external reset to the original props clears an unacknowledged numeric edit", () => {
+  const props = {
+    filters: empty,
+    amountMaximum: 10000,
+    currencies: ["USD"],
+    invalid: false,
+    onChange: vi.fn(),
+  };
+  const view = render(<ValueFilter {...props} />);
+  const controls = open();
+  fireEvent.change(controls.getByLabelText(t.minimumDealSize), {
+    target: { value: "1000" },
+  });
+  view.rerender(<ValueFilter {...props} filters={{ ...empty }} />);
+  expect(controls.getByLabelText(t.minimumDealSize)).toHaveProperty(
     "value",
     "",
   );
@@ -299,6 +341,6 @@ test("a legal large JPY amount never lets a slider edit exceed the supported min
   expect(Number(maximumInput.value)).toBeLessThanOrEqual(2147483647);
   expect(changed).toHaveBeenCalledTimes(1);
   await userEvent.setup().keyboard("{End}");
-  expect(changed).toHaveBeenLastCalledWith({ minimum: "", maximum: "" });
+  expect(changed).toHaveBeenLastCalledWith({ maximum: "" });
   expect(maximumInput).toHaveProperty("value", "");
 });

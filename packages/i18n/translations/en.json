@@ -211,6 +211,7 @@
     "HUMAN_ACTION_REQUIRED": "A signed-in teammate must review this action.",
     "ACTION_COMPLETED": "This action is already complete.",
     "FILE_SIZE": "Choose a file between 1 byte and 100 MB.",
+    "UPLOAD_RESTART_REQUIRED": "This upload attempt cannot be resumed. Choose the file again to start a new upload.",
     "FILE_CHECKSUM": "The uploaded file does not match its checksum. Upload the file again.",
     "FILE_TYPE": "Choose a valid PDF, Markdown, or plain text file.",
     "INVALID_INPUT": "Check the form and try again.",
@@ -314,7 +315,8 @@
     "PENDING_HISTORY_REVIEW_REQUIRED": "Review and link or ignore pending imported history for this contact before sending.",
     "CSV_STRUCTURE_INVALID": "Check the CSV: use unique, non-empty headers, the same number of columns in every row, and correctly escaped quotes.",
     "CSV_MAPPING_INVALID": "Map each imported field once, using columns from this file. Company imports accept company fields only.",
-    "FILE_READ_ERROR": "This file could not be read. Choose the file again."
+    "FILE_READ_ERROR": "This file could not be read. Choose the file again.",
+    "CSV_ROW_LIMIT": "Choose a CSV with at most 1,000 data rows. Split larger files before importing."
   },
   "consentAccess": "Access",
   "consentLevelRead": "Read",
@@ -2723,5 +2725,7 @@
     "classification": "Classification",
     "sourceUrl": "Source",
     "observedAt": "Observed at"
-  }
+  },
+  "csvRowLimit": "CSV imports support up to {count} data rows per file.",
+  "csvReadingFile": "Reading CSV file…"
 }

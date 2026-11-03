@@ -120,6 +120,19 @@ const phonePattern = /^[+\d\s().-]*$/;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Reader = Database | Transaction;
 
+function parseImportCsv(csvText: string) {
+  try {
+    return parseCsv(csvText);
+  } catch (error) {
+    throw new DomainError(
+      error instanceof Error && error.message === "CSV_ROW_LIMIT"
+        ? "CSV_ROW_LIMIT"
+        : "CSV_STRUCTURE_INVALID",
+      400,
+    );
+  }
+}
+
 export class CsvImportService {
   constructor(private db: Database) {}
 
@@ -186,12 +199,7 @@ export class CsvImportService {
     const input = csvImportPreviewSchema.parse(rawInput);
     await authorize(executor, principal, input.organizationId, input.productId);
     await assertProductActive(executor, input.organizationId, input.productId);
-    let parsed: ReturnType<typeof parseCsv>;
-    try {
-      parsed = parseCsv(input.csvText);
-    } catch {
-      throw new DomainError("CSV_STRUCTURE_INVALID", 400);
-    }
+    const parsed = parseImportCsv(input.csvText);
     const { headers, rows: rawRows } = parsed;
     const { mapping, parsedRows } = this.prepareRows(
       headers,
@@ -395,6 +403,8 @@ export class CsvImportService {
     rawInput: z.input<typeof csvImportSchema>,
   ): Promise<ImportResult> {
     const input = csvImportSchema.parse(rawInput);
+    // Bound parsing and per-row writes before acquiring a transaction or tenant lock.
+    parseImportCsv(input.csvText);
     return this.db.transaction(async (tx) => {
       await lockOrganization(tx, input.organizationId);
       await authorize(

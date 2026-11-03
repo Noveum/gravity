@@ -58,6 +58,10 @@ async function withProvider(
       for (let i = 0; i < body.length; i += 2)
         res.write(body.subarray(i, i + 2));
       res.end();
+    } else if (req.method === "DELETE") {
+      objects.delete(path);
+      res.statusCode = 204;
+      res.end();
     } else {
       res.statusCode = 405;
       res.end();
@@ -141,9 +145,12 @@ test.each([
           createHash("sha256").update(bytes).digest("hex"),
         );
       }
-      expect(requests.map((r) => r.method)).toEqual(["HEAD", "PUT", "GET"]);
+      expect(requests.map((r) => r.method)).toEqual(
+        code ? ["HEAD", "PUT", "GET", "DELETE"] : ["HEAD", "PUT", "GET"],
+      );
       expect(requests[1].condition).toBe('"source-version"');
       expect(requests[2].path).toContain("/files/");
+      if (code) expect(requests[3].path).toBe(requests[2].path);
     });
   },
 );

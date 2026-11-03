@@ -224,3 +224,133 @@ test("malformed replacement CSV clears the prior file before another preview", a
       .hasAttribute("disabled"),
   ).toBe(true);
 });
+
+test("replacement file cannot use an earlier preview while its text is still loading", async () => {
+  await mountCrm(harness, "/people");
+  fireEvent.click(await screen.findByRole("button", { name: t.importCsv }));
+  const dialog = await screen.findByRole("dialog");
+  const a = new File([""], "fictional-a.csv", { type: "text/csv" });
+  a.text = () => Promise.resolve("Name\nEarlier fixture");
+  await act(async () => {
+    fireEvent.change(
+      dialog.querySelector('input[type="file"]') as HTMLInputElement,
+      { target: { files: [a] } },
+    );
+  });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: new RegExp(t.previewCsvImport),
+      }),
+    );
+  });
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole("button", { name: t.back }));
+  });
+  let resolveB: (value: string) => void = () => {};
+  const b = new File([""], "fictional-b.csv", { type: "text/csv" });
+  b.text = () =>
+    new Promise<string>((resolve) => {
+      resolveB = resolve;
+    });
+  await act(async () => {
+    fireEvent.change(
+      dialog.querySelector('input[type="file"]') as HTMLInputElement,
+      { target: { files: [b] } },
+    );
+  });
+  expect(
+    within(dialog)
+      .getByRole("button", { name: new RegExp(t.previewCsvImport) })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  await act(async () => {
+    resolveB("Name\nReplacement fixture");
+  });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: new RegExp(t.previewCsvImport),
+      }),
+    );
+  });
+  expect(await within(dialog).findByText("Replacement fixture")).toBeDefined();
+  expect(within(dialog).queryByText("Earlier fixture")).toBeNull();
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /Import contacts/ }),
+    );
+  });
+  const request = harness.posts.find((body) => body.operation === "csv-import");
+  expect(request).toMatchObject({
+    label: "fictional-b.csv",
+    csvText: "Name\nReplacement fixture",
+  });
+});
+
+test("a superseded file read cannot replace the newer file's preview or imported contents", async () => {
+  await mountCrm(harness, "/people");
+  fireEvent.click(await screen.findByRole("button", { name: t.importCsv }));
+  const dialog = await screen.findByRole("dialog");
+  let resolveA: (value: string) => void = () => {};
+  const a = new File([""], "fictional-a.csv", { type: "text/csv" });
+  a.text = () =>
+    new Promise<string>((resolve) => {
+      resolveA = resolve;
+    });
+  const b = new File([""], "fictional-b.csv", { type: "text/csv" });
+  b.text = () => Promise.resolve("Name\nLatest fixture");
+  for (const file of [a, b])
+    await act(async () => {
+      fireEvent.change(
+        dialog.querySelector('input[type="file"]') as HTMLInputElement,
+        { target: { files: [file] } },
+      );
+    });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: new RegExp(t.previewCsvImport),
+      }),
+    );
+  });
+  expect(await within(dialog).findByText("Latest fixture")).toBeDefined();
+  await act(async () => {
+    resolveA("Name\nSuperseded fixture");
+  });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /Import contacts/ }),
+    );
+  });
+  expect(
+    harness.posts.find((body) => body.operation === "csv-import"),
+  ).toMatchObject({
+    label: "fictional-b.csv",
+    csvText: "Name\nLatest fixture",
+  });
+});
+
+test("the shared row limit is disclosed and oversized files cannot be previewed", async () => {
+  await mountCrm(harness, "/people");
+  fireEvent.click(await screen.findByRole("button", { name: t.importCsv }));
+  const dialog = await screen.findByRole("dialog");
+  expect(
+    within(dialog).getByText(t.csvRowLimit.replace("{count}", "1000")),
+  ).toBeDefined();
+  const csv = `Name\n${Array.from({ length: 1001 }, (_, index) => `Fictional ${index}`).join("\n")}`;
+  const file = new File([csv], "oversized-fictional.csv", { type: "text/csv" });
+  file.text = () => Promise.resolve(csv);
+  await act(async () => {
+    fireEvent.change(
+      dialog.querySelector('input[type="file"]') as HTMLInputElement,
+      { target: { files: [file] } },
+    );
+  });
+  expect(await within(dialog).findByText(t.errors.CSV_ROW_LIMIT)).toBeDefined();
+  expect(
+    within(dialog)
+      .getByRole("button", { name: new RegExp(t.previewCsvImport) })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+});

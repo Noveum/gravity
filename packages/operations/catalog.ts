@@ -193,6 +193,7 @@ export interface Operation {
   name: string;
   api: "crm" | "outreach" | "integrations" | "materials" | "grants" | "files";
   method: "GET" | "POST" | "DELETE";
+  access: "read" | "write";
   operation: string;
   description: string;
   schema: z.ZodObject;
@@ -207,23 +208,27 @@ export interface Operation {
 function operation<S extends z.ZodObject>(
   definition: Omit<
     Operation,
-    "schema" | "execute" | "idempotent" | "destructive"
+    "schema" | "execute" | "idempotent" | "destructive" | "access"
   > & {
     schema: S;
     run: (context: OperationContext, input: z.output<S>) => Promise<unknown>;
     idempotent?: boolean;
     destructive?: boolean;
     publish?: boolean;
+    access?: Operation["access"];
   },
 ): Operation {
+  const access =
+    definition.access ?? (definition.method === "GET" ? "read" : "write");
   return {
     ...definition,
-    idempotent: definition.idempotent ?? definition.method === "GET",
-    destructive: definition.destructive ?? definition.method !== "GET",
+    access,
+    idempotent: definition.idempotent ?? access === "read",
+    destructive: definition.destructive ?? access === "write",
     async execute(context, input) {
       const parsed = definition.schema.parse(input);
       const value = await definition.run(context, parsed);
-      if (definition.method !== "GET" && definition.publish !== false) {
+      if (access === "write" && definition.publish !== false) {
         const fields = parsed as { organizationId?: string };
         const output = value as
           | { organizationId?: string; id?: string }
@@ -987,6 +992,7 @@ export const operations: Operation[] = [
     method: "POST",
     operation: "csv-import-preview",
     name: "preview_csv_import",
+    access: "read",
     idempotent: true,
     destructive: false,
     publish: false,
@@ -1969,7 +1975,7 @@ const ownerOperations = new Set([
 export function operationRequirements(item: Operation) {
   return {
     scopes:
-      item.method === "GET"
+      item.access === "read"
         ? ["crm:read"]
         : [
             "crm:read",
@@ -1990,7 +1996,7 @@ export function operationAvailable(
 ) {
   const requirements = operationRequirements(item);
   return (
-    (item.method === "GET" ||
+    (item.access === "read" ||
       principal.source === "session" ||
       principal.readOnly === false) &&
     (!item.permission ||
@@ -2034,6 +2040,7 @@ export async function permissionAudit(
       name: item.name,
       api: `/api/${item.api}`,
       method: item.method,
+      access: item.access,
       operation: item.operation,
       available: operationAvailable(item, context.principal, membership.role),
       requirements: operationRequirements(item),
@@ -2054,7 +2061,7 @@ export async function executeMcpOperation(
     context.principal,
     organizationId,
     undefined,
-    item.method !== "GET",
+    item.access === "write",
   );
   const parsed = operationInput(item).parse(input);
   return item.execute(context, {

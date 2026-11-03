@@ -268,7 +268,7 @@ export function mcpHandler(
           ),
       );
       for (const operation of operations) {
-        if (operation.method !== "GET" && !writable) continue;
+        if (operation.access === "write" && !writable) continue;
         if (operation.permission === "crm:send" && !canSend) continue;
         if (operationRequirements(operation).humanSession) continue;
         server.registerTool(
@@ -277,7 +277,7 @@ export function mcpHandler(
             description: operation.description,
             inputSchema: operationInput(operation),
             annotations: {
-              readOnlyHint: operation.method === "GET",
+              readOnlyHint: operation.access === "read",
               destructiveHint: operation.destructive,
               idempotentHint: operation.idempotent,
             },
@@ -428,6 +428,7 @@ export function mcpHandler(
                       name: operation.name,
                       api: `/api/${operation.api}`,
                       method: operation.method,
+                      access: operation.access,
                       operation: operation.operation,
                       available: operationAvailable(
                         operation,

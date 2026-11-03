@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { ContactAttributionService } from "../packages/core/contact-attribution";
 import { CsvImportService, parseCsv } from "../packages/core/csv-import";
 import { createLocalDatabase } from "../packages/database/client";
@@ -258,4 +258,96 @@ test("company-only files review duplicate domains within the file and reject wit
   await expect(
     new CsvImportService(local.db).importCsv(admin, input),
   ).rejects.toMatchObject({ code: "COMPANY_EXISTS" });
+});
+
+test("read-only MCP principals can preview POST CSV operations but cannot import", async () => {
+  const principal = {
+    ...admin,
+    source: "mcp" as const,
+    organizationId,
+    readOnly: true,
+  };
+  const input = { productId, csvText: "Name\nRead-only preview fixture" };
+  const result = (await executeMcpOperation(
+    apiOperation("crm", "POST", "csv-import-preview"),
+    { db: local.db, principal },
+    organizationId,
+    input,
+  )) as { summary: { validCount: number } };
+  expect(result.summary.validCount).toBe(1);
+  await expect(
+    executeMcpOperation(
+      apiOperation("crm", "POST", "csv-import"),
+      { db: local.db, principal },
+      organizationId,
+      input,
+    ),
+  ).rejects.toMatchObject({ code: "FORBIDDEN" });
+});
+
+test("CSV work limit accepts 1,000 data rows and rejects 1,001 before a transaction", async () => {
+  const csvText = `Name\n${Array.from({ length: 1000 }, (_, index) => `Fictional ${index}`).join("\n")}`;
+  expect(parseCsv(csvText).rows).toHaveLength(1000);
+  expect(() => parseCsv(`${csvText}\nOver the limit`)).toThrow("CSV_ROW_LIMIT");
+  const transaction = vi.spyOn(local.db, "transaction");
+  try {
+    await expect(
+      new CsvImportService(local.db).importCsv(admin, {
+        organizationId,
+        productId,
+        csvText: `${csvText}\nOver the limit`,
+      }),
+    ).rejects.toMatchObject({ code: "CSV_ROW_LIMIT" });
+    expect(transaction).not.toHaveBeenCalled();
+    const preview = await new CsvImportService(local.db).preview(admin, {
+      organizationId,
+      productId,
+      csvText,
+    });
+    expect(preview.summary.validCount).toBe(1000);
+  } finally {
+    transaction.mockRestore();
+  }
+});
+
+test("a failure after an imported row rolls back people, companies, relationships and provenance", async () => {
+  const before = await Promise.all(
+    [
+      s.people,
+      s.companies,
+      s.relationships,
+      s.contactContributions,
+      s.contactImportBatches,
+      s.changeEvents,
+    ].map((table) => local.db.select().from(table)),
+  );
+  await local.client.exec(
+    `CREATE FUNCTION reject_csv_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.name = 'Forced CSV failure' THEN RAISE EXCEPTION 'Forced fixture failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_csv_fixture BEFORE INSERT ON people FOR EACH ROW EXECUTE FUNCTION reject_csv_fixture();`,
+  );
+  try {
+    await expect(
+      new CsvImportService(local.db).importCsv(admin, {
+        organizationId,
+        productId,
+        label: "Rollback fixture",
+        csvText:
+          "Name,Email,Company,Domain\nFirst rollback fixture,rollback-first@example.test,Rollback Company,rollback-csv.example.test\nForced CSV failure,rollback-fail@example.test,Rollback Company,rollback-csv.example.test",
+      }),
+    ).rejects.toThrow();
+    const after = await Promise.all(
+      [
+        s.people,
+        s.companies,
+        s.relationships,
+        s.contactContributions,
+        s.contactImportBatches,
+        s.changeEvents,
+      ].map((table) => local.db.select().from(table)),
+    );
+    expect(after).toEqual(before);
+  } finally {
+    await local.client.exec(
+      "DROP TRIGGER reject_csv_fixture ON people; DROP FUNCTION reject_csv_fixture();",
+    );
+  }
 });

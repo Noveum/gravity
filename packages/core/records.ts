@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
+import t from "../i18n/translations/en.json";
 import { publishChange } from "./changes";
 import { recordContactSubmission } from "./contact-attribution";
 import { lockContactDirectory } from "./contact-history";
@@ -1302,11 +1303,16 @@ export class RecordService {
                 nextStep: tr.nextStep || sr.nextStep,
                 nextStepDueAt: tr.nextStep
                   ? tr.nextStepDueAt
-                  : sr.nextStepDueAt,
+                  : sr.nextStep
+                    ? sr.nextStepDueAt
+                    : (tr.nextStepDueAt ?? sr.nextStepDueAt),
                 stageId: tr.stageId ?? sr.stageId,
                 tags: [...new Set([...tr.tags, ...sr.tags])],
                 amountMinor: tr.amountMinor ?? sr.amountMinor,
-                currency: tr.amountMinor === null ? sr.currency : tr.currency,
+                currency:
+                  tr.amountMinor === null && sr.amountMinor !== null
+                    ? sr.currency
+                    : tr.currency,
                 lastOutboundAt: latest(tr.lastOutboundAt, sr.lastOutboundAt),
                 lastInboundAt: latest(tr.lastInboundAt, sr.lastInboundAt),
                 touchCount: tr.touchCount + sr.touchCount,
@@ -1413,7 +1419,7 @@ export class RecordService {
                   .update(s.touches)
                   .set({
                     status: "skipped",
-                    skipReason: "merged_duplicate_enrollment",
+                    skipReason: t.mergeDuplicateEnrollmentReason,
                     closedAt: new Date(),
                     approvedHash: null,
                     approvedBy: null,

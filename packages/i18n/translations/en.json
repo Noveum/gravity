@@ -1133,11 +1133,7 @@
       "overview": "Overview"
     },
     "tourAllProducts": "All products",
-    "tourProducts": [
-      "AI Platform",
-      "API Marketplace",
-      "Services"
-    ],
+    "tourProducts": ["AI Platform", "API Marketplace", "Services"],
     "tourOwner": "You",
     "tourNextStep": "Next step",
     "tourSequence": "Evaluation follow-up",
@@ -1154,11 +1150,7 @@
       "Replies to review",
       "Pipeline value"
     ],
-    "tourMetricValues": [
-      "12",
-      "3",
-      "$48,000"
-    ],
+    "tourMetricValues": ["12", "3", "$48,000"],
     "tourMetricNote": "Example metrics. Select a card to explore the next actions behind it.",
     "tourSignal": "Evaluation planned · budget unverified",
     "tourPrivate": "Private thread · example",
@@ -2679,6 +2671,7 @@
   "mergeSelectPrompt": "Choose a duplicate record to merge into this one",
   "cannotMergeSelf": "Cannot merge a record into itself",
   "searchRecordPlaceholder": "Type to search records…",
+  "mergeDuplicateEnrollmentReason": "Stopped duplicate sequence enrollment after merging contacts",
   "mergeOriginalPerson": "Original person before merge",
   "mergeHistoryTitle": "Merge history",
   "mergeHistoryHint": "Original product relationship values retained when duplicates were merged. Canonical values take precedence where both records had a value.",

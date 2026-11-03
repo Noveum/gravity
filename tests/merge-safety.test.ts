@@ -725,16 +725,14 @@ test.each(["source", "target"])(
         },
       ])
       .returning();
-    await local.db
-      .insert(s.relationships)
-      .values(
-        [a, b, hidden].map((p) => ({
-          organizationId: org,
-          productId: p.id === hidden.id ? product : demoId(11),
-          personId: p.id,
-          ownerId: demoUser,
-        })),
-      );
+    await local.db.insert(s.relationships).values(
+      [a, b, hidden].map((p) => ({
+        organizationId: org,
+        productId: p.id === hidden.id ? product : demoId(11),
+        personId: p.id,
+        ownerId: demoUser,
+      })),
+    );
     await expect(
       new RecordService(local.db).mergeRecords(
         {

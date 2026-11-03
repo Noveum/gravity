@@ -6325,8 +6325,10 @@ nav.list-pagination > label:has(select) {
 .candidate-item:last-child {
   border-bottom: none;
 }
-.candidate-item:hover {
-  background: var(--surface-hover);
+@media (hover: hover) {
+  .candidate-item:hover {
+    background: var(--surface-hover);
+  }
 }
 .candidate-name {
   font-weight: 500;

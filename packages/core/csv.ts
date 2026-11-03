@@ -18,73 +18,57 @@ export interface ParsedCsv {
   rows: string[][];
 }
 
-/** RFC 4180 compliant CSV parser with multiline & quote escaping support. */
+/** Strict RFC 4180 field structure; blank lines are ignored. */
 export function parseCsv(text: string): ParsedCsv {
   const clean = text.replace(/^\uFEFF/, "");
   const lines: string[][] = [];
-  let currentRow: string[] = [];
-  let currentField = "";
-  let inQuotes = false;
-  let i = 0;
-
-  while (i < clean.length) {
+  let row: string[] = [];
+  let field = "";
+  let state: "plain" | "quoted" | "closed" = "plain";
+  const invalid = () => {
+    throw new Error("CSV_STRUCTURE_INVALID");
+  };
+  const finishField = () => {
+    row.push(field.trim());
+    field = "";
+    state = "plain";
+  };
+  const finishRow = () => {
+    finishField();
+    if (row.some(Boolean)) lines.push(row);
+    row = [];
+  };
+  for (let i = 0; i < clean.length; i++) {
     const char = clean[i];
-    if (inQuotes) {
+    if (state === "quoted") {
       if (char === '"') {
-        if (i + 1 < clean.length && clean[i + 1] === '"') {
-          currentField += '"';
-          i += 2;
-          continue;
-        }
-        inQuotes = false;
-        i++;
-        continue;
-      }
-      currentField += char;
-      i++;
-      continue;
-    }
-
-    if (char === '"') {
-      inQuotes = true;
-      i++;
-      continue;
-    }
-    if (char === ",") {
-      currentRow.push(currentField.trim());
-      currentField = "";
-      i++;
-      continue;
-    }
-    if (char === "\r" || char === "\n") {
-      if (char === "\r" && i + 1 < clean.length && clean[i + 1] === "\n") {
-        i++;
-      }
-      currentRow.push(currentField.trim());
-      currentField = "";
-      if (currentRow.some((field) => field.length > 0)) {
-        lines.push(currentRow);
-      }
-      currentRow = [];
-      i++;
-      continue;
-    }
-    currentField += char;
-    i++;
-  }
-
-  if (currentField.length > 0 || currentRow.length > 0) {
-    currentRow.push(currentField.trim());
-    if (currentRow.some((field) => field.length > 0)) {
-      lines.push(currentRow);
+        if (clean[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else state = "closed";
+      } else field += char;
+    } else if (char === ",") finishField();
+    else if (char === "\r" || char === "\n") {
+      if (char === "\r" && clean[i + 1] === "\n") i++;
+      finishRow();
+    } else if (char === '"') {
+      if (state !== "plain" || field.length) invalid();
+      state = "quoted";
+    } else {
+      if (state === "closed") invalid();
+      field += char;
     }
   }
-
-  if (lines.length === 0) {
-    return { headers: [], rows: [] };
-  }
-  const headers = lines[0].map((h) => h.trim());
-  const rows = lines.slice(1);
+  if (state === "quoted") invalid();
+  if (field.length || row.length || state === "closed") finishRow();
+  if (!lines.length) return { headers: [], rows: [] };
+  const [headers, ...rows] = lines;
+  if (
+    headers.some((header) => !header) ||
+    new Set(headers).size !== headers.length ||
+    rows.some((item) => item.length !== headers.length)
+  )
+    invalid();
   return { headers, rows };
 }
 

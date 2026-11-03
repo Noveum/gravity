@@ -17,71 +17,18 @@ import { useModalLifecycle } from "../modal-lifecycle";
 import { Select } from "../ui/select";
 import { LoadingState } from "../ui/states";
 
-export interface PreviewResponse {
-  summary: {
-    totalRows: number;
-    validCount: number;
-    duplicateCount: number;
-    invalidCount: number;
-    headers: string[];
-    detectedMapping: Record<string, string>;
-  };
-  validRows: Array<{
-    rowIndex: number;
-    person: {
-      name: string;
-      email?: string;
-      title?: string;
-      phone?: string;
-      linkedinUrl?: string;
-      summary?: string;
-    };
-    company?: {
-      name?: string;
-      domain?: string;
-      description?: string;
-    };
-  }>;
-  duplicateRows: Array<{
-    rowIndex: number;
-    person: {
-      name: string;
-      email?: string;
-      title?: string;
-      phone?: string;
-      linkedinUrl?: string;
-      summary?: string;
-    };
-    company?: {
-      name?: string;
-      domain?: string;
-      description?: string;
-    };
-    reasons: Array<{
-      kind: string;
-      message: string;
-      existingId?: string;
-      existingName?: string;
-    }>;
-  }>;
-  invalidRows: Array<{
-    rowIndex: number;
-    row: Record<string, string>;
-    errors: string[];
-  }>;
-}
+export type {
+  ImportResult as ImportResponse,
+  PreviewResult as PreviewResponse,
+} from "@crm/core/csv-import";
 
-export interface ImportResponse {
-  totalRows: number;
-  importedCount: number;
-  peopleCreated: number;
-  companiesCreated: number;
-  relationshipsCreated: number;
-  duplicateCount: number;
-  invalidCount: number;
-  duplicates: unknown[];
-  invalid: unknown[];
-}
+import type {
+  ImportResult as ImportResponse,
+  PreviewResult as PreviewResponse,
+} from "@crm/core/csv-import";
+
+const issueText = (code: string) =>
+  t.csvIssues[code as keyof typeof t.csvIssues] ?? t.errors.INVALID_INPUT;
 
 export const mappingFieldOptions = [
   { value: "ignore", label: t.doNotImport },
@@ -102,12 +49,14 @@ export function CsvImportDialog({
   productId: defaultProductId,
   onClose,
   onImported,
+  initialMode = "contacts",
 }: {
   data: ClientSnapshot;
   organizationId: string;
   productId: string;
   onClose: () => void;
   onImported: () => Promise<void>;
+  initialMode?: "contacts" | "companies";
 }) {
   const modal = useRef<HTMLDialogElement>(null);
   useModalLifecycle(modal);
@@ -118,6 +67,7 @@ export function CsvImportDialog({
   const [productId, setProductId] = useState(
     defaultProductId || data.products[0]?.id || "",
   );
+  const [mode, setMode] = useState<"contacts" | "companies">(initialMode);
   const [purpose, setPurpose] = useState<"buyer" | "partner">("buyer");
   const [headers, setHeaders] = useState<string[]>([]);
   const [totalRows, setTotalRows] = useState(0);
@@ -157,13 +107,18 @@ export function CsvImportDialog({
     setFile(selectedFile);
     try {
       const text = await readFileText(selectedFile);
-      setCsvText(text);
       const parsed = parseCsv(text);
+      setCsvText(text);
       setHeaders(parsed.headers);
       setTotalRows(parsed.rows.length);
       const detected = detectColumnMapping(parsed.headers);
       setColumnMapping(detected);
     } catch (err) {
+      setFile(null);
+      setCsvText("");
+      setHeaders([]);
+      setColumnMapping({});
+      setTotalRows(0);
       setError(errorText(err));
     }
   }
@@ -179,11 +134,20 @@ export function CsvImportDialog({
     }
     const mapping = currentMapping || columnMapping;
     const hasNameMapping = Object.values(mapping).includes("name");
-    if (!hasNameMapping) {
+    if (mode === "contacts" && !hasNameMapping) {
       setError(t.csvRequiredNameMissing);
       return;
     }
 
+    if (
+      mode === "companies" &&
+      !Object.values(mapping).some(
+        (field) => field === "companyName" || field === "companyDomain",
+      )
+    ) {
+      setError(t.csvRequiredCompanyMissing);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -197,6 +161,7 @@ export function CsvImportDialog({
           csvText,
           columnMapping: mapping,
           purpose,
+          mode,
         }),
       });
       setPreview(res);
@@ -230,8 +195,9 @@ export function CsvImportDialog({
           csvText,
           columnMapping,
           purpose,
+          mode,
           skipDuplicates,
-          label: file?.name || "CSV Import",
+          label: file?.name || t.importCsv,
         }),
       });
       setSummary(res);
@@ -282,6 +248,18 @@ export function CsvImportDialog({
         <div className="import-step-upload">
           <div className="import-settings-grid">
             <div className="field">
+              <span>{t.csvMode}</span>
+              <Select
+                label={t.csvMode}
+                value={mode}
+                options={[
+                  { value: "contacts", label: t.csvModeContacts },
+                  { value: "companies", label: t.csvModeCompanies },
+                ]}
+                onChange={(value) => setMode(value as "contacts" | "companies")}
+              />
+            </div>
+            <div className="field">
               <span>{t.selectProduct}</span>
               <Select
                 label={t.selectProduct}
@@ -295,18 +273,20 @@ export function CsvImportDialog({
               />
             </div>
 
-            <div className="field">
-              <span>{t.relationshipPurpose}</span>
-              <Select
-                label={t.relationshipPurpose}
-                value={purpose}
-                options={[
-                  { value: "buyer", label: t.purposeBuyer },
-                  { value: "partner", label: t.purposePartner },
-                ]}
-                onChange={(val) => setPurpose(val as "buyer" | "partner")}
-              />
-            </div>
+            {mode === "contacts" && (
+              <div className="field">
+                <span>{t.relationshipPurpose}</span>
+                <Select
+                  label={t.relationshipPurpose}
+                  value={purpose}
+                  options={[
+                    { value: "buyer", label: t.purposeBuyer },
+                    { value: "partner", label: t.purposePartner },
+                  ]}
+                  onChange={(val) => setPurpose(val as "buyer" | "partner")}
+                />
+              </div>
+            )}
           </div>
 
           {file ? (
@@ -326,7 +306,9 @@ export function CsvImportDialog({
                 <div>
                   <strong>{file.name}</strong>
                   <span className="muted">
-                    {(file.size / 1024).toFixed(1)} KB · {totalRows} rows
+                    {t.csvFileSizeRows
+                      .replace("{size}", (file.size / 1024).toFixed(1))
+                      .replace("{count}", String(totalRows))}
                   </span>
                 </div>
                 <button
@@ -391,7 +373,12 @@ export function CsvImportDialog({
                           <Select
                             label={header}
                             value={columnMapping[header] || "ignore"}
-                            options={mappingFieldOptions}
+                            options={mappingFieldOptions.filter(
+                              (option) =>
+                                mode === "contacts" ||
+                                option.value === "ignore" ||
+                                option.value.startsWith("company"),
+                            )}
                             onChange={(val) => {
                               setColumnMapping((prev) => ({
                                 ...prev,
@@ -482,18 +469,20 @@ export function CsvImportDialog({
             {previewTab === "valid" && (
               <div className="table-scroll" style={{ maxHeight: "280px" }}>
                 {preview.validRows.length === 0 ? (
-                  <p className="muted empty-cell">
-                    No valid rows ready to import.
-                  </p>
+                  <p className="muted empty-cell">{t.csvNoValidRows}</p>
                 ) : (
                   <table>
                     <thead>
                       <tr>
                         <th>{t.rowIndex}</th>
                         <th>{t.name}</th>
-                        <th>{t.email}</th>
-                        <th>{t.company}</th>
-                        <th>{t.title}</th>
+                        {mode === "contacts" && <th>{t.email}</th>}
+                        <th>
+                          {mode === "companies"
+                            ? t.fieldCompanyDomain
+                            : t.company}
+                        </th>
+                        {mode === "contacts" && <th>{t.title}</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -501,13 +490,23 @@ export function CsvImportDialog({
                         <tr key={row.rowIndex}>
                           <td>{row.rowIndex}</td>
                           <td>
-                            <strong>{row.person.name}</strong>
+                            <strong>
+                              {mode === "companies"
+                                ? row.company?.name || row.company?.domain
+                                : row.person.name}
+                            </strong>
                           </td>
-                          <td>{row.person.email || "—"}</td>
+                          {mode === "contacts" && (
+                            <td>{row.person.email || "—"}</td>
+                          )}
                           <td>
-                            {row.company?.name || row.company?.domain || "—"}
+                            {mode === "companies"
+                              ? row.company?.domain || "—"
+                              : row.company?.name || row.company?.domain || "—"}
                           </td>
-                          <td>{row.person.title || "—"}</td>
+                          {mode === "contacts" && (
+                            <td>{row.person.title || "—"}</td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -515,7 +514,10 @@ export function CsvImportDialog({
                 )}
                 {preview.validRows.length > 100 && (
                   <p className="muted" style={{ padding: "8px" }}>
-                    Showing first 100 of {preview.validRows.length} valid rows.
+                    {t.csvFirstRows.replace(
+                      "{count}",
+                      String(preview.validRows.length),
+                    )}
                   </p>
                 )}
               </div>
@@ -536,8 +538,12 @@ export function CsvImportDialog({
                         <tr>
                           <th>{t.rowIndex}</th>
                           <th>{t.name}</th>
-                          <th>{t.email}</th>
-                          <th>{t.company}</th>
+                          {mode === "contacts" && <th>{t.email}</th>}
+                          <th>
+                            {mode === "companies"
+                              ? t.fieldCompanyDomain
+                              : t.company}
+                          </th>
                           <th>{t.reason}</th>
                         </tr>
                       </thead>
@@ -545,17 +551,27 @@ export function CsvImportDialog({
                         {preview.duplicateRows.map((row) => (
                           <tr key={row.rowIndex}>
                             <td>{row.rowIndex}</td>
-                            <td>{row.person.name}</td>
-                            <td>{row.person.email || "—"}</td>
                             <td>
-                              {row.company?.name || row.company?.domain || "—"}
+                              {mode === "companies"
+                                ? row.company?.name || row.company?.domain
+                                : row.person.name}
+                            </td>
+                            {mode === "contacts" && (
+                              <td>{row.person.email || "—"}</td>
+                            )}
+                            <td>
+                              {mode === "companies"
+                                ? row.company?.domain || "—"
+                                : row.company?.name ||
+                                  row.company?.domain ||
+                                  "—"}
                             </td>
                             <td>
                               <ul className="reasons-list">
                                 {row.reasons.map((reason) => (
-                                  <li key={reason.message}>
+                                  <li key={reason.code}>
                                     <span className="import-badge warning">
-                                      {reason.message}
+                                      {issueText(reason.code)}
                                     </span>
                                   </li>
                                 ))}
@@ -590,9 +606,9 @@ export function CsvImportDialog({
                             <td>
                               <ul className="reasons-list">
                                 {row.errors.map((err) => (
-                                  <li key={err}>
+                                  <li key={issueText(err)}>
                                     <span className="import-badge danger">
-                                      {err}
+                                      {issueText(err)}
                                     </span>
                                   </li>
                                 ))}
@@ -624,7 +640,10 @@ export function CsvImportDialog({
                 disabled={preview.summary.validCount === 0}
                 onClick={() => void executeImport(true)}
               >
-                {t.importValidContacts} ({preview.summary.validCount})
+                {mode === "companies"
+                  ? t.importValidCompanies
+                  : t.importValidContacts}{" "}
+                ({preview.summary.validCount})
               </button>
             ) : (
               <button
@@ -633,7 +652,8 @@ export function CsvImportDialog({
                 disabled={preview.summary.validCount === 0}
                 onClick={() => void executeImport(false)}
               >
-                {t.importContacts} ({preview.summary.validCount})
+                {mode === "companies" ? t.importCompanies : t.importContacts} (
+                {preview.summary.validCount})
               </button>
             )}
           </div>
@@ -646,10 +666,10 @@ export function CsvImportDialog({
             <CheckCircle2 size={40} className="success-icon" />
             <h3>{t.importSummary}</h3>
             <p className="summary-headline">
-              {t.importedSuccess.replace(
-                "{count}",
-                String(summary.importedCount),
-              )}
+              {(mode === "companies"
+                ? t.importedCompaniesSuccess
+                : t.importedSuccess
+              ).replace("{count}", String(summary.importedCount))}
             </p>
 
             <div className="summary-breakdown">

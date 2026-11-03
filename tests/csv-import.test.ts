@@ -139,11 +139,11 @@ describe("CSV import preview and duplicate review with fixture", () => {
     expect(preview.summary.invalidCount).toBe(3);
     expect(preview.invalidRows).toHaveLength(3);
     const missingName = preview.invalidRows.find((r) => r.rowIndex === 5);
-    expect(missingName?.errors).toContain("Person name is required");
+    expect(missingName?.errors).toContain("PERSON_NAME_REQUIRED");
     const badEmail = preview.invalidRows.find((r) => r.rowIndex === 6);
-    expect(badEmail?.errors[0]).toContain("Invalid email address");
+    expect(badEmail?.errors[0]).toContain("EMAIL_INVALID");
     const badDomain = preview.invalidRows.find((r) => r.rowIndex === 7);
-    expect(badDomain?.errors[0]).toContain("Invalid company domain");
+    expect(badDomain?.errors[0]).toContain("COMPANY_DOMAIN_INVALID");
 
     // Identifies duplicates for review (existing email, existing company domain, duplicate in CSV)
     expect(preview.summary.duplicateCount).toBe(4);

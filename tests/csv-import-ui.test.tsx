@@ -106,9 +106,7 @@ Jane Fictional,jane.fictional@new-domain.invalid,New Tech,new-domain.invalid
   // Verifies duplicate review notice and duplicate row reason are displayed
   expect(within(dialog).getByText(t.duplicateReviewNote)).toBeDefined();
   expect(
-    within(dialog).getByText(
-      /already belongs to Mira Chen in this organization/,
-    ),
+    within(dialog).getByText(t.csvIssues.PERSON_EMAIL_EXISTS),
   ).toBeDefined();
 
   // Click Import valid contacts (skipping duplicates)
@@ -130,4 +128,99 @@ Jane Fictional,jane.fictional@new-domain.invalid,New Tech,new-domain.invalid
   const closeButtons = within(dialog).getAllByRole("button", { name: t.close });
   fireEvent.click(closeButtons[closeButtons.length - 1]);
   expect(onClose).toHaveBeenCalled();
+});
+
+test("Companies entry imports company-only CSV and displays its company summary", async () => {
+  await mountCrm(harness, "/companies");
+  fireEvent.click(await screen.findByRole("button", { name: t.importCsv }));
+  const dialog = await screen.findByRole("dialog");
+  const csv = "Company,Domain\nFictional UI Company,csv-ui-only.example.test";
+  const file = new File([csv], "fictional-companies.csv", { type: "text/csv" });
+  file.text = () => Promise.resolve(csv);
+  const input = dialog.querySelector('input[type="file"]') as HTMLInputElement;
+  await act(async () => {
+    fireEvent.change(input, { target: { files: [file] } });
+  });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: new RegExp(t.previewCsvImport),
+      }),
+    );
+  });
+  await waitFor(() => {
+    expect(within(dialog).getByText("Fictional UI Company")).toBeDefined();
+  });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /Import companies/ }),
+    );
+  });
+  await waitFor(() => {
+    expect(within(dialog).getByText(t.importSummary)).toBeDefined();
+  });
+  const [company] = await harness.local.db
+    .select()
+    .from((await import("../packages/database/schema")).companies)
+    .where(
+      (await import("drizzle-orm")).eq(
+        (await import("../packages/database/schema")).companies.domain,
+        "csv-ui-only.example.test",
+      ),
+    );
+  expect(company?.name).toBe("Fictional UI Company");
+});
+
+test("CSV validation codes display localized invalid row explanations", async () => {
+  await mountCrm(harness, "/people");
+  fireEvent.click(await screen.findByRole("button", { name: t.importCsv }));
+  const dialog = await screen.findByRole("dialog");
+  const csv = `Name,Title\nFictional Person,${"T".repeat(151)}`;
+  const file = new File([csv], "fictional-invalid.csv", { type: "text/csv" });
+  file.text = () => Promise.resolve(csv);
+  await act(async () => {
+    fireEvent.change(
+      dialog.querySelector('input[type="file"]') as HTMLInputElement,
+      { target: { files: [file] } },
+    );
+  });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: new RegExp(t.previewCsvImport),
+      }),
+    );
+  });
+  expect(
+    await within(dialog).findByText(t.csvIssues.TITLE_TOO_LONG),
+  ).toBeDefined();
+  expect(
+    within(dialog)
+      .getByRole("button", { name: /Import contacts/ })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+});
+
+test("malformed replacement CSV clears the prior file before another preview", async () => {
+  await mountCrm(harness, "/people");
+  fireEvent.click(await screen.findByRole("button", { name: t.importCsv }));
+  const dialog = await screen.findByRole("dialog");
+  for (const csv of ["Name\nValid Person", 'Name\n"unclosed']) {
+    const file = new File([csv], "fictional.csv", { type: "text/csv" });
+    file.text = () => Promise.resolve(csv);
+    await act(async () => {
+      fireEvent.change(
+        dialog.querySelector('input[type="file"]') as HTMLInputElement,
+        { target: { files: [file] } },
+      );
+    });
+  }
+  expect(
+    await within(dialog).findByText(t.errors.CSV_STRUCTURE_INVALID),
+  ).toBeDefined();
+  expect(
+    within(dialog)
+      .getByRole("button", { name: new RegExp(t.previewCsvImport) })
+      .hasAttribute("disabled"),
+  ).toBe(true);
 });

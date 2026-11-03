@@ -1,35 +1,40 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
-import { recordContactSubmission } from "./contact-attribution";
+import t from "../i18n/translations/en.json";
+import {
+  attributionHash,
+  recordContactSubmission,
+} from "./contact-attribution";
 import { authorize, DomainError, type Principal } from "./policy";
 import { assertProductActive } from "./products";
 import { companyDomain, linkedinUrl } from "./records";
-import { lockOrganization } from "./visibility";
+import { linkedinKey, lockOrganization } from "./visibility";
 
 export * from "./csv";
 
-import { detectColumnMapping, parseCsv } from "./csv";
+import { allowedFields, detectColumnMapping, parseCsv } from "./csv";
 
 export const csvImportPreviewSchema = z.object({
   organizationId: z.uuid(),
   productId: z.uuid(),
   csvText: z.string().min(1).max(5000000),
-  columnMapping: z.record(z.string(), z.string()).optional(),
+  columnMapping: z.record(z.string(), z.enum(allowedFields)).optional(),
+  mode: z
+    .enum(["contacts", "companies"])
+    .default("contacts")
+    .describe(
+      "contacts creates people with product relationships and optional companies; companies creates organization companies without people or relationships",
+    ),
   purpose: z.enum(["buyer", "partner"]).default("buyer"),
 });
 
-export const csvImportSchema = z.object({
-  organizationId: z.uuid(),
-  productId: z.uuid(),
-  csvText: z.string().min(1).max(5000000),
-  columnMapping: z.record(z.string(), z.string()).optional(),
-  purpose: z.enum(["buyer", "partner"]).default("buyer"),
+export const csvImportSchema = csvImportPreviewSchema.extend({
   skipDuplicates: z.boolean().default(false),
   rowIndices: z.array(z.number().int().positive()).optional(),
-  label: z.string().trim().min(1).max(150).default("CSV Import"),
+  label: z.string().trim().min(1).max(150).default(t.importCsv),
 });
 
 export interface ValidatedPerson {
@@ -54,8 +59,12 @@ export interface ValidatedRow {
 }
 
 export interface DuplicateReason {
-  kind: "person_email" | "company_domain" | "csv_duplicate";
-  message: string;
+  kind: "person_email" | "person_linkedin" | "company_domain" | "csv_duplicate";
+  code:
+    | "PERSON_EMAIL_EXISTS"
+    | "PERSON_LINKEDIN_EXISTS"
+    | "COMPANY_DOMAIN_EXISTS"
+    | "CSV_DUPLICATE";
   existingId?: string;
   existingName?: string;
 }
@@ -95,6 +104,7 @@ export interface ImportResult {
   relationshipsCreated: number;
   duplicateCount: number;
   invalidCount: number;
+  companyIds?: string[];
   imported: Array<{
     rowIndex: number;
     personId: string;
@@ -122,6 +132,20 @@ export class CsvImportService {
       ...detectColumnMapping(headers),
       ...(columnMapping ?? {}),
     };
+
+    const targets = new Set<string>();
+    for (const [header, target] of Object.entries(mapping)) {
+      if (
+        !headers.includes(header) ||
+        !allowedFields.includes(target as (typeof allowedFields)[number])
+      )
+        throw new DomainError("CSV_MAPPING_INVALID", 400);
+      if (target !== "ignore") {
+        if (targets.has(target))
+          throw new DomainError("CSV_MAPPING_INVALID", 400);
+        targets.add(target);
+      }
+    }
 
     const parsedRows: Array<{
       rowIndex: number;
@@ -160,198 +184,189 @@ export class CsvImportService {
     executor: Reader = this.db,
   ): Promise<PreviewResult> {
     const input = csvImportPreviewSchema.parse(rawInput);
-    await authorize(executor, principal, input.organizationId);
+    await authorize(executor, principal, input.organizationId, input.productId);
     await assertProductActive(executor, input.organizationId, input.productId);
-    if (
-      principal.productIds &&
-      !principal.productIds.includes(input.productId)
-    ) {
-      throw new DomainError("FORBIDDEN", 403);
+    let parsed: ReturnType<typeof parseCsv>;
+    try {
+      parsed = parseCsv(input.csvText);
+    } catch {
+      throw new DomainError("CSV_STRUCTURE_INVALID", 400);
     }
-
-    const { headers, rows: rawRows } = parseCsv(input.csvText);
+    const { headers, rows: rawRows } = parsed;
     const { mapping, parsedRows } = this.prepareRows(
       headers,
       rawRows,
       input.columnMapping,
     );
+    if (
+      input.mode === "companies" &&
+      Object.values(mapping).some(
+        (field) => field !== "ignore" && !field.startsWith("company"),
+      )
+    )
+      throw new DomainError("CSV_MAPPING_INVALID", 400);
 
+    // The directory is organization-wide, including archived records and aliases.
+    // Collision responses deliberately contain no stored record identifiers or names.
     const [existingPeople, existingCompanies] = await Promise.all([
       executor
-        .select({ id: s.people.id, name: s.people.name, email: s.people.email })
-        .from(s.people)
-        .where(
-          and(
-            eq(s.people.organizationId, input.organizationId),
-            isNull(s.people.archivedAt),
-          ),
-        ),
-      executor
         .select({
-          id: s.companies.id,
-          name: s.companies.name,
-          domain: s.companies.domain,
+          email: s.people.email,
+          otherEmails: s.people.otherEmails,
+          linkedin: linkedinKey(s.people.linkedinUrl),
         })
+        .from(s.people)
+        .where(eq(s.people.organizationId, input.organizationId)),
+      executor
+        .select({ domain: s.companies.domain })
         .from(s.companies)
-        .where(
-          and(
-            eq(s.companies.organizationId, input.organizationId),
-            isNull(s.companies.archivedAt),
-          ),
-        ),
+        .where(eq(s.companies.organizationId, input.organizationId)),
     ]);
-
-    const peopleByEmail = new Map<string, { id: string; name: string }>();
-    for (const p of existingPeople) {
-      if (p.email) peopleByEmail.set(p.email.toLowerCase(), p);
+    const emails = new Set(
+      existingPeople
+        .flatMap((person) => [person.email ?? "", ...person.otherEmails])
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const linkedins = new Set(
+      existingPeople.map((person) => String(person.linkedin)).filter(Boolean),
+    );
+    const domains = new Set(
+      existingCompanies
+        .map((company) => company.domain?.toLowerCase())
+        .filter(Boolean),
+    );
+    // Use the same database normalization expression as contact identity matching.
+    const profiles = [
+      ...new Set(
+        parsedRows.map((row) => row.values.linkedinUrl).filter(Boolean),
+      ),
+    ];
+    const profileKeys = new Map<string, string>();
+    if (profiles.length) {
+      const normalized = await executor
+        .select({
+          profile: sql<string>`profile`,
+          key: linkedinKey(sql`profile`).mapWith(String),
+        })
+        .from(
+          sql`jsonb_array_elements_text(${JSON.stringify(profiles)}::jsonb) AS profile`,
+        );
+      for (const row of normalized) profileKeys.set(row.profile, row.key);
     }
-
-    const companiesByDomain = new Map<string, { id: string; name: string }>();
-    for (const c of existingCompanies) {
-      if (c.domain) companiesByDomain.set(c.domain.toLowerCase(), c);
+    const counts = new Map<string, number>();
+    for (const { values } of parsedRows) {
+      const keys =
+        input.mode === "companies"
+          ? [
+              values.companyDomain
+                ? `domain:${companyDomain.safeParse(values.companyDomain).data}`
+                : `company:${values.companyName?.toLowerCase()}`,
+            ]
+          : [
+              values.email ? `email:${values.email.toLowerCase()}` : "",
+              values.linkedinUrl
+                ? `linkedin:${profileKeys.get(values.linkedinUrl)}`
+                : "",
+            ];
+      for (const key of keys.filter(Boolean))
+        counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-
     const validRows: ValidatedRow[] = [];
     const duplicateRows: DuplicateRow[] = [];
     const invalidRows: InvalidRow[] = [];
-    const seenEmailsInCsv = new Set<string>();
-
-    const emailCounts = new Map<string, number>();
-    for (const { values } of parsedRows) {
-      if (values.email) {
-        const parsedEmail = z
-          .string()
-          .trim()
-          .toLowerCase()
-          .pipe(z.email().max(254))
-          .safeParse(values.email);
-        if (parsedEmail.success) {
-          const e = parsedEmail.data;
-          emailCounts.set(e, (emailCounts.get(e) ?? 0) + 1);
-        }
-      }
-    }
-
     for (const { rowIndex, raw, values } of parsedRows) {
       const errors: string[] = [];
-
       const rawName = values.name ?? "";
-      if (!rawName) {
-        errors.push("Person name is required");
-      } else if (rawName.length > 100) {
-        errors.push("Person name must be 100 characters or fewer");
+      if (input.mode === "contacts" && !rawName)
+        errors.push("PERSON_NAME_REQUIRED");
+      if (
+        input.mode === "companies" &&
+        !values.companyName &&
+        !values.companyDomain
+      )
+        errors.push("COMPANY_IDENTITY_REQUIRED");
+      for (const [field, max, code] of [
+        ["name", 100, "PERSON_NAME_TOO_LONG"],
+        ["title", 150, "TITLE_TOO_LONG"],
+        ["companyName", 100, "COMPANY_NAME_TOO_LONG"],
+        ["companyDescription", 2000, "COMPANY_DESCRIPTION_TOO_LONG"],
+        ["summary", 10000, "SUMMARY_TOO_LONG"],
+      ] as const) {
+        if ((values[field]?.length ?? 0) > max) errors.push(code);
       }
-
       let email: string | undefined;
       if (values.email) {
-        const parsedEmail = z
+        const result = z
           .string()
           .trim()
           .toLowerCase()
           .pipe(z.email().max(254))
           .safeParse(values.email);
-        if (!parsedEmail.success) {
-          errors.push(`Invalid email address: ${values.email}`);
-        } else {
-          email = parsedEmail.data;
-        }
+        if (!result.success) errors.push("EMAIL_INVALID");
+        else email = result.data;
       }
-
       let compDomain: string | undefined;
       if (values.companyDomain) {
-        const parsedDomain = companyDomain.safeParse(values.companyDomain);
-        if (!parsedDomain.success || !parsedDomain.data) {
-          errors.push(`Invalid company domain: ${values.companyDomain}`);
-        } else {
-          compDomain = parsedDomain.data;
-        }
+        const result = companyDomain.safeParse(values.companyDomain);
+        if (!result.success || !result.data)
+          errors.push("COMPANY_DOMAIN_INVALID");
+        else compDomain = result.data;
       }
-
-      let linkedIn: string = "";
+      let linkedIn = "";
       if (values.linkedinUrl) {
-        const parsedLinkedin = linkedinUrl.safeParse(values.linkedinUrl);
-        if (!parsedLinkedin.success) {
-          errors.push(`Invalid LinkedIn URL: ${values.linkedinUrl}`);
-        } else {
-          linkedIn = parsedLinkedin.data;
-        }
+        const result = linkedinUrl.safeParse(values.linkedinUrl);
+        if (!result.success) errors.push("LINKEDIN_INVALID");
+        else linkedIn = result.data;
       }
-
       const phone = values.phone ?? "";
-      if (phone && (!phonePattern.test(phone) || phone.length > 40)) {
-        errors.push(`Invalid phone number: ${phone}`);
-      }
-
-      const compName = values.companyName
-        ? values.companyName.slice(0, 100)
-        : undefined;
-      const compDesc = values.companyDescription
-        ? values.companyDescription.slice(0, 2000)
-        : "";
-      const title = values.title ? values.title.slice(0, 150) : "";
-      const summary = values.summary ? values.summary.slice(0, 10000) : "";
-
-      if (errors.length > 0) {
+      if (phone && (!phonePattern.test(phone) || phone.length > 40))
+        errors.push("PHONE_INVALID");
+      if (errors.length) {
         invalidRows.push({ rowIndex, row: raw, errors });
         continue;
       }
-
       const person: ValidatedPerson = {
         name: rawName,
         email,
-        title,
+        title: values.title ?? "",
         phone,
         linkedinUrl: linkedIn,
-        summary,
+        summary: values.summary ?? "",
       };
-
-      const company: ValidatedCompany | undefined =
-        compName || compDomain || compDesc
+      const company =
+        values.companyName || compDomain || values.companyDescription
           ? {
-              name: compName,
+              name: values.companyName || undefined,
               domain: compDomain,
-              description: compDesc,
+              description: values.companyDescription ?? "",
             }
           : undefined;
-
       const reasons: DuplicateReason[] = [];
-
-      if (email) {
-        const existingPerson = peopleByEmail.get(email);
-        if (existingPerson) {
-          reasons.push({
-            kind: "person_email",
-            message: `Email "${email}" already belongs to ${existingPerson.name} in this organization.`,
-            existingId: existingPerson.id,
-            existingName: existingPerson.name,
-          });
-        } else if ((emailCounts.get(email) ?? 0) > 1) {
-          reasons.push({
-            kind: "csv_duplicate",
-            message: `Email "${email}" appears multiple times in this CSV.`,
-          });
-        }
-      }
-
-      if (compDomain) {
-        const existingComp = companiesByDomain.get(compDomain);
-        if (existingComp) {
-          reasons.push({
-            kind: "company_domain",
-            message: `Company domain "${compDomain}" already belongs to ${existingComp.name} in this organization.`,
-            existingId: existingComp.id,
-            existingName: existingComp.name,
-          });
-        }
-      }
-
-      if (reasons.length > 0) {
+      const profile = profileKeys.get(linkedIn);
+      if (email && emails.has(email))
+        reasons.push({ kind: "person_email", code: "PERSON_EMAIL_EXISTS" });
+      if (profile && linkedins.has(profile))
+        reasons.push({
+          kind: "person_linkedin",
+          code: "PERSON_LINKEDIN_EXISTS",
+        });
+      if (compDomain && domains.has(compDomain))
+        reasons.push({ kind: "company_domain", code: "COMPANY_DOMAIN_EXISTS" });
+      const duplicateInCsv =
+        input.mode === "companies"
+          ? (counts.get(
+              compDomain
+                ? `domain:${compDomain}`
+                : `company:${company?.name?.toLowerCase()}`,
+            ) ?? 0) > 1
+          : (email && (counts.get(`email:${email}`) ?? 0) > 1) ||
+            (profile && (counts.get(`linkedin:${profile}`) ?? 0) > 1);
+      if (duplicateInCsv)
+        reasons.push({ kind: "csv_duplicate", code: "CSV_DUPLICATE" });
+      if (reasons.length)
         duplicateRows.push({ rowIndex, person, company, reasons });
-        if (email) seenEmailsInCsv.add(email);
-      } else {
-        validRows.push({ rowIndex, person, company });
-        if (email) seenEmailsInCsv.add(email);
-      }
+      else validRows.push({ rowIndex, person, company });
     }
 
     return {
@@ -380,17 +395,16 @@ export class CsvImportService {
     rawInput: z.input<typeof csvImportSchema>,
   ): Promise<ImportResult> {
     const input = csvImportSchema.parse(rawInput);
-    await authorize(this.db, principal, input.organizationId);
-    await assertProductActive(this.db, input.organizationId, input.productId);
-    if (
-      principal.productIds &&
-      !principal.productIds.includes(input.productId)
-    ) {
-      throw new DomainError("FORBIDDEN", 403);
-    }
-
     return this.db.transaction(async (tx) => {
       await lockOrganization(tx, input.organizationId);
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
+      await assertProductActive(tx, input.organizationId, input.productId);
 
       const preview = await this.preview(
         principal,
@@ -400,6 +414,7 @@ export class CsvImportService {
           csvText: input.csvText,
           columnMapping: input.columnMapping,
           purpose: input.purpose,
+          mode: input.mode,
         },
         tx,
       );
@@ -420,7 +435,10 @@ export class CsvImportService {
 
       if (!input.skipDuplicates && candidateDuplicates.length > 0) {
         const firstReason = candidateDuplicates[0].reasons[0];
-        if (firstReason?.kind === "company_domain") {
+        if (
+          input.mode === "companies" ||
+          firstReason?.kind === "company_domain"
+        ) {
           throw new DomainError("COMPANY_EXISTS", 409);
         }
         throw new DomainError("PERSON_EXISTS", 409);
@@ -456,16 +474,18 @@ export class CsvImportService {
         .orderBy(asc(s.stages.position))
         .limit(1);
 
-      await tx
+      const [batch] = await tx
         .insert(s.contactImportBatches)
         .values({
           organizationId: input.organizationId,
           productId: input.productId,
           submittedBy: principal.userId,
           sourceKind: "file",
-          label: input.label || "CSV Import",
+          label: input.label,
           submissionKey: `csv-import-${randomUUID()}`,
-          transport: principal.source === "mcp" ? "mcp" : "session",
+          transport: principal.source,
+          clientId: principal.source === "mcp" ? principal.clientId : null,
+          grantId: principal.source === "mcp" ? principal.grantId : null,
         })
         .returning();
 
@@ -483,7 +503,7 @@ export class CsvImportService {
               row.company.name ||
               (row.company.domain
                 ? row.company.domain.split(".")[0].toUpperCase()
-                : "Company");
+                : t.company);
 
             const [createdComp] = await tx
               .insert(s.companies)
@@ -507,6 +527,21 @@ export class CsvImportService {
           }
         }
       }
+
+      if (input.mode === "companies")
+        return {
+          totalRows: preview.summary.totalRows,
+          importedCount: candidateValid.length,
+          peopleCreated: 0,
+          companiesCreated: companiesCreatedCount,
+          relationshipsCreated: 0,
+          duplicateCount: candidateDuplicates.length,
+          invalidCount: candidateInvalid.length,
+          imported: [],
+          companyIds: [...createdCompaniesByKey.values()],
+          duplicates: candidateDuplicates,
+          invalid: candidateInvalid,
+        };
 
       const importedList: Array<{
         rowIndex: number;
@@ -557,6 +592,12 @@ export class CsvImportService {
           productId: input.productId,
           kind: "created",
           sourceRecordId: String(row.rowIndex),
+          submission: { batch },
+          requestHash: attributionHash({
+            mode: input.mode,
+            purpose: input.purpose,
+            row,
+          }),
         });
 
         await tx.insert(s.changeEvents).values([

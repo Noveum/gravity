@@ -723,6 +723,7 @@ function CrmShell({ children }: { children: ReactNode }) {
         )}
         {crm.importDialog && data && (
           <CsvImportDialog
+            initialMode={section === "companies" ? "companies" : "contacts"}
             data={data}
             organizationId={organizationId}
             productId={crm.productId}

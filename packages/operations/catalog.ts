@@ -970,7 +970,7 @@ export const operations: Operation[] = [
     destructive: false,
     publish: false,
     description:
-      "Preview a CSV import of people and companies. Detects column mappings, validates fields, and checks for existing duplicate emails or company domains for explicit review without silent merging.",
+      "Preview CSV with mode=contacts (default) or mode=companies for company-only files. Map each field once. Returns structured validation codes and organization-wide email/alias, LinkedIn and company-domain collisions without disclosing stored records. No writes.",
     schema: csvImportPreviewSchema,
     run: (c, input) => new CsvImportService(c.db).preview(c.principal, input),
   }),
@@ -982,7 +982,7 @@ export const operations: Operation[] = [
     idempotent: false,
     destructive: true,
     description:
-      "Import people and companies from CSV with product relationships. Rows with duplicate emails or company domains must be explicitly reviewed; by default duplicates reject with PERSON_EXISTS or COMPANY_EXISTS rather than silently merging. Pass skipDuplicates to import valid rows while skipping reviewed duplicates.",
+      "Import CSV with mode=contacts (default) to create people and product relationships, or mode=companies to create organization companies without people or relationships. Preview first with preview_csv_import. Duplicate identities require review: by default they reject with PERSON_EXISTS or COMPANY_EXISTS; skipDuplicates imports only valid non-duplicate rows. Authenticated attribution is recorded for contacts. This operation is not idempotent; inspect state after an unknown outcome before attempting another import.",
     schema: csvImportSchema,
     run: (c, input) => new CsvImportService(c.db).importCsv(c.principal, input),
   }),

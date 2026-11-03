@@ -307,7 +307,10 @@
     "HISTORY_FUTURE": "Historical messages must have a date and time in the past.",
     "DRAFT_ALREADY_SCHEDULED": "This draft has already been scheduled. Edit its action instead.",
     "PRIVATE_HISTORY_REVIEW_REQUIRED": "Relevant private history belongs to another account owner. Ask its owner to review the contact before sending.",
-    "PENDING_HISTORY_REVIEW_REQUIRED": "Review and link or ignore pending imported history for this contact before sending."
+    "PENDING_HISTORY_REVIEW_REQUIRED": "Review and link or ignore pending imported history for this contact before sending.",
+    "CSV_STRUCTURE_INVALID": "Check the CSV: use unique, non-empty headers, the same number of columns in every row, and correctly escaped quotes.",
+    "CSV_MAPPING_INVALID": "Map each imported field once, using columns from this file. Company imports accept company fields only.",
+    "FILE_READ_ERROR": "This file could not be read. Choose the file again."
   },
   "consentAccess": "Access",
   "consentLevelRead": "Read",
@@ -2471,7 +2474,7 @@
   "importCsv": "Import CSV",
   "importContacts": "Import contacts",
   "csvImportTitle": "Import contacts and companies from CSV",
-  "csvImportDescription": "Upload a CSV, map columns to person and company fields, choose the product relationship to create, and preview the result before anything is written.",
+  "csvImportDescription": "Choose contacts or companies, upload a CSV, map columns, and preview validation and duplicates before importing. Company imports create organization records without contacts or product relationships.",
   "uploadCsv": "Upload CSV file",
   "chooseFile": "Choose CSV file",
   "dragCsvHere": "Drag and drop a CSV file here, or click to browse",
@@ -2620,5 +2623,32 @@
         "After a write timeout, read current state before repeating it. After a send timeout inspect get_delivery/list_deliveries and reconcile_delivery. Never automatically retry unknown sends. Record only timestamp, client version, status, operation and sanitized correlation IDs for diagnosis; exclude tokens and private contact/message data."
       ]
     }
+  },
+  "csvMode": "Import type",
+  "csvModeContacts": "Contacts and their companies",
+  "csvModeCompanies": "Companies only",
+  "csvRequiredCompanyMissing": "Map at least one column to Company name or Company domain.",
+  "importCompanies": "Import companies",
+  "importValidCompanies": "Import valid companies",
+  "csvNoValidRows": "No valid rows ready to import.",
+  "csvFirstRows": "Showing the first 100 of {count} valid rows.",
+  "csvFileSizeRows": "{size} KB · {count} rows",
+  "importedCompaniesSuccess": "Successfully imported {count} companies.",
+  "csvIssues": {
+    "PERSON_NAME_REQUIRED": "Person name is required.",
+    "COMPANY_IDENTITY_REQUIRED": "Company name or domain is required.",
+    "PERSON_NAME_TOO_LONG": "Person name must be 100 characters or fewer.",
+    "TITLE_TOO_LONG": "Job title must be 150 characters or fewer.",
+    "COMPANY_NAME_TOO_LONG": "Company name must be 100 characters or fewer.",
+    "COMPANY_DESCRIPTION_TOO_LONG": "Company description must be 2,000 characters or fewer.",
+    "SUMMARY_TOO_LONG": "Notes must be 10,000 characters or fewer.",
+    "EMAIL_INVALID": "Invalid email address.",
+    "COMPANY_DOMAIN_INVALID": "Invalid company domain.",
+    "LINKEDIN_INVALID": "Invalid LinkedIn URL. Use an HTTPS LinkedIn URL of at most 300 characters.",
+    "PHONE_INVALID": "Invalid phone number. Use digits and phone punctuation, at most 40 characters.",
+    "PERSON_EMAIL_EXISTS": "This email matches an existing contact in this organization.",
+    "PERSON_LINKEDIN_EXISTS": "This LinkedIn profile matches an existing contact in this organization.",
+    "COMPANY_DOMAIN_EXISTS": "This domain matches an existing company in this organization.",
+    "CSV_DUPLICATE": "This identity appears multiple times in this CSV."
   }
 }

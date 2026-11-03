@@ -211,6 +211,65 @@ export async function completeAssetUpload(
   },
   storage: FileStorage = objectStorage("materials"),
 ) {
+  // Consume durably before any remote mutation. Epoch expiration is a one-shot
+  // attempt marker: failed/crashed attempts must never reuse their object key.
+  // A delayed COPY or DELETE may still complete after its response times out.
+  const claim = await db.transaction(async (tx) => {
+    await authorize(tx, principal, input.organizationId, input.productId, true);
+    const [reserved] = await tx
+      .select()
+      .from(s.assetUpload)
+      .where(
+        and(
+          eq(s.assetUpload.id, input.uploadId),
+          eq(s.assetUpload.organizationId, input.organizationId),
+          eq(s.assetUpload.productId, input.productId),
+          eq(s.assetUpload.uploadedBy, principal.userId),
+        ),
+      )
+      .for("update");
+    if (!reserved) throw new DomainError("NOT_FOUND", 404);
+    if (reserved.completedAssetId) {
+      await tx
+        .select({ id: s.organizations.id })
+        .from(s.organizations)
+        .where(eq(s.organizations.id, input.organizationId))
+        .for("share");
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
+      const [asset] = await tx
+        .select()
+        .from(s.assets)
+        .where(
+          and(
+            eq(s.assets.id, reserved.completedAssetId),
+            eq(s.assets.organizationId, input.organizationId),
+            eq(s.assets.productId, input.productId),
+          ),
+        );
+      if (!asset) throw new DomainError("NOT_FOUND", 404);
+      return {
+        kind: "completed" as const,
+        asset: { id: asset.id, name: asset.name },
+      };
+    }
+    if (reserved.expiresAt.getTime() === 0)
+      throw new DomainError("UPLOAD_RESTART_REQUIRED", 409);
+    if (reserved.expiresAt.getTime() < Date.now())
+      throw new DomainError("CONFLICT", 409);
+    await tx
+      .update(s.assetUpload)
+      .set({ expiresAt: new Date(0) })
+      .where(eq(s.assetUpload.id, reserved.id));
+    return { kind: "claimed" as const, upload: reserved };
+  });
+  if (claim.kind === "completed") return claim.asset;
+  const reserved = claim.upload;
   let attemptedKey: string | undefined;
   try {
     return await db.transaction(async (tx) => {
@@ -221,47 +280,21 @@ export async function completeAssetUpload(
         input.productId,
         true,
       );
-      const [reserved] = await tx
+      const [current] = await tx
         .select()
         .from(s.assetUpload)
         .where(
           and(
-            eq(s.assetUpload.id, input.uploadId),
+            eq(s.assetUpload.id, reserved.id),
             eq(s.assetUpload.organizationId, input.organizationId),
             eq(s.assetUpload.productId, input.productId),
             eq(s.assetUpload.uploadedBy, principal.userId),
           ),
         )
         .for("update");
-      if (!reserved) throw new DomainError("NOT_FOUND", 404);
-      if (reserved.completedAssetId) {
-        await tx
-          .select({ id: s.organizations.id })
-          .from(s.organizations)
-          .where(eq(s.organizations.id, input.organizationId))
-          .for("share");
-        await authorize(
-          tx,
-          principal,
-          input.organizationId,
-          input.productId,
-          true,
-        );
-        const [asset] = await tx
-          .select()
-          .from(s.assets)
-          .where(
-            and(
-              eq(s.assets.id, reserved.completedAssetId),
-              eq(s.assets.organizationId, input.organizationId),
-              eq(s.assets.productId, input.productId),
-            ),
-          );
-        if (!asset) throw new DomainError("NOT_FOUND", 404);
-        return { id: asset.id, name: asset.name };
-      }
-      if (reserved.expiresAt.getTime() < Date.now())
-        throw new DomainError("CONFLICT", 409);
+      if (!current) throw new DomainError("NOT_FOUND", 404);
+      if (current.expiresAt.getTime() !== 0 || current.completedAssetId)
+        throw new DomainError("UPLOAD_RESTART_REQUIRED", 409);
       const [folder] = await tx
         .select()
         .from(s.folders)
@@ -288,9 +321,8 @@ export async function completeAssetUpload(
         )
       )
         throw new DomainError("FORBIDDEN", 403);
-      // The reservation durably identifies one private target, including after a
-      // crash or lost database acknowledgement. Retry never multiplies sealed keys.
-      // The reservation lock and completion receipt protect accepted objects.
+      // This consumed reservation permits exactly one remote copy attempt.
+      // Success replays use its receipt; failures require a fresh reservation.
       const assetId = reserved.id;
       const finalKey = `${reserved.organizationId}/files/${assetId}`;
       attemptedKey = finalKey;
@@ -417,8 +449,9 @@ export async function completeAssetUpload(
         if (committed) return committed;
       } catch {
         // An unavailable database cannot establish rollback; preserve bytes.
-        // The reservation's stable target remains reconcilable by a later retry.
-        // Storage cleanup failure likewise retains at most that one target.
+        // The durable one-shot marker prevents key reuse even if this worker
+        // crashes, cleanup fails, or remote mutation finishes after a timeout.
+        // Successful commits remain recoverable through their completion receipt.
       }
     }
     throw error;

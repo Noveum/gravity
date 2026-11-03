@@ -57,7 +57,7 @@ jobs:
       - run: bun run test --shard=${{ matrix.shard }}/3
 
   postgres:
-    # tests/outreach-postgres.test.ts skips itself without a local server, so it needs its own job.
+    # Production-driver suites skip without a local server, so run them explicitly here.
     name: Production driver on PostgreSQL
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -86,7 +86,7 @@ jobs:
         with:
           bun-version: '1.3.14'
       - run: bun install --frozen-lockfile
-      - run: bun run test tests/outreach-postgres.test.ts
+      - run: bun run test tests/outreach-postgres.test.ts tests/material-upload-postgres.test.ts
 
   build:
     name: Build and public smoke test

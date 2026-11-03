@@ -28,9 +28,10 @@ async function reserve(
     sha256?: string;
     deleteFails?: boolean;
     sealFails?: boolean;
+    objects?: Map<string, Uint8Array>;
   } = {},
 ) {
-  const objects = new Map<string, Uint8Array>();
+  const objects = options.objects ?? new Map<string, Uint8Array>();
   const targets: string[] = [];
   const storage = {
     uploadUrl: async () => "https://storage.example.test/upload",
@@ -87,7 +88,8 @@ function transactionFailure(
         return Reflect.get(target, property, target);
       return async (...args: Parameters<Database["transaction"]>) => {
         count++;
-        if (count > 1) {
+        if (count === 1) return target.transaction(...args);
+        if (count > 2) {
           if (mode === "unavailable" || mode === "rollback-unavailable")
             throw new Error("Database unreachable");
           return target.transaction(...args);
@@ -141,10 +143,13 @@ test("cleanup failure leaves one durable reservation target across repeated reje
     Buffer.from("invalid"),
     { mimeType: "application/pdf", deleteFails: true },
   );
-  for (let i = 0; i < 3; i++)
+  await expect(
+    completeAssetUpload(local.db, owner, input, storage),
+  ).rejects.toMatchObject({ code: "FILE_TYPE" });
+  for (let i = 0; i < 2; i++)
     await expect(
       completeAssetUpload(local.db, owner, input, storage),
-    ).rejects.toMatchObject({ code: "FILE_TYPE" });
+    ).rejects.toMatchObject({ code: "UPLOAD_RESTART_REQUIRED" });
   expect(objects.size).toBe(1);
   expect(new Set(targets).size).toBe(1);
   expect(targets[0]).toBe(`${org}/files/${input.uploadId}`);
@@ -190,7 +195,7 @@ test("when commit reconciliation is unavailable preserve bytes until an authoriz
   expect(targets).toHaveLength(1);
 });
 
-test("when rollback reconciliation is unavailable an authorized retry reuses the durable target", async () => {
+test("when rollback reconciliation is unavailable the durable marker forbids target reuse", async () => {
   const { input, storage, objects, targets } = await reserve(
     Buffer.from("Fictional"),
   );
@@ -209,8 +214,139 @@ test("when rollback reconciliation is unavailable an authorized retry reuses the
     .from(s.assetUpload)
     .where(eq(s.assetUpload.id, input.uploadId));
   expect(pending.completedAssetId).toBeNull();
-  const result = await completeAssetUpload(local.db, owner, input, storage);
-  expect(result.id).toBe(input.uploadId);
-  expect(new Set(targets).size).toBe(1);
+  expect(pending.expiresAt.getTime()).toBe(0);
+  await expect(
+    completeAssetUpload(local.db, owner, input, storage),
+  ).rejects.toMatchObject({ code: "UPLOAD_RESTART_REQUIRED" });
+  expect(targets).toHaveLength(1);
   expect(objects.size).toBe(1);
+});
+
+test("a delayed unknown DELETE cannot delete bytes accepted under a fresh reservation", async () => {
+  const bytes = Buffer.from("%PDF-valid");
+  const rejected = await reserve(Buffer.from("invalid!!!"), {
+    mimeType: "application/pdf",
+  });
+  let lateDelete = () => {};
+  rejected.storage.deleteObject = vi.fn(async (key) => {
+    lateDelete = () => {
+      rejected.objects.delete(key);
+    };
+    throw new Error("DELETE response timed out");
+  });
+  await expect(
+    completeAssetUpload(local.db, owner, rejected.input, rejected.storage),
+  ).rejects.toMatchObject({ code: "FILE_TYPE" });
+  rejected.storage.sealUpload = async (_source, key) => {
+    rejected.targets.push(key);
+    rejected.objects.set(key, bytes);
+  };
+  await expect(
+    completeAssetUpload(local.db, owner, rejected.input, rejected.storage),
+  ).rejects.toMatchObject({ code: "UPLOAD_RESTART_REQUIRED" });
+  const accepted = await reserve(bytes, {
+    mimeType: "application/pdf",
+    objects: rejected.objects,
+  });
+  const result = await completeAssetUpload(
+    local.db,
+    owner,
+    accepted.input,
+    accepted.storage,
+  );
+  lateDelete();
+  expect(rejected.objects.get(`${org}/files/${result.id}`)).toEqual(bytes);
+  expect(
+    await completeAssetUpload(
+      local.db,
+      owner,
+      accepted.input,
+      accepted.storage,
+    ),
+  ).toEqual(result);
+  expect(rejected.targets).toHaveLength(1);
+});
+
+test("a delayed unknown COPY cannot overwrite bytes accepted under a fresh reservation", async () => {
+  const bytes = Buffer.from("Fictional accepted material");
+  const rejected = await reserve(bytes);
+  let lateCopy = () => {};
+  rejected.storage.sealUpload = async (_source, key) => {
+    rejected.targets.push(key);
+    lateCopy = () => {
+      rejected.objects.set(key, Buffer.from("late corrupt copy"));
+    };
+    throw new Error("COPY response timed out");
+  };
+  await expect(
+    completeAssetUpload(local.db, owner, rejected.input, rejected.storage),
+  ).rejects.toThrow("COPY response timed out");
+  rejected.storage.sealUpload = async (_source, key) => {
+    rejected.targets.push(key);
+    rejected.objects.set(key, bytes);
+  };
+  await expect(
+    completeAssetUpload(local.db, owner, rejected.input, rejected.storage),
+  ).rejects.toMatchObject({ code: "UPLOAD_RESTART_REQUIRED" });
+  const accepted = await reserve(bytes, { objects: rejected.objects });
+  const result = await completeAssetUpload(
+    local.db,
+    owner,
+    accepted.input,
+    accepted.storage,
+  );
+  lateCopy();
+  expect(rejected.objects.get(`${org}/files/${result.id}`)).toEqual(bytes);
+  expect(
+    await completeAssetUpload(
+      local.db,
+      owner,
+      accepted.input,
+      accepted.storage,
+    ),
+  ).toEqual(result);
+  expect(rejected.targets).toHaveLength(1);
+});
+
+test("a crash after durable consumption cannot permit a later storage attempt on the same key", async () => {
+  const { input, storage, targets } = await reserve(Buffer.from("Fictional"));
+  let count = 0;
+  const crashed = new Proxy(local.db, {
+    get(target, property) {
+      if (property !== "transaction")
+        return Reflect.get(target, property, target);
+      return async (...args: Parameters<Database["transaction"]>) => {
+        if (++count === 2) throw new Error("Worker crashed before I/O");
+        return target.transaction(...args);
+      };
+    },
+  });
+  await expect(
+    completeAssetUpload(crashed, owner, input, storage),
+  ).rejects.toThrow("Worker crashed before I/O");
+  await expect(
+    completeAssetUpload(local.db, owner, input, storage),
+  ).rejects.toMatchObject({ code: "UPLOAD_RESTART_REQUIRED" });
+  expect(targets).toHaveLength(0);
+});
+
+test("a lost durable-claim acknowledgement starts no storage mutation and forbids target reuse", async () => {
+  const { input, storage, targets } = await reserve(Buffer.from("Fictional"));
+  const unknownClaim = new Proxy(local.db, {
+    get(target, property) {
+      if (property !== "transaction")
+        return Reflect.get(target, property, target);
+      return async (...args: Parameters<Database["transaction"]>) => {
+        await target.transaction(...args);
+        throw new Error("Claim commit acknowledgement lost");
+      };
+    },
+  });
+  await expect(
+    completeAssetUpload(unknownClaim, owner, input, storage),
+  ).rejects.toThrow("Claim commit acknowledgement lost");
+  await expect(
+    completeAssetUpload(local.db, owner, input, storage),
+  ).rejects.toMatchObject({ code: "UPLOAD_RESTART_REQUIRED" });
+  expect(targets).toHaveLength(0);
 });

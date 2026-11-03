@@ -2,9 +2,8 @@ import { assertMutationOrigin, currentPrincipal } from "@crm/auth/server";
 import { errorResponse, limitedBody } from "@crm/core/http";
 import { DomainError } from "@crm/core/policy";
 import { getDatabase, isDemoMode } from "@crm/database/client";
-import { readLocalObject } from "@crm/files/storage";
 import { apiOperation } from "@crm/operations/catalog";
-import { maxFileSize } from "@crm/storage/files";
+import { maxFileSize, readAssetContent } from "@crm/storage/files";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -37,7 +36,12 @@ export async function GET(request: Request) {
         },
       });
     }
-    const bytes = await readLocalObject(asset.url.slice(6));
+    const { bytes } = await readAssetContent(
+      await getDatabase(),
+      principal,
+      fields.organizationId,
+      fields.assetId,
+    );
     return new Response(bytes.buffer as ArrayBuffer, {
       headers: {
         "Content-Type": asset.mimeType,
@@ -86,7 +90,11 @@ export async function PUT(request: Request) {
     const principal = await currentPrincipal(request.headers);
     const fields = Object.fromEntries(new URL(request.url).searchParams);
     const bytes = await limitedBody(request, maxFileSize);
-    const result = await apiOperation("materials", "POST", "upload-bytes").execute(
+    const result = await apiOperation(
+      "materials",
+      "POST",
+      "upload-bytes",
+    ).execute(
       { db: await getDatabase(), principal },
       { ...fields, dataBase64: Buffer.from(bytes).toString("base64") },
     );

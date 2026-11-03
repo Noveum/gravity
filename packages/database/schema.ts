@@ -1083,6 +1083,7 @@ export const assetUpload = pgTable(
     storageKey: text("storage_key").notNull(),
     sha256: text("sha256"),
     uploadedBy: text("uploaded_by").notNull(),
+    completedAssetId: uuid("completed_asset_id"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: createdAt(),
   },
@@ -1100,6 +1101,10 @@ export const assetUpload = pgTable(
       columns: [t.organizationId, t.productId, t.folderId],
       foreignColumns: [folders.organizationId, folders.productId, folders.id],
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.completedAssetId],
+      foreignColumns: [assets.organizationId, assets.productId, assets.id],
+    }),
     check("asset_upload_size", sql`${t.size} > 0 AND ${t.size} <= 104857600`),
   ],
 ).enableRLS();

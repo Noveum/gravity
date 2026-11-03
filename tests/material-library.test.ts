@@ -303,13 +303,13 @@ describe("direct-to-storage material uploads and downloads", () => {
     const storedBytes = await readLocalObject(downloaded.url.slice(6));
     expect(storedBytes).toEqual(new Uint8Array(content));
 
-    // 6. Replay completion is rejected (404 because reservation was already removed)
+    // 6. Completion retries return the durable result.
     await expect(
       run("complete_material_upload", owner, {
         productId: demoId(10),
         uploadId: reserved.uploadId,
       }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    ).resolves.toEqual(completed);
   });
 
   test("rejects size mismatch, invalid PDF header, and expired reservation", async () => {

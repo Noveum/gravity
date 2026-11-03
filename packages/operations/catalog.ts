@@ -176,6 +176,7 @@ import {
   maxFileSize,
   putLocalMaterialUpload,
   reserveAssetUpload,
+  uploadAsset,
 } from "../storage/files";
 
 export interface OperationContext {
@@ -260,9 +261,19 @@ export const materialReserveSchema = scopeSchema.extend({
   name: z.string().trim().min(1).max(200),
   mimeType: z.string().min(1).max(100),
   size: z.number().int().min(1).max(maxFileSize),
-  sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  sha256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
 });
-export const materialUploadSchema = materialReserveSchema;
+export const materialUploadSchema = materialReserveSchema
+  .omit({ size: true, sha256: true })
+  .extend({
+    dataBase64: z
+      .string()
+      .min(1)
+      .max(Math.ceil(maxFileSize / 3) * 4),
+  });
 export const materialCompleteSchema = scopeSchema.extend({
   productId: z.uuid(),
   uploadId: z.uuid(),
@@ -1727,6 +1738,21 @@ export const operations: Operation[] = [
   operation({
     api: "materials",
     method: "POST",
+    operation: "upload",
+    name: "upload_material",
+    description:
+      "Upload a small PDF/text/Markdown material as canonical base64 into an authorized product folder. Use reserve_material_upload and complete_material_upload for larger files up to 100 MiB.",
+    schema: materialUploadSchema,
+    destructive: false,
+    run: (c, input) =>
+      uploadAsset(c.db, c.principal, {
+        ...input,
+        bytes: materialBytes(input.dataBase64),
+      }),
+  }),
+  operation({
+    api: "materials",
+    method: "POST",
     operation: "reserve",
     name: "reserve_material_upload",
     description:
@@ -1741,7 +1767,7 @@ export const operations: Operation[] = [
     operation: "complete",
     name: "complete_material_upload",
     description:
-      "Seal a reserved material upload into an immutable asset after size verification.",
+      "Seal a reserved material upload into an immutable asset after streamed size, content and SHA256 verification.",
     schema: materialCompleteSchema,
     destructive: false,
     run: (c, input) => completeAssetUpload(c.db, c.principal, input),

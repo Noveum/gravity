@@ -22,7 +22,7 @@ import {
   operations,
   permissionAudit,
 } from "../operations/catalog";
-import { downloadAsset } from "../storage/files";
+import { readAssetContent } from "../storage/files";
 import {
   agentGuide,
   agentGuideOutputSchema,
@@ -541,7 +541,7 @@ export function mcpHandler(
         },
         async ({ assetId }) =>
           toolResult(async () => {
-            const { asset, bytes } = await downloadAsset(
+            const { asset, bytes } = await readAssetContent(
               db,
               principal,
               organizationId,

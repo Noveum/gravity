@@ -1,10 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import {
-  GetObjectCommand,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { and, eq } from "drizzle-orm";
 import { authorize, DomainError, type Principal } from "../core/policy";
 import { assertProductActive } from "../core/products";
@@ -22,23 +19,62 @@ import {
 export const maxFileSize = 100 * 1024 * 1024;
 export const mimeTypes = ["application/pdf", "text/plain", "text/markdown"];
 
-export async function readObject(key: string) {
+async function readObject(key: string) {
   if (isDemoMode()) {
-    try {
-      return await readLocalObject(key);
-    } catch {
+    if (/^[a-f0-9-]{36}$/.test(key))
       return new Uint8Array(await readFile(resolve(".data/files", key)));
-    }
+    return readLocalObject(key);
   }
   const { client, bucket: Bucket } = storageConnection();
-  const object = await client.send(
-    new GetObjectCommand({ Bucket, Key: key }),
-  );
+  const object = await client.send(new GetObjectCommand({ Bucket, Key: key }));
   if (!object.Body) throw new DomainError("NOT_FOUND", 404);
   return object.Body.transformToByteArray();
 }
 
-async function putObjectDirect(key: string, bytes: Uint8Array, mimeType: string) {
+async function validateSealedMaterial(
+  storage: FileStorage,
+  key: string,
+  size: number,
+  mimeType: string,
+) {
+  const hash = createHash("sha256");
+  const decoder = mimeType.startsWith("text/")
+    ? new TextDecoder("utf-8", { fatal: true })
+    : undefined;
+  const signature = new Uint8Array(5);
+  let count = 0;
+  for await (const bytes of storage.readChunks(key)) {
+    if (count + bytes.length > size || count + bytes.length > maxFileSize)
+      throw new DomainError("FILE_SIZE", 413);
+    if (count < signature.length)
+      signature.set(bytes.subarray(0, signature.length - count), count);
+    count += bytes.length;
+    hash.update(bytes);
+    try {
+      decoder?.decode(bytes, { stream: true });
+    } catch {
+      throw new DomainError("FILE_TYPE", 415);
+    }
+  }
+  if (count !== size) throw new DomainError("FILE_SIZE", 413);
+  if (
+    mimeType === "application/pdf" &&
+    new TextDecoder().decode(signature) !== "%PDF-"
+  )
+    throw new DomainError("FILE_TYPE", 415);
+  try {
+    decoder?.decode();
+  } catch {
+    throw new DomainError("FILE_TYPE", 415);
+  }
+  return hash.digest("hex");
+}
+
+async function putObjectDirect(
+  key: string,
+  bytes: Uint8Array,
+  mimeType: string,
+) {
   if (isDemoMode()) {
     await writeLocalUpload(key, bytes);
   } else {
@@ -145,7 +181,7 @@ export async function putLocalMaterialUpload(
       ),
     );
   if (!upload) throw new DomainError("NOT_FOUND", 404);
-  if (upload.expiresAt.getTime() < Date.now())
+  if (upload.completedAssetId || upload.expiresAt.getTime() < Date.now())
     throw new DomainError("CONFLICT", 409);
   if (upload.size !== input.bytes.length)
     throw new DomainError("FILE_SIZE", 400);
@@ -175,66 +211,9 @@ export async function completeAssetUpload(
   },
   storage: FileStorage = objectStorage("materials"),
 ) {
-  await authorize(db, principal, input.organizationId, input.productId, true);
-  const [reserved] = await db
-    .select()
-    .from(s.assetUpload)
-    .where(
-      and(
-        eq(s.assetUpload.id, input.uploadId),
-        eq(s.assetUpload.organizationId, input.organizationId),
-        eq(s.assetUpload.productId, input.productId),
-        eq(s.assetUpload.uploadedBy, principal.userId),
-      ),
-    );
-  if (!reserved) throw new DomainError("NOT_FOUND", 404);
-  if (reserved.expiresAt.getTime() < Date.now())
-    throw new DomainError("CONFLICT", 409);
-  const [folder] = await db
-    .select()
-    .from(s.folders)
-    .where(
-      and(
-        eq(s.folders.id, reserved.folderId),
-        eq(s.folders.organizationId, reserved.organizationId),
-        eq(s.folders.productId, reserved.productId),
-      ),
-    );
-  if (!folder) throw new DomainError("NOT_FOUND", 404);
-  const allowedStages = await db
-    .select()
-    .from(s.stages)
-    .where(
-      and(
-        eq(s.stages.organizationId, reserved.organizationId),
-        eq(s.stages.productId, reserved.productId),
-      ),
-    );
-  if (
-    reserved.stageIds.some((id) => !allowedStages.some((stage) => stage.id === id))
-  )
-    throw new DomainError("FORBIDDEN", 403);
-  const assetId = randomUUID();
-  const finalKey = `${reserved.organizationId}/files/${assetId}`;
-  await storage.sealUpload(reserved.storageKey, finalKey, reserved.size);
-  if (isDemoMode()) {
-    const bytes = await readLocalObject(finalKey);
-    if (
-      reserved.mimeType === "application/pdf" &&
-      new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-"
-    )
-      throw new DomainError("FILE_TYPE", 415);
-    if (reserved.mimeType.startsWith("text/")) {
-      try {
-        new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      } catch {
-        throw new DomainError("FILE_TYPE", 415);
-      }
-    }
-  }
-  return await db.transaction(async (tx) => {
-    await assertProductActive(tx, reserved.organizationId, reserved.productId);
-    const [current] = await tx
+  return db.transaction(async (tx) => {
+    await authorize(tx, principal, input.organizationId, input.productId, true);
+    const [reserved] = await tx
       .select()
       .from(s.assetUpload)
       .where(
@@ -244,20 +223,88 @@ export async function completeAssetUpload(
           eq(s.assetUpload.productId, input.productId),
           eq(s.assetUpload.uploadedBy, principal.userId),
         ),
+      )
+      .for("update");
+    if (!reserved) throw new DomainError("NOT_FOUND", 404);
+    if (reserved.completedAssetId) {
+      await tx
+        .select({ id: s.organizations.id })
+        .from(s.organizations)
+        .where(eq(s.organizations.id, input.organizationId))
+        .for("share");
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
       );
-    if (!current) throw new DomainError("NOT_FOUND", 404);
-    if (current.expiresAt.getTime() < Date.now())
+      const [asset] = await tx
+        .select()
+        .from(s.assets)
+        .where(
+          and(
+            eq(s.assets.id, reserved.completedAssetId),
+            eq(s.assets.organizationId, input.organizationId),
+            eq(s.assets.productId, input.productId),
+          ),
+        );
+      if (!asset) throw new DomainError("NOT_FOUND", 404);
+      return { id: asset.id, name: asset.name };
+    }
+    if (reserved.expiresAt.getTime() < Date.now())
       throw new DomainError("CONFLICT", 409);
-
-    let sha256 = reserved.sha256;
-    if (!sha256 && isDemoMode()) {
-      const bytes = await readLocalObject(finalKey);
-      sha256 = createHash("sha256").update(bytes).digest("hex");
-    }
-    if (!sha256) {
-      sha256 = "0".repeat(64);
-    }
-
+    const [folder] = await tx
+      .select()
+      .from(s.folders)
+      .where(
+        and(
+          eq(s.folders.id, reserved.folderId),
+          eq(s.folders.organizationId, reserved.organizationId),
+          eq(s.folders.productId, reserved.productId),
+        ),
+      );
+    if (!folder) throw new DomainError("NOT_FOUND", 404);
+    const allowedStages = await tx
+      .select()
+      .from(s.stages)
+      .where(
+        and(
+          eq(s.stages.organizationId, reserved.organizationId),
+          eq(s.stages.productId, reserved.productId),
+        ),
+      );
+    if (
+      reserved.stageIds.some(
+        (id) => !allowedStages.some((stage) => stage.id === id),
+      )
+    )
+      throw new DomainError("FORBIDDEN", 403);
+    // A fresh private target is never exposed through an upload URL. Serialize
+    // completion on its reservation so retries cannot overwrite an accepted object.
+    const assetId = randomUUID();
+    const finalKey = `${reserved.organizationId}/files/${assetId}`;
+    await storage.sealUpload(reserved.storageKey, finalKey, reserved.size);
+    const sha256 = await validateSealedMaterial(
+      storage,
+      finalKey,
+      reserved.size,
+      reserved.mimeType,
+    );
+    if (reserved.sha256 && reserved.sha256.toLowerCase() !== sha256)
+      throw new DomainError("FILE_CHECKSUM", 400);
+    // Membership administration locks the organization. Take the matching read
+    // lock after storage I/O so access cannot change between this check and commit.
+    await tx
+      .select({ id: s.organizations.id })
+      .from(s.organizations)
+      .where(eq(s.organizations.id, input.organizationId))
+      .for("share");
+    // Storage I/O may outlive an authorization change; check current access again.
+    await authorize(tx, principal, input.organizationId, input.productId, true);
+    await assertProductActive(tx, input.organizationId, input.productId);
+    if (reserved.expiresAt.getTime() < Date.now())
+      throw new DomainError("CONFLICT", 409);
     const [asset] = await tx
       .insert(s.assets)
       .values({
@@ -273,8 +320,7 @@ export async function completeAssetUpload(
         uploadedBy: principal.userId,
       })
       .returning();
-
-    if (reserved.stageIds.length) {
+    if (reserved.stageIds.length)
       await tx.insert(s.assetStages).values(
         [...new Set(reserved.stageIds)].map((stageId) => ({
           organizationId: reserved.organizationId,
@@ -283,8 +329,6 @@ export async function completeAssetUpload(
           stageId,
         })),
       );
-    }
-
     await tx.insert(s.changeEvents).values({
       organizationId: reserved.organizationId,
       productId: reserved.productId,
@@ -292,9 +336,10 @@ export async function completeAssetUpload(
       type: "asset.uploaded",
       entityId: asset.id,
     });
-
-    await tx.delete(s.assetUpload).where(eq(s.assetUpload.id, input.uploadId));
-
+    await tx
+      .update(s.assetUpload)
+      .set({ completedAssetId: asset.id })
+      .where(eq(s.assetUpload.id, input.uploadId));
     return { id: asset.id, name: asset.name };
   });
 }
@@ -326,8 +371,28 @@ export async function downloadAsset(
   return {
     asset,
     url,
-    bytes: await readObject(asset.storageKey),
   };
+}
+
+// Content reads are explicit and use the same current authorization as URLs.
+export async function readAssetContent(
+  db: Database,
+  principal: Principal,
+  organizationId: string,
+  assetId: string,
+) {
+  const [asset] = await db
+    .select()
+    .from(s.assets)
+    .where(
+      and(
+        eq(s.assets.organizationId, organizationId),
+        eq(s.assets.id, assetId),
+      ),
+    );
+  if (!asset) throw new DomainError("NOT_FOUND", 404);
+  await authorize(db, principal, organizationId, asset.productId);
+  return { asset, bytes: await readObject(asset.storageKey) };
 }
 
 export async function uploadAsset(

@@ -15,7 +15,7 @@ import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import { writeLocalUpload } from "../packages/files/storage";
 import { guideTopics } from "../packages/mcp/guidance";
-import { mcpHandler, principalForGrant } from "../packages/mcp/server";
+import { principalForGrant } from "../packages/mcp/server";
 import {
   operationRequirements,
   operations,
@@ -1180,17 +1180,16 @@ test("MCP can upload contract PDFs and download exact bytes without crossing pro
   expect(reservation.url).toBeDefined();
 
   // An unfinished upload must never be listed
-  const snapshotBefore = await call("list_materials", { productId: demoId(11) });
+  const snapshotBefore = await call("list_materials", {
+    productId: demoId(11),
+  });
   expect(
     snapshotBefore.assets?.some(
       (a: { id: string }) => a.id === reservation.uploadId,
     ),
   ).toBe(false);
 
-  await writeLocalUpload(
-    `${demoId(1)}/pending/${reservation.uploadId}`,
-    bytes,
-  );
+  await writeLocalUpload(`${demoId(1)}/pending/${reservation.uploadId}`, bytes);
 
   const completed = await call("complete_material_upload", {
     productId: demoId(11),

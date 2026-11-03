@@ -398,7 +398,11 @@ export class ContactAttributionService {
     );
     const rows = await this.rows(where, input.limit + 1, input.offset);
     const [creator] = await this.rows(
-      and(where, eq(s.contactContributions.kind, "created")),
+      and(
+        where,
+        eq(s.contactContributions.kind, "created"),
+        isNull(s.contactContributions.mergedFromPersonId),
+      ),
       1,
       0,
     );
@@ -446,6 +450,7 @@ export class ContactAttributionService {
     const rows = await this.db
       .select({
         id: s.contactContributions.id,
+        mergedFromPersonId: s.contactContributions.mergedFromPersonId,
         personId: s.contactContributions.personId,
         productId: s.contactContributions.productId,
         actorId: s.contactContributions.actorId,

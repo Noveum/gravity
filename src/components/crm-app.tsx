@@ -667,6 +667,50 @@ function CrmShell({ children }: { children: ReactNode }) {
                   crm.setPersonDialog(true);
                 },
               },
+              ...(section === "people" &&
+              (recordId || crm.selection.selected[0] || paletteFocus.current)
+                ? [
+                    {
+                      id: "merge-person",
+                      title: t.mergePerson,
+                      shortcut: "",
+                      run: () => {
+                        const target =
+                          recordId ||
+                          crm.selection.selected[0] ||
+                          paletteFocus.current;
+                        if (target)
+                          crm.openRecordDialog({
+                            kind: "merge",
+                            id: target,
+                            entity: "person",
+                          });
+                      },
+                    },
+                  ]
+                : []),
+              ...(section === "companies" &&
+              (recordId || crm.selection.selected[0] || paletteFocus.current)
+                ? [
+                    {
+                      id: "merge-company",
+                      title: t.mergeCompany,
+                      shortcut: "",
+                      run: () => {
+                        const target =
+                          recordId ||
+                          crm.selection.selected[0] ||
+                          paletteFocus.current;
+                        if (target)
+                          crm.openRecordDialog({
+                            kind: "merge",
+                            id: target,
+                            entity: "company",
+                          });
+                      },
+                    },
+                  ]
+                : []),
               {
                 id: "import-csv",
                 title: t.importCsv,

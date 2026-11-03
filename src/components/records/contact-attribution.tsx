@@ -134,6 +134,12 @@ export function ContactAttribution({ context }: { context: ClientContext }) {
                       <dd>{item.provider}</dd>
                     </>
                   )}
+                  {item.mergedFromPersonId && (
+                    <>
+                      <dt>{t.mergeOriginalPerson}</dt>
+                      <dd>{item.mergedFromPersonId}</dd>
+                    </>
+                  )}
                   {item.sourceRecordId && (
                     <>
                       <dt>{copy.sourceRecordId}</dt>

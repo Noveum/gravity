@@ -1,7 +1,7 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import * as Slider from "@radix-ui/react-slider";
-import { useId, useState } from "react";
+import { useId } from "react";
 import { formatMoney, minorStep } from "../money";
 import { FilterPopover } from "../ui/filter-popover";
 import { Select } from "../ui/select";
@@ -13,16 +13,8 @@ export type ValueFilters = {
   size: string;
 };
 
-const filterKey = (filters: ValueFilters) =>
-  JSON.stringify([
-    filters.minimum,
-    filters.maximum,
-    filters.currency,
-    filters.size,
-  ]);
-
 export function ValueFilter({
-  filters: suppliedFilters,
+  filters,
   amountMaximum,
   currencies,
   invalid,
@@ -35,34 +27,6 @@ export function ValueFilter({
   onChange: (values: Partial<ValueFilters>) => void;
 }) {
   const id = useId();
-  const suppliedKey = filterKey(suppliedFilters);
-  const [draft, setDraft] = useState({
-    observedKey: suppliedKey,
-    values: suppliedFilters,
-    pending: [] as string[],
-  });
-  // Native-history updates reach useSearchParams asynchronously. Keep edits
-  // visible and do not let an intermediate URL snapshot undo a newer edit.
-  if (draft.observedKey !== suppliedKey) {
-    const acknowledged = draft.pending.lastIndexOf(suppliedKey);
-    const pending =
-      acknowledged >= 0 ? draft.pending.slice(acknowledged + 1) : [];
-    setDraft({
-      observedKey: suppliedKey,
-      values: pending.length ? draft.values : suppliedFilters,
-      pending,
-    });
-  }
-  const filters = draft.values;
-  function change(values: Partial<ValueFilters>) {
-    const next = { ...filters, ...values };
-    setDraft((current) => ({
-      ...current,
-      values: next,
-      pending: [...current.pending, filterKey(next)],
-    }));
-    onChange(values);
-  }
   const unit = Number(minorStep(filters.currency || "USD"));
   const digits = Math.max(0, Math.round(-Math.log10(unit)));
   const number = (value: string, fallback: number) => {
@@ -121,7 +85,7 @@ export function ValueFilter({
             id={`${id}-size`}
             label={t.dealSize}
             value={filters.size}
-            onChange={(size) => change({ size })}
+            onChange={(size) => onChange({ size })}
             options={[
               { value: "", label: t.anyDealSize },
               { value: "known", label: t.knownDealSize },
@@ -135,7 +99,7 @@ export function ValueFilter({
             id={`${id}-currency-select`}
             label={t.currency}
             value={filters.currency}
-            onChange={(currency) => change({ currency })}
+            onChange={(currency) => onChange({ currency })}
             options={[
               { value: "", label: t.allCurrencies },
               ...[...new Set(["USD", ...currencies])].map((value) => ({
@@ -157,12 +121,17 @@ export function ValueFilter({
             ? [0, limit]
             : [number(filters.minimum, 0), number(filters.maximum, limit)]
         }
-        onValueChange={([minimum = 0, maximum = limit]) =>
-          change({
-            minimum: minimum <= 0 ? "" : minimum.toFixed(digits),
-            maximum: maximum >= upperEndpoint ? "" : maximum.toFixed(digits),
-          })
-        }
+        onValueChange={([minimum = 0, maximum = limit]) => {
+          // URL-derived props can lag a recent numeric edit. Only replace
+          // bounds this slider event changed; preserve the other current URL bound.
+          const changed: Partial<ValueFilters> = {};
+          if (minimum !== number(filters.minimum, 0))
+            changed.minimum = minimum <= 0 ? "" : minimum.toFixed(digits);
+          if (maximum !== number(filters.maximum, limit))
+            changed.maximum =
+              maximum >= upperEndpoint ? "" : maximum.toFixed(digits);
+          if (Object.keys(changed).length) onChange(changed);
+        }}
       >
         <Slider.Track className="value-range-track">
           <Slider.Range className="value-range-fill" />
@@ -187,7 +156,7 @@ export function ValueFilter({
             step={unit}
             placeholder="0"
             value={filters.minimum}
-            onChange={(event) => change({ minimum: event.target.value })}
+            onChange={(event) => onChange({ minimum: event.target.value })}
             aria-invalid={invalid}
           />
         </label>
@@ -203,7 +172,7 @@ export function ValueFilter({
             step={unit}
             placeholder={String(amountMaximum || 10000)}
             value={filters.maximum}
-            onChange={(event) => change({ maximum: event.target.value })}
+            onChange={(event) => onChange({ maximum: event.target.value })}
             aria-invalid={invalid}
           />
         </label>
@@ -217,7 +186,7 @@ export function ValueFilter({
         className="ghost value-filter-reset"
         disabled={!active}
         onClick={() =>
-          change({ minimum: "", maximum: "", currency: "", size: "" })
+          onChange({ minimum: "", maximum: "", currency: "", size: "" })
         }
       >
         {t.uiRefresh.resetValue}

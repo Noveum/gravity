@@ -23,6 +23,8 @@ import {
   shareLockStage,
 } from "./visibility";
 
+import { ianaTimeZoneSchema } from "./workspace";
+
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 const version = z.number().int().positive();
@@ -171,7 +173,7 @@ export const mergeRecordsSchema = scopeSchema.extend({
   companyId: z.uuid().nullable().optional(),
   summary: z.string().trim().max(10000).optional(),
   doNotContact: z.boolean().optional(),
-  timeZone: z.string().nullable().optional(),
+  timeZone: ianaTimeZoneSchema.nullable().optional(),
   domain: companyDomain.nullable().optional(),
   description: z.string().trim().max(2000).optional(),
   tags: tagsSchema.optional(),

@@ -758,3 +758,18 @@ test.each(["source", "target"])(
     ).toEqual(hidden);
   },
 );
+
+test("merge schema rejects invalid contact time zones", () => {
+  const operation = apiOperation("crm", "POST", "merge-records");
+  expect(
+    operation.schema.safeParse({
+      organizationId: org,
+      entity: "person",
+      targetId: randomUUID(),
+      sourceId: randomUUID(),
+      targetVersion: 1,
+      sourceVersion: 1,
+      timeZone: "not/a/timezone",
+    }).success,
+  ).toBe(false);
+});

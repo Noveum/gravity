@@ -390,7 +390,11 @@ export function MergeDialog({
                   key={c.id}
                   type="button"
                   className="candidate-item"
-                  onClick={() => setSourceId(c.id)}
+                  onClick={() => {
+                    setSourceId(c.id);
+                    setFieldChoices({});
+                    setError("");
+                  }}
                 >
                   <span className="candidate-name">{c.name}</span>
                   <span className="candidate-detail muted">

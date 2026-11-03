@@ -1,7 +1,9 @@
 "use client";
+import type { ClientCompanyContext, ClientContext } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import { ArrowLeftRight, Check, GitMerge } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { errorText, requestJson } from "../client-api";
 import { useCrm } from "../crm/crm-context";
 import { useModalLifecycle } from "../modal-lifecycle";
 import { companyPath, personPath } from "../routes";
@@ -42,14 +44,62 @@ export function MergeDialog({
 
   const data = crm.sourceData;
   const companies = data?.companies ?? [];
+  const scope = `${crm.organizationId}/${entity}/${targetId}/${sourceId}`;
+  const [loaded, setLoaded] = useState<{
+    scope: string;
+    people: ClientContext["person"][];
+    companies: ClientCompanyContext["company"][];
+  } | null>(null);
+  useEffect(() => {
+    if (!data?.compact || !sourceId) return;
+    const controller = new AbortController();
+    setError("");
+    const operation = entity === "person" ? "person" : "company";
+    const key = entity === "person" ? "personId" : "companyId";
+    Promise.all(
+      [targetId, sourceId].map((id) =>
+        requestJson<ClientContext | ClientCompanyContext>(
+          `/api/crm?operation=${operation}&organizationId=${crm.organizationId}&${key}=${id}`,
+          { signal: controller.signal },
+        ),
+      ),
+    )
+      .then((results) => {
+        if (controller.signal.aborted) return;
+        setLoaded({
+          scope,
+          people: results.flatMap((result) =>
+            "person" in result ? [result.person] : [],
+          ),
+          companies: results.flatMap((result) =>
+            "company" in result && result.company ? [result.company] : [],
+          ),
+        });
+      })
+      .catch((failure) => {
+        if (!controller.signal.aborted) setError(errorText(failure));
+      });
+    return () => controller.abort();
+  }, [crm.organizationId, data?.compact, entity, targetId, sourceId, scope]);
+  const ready = !data?.compact || loaded?.scope === scope;
+  const fullPeople = data?.compact
+    ? loaded?.scope === scope
+      ? loaded.people
+      : []
+    : data?.people;
+  const fullCompanies = data?.compact
+    ? loaded?.scope === scope
+      ? loaded.companies
+      : []
+    : data?.companies;
 
   const targetPerson =
     entity === "person"
-      ? data?.people.find((p) => p.id === targetId)
+      ? fullPeople?.find((p) => p.id === targetId)
       : undefined;
   const targetCompany =
     entity === "company"
-      ? data?.companies.find((c) => c.id === targetId)
+      ? fullCompanies?.find((c) => c.id === targetId)
       : undefined;
 
   const candidates =
@@ -76,11 +126,11 @@ export function MergeDialog({
 
   const sourcePerson =
     entity === "person"
-      ? data?.people.find((p) => p.id === sourceId)
+      ? fullPeople?.find((p) => p.id === sourceId)
       : undefined;
   const sourceCompany =
     entity === "company"
-      ? data?.companies.find((c) => c.id === sourceId)
+      ? fullCompanies?.find((c) => c.id === sourceId)
       : undefined;
 
   const targetRecord = targetPerson ?? targetCompany;
@@ -211,7 +261,7 @@ export function MergeDialog({
   }
 
   async function handleMerge() {
-    if (!targetRecord || !sourceRecord) return;
+    if (!ready || !targetRecord || !sourceRecord) return;
     setBusy(true);
     setError("");
 
@@ -228,6 +278,9 @@ export function MergeDialog({
 
       if (entity === "person" && targetPerson && sourcePerson) {
         for (const comp of comparisons) {
+          // Preserve the service's alias union unless the user explicitly
+          // chooses one list during review.
+          if (comp.key === "otherEmails" && !fieldChoices.otherEmails) continue;
           const choice =
             fieldChoices[comp.key] ??
             (comp.targetVal ? "target" : comp.sourceVal ? "source" : "target");
@@ -271,13 +324,13 @@ export function MergeDialog({
           if (choice === "source") {
             if (comp.key === "name") payload.name = sourceCompany.name;
             else if (comp.key === "domain")
-              payload.domain = sourceCompany.domain;
+              payload.domain = sourceCompany.domain ?? "";
             else if (comp.key === "description")
               payload.description = sourceCompany.description;
           } else {
             if (comp.key === "name") payload.name = targetCompany.name;
             else if (comp.key === "domain")
-              payload.domain = targetCompany.domain;
+              payload.domain = targetCompany.domain ?? "";
             else if (comp.key === "description")
               payload.description = targetCompany.description;
           }
@@ -317,7 +370,9 @@ export function MergeDialog({
           <p className="muted">{t.mergeRecordsSubtitle}</p>
         </div>
 
-        {!sourceRecord ? (
+        {sourceId && !ready ? (
+          <p role="status">{t.loading}</p>
+        ) : !sourceRecord ? (
           <div className="merge-select-step">
             <label>
               {t.selectDuplicateRecord}
@@ -472,7 +527,7 @@ export function MergeDialog({
           <button type="button" disabled={busy} onClick={onClose}>
             {t.cancel}
           </button>
-          {sourceRecord && (
+          {ready && sourceRecord && (
             <button
               type="button"
               className="primary"

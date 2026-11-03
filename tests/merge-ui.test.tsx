@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { mergeRecordsSchema } from "../packages/core/records";
 import { demoId } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import {
@@ -14,6 +15,7 @@ import {
   type CrmContextValue,
 } from "../src/components/crm/crm-context";
 import { MergeDialog } from "../src/components/records/merge-dialog";
+import { MergeHistory } from "../src/components/records/merge-history";
 
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
@@ -26,6 +28,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 const personA = {
@@ -197,4 +200,141 @@ describe("MergeDialog Review Screen UI", () => {
       false,
     );
   });
+});
+
+test("compact snapshots load authorized full notes before permitting merge", async () => {
+  let resolveFull!: (response: Response) => void;
+  const fetcher = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFull = resolve;
+        }),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ person: personB }), { status: 200 }),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const { send } = renderMergeDialog({
+    sourceData: {
+      ...mockSourceData,
+      compact: true,
+      people: [
+        { ...personA, summary: "" },
+        { ...personB, summary: "" },
+      ],
+    } as unknown as CrmContextValue["sourceData"],
+  });
+  fireEvent.click(screen.getByText("Alice Duplicate"));
+  expect(screen.queryByText(t.mergeSubmit)).toBeNull();
+  expect(send).not.toHaveBeenCalled();
+  resolveFull(
+    new Response(JSON.stringify({ person: { ...personA, version: 7 } }), {
+      status: 200,
+    }),
+  );
+  await screen.findByText("Canonical summary notes.");
+  fireEvent.click(screen.getByText(t.mergeSubmit));
+  await waitFor(() => expect(send).toHaveBeenCalled());
+  expect(send.mock.calls[0][0]).toMatchObject({
+    summary: "Canonical summary notes.",
+    targetVersion: 7,
+  });
+  expect(fetcher.mock.calls[0][0]).toContain(`personId=${personA.id}`);
+});
+
+test("failed full-record reads cannot submit compact placeholders", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ error: "FORBIDDEN" }), { status: 403 }),
+      ),
+  );
+  const { send } = renderMergeDialog({
+    sourceData: {
+      ...mockSourceData,
+      compact: true,
+    } as CrmContextValue["sourceData"],
+  });
+  fireEvent.click(screen.getByText("Alice Duplicate"));
+  await screen.findByRole("alert");
+  expect(screen.queryByText(t.mergeSubmit)).toBeNull();
+  expect(send).not.toHaveBeenCalled();
+});
+
+test("company merge with missing domains submits a valid empty domain", async () => {
+  const send = vi.fn().mockResolvedValue({ ok: true });
+  const companies = [
+    {
+      id: demoId(101),
+      name: "Canonical company",
+      domain: null,
+      description: "Canonical",
+      version: 1,
+    },
+    {
+      id: demoId(102),
+      name: "Duplicate company",
+      domain: null,
+      description: "Duplicate",
+      version: 1,
+    },
+  ];
+  const context = {
+    organizationId: demoId(1),
+    sourceData: { ...mockSourceData, companies },
+    send,
+    go: vi.fn(),
+  } as unknown as CrmContextValue;
+  render(
+    <CrmContext.Provider value={context}>
+      <MergeDialog
+        entity="company"
+        initialTargetId={companies[0].id}
+        onClose={vi.fn()}
+      />
+    </CrmContext.Provider>,
+  );
+  fireEvent.click(screen.getByText("Duplicate company"));
+  fireEvent.click(screen.getByText(t.mergeSubmit));
+  await waitFor(() => expect(send).toHaveBeenCalledOnce());
+  expect(send.mock.calls[0][0].domain).toBe("");
+  expect(mergeRecordsSchema.safeParse(send.mock.calls[0][0]).success).toBe(
+    true,
+  );
+});
+
+test("relationship merge history exposes conflicting notes and structured fields read-only", () => {
+  render(
+    <MergeHistory
+      entries={[
+        {
+          id: demoId(1),
+          context: "Original conflict",
+          contextDetails: {
+            background: "Original background",
+            fields: [
+              {
+                id: demoId(2),
+                label: "Budget model",
+                type: "text",
+                value: "Original custom value",
+              },
+            ],
+          },
+          nextStep: "Original next step",
+          priority: "high",
+          touchCount: 7,
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByText(t.mergeHistoryTitle)).toBeDefined();
+  expect(screen.getByText("Original conflict")).toBeDefined();
+  expect(screen.getByText("Original background")).toBeDefined();
+  expect(screen.getByText("Original custom value")).toBeDefined();
+  expect(screen.queryByRole("textbox")).toBeNull();
 });

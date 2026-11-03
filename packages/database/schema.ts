@@ -89,6 +89,8 @@ export const contactContributions = pgTable(
     id: id(),
     organizationId: organizationId(),
     personId: uuid("person_id").notNull(),
+    // Original identity retained when its attribution moves to a canonical person.
+    mergedFromPersonId: uuid("merged_from_person_id"),
     productId: uuid("product_id"),
     actorId: text("actor_id"),
     sourceMemberId: text("source_member_id"),
@@ -166,7 +168,7 @@ export const contactContributions = pgTable(
     ),
     uniqueIndex("contact_contributions_original_creator")
       .on(t.personId)
-      .where(sql`${t.kind} = 'created'`),
+      .where(sql`${t.kind} = 'created' AND ${t.mergedFromPersonId} IS NULL`),
     check(
       "contact_contribution_batch_row",
       sql`((${t.batchId} IS NULL) = (${t.requestHash} IS NULL)) AND (${t.batchId} IS NULL OR (${t.productId} IS NOT NULL AND ${t.sourceRecordId} IS NOT NULL))`,
@@ -372,6 +374,11 @@ export const relationships = pgTable(
         fields: [],
       }),
     contextSource: text("context_source"),
+    // Product-shared snapshots only; never private message bodies.
+    mergeHistory: jsonb("merge_history")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
     stageId: uuid("stage_id"),
     stagePipeline: text("stage_pipeline", { enum: ["outreach"] })
       .notNull()
@@ -587,7 +594,7 @@ export const touches = pgTable(
         enrollments.relationshipId,
         enrollments.id,
       ],
-    }),
+    }).onUpdate("cascade"),
     foreignKey({
       columns: [t.organizationId, t.senderId],
       foreignColumns: [memberships.organizationId, memberships.userId],

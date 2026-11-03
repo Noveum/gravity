@@ -171,7 +171,7 @@ export const mergeRecordsSchema = scopeSchema.extend({
   summary: z.string().trim().max(10000).optional(),
   doNotContact: z.boolean().optional(),
   timeZone: z.string().nullable().optional(),
-  domain: companyDomain.optional(),
+  domain: companyDomain.nullable().optional(),
   description: z.string().trim().max(2000).optional(),
   tags: tagsSchema.optional(),
   amountMinor: amountMinor.optional(),
@@ -1119,7 +1119,8 @@ export class RecordService {
               eq(s.relationships.organizationId, input.organizationId),
               eq(s.relationships.personId, source.id),
             ),
-          );
+          )
+          .for("update");
         const targetRelationships = await tx
           .select()
           .from(s.relationships)
@@ -1128,9 +1129,10 @@ export class RecordService {
               eq(s.relationships.organizationId, input.organizationId),
               eq(s.relationships.personId, target.id),
             ),
-          );
+          )
+          .for("update");
 
-        const blockedProducts = sourceRelationships
+        const blockedProducts = [...sourceRelationships, ...targetRelationships]
           .map((r) => r.productId)
           .filter((pId) => !writable.has(pId));
         if (blockedProducts.length > 0) throw new DomainError("FORBIDDEN", 403);
@@ -1256,33 +1258,108 @@ export class RecordService {
             (r) => r.productId === sr.productId && r.purpose === sr.purpose,
           );
           if (tr) {
+            // A canonical choice must never erase the losing product context.
+            // Retain every source field (including ownership/version) in its
+            // existing product visibility scope before deleting the duplicate.
+            const { mergeHistory: priorHistory, ...original } = sr;
+            const contextDetails = { ...tr.contextDetails };
+            for (const key of [
+              "background",
+              "needs",
+              "timing",
+              "budget",
+              "decisionProcess",
+              "risks",
+              "history",
+            ] as const)
+              contextDetails[key] ||= sr.contextDetails[key];
+            const combine = <T extends { id: string }>(
+              canonical: T[],
+              incoming: T[],
+            ) => {
+              const ids = new Set(canonical.map((item) => item.id));
+              return [
+                ...canonical,
+                ...incoming.filter((item) => !ids.has(item.id)),
+              ];
+            };
+            contextDetails.signals = combine(
+              tr.contextDetails.signals,
+              sr.contextDetails.signals,
+            );
+            contextDetails.fields = combine(
+              tr.contextDetails.fields,
+              sr.contextDetails.fields,
+            );
+            const latest = (a: Date | null, b: Date | null) =>
+              !a ? b : !b ? a : a > b ? a : b;
+            await tx
+              .update(s.relationships)
+              .set({
+                context: tr.context || sr.context,
+                contextDetails,
+                contextSource: tr.contextSource || sr.contextSource,
+                nextStep: tr.nextStep || sr.nextStep,
+                nextStepDueAt: tr.nextStep
+                  ? tr.nextStepDueAt
+                  : sr.nextStepDueAt,
+                stageId: tr.stageId ?? sr.stageId,
+                tags: [...new Set([...tr.tags, ...sr.tags])],
+                amountMinor: tr.amountMinor ?? sr.amountMinor,
+                currency: tr.amountMinor === null ? sr.currency : tr.currency,
+                lastOutboundAt: latest(tr.lastOutboundAt, sr.lastOutboundAt),
+                lastInboundAt: latest(tr.lastInboundAt, sr.lastInboundAt),
+                touchCount: tr.touchCount + sr.touchCount,
+                mergeHistory: [
+                  ...tr.mergeHistory,
+                  ...priorHistory,
+                  {
+                    ...original,
+                    mergedAt: new Date().toISOString(),
+                    mergedBy: principal.userId,
+                  },
+                ],
+                version: tr.version + 1,
+              })
+              .where(eq(s.relationships.id, tr.id));
             await tx
               .update(s.conversations)
               .set({ relationshipId: tr.id })
               .where(eq(s.conversations.relationshipId, sr.id));
             await tx
               .update(s.actions)
-              .set({ relationshipId: tr.id })
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.actions.version} + 1`,
+              })
               .where(eq(s.actions.relationshipId, sr.id));
             await tx
               .update(s.meetings)
-              .set({ relationshipId: tr.id })
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.meetings.version} + 1`,
+              })
               .where(eq(s.meetings.relationshipId, sr.id));
             await tx
               .update(s.opportunities)
-              .set({ relationshipId: tr.id })
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.opportunities.version} + 1`,
+              })
               .where(eq(s.opportunities.relationshipId, sr.id));
             await tx
               .update(s.internalTasks)
-              .set({ relationshipId: tr.id })
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.internalTasks.version} + 1`,
+              })
               .where(eq(s.internalTasks.relationshipId, sr.id));
             await tx
-              .update(s.touches)
-              .set({ relationshipId: tr.id })
-              .where(eq(s.touches.relationshipId, sr.id));
-            await tx
               .update(s.nativeDrafts)
-              .set({ relationshipId: tr.id })
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.nativeDrafts.version} + 1`,
+              })
               .where(eq(s.nativeDrafts.relationshipId, sr.id));
             await tx
               .update(s.evidence)
@@ -1294,9 +1371,22 @@ export class RecordService {
               .where(eq(s.integrationItems.relationshipId, sr.id));
             await tx
               .update(s.yoduBindings)
-              .set({ relationshipId: tr.id })
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.yoduBindings.version} + 1`,
+              })
               .where(eq(s.yoduBindings.relationshipId, sr.id));
 
+            await tx
+              .update(s.deliveries)
+              .set({ relationshipId: tr.id })
+              .where(eq(s.deliveries.relationshipId, sr.id));
+            // Invalidate captured touch versions before enrollment updates
+            // cascade the composite FK's relationship ID atomically.
+            await tx
+              .update(s.touches)
+              .set({ version: sql`${s.touches.version} + 1` })
+              .where(eq(s.touches.relationshipId, sr.id));
             const targetActiveSequences = new Set(
               (
                 await tx
@@ -1320,6 +1410,25 @@ export class RecordService {
                 (enc.status === "running" || enc.status === "paused")
               ) {
                 await tx
+                  .update(s.touches)
+                  .set({
+                    status: "skipped",
+                    skipReason: "merged_duplicate_enrollment",
+                    closedAt: new Date(),
+                    approvedHash: null,
+                    approvedBy: null,
+                  })
+                  .where(
+                    and(
+                      eq(s.touches.enrollmentId, enc.id),
+                      inArray(s.touches.status, [
+                        "planned",
+                        "drafted",
+                        "approved",
+                      ]),
+                    ),
+                  );
+                await tx
                   .update(s.enrollments)
                   .set({
                     status: "stopped",
@@ -1331,7 +1440,7 @@ export class RecordService {
               } else {
                 await tx
                   .update(s.enrollments)
-                  .set({ relationshipId: tr.id })
+                  .set({ relationshipId: tr.id, version: enc.version + 1 })
                   .where(eq(s.enrollments.id, enc.id));
               }
             }
@@ -1349,8 +1458,18 @@ export class RecordService {
 
         await tx
           .update(s.contactContributions)
-          .set({ personId: target.id })
+          .set({
+            personId: target.id,
+            mergedFromPersonId: sql`coalesce(${s.contactContributions.mergedFromPersonId}, ${source.id}::uuid)`,
+          })
           .where(eq(s.contactContributions.personId, source.id));
+
+        // The LinkedIn identity index is immediate, so release the source
+        // key inside this transaction before assigning it to the survivor.
+        await tx
+          .update(s.people)
+          .set({ linkedinUrl: "" })
+          .where(eq(s.people.id, source.id));
 
         const [updated] = await tx
           .update(s.people)
@@ -1394,14 +1513,9 @@ export class RecordService {
           entityId: target.id,
         });
 
-        if (
-          (target.email ?? null) !== (updated.email ?? null) ||
-          target.name !== updated.name ||
-          target.title !== updated.title ||
-          (target.companyId ?? null) !== (updated.companyId ?? null)
-        ) {
-          await clearApprovals(tx, principal, input.organizationId, target.id);
-        }
+        // Both people and relationship IDs/context changed. Even a retained
+        // recipient requires a fresh review; this never permits dispatch.
+        await clearApprovals(tx, principal, input.organizationId, target.id);
 
         return updated;
       }
@@ -1450,6 +1564,29 @@ export class RecordService {
         ))
       )
         throw new DomainError("NOT_FOUND", 404);
+
+      const affectedRelationships = await tx
+        .select({ productId: s.relationships.productId })
+        .from(s.relationships)
+        .innerJoin(
+          s.people,
+          and(
+            eq(s.people.id, s.relationships.personId),
+            eq(s.people.organizationId, s.relationships.organizationId),
+          ),
+        )
+        .where(
+          and(
+            eq(s.people.organizationId, input.organizationId),
+            inArray(s.people.companyId, [source.id, target.id]),
+          ),
+        );
+      if (
+        affectedRelationships.some(
+          (relationship) => !writable.has(relationship.productId),
+        )
+      )
+        throw new DomainError("FORBIDDEN", 403);
 
       const chosenName = input.name ?? target.name;
       const chosenDomain =
@@ -1513,6 +1650,11 @@ export class RecordService {
           await clearApprovals(tx, principal, input.organizationId, emp.id);
         }
       }
+
+      await tx
+        .update(s.companies)
+        .set({ domain: null })
+        .where(eq(s.companies.id, source.id));
 
       const [updated] = await tx
         .update(s.companies)

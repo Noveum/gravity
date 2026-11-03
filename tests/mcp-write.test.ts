@@ -13,6 +13,7 @@ import { RecordService } from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
+import { writeLocalUpload } from "../packages/files/storage";
 import { guideTopics } from "../packages/mcp/guidance";
 import { principalForGrant } from "../packages/mcp/server";
 import {
@@ -1162,44 +1163,63 @@ test("MCP can upload contract PDFs and download exact bytes without crossing pro
     productId: demoId(11),
     name: "Fictional contracts",
   });
-  const dataBase64 = Buffer.from(
-    "%PDF-1.7\nFictional contract\n%%EOF",
-  ).toString("base64");
+  const bytes = Buffer.from("%PDF-1.7\nFictional contract\n%%EOF");
   const input = {
     productId: demoId(11),
     folderId: folder.id,
     name: "Fictional contract.pdf",
     mimeType: "application/pdf",
-    dataBase64,
+    size: bytes.length,
   };
   expect(
-    (await call("upload_material", { ...input, dataBase64: "not base64" }))
-      .error,
-  ).toContain("INVALID_INPUT");
-  const asset = await call("upload_material", input);
-  expect(asset.error).toBeUndefined();
-  const file = await call("download_material", { assetId: asset.id });
+    (await call("reserve_material_upload", { ...input, size: -1 })).error,
+  ).toBeDefined();
+  const reservation = await call("reserve_material_upload", input);
+  expect(reservation.error).toBeUndefined();
+  expect(reservation.uploadId).toBeDefined();
+  expect(reservation.url).toBeDefined();
+
+  // An unfinished upload must never be listed
+  const snapshotBefore = await call("list_materials", {
+    productId: demoId(11),
+  });
+  expect(
+    snapshotBefore.assets?.some(
+      (a: { id: string }) => a.id === reservation.uploadId,
+    ),
+  ).toBe(false);
+
+  await writeLocalUpload(`${demoId(1)}/pending/${reservation.uploadId}`, bytes);
+
+  const completed = await call("complete_material_upload", {
+    productId: demoId(11),
+    uploadId: reservation.uploadId,
+  });
+  expect(completed.error).toBeUndefined();
+  expect(completed.id).toBeDefined();
+
+  const file = await call("download_material", { assetId: completed.id });
   expect(file.mimeType).toBe("application/pdf");
-  expect(file.dataBase64).toBe(dataBase64);
+  expect(file.url).toBeDefined();
+  expect(file.dataBase64).toBeUndefined();
   expect(file.sha256).toMatch(/^[a-f0-9]{64}$/);
   expect(
     (
       await call(
         "download_material",
-        { assetId: asset.id },
+        { assetId: completed.id },
         { ...writable, productIds: [demoId(10)] },
       )
     ).error,
   ).toContain("FORBIDDEN");
-  expect(
-    (
-      await call("upload_material", {
-        ...input,
-        mimeType: "application/pdf",
-        dataBase64: Buffer.from("not a pdf").toString("base64"),
-      })
-    ).error,
-  ).toContain("FILE_TYPE");
+  const textAsset = await call("create_material", {
+    productId: demoId(11),
+    folderId: folder.id,
+    name: "Draft notes.md",
+    mimeType: "text/markdown",
+    content: "# Draft notes",
+  });
+  expect(textAsset.error).toBeUndefined();
 });
 
 test("MCP supports atomic follow-up planning and new workspaces without silently widening its grant", async () => {

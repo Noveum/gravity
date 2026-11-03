@@ -26,7 +26,7 @@ The current hosted capabilities do not yet include every operation on the review
 | Inbox ingestion | `get_integrations`, paginated review queue | `sync_integration`, reviewed `link_import`/`ignore_import` | Follow `nextReviewCursor` and bounded sync `more` flags. Account history remains restricted to its owner. Sync and classification do not send. |
 | Workspace administration | `list_members`, `list_invitations`, `get_permission_audit` | Scoped member/settings operations | Agent grants cannot widen access or override human-only decisions. Inviting/reactivating members, granting access, changing the workspace time zone and resolving ambiguous deliveries require a signed-in person. |
 | Private file library | `list_files`, `get_file` | `create_file`, `update_file`, `reserve_file_upload`, `complete_file_upload`, `transfer_files` | Owner, product and file permissions apply. Private files do not become shared sales materials implicitly; public sharing is an explicit visibility change. |
-| Meetings and documents | Read meetings, evidence and private materials | `save_meeting`, `accept_meeting_commitment`, `upload_material` | A booking is not a held meeting. Commitments require explicit acceptance. Calendar event dispatch, message attachments and contract signing are not implemented. |
+| Meetings and documents | Read meetings, evidence and private materials | `save_meeting`, `accept_meeting_commitment`, `reserve_material_upload`, `complete_material_upload` | A booking is not a held meeting. Commitments require explicit acceptance. Calendar event dispatch, message attachments and contract signing are not implemented. |
 
 ## Sending readiness
 

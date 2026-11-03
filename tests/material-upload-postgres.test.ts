@@ -43,7 +43,11 @@ describe.skipIf(!usable)("material completion on PostgreSQL", () => {
   async function reserve(beforeRead?: () => Promise<void>) {
     const bytes = Buffer.from("Fictional immutable material €");
     const targets: string[] = [];
+    const deleted: string[] = [];
     const storage: FileStorage = {
+      deleteObject: async (key) => {
+        deleted.push(key);
+      },
       uploadUrl: async () => "https://storage.example.test/upload",
       sealUpload: async (_source, target) => {
         targets.push(target);
@@ -72,6 +76,7 @@ describe.skipIf(!usable)("material completion on PostgreSQL", () => {
     return {
       storage,
       targets,
+      deleted,
       input: {
         organizationId: demoId(1),
         productId: demoId(10),
@@ -102,7 +107,7 @@ describe.skipIf(!usable)("material completion on PostgreSQL", () => {
     expect(targets).toHaveLength(1);
   });
   test("membership revoked during storage validation prevents completion and replay", async () => {
-    const { storage, input } = await reserve(async () => {
+    const { storage, input, deleted } = await reserve(async () => {
       await db
         .update(s.memberships)
         .set({ active: false })
@@ -117,6 +122,7 @@ describe.skipIf(!usable)("material completion on PostgreSQL", () => {
         .from(s.assetUpload)
         .where(eq(s.assetUpload.id, input.uploadId));
       expect(receipt.completedAssetId).toBeNull();
+      expect(deleted).toHaveLength(1);
     } finally {
       await db
         .update(s.memberships)
@@ -142,6 +148,7 @@ describe.skipIf(!usable)("material completion on PostgreSQL", () => {
     };
     const bytes = Buffer.from("Fictional material");
     const storage: FileStorage = {
+      deleteObject: async () => {},
       uploadUrl: async () => "https://storage.example.test/upload",
       sealUpload: async () => {},
       downloadUrl: async () => "https://storage.example.test/download",
@@ -204,5 +211,64 @@ describe.skipIf(!usable)("material completion on PostgreSQL", () => {
       ),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(targets).toHaveLength(0);
+  });
+  test("cleanup serializes with a retry and never deletes its accepted object", async () => {
+    const { storage, input, targets } = await reserve();
+    const bytes = Buffer.from("Fictional immutable material €");
+    const objects = new Map<string, Uint8Array>();
+    let reads = 0;
+    let cleanupStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      cleanupStarted = resolve;
+    });
+    let releaseCleanup!: () => void;
+    const released = new Promise<void>((resolve) => {
+      releaseCleanup = resolve;
+    });
+    storage.sealUpload = async (_source, target) => {
+      targets.push(target);
+      objects.set(target, bytes);
+    };
+    storage.readChunks = async function* () {
+      yield reads++ === 0 ? Buffer.alloc(bytes.length, 0xff) : bytes;
+    };
+    storage.deleteObject = async (key) => {
+      cleanupStarted();
+      await released;
+      objects.delete(key);
+    };
+    const rejected = completeAssetUpload(db, owner, input, storage).then(
+      (value) => ({ value, error: undefined }),
+      (error) => ({ value: undefined, error }),
+    );
+    await started;
+    let accepted: ReturnType<typeof completeAssetUpload> | undefined;
+    try {
+      accepted = completeAssetUpload(db, owner, input, storage);
+      const deadline = Date.now() + 5000;
+      let waiting = false;
+      while (Date.now() < deadline) {
+        const rows =
+          await client`SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%asset_upload%'`;
+        if (rows.length) {
+          waiting = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(waiting).toBe(true);
+      expect(targets).toHaveLength(1);
+    } finally {
+      releaseCleanup();
+    }
+    expect((await rejected).error).toMatchObject({ code: "FILE_TYPE" });
+    const result = await accepted;
+    expect(result?.id).toBe(input.uploadId);
+    expect(new Set(targets).size).toBe(1);
+    expect(objects.get(`${demoId(1)}/files/${input.uploadId}`)).toEqual(bytes);
+    expect(await completeAssetUpload(db, owner, input, storage)).toEqual(
+      result,
+    );
+    expect(targets).toHaveLength(2);
   });
 });

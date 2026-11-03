@@ -66,4 +66,13 @@ describe("wall clock inputs in the workspace time zone", () => {
     );
     expect(instantFromZonedInput("not a time", "UTC")).toBe("");
   });
+  test("year-one timezone math handles BC intermediates and rejects unsupported UTC years", () => {
+    expect(
+      instantFromZonedInput("0001-01-01T00:00:00.125", "America/New_York"),
+    ).toBe("0001-01-01T04:56:02.125Z");
+    expect(instantFromZonedInput("0001-01-01T00:00", "Asia/Kolkata")).toBe("");
+    expect(
+      instantFromZonedInput("9999-12-31T23:59:59.999", "America/New_York"),
+    ).toBe("");
+  });
 });

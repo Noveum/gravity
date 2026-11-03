@@ -19,6 +19,7 @@ import {
   test,
   vi,
 } from "vitest";
+import { ContactAttributionService } from "../packages/core/contact-attribution";
 import {
   CrmService,
   messageActivitySchema,
@@ -31,6 +32,7 @@ import { shortcutLabel } from "../packages/core/shortcuts";
 import { createLocalDatabase } from "../packages/database/client";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
+import { apiOperation } from "../packages/operations/catalog";
 import { appearanceBootScript } from "../src/components/appearance-boot";
 import { label, requestJson } from "../src/components/client-api";
 import { CrmApp } from "../src/components/crm-app";
@@ -50,6 +52,7 @@ import { SequencesView } from "../src/components/views/sequences-view";
 import { SettingsView } from "../src/components/views/settings-view";
 import { contactTab } from "./support/contact-workspace";
 import { usePathname, visit } from "./support/memory-router";
+import { chooseSelect } from "./support/select-control";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
 vi.mock("next/link", () => import("./support/memory-router"));
@@ -153,7 +156,33 @@ beforeEach(() => {
     if (url.startsWith("/api/outreach")) throw new Error("NOT_FOUND");
     const params = new URL(url, "http://localhost").searchParams;
     const organizationId = params.get("organizationId") || demoId(1);
+    const operation = params.get("operation");
+    if (
+      ["native-drafts", "internal-tasks", "messages"].includes(operation ?? "")
+    )
+      return serialize(
+        await apiOperation("crm", "GET", operation).execute(
+          { db: local.db, principal },
+          Object.fromEntries(params),
+        ),
+      );
+    if (url.startsWith("/api/integrations") && operation?.startsWith("yodu-"))
+      return serialize(
+        await apiOperation("integrations", "GET", operation).execute(
+          { db: local.db, principal },
+          Object.fromEntries(params),
+        ),
+      );
     if (params.get("operation") === "invitations") return [];
+    if (params.get("operation") === "contact-attribution")
+      return serialize(
+        await new ContactAttributionService(local.db).list(principal, {
+          organizationId,
+          personId: params.get("personId") ?? "",
+          productId: params.get("productId") ?? undefined,
+          offset: params.get("offset") ?? 0,
+        }),
+      );
     if (
       params.get("operation") === "context" &&
       missingContexts.has(params.get("relationshipId") ?? "")
@@ -340,9 +369,10 @@ test("product switching changes records synchronously without another snapshot r
   );
   await act(async () => {});
   request.mockClear();
-  fireEvent.change(screen.getByRole("combobox", { name: t.product }), {
-    target: { value: demoId(11) },
-  });
+  await chooseSelect(
+    screen.getByRole("combobox", { name: t.product }),
+    "API Marketplace",
+  );
   expect(screen.getByRole("link", { name: "Jonah Reed" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Leena Rao" })).toBeNull();
   expect(screen.queryByText(t.loading, { exact: true })).toBeNull();
@@ -373,10 +403,14 @@ test("a delayed previous-organization snapshot cannot reappear after switching o
   expect(screen.queryByText("Mira Chen")).toBeNull();
   await act(async () => release(snapshot));
   await waitFor(() =>
-    expect(
-      screen.getByRole("option", { name: "Design Partners" }),
-    ).toBeTruthy(),
+    expect(screen.getByRole("combobox", { name: t.product }).textContent).toBe(
+      t.allProducts,
+    ),
   );
+  fireEvent.keyDown(screen.getByRole("combobox", { name: t.product }), {
+    key: "ArrowDown",
+  });
+  await screen.findByRole("option", { name: "Design Partners" });
   expect(screen.queryByText("Mira Chen")).toBeNull();
   expect(screen.queryByRole("option", { name: "AI Platform" })).toBeNull();
 });
@@ -492,9 +526,10 @@ test("modifier Enter saves the draft once without approval or a false version co
 test("creating a person for another product refreshes the full snapshot before opening the new record", async () => {
   mount();
   fireEvent.click(screen.getByRole("link", { name: t.people }));
-  fireEvent.change(screen.getByRole("combobox", { name: t.product }), {
-    target: { value: demoId(10) },
-  });
+  await chooseSelect(
+    screen.getByRole("combobox", { name: t.product }),
+    "AI Platform",
+  );
   fireEvent.keyDown(document.body, { key: "c" });
   const dialog = within(screen.getByRole("region", { name: t.addPerson }));
   await waitFor(() =>
@@ -524,10 +559,9 @@ test("creating a person for another product refreshes the full snapshot before o
     expect(screen.queryByRole("region", { name: t.addPerson })).toBeNull(),
   );
   await waitFor(() =>
-    expect(
-      (screen.getByRole("combobox", { name: t.product }) as HTMLSelectElement)
-        .value,
-    ).toBe(demoId(12)),
+    expect(screen.getByRole("combobox", { name: t.product }).textContent).toBe(
+      "Services",
+    ),
   );
   expect(
     await screen.findByRole("link", {
@@ -537,10 +571,9 @@ test("creating a person for another product refreshes the full snapshot before o
   expect(
     screen.getByRole("complementary", { name: t.recordDetails }),
   ).toBeTruthy();
-  expect(
-    (screen.getByRole("combobox", { name: t.product }) as HTMLSelectElement)
-      .value,
-  ).toBe(demoId(12));
+  expect(screen.getByRole("combobox", { name: t.product }).textContent).toBe(
+    "Services",
+  );
 });
 
 test("a fresh workspace opens its first product and offers working contact and integration paths", async () => {
@@ -574,10 +607,9 @@ test("a fresh workspace opens its first product and offers working contact and i
       <Routed />
     </CrmApp>,
   );
-  expect(
-    (screen.getByRole("combobox", { name: t.product }) as HTMLSelectElement)
-      .value,
-  ).toBe(created.productId);
+  expect(screen.getByRole("combobox", { name: t.product }).textContent).toBe(
+    "Initial product",
+  );
   expect(screen.getByRole("heading", { name: t.workspaceReady })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: t.addPerson }));
   await waitFor(() =>
@@ -906,16 +938,16 @@ test("saved views are links whose filter lives in the URL", async () => {
   ).toBe("true");
   cleanup();
   mount();
-  expect(
-    (screen.getByRole("combobox", { name: t.actionType }) as HTMLSelectElement)
-      .value,
-  ).toBe("reply");
+  expect(screen.getByRole("combobox", { name: t.actionType }).textContent).toBe(
+    t.reply,
+  );
   expect(
     screen.queryByRole("complementary", { name: t.recordDetails }),
   ).toBeNull();
-  fireEvent.change(screen.getByRole("combobox", { name: t.actionType }), {
-    target: { value: "" },
-  });
+  await chooseSelect(
+    screen.getByRole("combobox", { name: t.actionType }),
+    t.allTypes,
+  );
   expect(window.location.search).toBe("");
   expect(new Set(actionRows()).size).toBeGreaterThan(1);
   fireEvent.click(screen.getByRole("link", { name: t.waiting }));
@@ -940,9 +972,10 @@ test("switching workspace remembers its slug and leaves a record of the old work
   await waitFor(() =>
     expect(screen.getByRole("link", { name: "Moonlit Design" })).toBeTruthy(),
   );
-  fireEvent.change(screen.getByRole("combobox", { name: t.product }), {
-    target: { value: demoId(13) },
-  });
+  await chooseSelect(
+    screen.getByRole("combobox", { name: t.product }),
+    "Design Partners",
+  );
   expect(document.cookie).toContain(`gravity-brand=${demoId(13)}`);
 });
 
@@ -1456,6 +1489,41 @@ test("non-admins have no product creation buttons, shortcut or advertised creati
   expect(screen.getByRole("dialog", { name: t.commands })).toBeTruthy();
 });
 
+test("opportunities follows Overview in Work and keeps its go-to shortcut", async () => {
+  mount("/overview");
+  const work = document.querySelector<HTMLElement>('[data-section="work"]');
+  const records = document.querySelector<HTMLElement>(
+    '[data-section="records"]',
+  );
+  if (!work || !records) throw new Error("Missing navigation groups");
+  expect(
+    within(work)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("data-nav-item")),
+  ).toEqual(["overview", "opportunities", "actions", "meetings"]);
+  expect(
+    within(records).queryByRole("link", { name: t.opportunities }),
+  ).toBeNull();
+  const toggle = within(work).getByRole("button", { name: t.navWork });
+  fireEvent.click(toggle);
+  expect(
+    within(work).queryByRole("link", { name: t.opportunities }),
+  ).toBeNull();
+  fireEvent.click(toggle);
+  fireEvent.click(within(work).getByRole("link", { name: t.opportunities }));
+  await waitFor(() => expect(window.location.pathname).toBe("/opportunities"));
+  fireEvent.click(within(work).getByRole("link", { name: t.overview }));
+  fireEvent.keyDown(document.body, { key: "g" });
+  fireEvent.keyDown(document.body, { key: "o" });
+  await waitFor(() => expect(window.location.pathname).toBe("/opportunities"));
+  expect(heading(t.opportunities)).toBeTruthy();
+  expect(
+    within(work)
+      .getByRole("link", { name: t.opportunities })
+      .getAttribute("aria-current"),
+  ).toBe("page");
+});
+
 test("visible go-to hints include Outreach and the help button opens the map", async () => {
   mount();
   const sidebar = document.getElementById("navigation-panel") as HTMLElement;
@@ -1528,13 +1596,13 @@ test("Overview metrics drill into real deals and message history with keyboard n
   const messages = screen.getByRole("region", {
     name: new RegExp(`^${t.messagesSent}`),
   });
-  await within(messages).findByRole("button", {
-    name: /evaluation workflow we discussed/,
-  });
+  const preview = await within(messages).findByText(
+    /evaluation workflow we discussed/,
+  );
+  const messageRow = preview.closest("tr");
+  if (!messageRow) throw new Error("Missing message report row");
   fireEvent.click(
-    within(messages).getByRole("button", {
-      name: /evaluation workflow we discussed/,
-    }),
+    within(messageRow).getByRole("button", { name: "Mira Chen" }),
   );
   await screen.findByRole("heading", { name: "Mira Chen" });
 });
@@ -1615,7 +1683,10 @@ test("pipeline form creates a second pipeline and refreshes the board", async ()
   await waitFor(() =>
     expect(screen.queryByRole("region", { name: t.newPipeline })).toBeNull(),
   );
+  fireEvent.keyDown(screen.getByRole("combobox", { name: t.pipeline }), {
+    key: "ArrowDown",
+  });
   expect(
-    screen.getByRole("option", { name: /Fictional enterprise sales/ }),
+    await screen.findByRole("option", { name: /Fictional enterprise sales/ }),
   ).toBeTruthy();
 });

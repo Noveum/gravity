@@ -6,6 +6,7 @@ import {
   desc,
   eq,
   inArray,
+  isNotNull,
   isNull,
   lt,
   or,
@@ -14,10 +15,17 @@ import {
 import { z } from "zod";
 import { appUrl } from "../auth/options";
 import { publishChange } from "../core/changes";
+import { recordProviderContribution } from "../core/contact-attribution";
+import {
+  contactIdentityIds,
+  contactIdsForParticipants,
+  lockContactDirectory,
+} from "../core/contact-history";
+import { cursorInstantSchema } from "../core/datetime";
 import { pauseForReply, peopleByEmail } from "../core/outreach";
 import { authorize, DomainError, type Principal } from "../core/policy";
 import { assertProductActive } from "../core/products";
-import { assertActiveRelationships } from "../core/visibility";
+import { assertActiveRelationships, clearApprovals } from "../core/visibility";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import {
@@ -55,9 +63,23 @@ export const integrationOverviewInput = integrationScope.extend({
   reviewQuery: z.string().trim().max(120).optional(),
   reviewProvider: integrationProvider.optional(),
   reviewCursor: z.string().min(1).max(1000).optional(),
+  failedReceiptCursor: z.string().min(1).max(1000).optional(),
 });
-const reviewPosition = z.object({ id: z.uuid(), createdAt: z.iso.datetime() });
+const reviewPosition = z.object({
+  id: z.uuid(),
+  createdAt: cursorInstantSchema,
+});
 const reviewPageSize = 20;
+function cursorPosition(cursor?: string) {
+  if (!cursor) return undefined;
+  try {
+    return reviewPosition.parse(
+      JSON.parse(Buffer.from(cursor, "base64url").toString()),
+    );
+  } catch {
+    throw new DomainError("INVALID_INPUT", 400);
+  }
+}
 export const connectInput = integrationScope.extend({
   productId: z.uuid(),
   provider: integrationProvider,
@@ -161,6 +183,20 @@ export interface ConnectionOverview {
   }[];
   reviewTotal: number;
   nextReviewCursor: string | null;
+  failedReceipts: {
+    id: string;
+    connectionId: string;
+    productId: string;
+    externalId: string;
+    errorCode: string;
+    attempts: number;
+    createdAt: string;
+    conversationId: string | null;
+    threadId: string | null;
+    canDiscard: boolean;
+  }[];
+  failedReceiptTotal: number;
+  nextFailedReceiptCursor: string | null;
 }
 export class IntegrationService {
   constructor(
@@ -173,16 +209,8 @@ export class IntegrationService {
   ): Promise<ConnectionOverview> {
     accountActor(principal);
     const scope = integrationOverviewInput.parse(input);
-    let position: z.infer<typeof reviewPosition> | undefined;
-    if (scope.reviewCursor) {
-      try {
-        position = reviewPosition.parse(
-          JSON.parse(Buffer.from(scope.reviewCursor, "base64url").toString()),
-        );
-      } catch {
-        throw new DomainError("INVALID_INPUT", 400);
-      }
-    }
+    const position = cursorPosition(scope.reviewCursor);
+    const failedPosition = cursorPosition(scope.failedReceiptCursor);
     const allowed = await authorize(
       this.db,
       principal,
@@ -250,6 +278,78 @@ export class IntegrationService {
       .where(filter);
     const items = page.slice(0, reviewPageSize);
     const last = items.at(-1);
+    const failedProduct = sql<string>`coalesce(${s.conversations.productId}, ${s.connections.productId})`;
+    const failedFilter = and(
+      eq(s.integrationReceipts.organizationId, scope.organizationId),
+      eq(s.integrationReceipts.provider, "unipile"),
+      isNull(s.integrationReceipts.processedAt),
+      isNotNull(s.integrationReceipts.errorCode),
+      inArray(
+        s.integrationReceipts.connectionId,
+        rows
+          .filter((row) =>
+            scope.reviewProvider
+              ? uiProvider(row.provider) === scope.reviewProvider
+              : true,
+          )
+          .map((row) => row.id),
+      ),
+      inArray(
+        failedProduct,
+        scope.productId ? [scope.productId] : allowed.products.map((p) => p.id),
+      ),
+      search
+        ? sql`${s.integrationReceipts.externalId} ILIKE ${`%${search}%`}`
+        : undefined,
+    );
+    const failedThreads = and(
+      eq(s.conversations.organizationId, scope.organizationId),
+      eq(s.conversations.connectionId, s.integrationReceipts.connectionId),
+      sql`${s.conversations.externalThreadId} = ${s.integrationReceipts.payload}->>'chat_id'`,
+    );
+    const failedPage = await this.db
+      .select({
+        id: s.integrationReceipts.id,
+        connectionId: s.integrationReceipts.connectionId,
+        productId: failedProduct,
+        externalId: s.integrationReceipts.externalId,
+        errorCode: s.integrationReceipts.errorCode,
+        attempts: s.integrationReceipts.attempts,
+        createdAt: sql<string>`to_char(${s.integrationReceipts.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+        conversationId: s.conversations.id,
+        threadId: s.conversations.externalThreadId,
+        leaseUntil: s.integrationReceipts.leaseUntil,
+      })
+      .from(s.integrationReceipts)
+      .innerJoin(
+        s.connections,
+        eq(s.connections.id, s.integrationReceipts.connectionId),
+      )
+      .leftJoin(s.conversations, failedThreads)
+      .where(
+        and(
+          failedFilter,
+          failedPosition
+            ? sql`(${s.integrationReceipts.createdAt}, ${s.integrationReceipts.id}) < (${failedPosition.createdAt}::timestamptz, ${failedPosition.id}::uuid)`
+            : undefined,
+        ),
+      )
+      .orderBy(
+        desc(s.integrationReceipts.createdAt),
+        desc(s.integrationReceipts.id),
+      )
+      .limit(reviewPageSize + 1);
+    const [failedTotal] = await this.db
+      .select({ value: count() })
+      .from(s.integrationReceipts)
+      .innerJoin(
+        s.connections,
+        eq(s.connections.id, s.integrationReceipts.connectionId),
+      )
+      .leftJoin(s.conversations, failedThreads)
+      .where(failedFilter);
+    const failedItems = failedPage.slice(0, reviewPageSize);
+    const lastFailed = failedItems.at(-1);
     const configuration = await new ProviderConfigurationService(this.db).own(
       principal,
       scope.organizationId,
@@ -273,6 +373,25 @@ export class IntegrationService {
         page.length > reviewPageSize && last
           ? Buffer.from(
               JSON.stringify({ id: last.id, createdAt: last.createdAt }),
+            ).toString("base64url")
+          : null,
+      failedReceipts: failedItems.map(
+        ({ leaseUntil, errorCode, ...receipt }) => ({
+          ...receipt,
+          errorCode: errorCode ?? "PROVIDER_RESPONSE_INVALID",
+          canDiscard:
+            (principal.source !== "mcp" || principal.readOnly === false) &&
+            (!leaseUntil || leaseUntil.getTime() < Date.now()),
+        }),
+      ),
+      failedReceiptTotal: failedTotal.value,
+      nextFailedReceiptCursor:
+        failedPage.length > reviewPageSize && lastFailed
+          ? Buffer.from(
+              JSON.stringify({
+                id: lastFailed.id,
+                createdAt: lastFailed.createdAt,
+              }),
             ).toString("base64url")
           : null,
     };
@@ -753,6 +872,7 @@ export class IntegrationService {
       throw new DomainError("CONNECTION_UNAVAILABLE", 422);
     const record = importRecordSchema.parse(input);
     const item = await this.db.transaction(async (tx) => {
+      await lockContactDirectory(tx, connection.organizationId);
       const [active] = await tx
         .select()
         .from(s.connections)
@@ -798,6 +918,36 @@ export class IntegrationService {
                 ),
               )
           : [];
+      if (
+        record.kind === "message" &&
+        !isDeepStrictEqual(prior?.record, record) &&
+        (!linked || prior?.status === "matched")
+      ) {
+        const identities = await contactIdsForParticipants(
+          tx,
+          active.organizationId,
+          [...record.participants, ...(record.from ? [record.from] : [])],
+        );
+        if (identities.length)
+          await tx
+            .select({ id: s.people.id })
+            .from(s.people)
+            .where(
+              and(
+                eq(s.people.organizationId, active.organizationId),
+                inArray(s.people.id, identities),
+              ),
+            )
+            .orderBy(s.people.id)
+            .for("update");
+        for (const personId of identities)
+          await clearApprovals(
+            tx,
+            { userId: active.ownerId, source: "session" },
+            active.organizationId,
+            personId,
+          );
+      }
       if (
         !prior &&
         !linked &&
@@ -863,6 +1013,7 @@ export class IntegrationService {
     item: typeof s.integrationItems.$inferSelect,
     relationshipId: string,
     linkedByMember = false,
+    linkedBy?: Principal,
   ) {
     const [relationship] = await this.db
       .select()
@@ -890,6 +1041,53 @@ export class IntegrationService {
       const { threadId, direction } = record;
       if (!threadId || !direction) throw new DomainError("INVALID_INPUT", 400);
       await this.db.transaction(async (tx) => {
+        // Organization authority must stabilize before subordinate row locks.
+        await lockContactDirectory(tx, connection.organizationId);
+        const [active] = await tx
+          .select()
+          .from(s.connections)
+          .where(
+            and(
+              eq(s.connections.id, connection.id),
+              eq(s.connections.status, "connected"),
+            ),
+          )
+          .for("update");
+        if (!active?.productId || !active.encryptedCredentials)
+          throw new DomainError("CONNECTION_UNAVAILABLE", 422);
+        await authorize(
+          tx,
+          permission,
+          connection.organizationId,
+          relationship.productId,
+          true,
+        );
+        const [person] = await tx
+          .select()
+          .from(s.people)
+          .where(
+            and(
+              eq(s.people.id, relationship.personId),
+              eq(s.people.organizationId, connection.organizationId),
+            ),
+          );
+        if (!person) throw new DomainError("NOT_FOUND", 404);
+        const identities = await contactIdentityIds(
+          tx,
+          connection.organizationId,
+          person,
+        );
+        await tx
+          .select({ id: s.people.id })
+          .from(s.people)
+          .where(
+            and(
+              eq(s.people.organizationId, connection.organizationId),
+              inArray(s.people.id, identities),
+            ),
+          )
+          .orderBy(s.people.id)
+          .for("update");
         if (linkedByMember) {
           await assertActiveRelationships(tx, connection.organizationId, [
             relationshipId,
@@ -927,6 +1125,14 @@ export class IntegrationService {
               );
         if (stored.relationshipId !== relationshipId)
           throw new DomainError("THREAD_ALREADY_LINKED", 409);
+        await recordProviderContribution(tx, connection, {
+          personId: relationship.personId,
+          productId: relationship.productId,
+          sourceRecordId: `message:${record.externalId}`,
+          sourceConversationId: stored.id,
+          linkedByMember,
+          linkedBy,
+        });
         await ingestReply(tx, {
           provider: connection.provider === "unipile" ? "unipile" : "gmail",
           accountId: connection.externalAccountId,
@@ -1008,6 +1214,13 @@ export class IntegrationService {
               .where(eq(s.meetings.id, locked.entityId))
               .returning()
           : await tx.insert(s.meetings).values(values).returning();
+        await recordProviderContribution(tx, connection, {
+          personId: relationship.personId,
+          productId: relationship.productId,
+          sourceRecordId: item.id,
+          linkedByMember,
+          linkedBy,
+        });
         await tx
           .update(s.integrationItems)
           .set({
@@ -1044,7 +1257,11 @@ export class IntegrationService {
           eq(s.integrationItems.organizationId, organizationId),
         ),
       );
-    if (!item) throw new DomainError("NOT_FOUND", 404);
+    if (!item) {
+      if (relationshipId) throw new DomainError("NOT_FOUND", 404);
+      await this.discardFailedReceipt(principal, organizationId, id);
+      return;
+    }
     const connection = await this.own(
       principal,
       organizationId,
@@ -1074,16 +1291,157 @@ export class IntegrationService {
       relationship.productId,
       true,
     );
-    await this.materializeThread(connection, item, relationshipId, true);
+    await this.materializeThread(
+      connection,
+      item,
+      relationshipId,
+      true,
+      principal,
+    );
+  }
+  private async discardFailedReceipt(
+    principal: Principal,
+    organizationId: string,
+    id: string,
+  ) {
+    await this.db.transaction(async (tx) => {
+      await lockContactDirectory(tx, organizationId);
+      const [found] = await tx
+        .select()
+        .from(s.integrationReceipts)
+        .where(
+          and(
+            eq(s.integrationReceipts.id, id),
+            eq(s.integrationReceipts.organizationId, organizationId),
+            eq(s.integrationReceipts.provider, "unipile"),
+            isNotNull(s.integrationReceipts.errorCode),
+          ),
+        );
+      if (!found) throw new DomainError("NOT_FOUND", 404);
+      const [connection] = await tx
+        .select()
+        .from(s.connections)
+        .where(
+          and(
+            eq(s.connections.id, found.connectionId),
+            eq(s.connections.organizationId, organizationId),
+            eq(s.connections.ownerId, principal.userId),
+          ),
+        )
+        .for("update");
+      if (!connection?.productId) throw new DomainError("NOT_FOUND", 404);
+      await authorize(
+        tx,
+        principal,
+        organizationId,
+        connection.productId,
+        true,
+      );
+      const [conversation] = await tx
+        .select()
+        .from(s.conversations)
+        .where(
+          and(
+            eq(s.conversations.organizationId, organizationId),
+            eq(s.conversations.connectionId, connection.id),
+            sql`${s.conversations.externalThreadId} = (SELECT ${s.integrationReceipts.payload}->>'chat_id' FROM ${s.integrationReceipts} WHERE ${s.integrationReceipts.id} = ${found.id}::uuid)`,
+          ),
+        );
+      if (conversation)
+        await authorize(
+          tx,
+          principal,
+          organizationId,
+          conversation.productId,
+          true,
+        );
+      const [person] = conversation
+        ? await tx
+            .select({ person: s.people })
+            .from(s.people)
+            .innerJoin(
+              s.relationships,
+              and(
+                eq(s.relationships.organizationId, organizationId),
+                eq(s.relationships.personId, s.people.id),
+                eq(s.relationships.id, conversation.relationshipId),
+              ),
+            )
+            .where(eq(s.people.organizationId, organizationId))
+        : [];
+      const identities = person
+        ? await contactIdentityIds(tx, organizationId, person.person)
+        : [];
+      if (identities.length)
+        await tx
+          .select({ id: s.people.id })
+          .from(s.people)
+          .where(
+            and(
+              eq(s.people.organizationId, organizationId),
+              inArray(s.people.id, identities),
+            ),
+          )
+          .orderBy(s.people.id)
+          .for("update");
+      // The discard releases a history gate. Recheck every grant after waiting
+      // and invalidate approval so reviewing the failed receipt cannot send.
+      await authorize(
+        tx,
+        principal,
+        organizationId,
+        connection.productId,
+        true,
+      );
+      if (conversation)
+        await authorize(
+          tx,
+          principal,
+          organizationId,
+          conversation.productId,
+          true,
+        );
+      const [receipt] = await tx
+        .select()
+        .from(s.integrationReceipts)
+        .where(eq(s.integrationReceipts.id, found.id))
+        .for("update");
+      if (!receipt?.errorCode) throw new DomainError("NOT_FOUND", 404);
+      if (receipt.processedAt) return;
+      if (receipt.leaseUntil && receipt.leaseUntil.getTime() >= Date.now())
+        throw new DomainError("SYNC_IN_PROGRESS", 409);
+      for (const personId of identities)
+        await clearApprovals(tx, principal, organizationId, personId);
+      await tx
+        .update(s.integrationReceipts)
+        .set({ processedAt: new Date(), leaseUntil: null })
+        .where(eq(s.integrationReceipts.id, receipt.id));
+      await tx.insert(s.changeEvents).values({
+        organizationId,
+        productId: conversation?.productId ?? connection.productId,
+        sourceConversationId: conversation?.id,
+        actorId: principal.userId,
+        type: "provider_receipt.discarded",
+        entityId: receipt.id,
+      });
+    });
+    publishChange(organizationId);
   }
   private async materializeThread(
     connection: typeof s.connections.$inferSelect,
     item: typeof s.integrationItems.$inferSelect,
     relationshipId: string,
     linkedByMember: boolean,
+    linkedBy?: Principal,
   ) {
     if (item.record.kind !== "message" || !item.record.threadId)
-      return this.materialize(connection, item, relationshipId, linkedByMember);
+      return this.materialize(
+        connection,
+        item,
+        relationshipId,
+        linkedByMember,
+        linkedBy,
+      );
     const threadItems = await this.db
       .select()
       .from(s.integrationItems)
@@ -1101,6 +1459,7 @@ export class IntegrationService {
         member,
         relationshipId,
         linkedByMember,
+        linkedBy,
       );
   }
   async updateConnection(

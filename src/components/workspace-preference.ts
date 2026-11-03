@@ -27,7 +27,11 @@ export function preferenceCookie(name: string, value: string, secure = false) {
   return [
     `${name}=${encodeURIComponent(value)}`,
     "Path=/",
-    `Max-Age=${value ? yearInSeconds : 0}`,
+    ...(value
+      ? name === brandCookie
+        ? []
+        : [`Max-Age=${yearInSeconds}`]
+      : ["Max-Age=0"]),
     "SameSite=Lax",
     ...(secure ? ["Secure"] : []),
   ].join("; ");

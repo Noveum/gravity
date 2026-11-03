@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -89,7 +95,140 @@ async function openSendFromApproved() {
 }
 
 describe("sending an approved touch", () => {
+  test("asynchronously loaded confirmation history starts at the newest message and keeps manual scrolling until the account changes", async () => {
+    const otherGmail = demoId(1952);
+    const responses: ((value: typeof readiness) => void)[] = [];
+    const harnessed = vi.mocked(requestJson).getMockImplementation();
+    vi.mocked(requestJson).mockImplementation(async (url, init) => {
+      const address = String(url);
+      if (address.startsWith("/api/integrations"))
+        return {
+          connections: [gmail, otherGmail].map((id, index) => ({
+            id,
+            provider: "gmail",
+            status: "connected",
+            displayName: `Fictional mailbox ${index + 1}`,
+            canSend: true,
+          })),
+        };
+      if (address.startsWith("/api/outreach?operation=send-readiness"))
+        return new Promise((resolve) => responses.push(resolve));
+      if (!harnessed) throw new Error("harness");
+      return harnessed(url, init);
+    });
+    const height = vi
+      .spyOn(Element.prototype, "scrollHeight", "get")
+      .mockReturnValue(1000);
+    try {
+      const dialog = await openSendFromApproved();
+      await waitFor(() => expect(responses).toHaveLength(1));
+      expect(
+        within(dialog).queryByRole("region", {
+          name: t.nativeIngestion.sendHistory,
+        }),
+      ).toBeNull();
+      const response = {
+        ...readiness,
+        history: {
+          messages: Array.from({ length: 10 }, (_, index) => ({
+            id: `fictional-message-${index}`,
+            direction: index % 2 ? "inbound" : "outbound",
+            channel: "gmail",
+            body: `Fictional message ${index}`,
+            occurredAt: `2026-01-02T12:${String(index).padStart(2, "0")}:00.000Z`,
+          })),
+          coverage: "partial",
+        },
+      };
+      await act(async () => responses[0]?.(response));
+      const history = within(dialog).getByRole("region", {
+        name: t.nativeIngestion.sendHistory,
+      });
+      expect(history.scrollTop).toBe(1000);
+      history.scrollTop = 200;
+      fireEvent.change(within(dialog).getByLabelText(t.sendAccount), {
+        target: { value: gmail },
+      });
+      expect(history.scrollTop).toBe(200);
+      fireEvent.change(within(dialog).getByLabelText(t.sendAccount), {
+        target: { value: otherGmail },
+      });
+      await waitFor(() => expect(responses).toHaveLength(2));
+      await act(async () => responses[1]?.(response));
+      expect(
+        within(dialog).getByRole("region", {
+          name: t.nativeIngestion.sendHistory,
+        }).scrollTop,
+      ).toBe(1000);
+      expect(sends).toHaveLength(0);
+    } finally {
+      height.mockRestore();
+    }
+  });
+
+  test("confirmation previews the exact approved draft with a chronological two-sided conversation", async () => {
+    readiness = {
+      ...readiness,
+      approved: true,
+      draft:
+        "Subject: Fictional next step\n\nAn approved fictional reply.\n\nA second paragraph.",
+      history: {
+        messages: [
+          {
+            id: "fictional-recent-reply",
+            direction: "inbound",
+            channel: "gmail",
+            body: "Fictional incoming reply.",
+            occurredAt: "2026-01-02T12:05:00.000Z",
+          },
+          {
+            id: "fictional-original-message",
+            direction: "outbound",
+            channel: "gmail",
+            body: "Fictional original message.",
+            occurredAt: "2026-01-02T12:00:00.000Z",
+          },
+        ],
+        coverage: "partial",
+      },
+    };
+    const dialog = await openSendFromApproved();
+    const preview = await within(dialog).findByRole("region", {
+      name: t.draftFlow.messagePreview,
+    });
+    expect(preview.querySelector("p")?.textContent).toBe(readiness.draft);
+    const messages = dialog.querySelectorAll(".message-thread-row");
+    expect(
+      Array.from(messages, (message) => message.getAttribute("data-direction")),
+    ).toEqual(["outbound", "inbound"]);
+    expect(messages[0]?.textContent).toContain(t.outgoing);
+    expect(messages[1]?.textContent).toContain("Amara Stone");
+    const history = within(dialog).getByRole("region", {
+      name: t.nativeIngestion.sendHistory,
+    });
+    expect(history.tabIndex).toBe(0);
+    history.focus();
+    expect(document.activeElement).toBe(history);
+    expect(sends).toHaveLength(0);
+  });
+
   test("the confirmation names recipient, account and channel from readiness and a double click sends once", async () => {
+    let release!: (value: typeof delivery) => void;
+    const pending = new Promise<typeof delivery>((resolve) => {
+      release = resolve;
+    });
+    const harnessed = vi.mocked(requestJson).getMockImplementation();
+    vi.mocked(requestJson).mockImplementation(async (url, init) => {
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        if (body.operation === "send-touch") {
+          sends.push(body);
+          return pending;
+        }
+      }
+      if (!harnessed) throw new Error("harness");
+      return harnessed(url, init);
+    });
     const dialog = await openSendFromApproved();
     await within(dialog).findByText("person4@example.test");
     expect(within(dialog).getByText("you@example.test")).toBeTruthy();
@@ -103,6 +242,13 @@ describe("sending an approved touch", () => {
     );
     fireEvent.click(confirm);
     fireEvent.click(confirm);
+    // Verify the race while the first request is still in flight, then commit
+    // its response explicitly instead of racing the toast against a timer.
+    expect(sends).toHaveLength(1);
+    await act(async () => {
+      release(delivery);
+      await pending;
+    });
     await screen.findByText(t.messageSent.replace("{name}", "Amara Stone"));
     expect(sends).toHaveLength(1);
     expect(sends[0]).toMatchObject({

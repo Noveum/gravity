@@ -1,7 +1,8 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useVerbs, useWorkspaceData } from "../crm/crm-context";
 import { DeliveryChecks, useDeliveryChecks } from "../outreach/delivery-checks";
 import {
@@ -16,6 +17,7 @@ import { PausedRow } from "../outreach/paused-list";
 import { PipelineBoard } from "../outreach/pipeline-board";
 import { SendDialog } from "../outreach/send-dialog";
 import { SentRow } from "../outreach/sent-list";
+import { StopEnrollmentDialog } from "../outreach/sequence-dialog";
 import { TouchActions } from "../outreach/touch-actions";
 import { MarkSentDialog, SkipDialog } from "../outreach/touch-dialogs";
 import { TouchDrawer } from "../outreach/touch-drawer";
@@ -34,7 +36,12 @@ import {
   useRecordBrowser,
   useRecordIndex,
 } from "../records/list-browser";
-import { type OutreachTab, outreachPath, outreachTabFor } from "../routes";
+import {
+  type OutreachTab,
+  outreachPath,
+  outreachTabFor,
+  sectionPath,
+} from "../routes";
 import { EmptyState, ErrorState, LoadingState } from "../ui/states";
 import { SequencesView } from "./sequences-view";
 
@@ -50,6 +57,7 @@ export function OutreachView() {
   const outreach = useOutreachData();
   const { due, queue } = outreach;
   const send = useOutreachSend();
+  const [stopping, setStopping] = useState<PausedEnrollment | null>(null);
   const deliveries = useDeliveryChecks(tab === "sent");
   const touches = new Map<string, Touch>(
     [
@@ -94,7 +102,7 @@ export function OutreachView() {
             ? sent
             : [];
   const browser = useRecordBrowser(
-    byUrgency(rows, now, crm.timeZone),
+    tab === "sent" ? rows : byUrgency(rows, now, crm.timeZone),
     (touch) => index.facts(touch.relationshipId),
     (touch) => touch.person.name,
   );
@@ -126,6 +134,21 @@ export function OutreachView() {
     crm.notify(t.resumed.replace("{name}", enrollment.person.name), "success");
     await outreach.reload();
   }
+  async function stop(enrollment: PausedEnrollment) {
+    const result = await send<{ version: number }>({
+      operation: "enrollment",
+      enrollmentId: enrollment.id,
+      version: enrollment.version,
+      command: "stop",
+    });
+    if (!result.ok) return result.error;
+    crm.notify(
+      t.enrollmentStopped.replace("{name}", enrollment.person.name),
+      "success",
+    );
+    await outreach.reload();
+    return null;
+  }
   const drawerTouch =
     verbs.drawer && (touches.get(verbs.drawer.touch.id) ?? verbs.drawer.touch);
   const flat = (
@@ -135,7 +158,7 @@ export function OutreachView() {
   ) =>
     touches.length ? (
       <TouchGroup title={title} count={total}>
-        {byUrgency(touches, now, crm.timeZone).map(row)}
+        {touches.map(row)}
       </TouchGroup>
     ) : null;
   const loading = tab !== "sequences" && tab !== "pipeline" && !due && !queue;
@@ -144,7 +167,6 @@ export function OutreachView() {
       <FollowUpGroups
         touches={browser.page.items}
         all={browser.rows}
-        now={now}
         row={row}
       />
     ),
@@ -184,6 +206,9 @@ export function OutreachView() {
               key={enrollment.id}
               enrollment={enrollment}
               onResume={resume}
+              onStop={(target) => {
+                if (crm.canLeaveEditor()) setStopping(target);
+              }}
             />
           ))}
         </TouchGroup>
@@ -199,6 +224,14 @@ export function OutreachView() {
     paused: paused.length,
   };
   const listTab = tab in counts ? (tab as keyof typeof counts) : null;
+  const activeBrowser = tab === "paused" ? pausedBrowser : browser;
+  const filtered =
+    !!search ||
+    activeBrowser.fieldInvalid ||
+    activeBrowser.fieldDrafts.some((draft) => !!draft.key) ||
+    Object.entries(activeBrowser.filters).some(
+      ([key, value]) => value && key !== "sort",
+    );
   return (
     <>
       <OutreachTabs
@@ -250,6 +283,14 @@ export function OutreachView() {
           }
         />
       )}
+      {stopping && (
+        <StopEnrollmentDialog
+          name={stopping.person.name}
+          sequenceName={stopping.sequenceName}
+          onClose={() => setStopping(null)}
+          onSubmit={() => stop(stopping)}
+        />
+      )}
       <div
         className="outreach-workspace"
         data-editor-open={drawerTouch ? "" : undefined}
@@ -284,9 +325,60 @@ export function OutreachView() {
                   : browser.page.total) &&
                 !(listTab === "sent" && deliveries.items.length) && (
                   <EmptyState
-                    title={emptyCopy(listTab)}
-                    description={t.outreachEmptyDetail}
-                    compact
+                    title={filtered ? t.noResults : emptyCopy(listTab)}
+                    description={
+                      filtered
+                        ? t.outreachFilteredDetail
+                        : t.outreachEmptyDetails[listTab]
+                    }
+                    action={
+                      <>
+                        {filtered && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              activeBrowser.clear();
+                              crm.clearSearch();
+                            }}
+                          >
+                            {t.clearFilters}
+                          </button>
+                        )}
+                        {crm.productId && (
+                          <button
+                            type="button"
+                            onClick={() => crm.switchProduct("")}
+                          >
+                            {t.actionEmpty.viewAllProducts}
+                          </button>
+                        )}
+                        <Link className="button" href={sectionPath("people")}>
+                          {t.actionEmpty.reviewPeople}
+                        </Link>
+                        {listTab === "today" && (
+                          <Link
+                            className="button"
+                            href={outreachPath("drafts")}
+                          >
+                            {t.outreachTabs.drafts}
+                          </Link>
+                        )}
+                        {listTab === "approved" && (
+                          <Link
+                            className="button"
+                            href={outreachPath("drafts")}
+                          >
+                            {t.outreachTabs.drafts}
+                          </Link>
+                        )}
+                        <Link
+                          className="button"
+                          href={outreachPath("sequences")}
+                        >
+                          {t.sequences}
+                        </Link>
+                      </>
+                    }
                   />
                 )}
             </>

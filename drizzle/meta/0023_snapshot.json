@@ -1,5 +1,5 @@
 {
-  "id": "db139dd5-66e2-498b-bb0b-517c2c2432d1",
+  "id": "3c088d90-c477-46be-aa2e-073417390b1c",
   "prevId": "ee6587b6-55a3-4fa8-9a83-2f8d21cd80e3",
   "version": "7",
   "dialect": "postgresql",
@@ -382,177 +382,6 @@
       "checkConstraints": {},
       "isRLSEnabled": true
     },
-    "public.asset_upload": {
-      "name": "asset_upload",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "product_id": {
-          "name": "product_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "folder_id": {
-          "name": "folder_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "stage_ids": {
-          "name": "stage_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "mime_type": {
-          "name": "mime_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "size": {
-          "name": "size",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "storage_key": {
-          "name": "storage_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sha256": {
-          "name": "sha256",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "uploaded_by": {
-          "name": "uploaded_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "asset_upload_organization_id_organizations_id_fk": {
-          "name": "asset_upload_organization_id_organizations_id_fk",
-          "tableFrom": "asset_upload",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "asset_upload_organization_id_product_id_products_organization_id_id_fk": {
-          "name": "asset_upload_organization_id_product_id_products_organization_id_id_fk",
-          "tableFrom": "asset_upload",
-          "tableTo": "products",
-          "columnsFrom": [
-            "organization_id",
-            "product_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "asset_upload_organization_id_uploaded_by_memberships_organization_id_user_id_fk": {
-          "name": "asset_upload_organization_id_uploaded_by_memberships_organization_id_user_id_fk",
-          "tableFrom": "asset_upload",
-          "tableTo": "memberships",
-          "columnsFrom": [
-            "organization_id",
-            "uploaded_by"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "user_id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "asset_upload_organization_id_product_id_folder_id_folders_organization_id_product_id_id_fk": {
-          "name": "asset_upload_organization_id_product_id_folder_id_folders_organization_id_product_id_id_fk",
-          "tableFrom": "asset_upload",
-          "tableTo": "folders",
-          "columnsFrom": [
-            "organization_id",
-            "product_id",
-            "folder_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "product_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "gravity_server_access": {
-          "name": "gravity_server_access",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "gravity_app"
-          ],
-          "using": "true",
-          "withCheck": "true"
-        }
-      },
-      "checkConstraints": {
-        "asset_upload_size": {
-          "name": "asset_upload_size",
-          "value": "\"asset_upload\".\"size\" > 0 AND \"asset_upload\".\"size\" <= 104857600"
-        }
-      },
-      "isRLSEnabled": true
-    },
     "public.assets": {
       "name": "assets",
       "schema": "",
@@ -715,7 +544,7 @@
       "checkConstraints": {
         "asset_size_valid": {
           "name": "asset_size_valid",
-          "value": "\"assets\".\"size\" > 0 AND \"assets\".\"size\" <= 104857600"
+          "value": "\"assets\".\"size\" > 0 AND \"assets\".\"size\" <= 10485760"
         }
       },
       "isRLSEnabled": true
@@ -1360,6 +1189,545 @@
           "columns": [
             "connection_id",
             "provider_event_id"
+          ]
+        }
+      },
+      "policies": {
+        "gravity_server_access": {
+          "name": "gravity_server_access",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "gravity_app"
+          ],
+          "using": "true",
+          "withCheck": "true"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.contact_contributions": {
+      "name": "contact_contributions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_member_id": {
+          "name": "source_member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transport": {
+          "name": "transport",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grant_id": {
+          "name": "grant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "batch_id": {
+          "name": "batch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_record_id": {
+          "name": "source_record_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_hash": {
+          "name": "request_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_conversation_id": {
+          "name": "source_conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "contact_contributions_person": {
+          "name": "contact_contributions_person",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "contact_contributions_actor": {
+          "name": "contact_contributions_actor",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "actor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "contact_contributions_batch_row": {
+          "name": "contact_contributions_batch_row",
+          "columns": [
+            {
+              "expression": "batch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "contact_contributions_provider_row": {
+          "name": "contact_contributions_provider_row",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "contact_contributions_original_creator": {
+          "name": "contact_contributions_original_creator",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"contact_contributions\".\"kind\" = 'created'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "contact_contributions_organization_id_organizations_id_fk": {
+          "name": "contact_contributions_organization_id_organizations_id_fk",
+          "tableFrom": "contact_contributions",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "contact_contributions_connection_id_connections_id_fk": {
+          "name": "contact_contributions_connection_id_connections_id_fk",
+          "tableFrom": "contact_contributions",
+          "tableTo": "connections",
+          "columnsFrom": [
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "contact_contributions_source_conversation_id_conversations_id_fk": {
+          "name": "contact_contributions_source_conversation_id_conversations_id_fk",
+          "tableFrom": "contact_contributions",
+          "tableTo": "conversations",
+          "columnsFrom": [
+            "source_conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "contact_contributions_organization_id_person_id_people_organization_id_id_fk": {
+          "name": "contact_contributions_organization_id_person_id_people_organization_id_id_fk",
+          "tableFrom": "contact_contributions",
+          "tableTo": "people",
+          "columnsFrom": [
+            "organization_id",
+            "person_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "contact_contributions_organization_id_product_id_products_organization_id_id_fk": {
+          "name": "contact_contributions_organization_id_product_id_products_organization_id_id_fk",
+          "tableFrom": "contact_contributions",
+          "tableTo": "products",
+          "columnsFrom": [
+            "organization_id",
+            "product_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "contact_contributions_organization_id_actor_id_memberships_organization_id_user_id_fk": {
+          "name": "contact_contributions_organization_id_actor_id_memberships_organization_id_user_id_fk",
+          "tableFrom": "contact_contributions",
+          "tableTo": "memberships",
+          "columnsFrom": [
+            "organization_id",
+            "actor_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "user_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "contact_contributions_organization_id_source_member_id_memberships_organization_id_user_id_fk": {
+          "name": "contact_contributions_organization_id_source_member_id_memberships_organization_id_user_id_fk",
+          "tableFrom": "contact_contributions",
+          "tableTo": "memberships",
+          "columnsFrom": [
+            "organization_id",
+            "source_member_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "user_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "contact_contributions_organization_id_product_id_batch_id_contact_import_batches_organization_id_product_id_id_fk": {
+          "name": "contact_contributions_organization_id_product_id_batch_id_contact_import_batches_organization_id_product_id_id_fk",
+          "tableFrom": "contact_contributions",
+          "tableTo": "contact_import_batches",
+          "columnsFrom": [
+            "organization_id",
+            "product_id",
+            "batch_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "product_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "gravity_server_access": {
+          "name": "gravity_server_access",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "gravity_app"
+          ],
+          "using": "true",
+          "withCheck": "true"
+        }
+      },
+      "checkConstraints": {
+        "contact_contribution_batch_row": {
+          "name": "contact_contribution_batch_row",
+          "value": "(\"contact_contributions\".\"batch_id\" IS NULL) = (\"contact_contributions\".\"request_hash\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.contact_import_batches": {
+      "name": "contact_import_batches",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "submitted_by": {
+          "name": "submitted_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_member_id": {
+          "name": "source_member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "submission_key": {
+          "name": "submission_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transport": {
+          "name": "transport",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grant_id": {
+          "name": "grant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "contact_import_batches_organization_id_organizations_id_fk": {
+          "name": "contact_import_batches_organization_id_organizations_id_fk",
+          "tableFrom": "contact_import_batches",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "contact_import_batches_organization_id_product_id_products_organization_id_id_fk": {
+          "name": "contact_import_batches_organization_id_product_id_products_organization_id_id_fk",
+          "tableFrom": "contact_import_batches",
+          "tableTo": "products",
+          "columnsFrom": [
+            "organization_id",
+            "product_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "contact_import_batches_organization_id_submitted_by_memberships_organization_id_user_id_fk": {
+          "name": "contact_import_batches_organization_id_submitted_by_memberships_organization_id_user_id_fk",
+          "tableFrom": "contact_import_batches",
+          "tableTo": "memberships",
+          "columnsFrom": [
+            "organization_id",
+            "submitted_by"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "user_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "contact_import_batches_organization_id_source_member_id_memberships_organization_id_user_id_fk": {
+          "name": "contact_import_batches_organization_id_source_member_id_memberships_organization_id_user_id_fk",
+          "tableFrom": "contact_import_batches",
+          "tableTo": "memberships",
+          "columnsFrom": [
+            "organization_id",
+            "source_member_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "user_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "contact_import_batches_organization_id_product_id_id_unique": {
+          "name": "contact_import_batches_organization_id_product_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "product_id",
+            "id"
+          ]
+        },
+        "contact_import_batches_organization_id_submitted_by_submission_key_unique": {
+          "name": "contact_import_batches_organization_id_submitted_by_submission_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "submitted_by",
+            "submission_key"
           ]
         }
       },

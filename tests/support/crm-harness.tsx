@@ -203,6 +203,21 @@ async function respondOutreach(
 }
 
 async function respond(harness: Harness, url: string, init?: RequestInit) {
+  if (url.startsWith("/api/integrations")) {
+    const input =
+      init?.method === "POST"
+        ? JSON.parse(String(init.body))
+        : Object.fromEntries(new URL(url, "http://localhost").searchParams);
+    if (String(input.operation ?? "").startsWith("yodu-")) {
+      if (init?.method === "POST") harness.posts.push(input);
+      return viaCatalog(
+        harness,
+        "integrations",
+        init?.method === "POST" ? "POST" : "GET",
+        input,
+      );
+    }
+  }
   if (url.startsWith("/api/outreach"))
     return respondOutreach(harness, url, init);
   const { service } = harness;
@@ -282,6 +297,15 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
   const params = new URL(url, "http://localhost").searchParams;
   const organizationId = params.get("organizationId") || demoId(1);
   const listed = params.get("operation");
+  if (
+    [
+      "contact-attribution",
+      "native-drafts",
+      "internal-tasks",
+      "messages",
+    ].includes(listed ?? "")
+  )
+    return viaCatalog(harness, "crm", "GET", Object.fromEntries(params));
   if (listed === "invitations" || listed === "members")
     return serialize(
       await apiOperation("crm", "GET", listed).execute(
@@ -332,6 +356,7 @@ export function installCrmHarness() {
       "ResizeObserver",
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );

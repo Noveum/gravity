@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
+import { recordContactSubmission } from "./contact-attribution";
 import { scopeSchema } from "./crm";
 import { authorize, DomainError, type Principal } from "./policy";
 import { tagsSchema } from "./record-tags";
@@ -102,6 +103,19 @@ export class RecordMetadataService {
         )
         .returning();
       if (!updated) throw new DomainError("CONFLICT", 409);
+      if (input.entity === "person")
+        await recordContactSubmission(tx, principal, {
+          organizationId: input.organizationId,
+          personId: record.id,
+          kind: "updated",
+        });
+      if ("personId" in record)
+        await recordContactSubmission(tx, principal, {
+          organizationId: input.organizationId,
+          personId: record.personId,
+          productId: record.productId,
+          kind: "updated",
+        });
       await tx.insert(s.changeEvents).values({
         organizationId: input.organizationId,
         ...(productId ? { productId } : {}),

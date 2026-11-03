@@ -1,10 +1,26 @@
 "use client";
 import { parseMoney } from "@crm/core/analytics";
+import { instantFromZonedInput, zonedInputValue } from "@crm/core/calendar";
 import type { ClientSnapshot } from "@crm/core/dto";
+import {
+  fieldFilterOperators,
+  fieldFilterSchema,
+  matchesFieldFilters,
+  normalizeFieldLabel,
+} from "@crm/core/field-filters";
+import type { RelationshipField } from "@crm/core/relationship-context";
 import t from "@crm/i18n/translations/en.json";
-import { type ReactNode, useMemo, useState } from "react";
+import { SlidersHorizontal, X } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { type ReactNode, useId, useMemo, useRef, useState } from "react";
+import { z } from "zod";
 import { useWorkspaceData } from "../crm/crm-context";
+import { useFilterVisibility } from "../filter-visibility";
 import { minorStep } from "../money";
+import { FilterPopover } from "../ui/filter-popover";
+import { Select } from "../ui/select";
+import { currentViewQuery, replaceViewQuery } from "../view-query";
+import { ValueFilter } from "./value-filter";
 
 export interface RecordFacts {
   tags?: readonly string[];
@@ -15,6 +31,10 @@ export interface RecordFacts {
   qualification?: string;
   qualifications?: readonly string[];
   status?: string;
+  submitterIds?: readonly string[];
+  sourceMemberIds?: readonly string[];
+  attribution?: boolean;
+  fieldGroups?: readonly (readonly RelationshipField[])[];
 }
 
 export function useRecordIndex() {
@@ -59,6 +79,7 @@ export function useRecordIndex() {
         currency: value?.currency ?? "USD",
         ownerId: relationship?.ownerId ?? "",
         qualification: relationship?.qualification ?? "",
+        fieldGroups: [relationship?.contextFields ?? []],
       };
     };
     return { people, companies, relationships, byPerson, byCompany, facts };
@@ -169,9 +190,12 @@ export function PagedItems<T>({
   );
 }
 
-const emptyFilters = {
+export const emptyFilters = {
   tag: "",
   ownerId: "",
+  submittedBy: "",
+  sourceMemberId: "",
+  attribution: "",
   qualification: "",
   status: "",
   currency: "",
@@ -180,6 +204,97 @@ const emptyFilters = {
   size: "",
   sort: "default",
 };
+interface FieldFilterDraft {
+  id: string;
+  key: string;
+  operator: string;
+  value: string;
+  timeZone: string;
+  label?: string;
+  type?: RelationshipField["type"];
+}
+
+interface FieldDefinition {
+  key: string;
+  label: string;
+  type: RelationshipField["type"];
+}
+
+// Keep incomplete values editable; matching still validates the full domain schema.
+const fieldDraftQuerySchema = z
+  .array(z.object(fieldFilterSchema.shape))
+  .max(10);
+function readFieldQuery(value: string) {
+  if (!value) return { fields: [] as FieldFilterDraft[], invalid: false };
+  try {
+    if (value.length > 20000) throw new Error("Invalid field filters");
+    const parsed = fieldDraftQuerySchema.safeParse(JSON.parse(value));
+    if (!parsed.success) return { fields: [], invalid: true };
+    return {
+      fields: parsed.data.map((field, index) => ({
+        id: `query-${index}`,
+        key: `${field.type}:${normalizeFieldLabel(field.label)}`,
+        label: field.label,
+        type: field.type,
+        operator: field.operator,
+        value:
+          field.type === "datetime" &&
+          typeof field.value === "string" &&
+          field.value.endsWith("Z")
+            ? zonedInputValue(field.value, "UTC", true)
+            : String(field.value ?? ""),
+        timeZone: field.type === "datetime" ? "UTC" : "",
+      })),
+      invalid: parsed.data.some(
+        (field) => !fieldFilterSchema.safeParse(field).success,
+      ),
+    };
+  } catch {
+    return { fields: [], invalid: true };
+  }
+}
+
+function fieldDefinition(
+  draft: FieldFilterDraft,
+  definitions: readonly FieldDefinition[],
+) {
+  return (
+    definitions.find((field) => field.key === draft.key) ??
+    (draft.label && draft.type
+      ? { key: draft.key, label: draft.label, type: draft.type }
+      : undefined)
+  );
+}
+
+function fieldQueryValue(
+  draft: FieldFilterDraft,
+  definitions: readonly FieldDefinition[],
+  timeZone: string,
+) {
+  const field = fieldDefinition(draft, definitions);
+  return {
+    label: field?.label,
+    type: field?.type,
+    operator: draft.operator,
+    ...(!["exists", "missing"].includes(draft.operator)
+      ? {
+          value:
+            field?.type === "number"
+              ? draft.value.trim()
+                ? Number(draft.value)
+                : undefined
+              : field?.type === "boolean"
+                ? draft.value === "true"
+                : field?.type === "datetime"
+                  ? instantFromZonedInput(
+                      draft.value,
+                      draft.timeZone || timeZone,
+                    ) || draft.value
+                  : draft.value,
+        }
+      : {}),
+  };
+}
 export function useRecordBrowser<T>(
   rows: readonly T[],
   read: (row: T) => RecordFacts,
@@ -188,11 +303,101 @@ export function useRecordBrowser<T>(
 ) {
   const crm = useWorkspaceData();
   const scope = `${crm.organizationId}/${crm.productId}/${crm.pathname}/${crm.listFilterKey}`;
-  const [state, setState] = useState({ scope, filters: emptyFilters });
-  const filters = state.scope === scope ? state.filters : emptyFilters;
+  const query = useSearchParams();
+  const fieldScope = `${crm.organizationId}/${crm.productId}/${crm.pathname}/${crm.timeZone}`;
+  const serializedFields = query.get("fieldFilters") ?? "";
+  const fieldQuery = useMemo(
+    () => readFieldQuery(serializedFields),
+    [serializedFields],
+  );
+  const [fieldState, setFieldState] = useState({
+    scope: fieldScope,
+    query: serializedFields,
+    fields: fieldQuery.fields,
+  });
+  const pendingFields = useRef(fieldState);
+  const fieldDrafts =
+    fieldState.scope === fieldScope && fieldState.query === serializedFields
+      ? fieldState.fields
+      : fieldQuery.fields;
+  const filters = Object.fromEntries(
+    Object.entries(emptyFilters).map(([key, fallback]) => [
+      key,
+      query.get(key === "ownerId" ? "owner" : key) ?? fallback,
+    ]),
+  ) as typeof emptyFilters;
+  const replace = replaceViewQuery;
+  const updateMany = (values: Partial<typeof emptyFilters>) => {
+    const next = currentViewQuery();
+    for (const [key, value] of Object.entries(values)) {
+      const parameter = key === "ownerId" ? "owner" : key;
+      if (value && !(key === "sort" && value === "default"))
+        next.set(parameter, value);
+      else next.delete(parameter);
+    }
+    replace(next);
+  };
   const update = (key: keyof typeof emptyFilters, value: string) =>
-    setState({ scope, filters: { ...filters, [key]: value } });
+    updateMany({ [key]: value });
+  const clear = () => {
+    const next = currentViewQuery();
+    for (const key of Object.keys(emptyFilters))
+      next.delete(key === "ownerId" ? "owner" : key);
+    next.delete("fieldFilters");
+    const cleared = { scope: fieldScope, query: "", fields: [] };
+    pendingFields.current = cleared;
+    setFieldState(cleared);
+    replace(next);
+  };
   const facts = rows.map((row) => ({ row, value: read(row) }));
+  const fieldDefinitions = [
+    ...new Map(
+      crm.data.relationships
+        .flatMap((relationship) => relationship.contextFields ?? [])
+        .map((field) => [
+          `${field.type}:${normalizeFieldLabel(field.label)}`,
+          {
+            key: `${field.type}:${normalizeFieldLabel(field.label)}`,
+            label: field.label,
+            type: field.type,
+          },
+        ]),
+    ).values(),
+  ].sort((a, b) => a.label.localeCompare(b.label));
+  const changeFields = (
+    change: (current: readonly FieldFilterDraft[]) => FieldFilterDraft[],
+  ) => {
+    const next = currentViewQuery();
+    const liveQuery = next.get("fieldFilters") ?? "";
+    const current =
+      pendingFields.current.scope === fieldScope &&
+      pendingFields.current.query === liveQuery
+        ? pendingFields.current.fields
+        : readFieldQuery(liveQuery).fields;
+    const fields = change(current);
+    const values = fields
+      .filter((draft) => draft.key)
+      .map((draft) => fieldQueryValue(draft, fieldDefinitions, crm.timeZone));
+    const serialized = values.length ? JSON.stringify(values) : "";
+    if (serialized) next.set("fieldFilters", serialized);
+    else next.delete("fieldFilters");
+    const state = { scope: fieldScope, query: serialized, fields };
+    pendingFields.current = state;
+    setFieldState(state);
+    replace(next);
+  };
+  const parsedFields = fieldDrafts
+    .filter((draft) => draft.key)
+    .map((draft) =>
+      fieldFilterSchema.safeParse(
+        fieldQueryValue(draft, fieldDefinitions, crm.timeZone),
+      ),
+    );
+  const fieldInvalid =
+    fieldQuery.invalid || parsedFields.some((result) => !result.success);
+  const fieldFilters = parsedFields.flatMap((result) =>
+    result.success ? [result.data] : [],
+  );
   let invalid = false;
   let minimum: number | null = null;
   let maximum: number | null = null;
@@ -204,7 +409,14 @@ export function useRecordBrowser<T>(
     invalid = true;
   }
   const filtered = facts.filter(({ value }) => {
-    if (invalid) return false;
+    if (invalid || fieldInvalid) return false;
+    if (
+      fieldFilters.length &&
+      !(value.fieldGroups ?? []).some((group) =>
+        matchesFieldFilters(group, fieldFilters),
+      )
+    )
+      return false;
     if (
       filters.tag &&
       !value.tags?.some((tag) => tag.toLowerCase() === filters.tag)
@@ -222,6 +434,23 @@ export function useRecordBrowser<T>(
       !value.qualifications?.includes(filters.qualification)
     )
       return false;
+    if (
+      filters.submittedBy &&
+      !value.submitterIds?.includes(filters.submittedBy)
+    )
+      return false;
+    if (
+      filters.sourceMemberId &&
+      !value.sourceMemberIds?.includes(filters.sourceMemberId)
+    )
+      return false;
+    const contributors = new Set([
+      ...(value.submitterIds ?? []),
+      ...(value.sourceMemberIds ?? []),
+    ]);
+    if (filters.attribution === "recorded" && !contributors.size) return false;
+    if (filters.attribution === "unknown" && contributors.size) return false;
+    if (filters.attribution === "shared" && contributors.size < 2) return false;
     if (filters.status && value.status !== filters.status) return false;
     if (filters.size === "known" && value.amountMinor == null) return false;
     if (filters.size === "unknown" && value.amountMinor != null) return false;
@@ -243,11 +472,35 @@ export function useRecordBrowser<T>(
       return false;
     return true;
   });
-  if (filters.sort === "name")
-    filtered.sort((a, b) => name(a.row).localeCompare(name(b.row)));
+  const idOrder = (a: T, b: T) =>
+    String((a as { id?: string }).id ?? "").localeCompare(
+      String((b as { id?: string }).id ?? ""),
+    );
+  const nameOrder = (a: T, b: T) =>
+    name(a).localeCompare(name(b)) || idOrder(a, b);
+  if (filters.sort === "name" || filters.sort === "name_desc")
+    filtered.sort(
+      (a, b) =>
+        name(a.row).localeCompare(name(b.row)) *
+          (filters.sort === "name_desc" ? -1 : 1) || idOrder(a.row, b.row),
+    );
+  if (filters.sort === "amount_asc" || filters.sort === "amount_desc")
+    filtered.sort((a, b) => {
+      if (a.value.amountMinor == null && b.value.amountMinor != null) return 1;
+      if (b.value.amountMinor == null && a.value.amountMinor != null) return -1;
+      const currency = (a.value.currency || "USD").localeCompare(
+        b.value.currency || "USD",
+      );
+      return (
+        currency ||
+        ((a.value.amountMinor ?? 0) - (b.value.amountMinor ?? 0)) *
+          (filters.sort === "amount_desc" ? -1 : 1) ||
+        nameOrder(a.row, b.row)
+      );
+    });
   const page = useListPage(
     filtered.map(({ row }) => row),
-    `${scope}/${crm.search}/${JSON.stringify(filters)}`,
+    `${scope}/${crm.search}/${JSON.stringify(filters)}/${JSON.stringify(fieldDrafts)}`,
     revealId,
   );
   return {
@@ -255,8 +508,47 @@ export function useRecordBrowser<T>(
     rows: filtered.map(({ row }) => row),
     filters,
     update,
-    clear: () => setState({ scope, filters: emptyFilters }),
+    updateMany,
+    clear,
+    amountMaximum:
+      Math.max(
+        0,
+        ...facts
+          .filter(
+            ({ value }) =>
+              (value.currency || "USD") === (filters.currency || "USD"),
+          )
+          .map(({ value }) => value.amountMinor ?? 0),
+      ) * Number(minorStep(filters.currency || "USD")),
     invalid,
+    fieldInvalid,
+    fieldDrafts,
+    fieldDefinitions,
+    addFieldFilter: () =>
+      changeFields((current) =>
+        current.length >= 10
+          ? [...current]
+          : [
+              ...current,
+              {
+                id: crypto.randomUUID(),
+                key: "",
+                operator: "eq",
+                value: "",
+                timeZone: "",
+              },
+            ],
+      ),
+    updateFieldFilter: (index: number, patch: Partial<FieldFilterDraft>) =>
+      changeFields((current) =>
+        current.map((draft, position) =>
+          position === index ? { ...draft, ...patch } : draft,
+        ),
+      ),
+    removeFieldFilter: (index: number) =>
+      changeFields((current) =>
+        current.filter((_, position) => position !== index),
+      ),
     tags: [
       ...new Map(
         facts
@@ -291,154 +583,417 @@ export function useRecordBrowser<T>(
     hasOwner: facts.some(
       ({ value }) => !!value.ownerId || !!value.ownerIds?.length,
     ),
+    hasAttribution:
+      crm.route?.section === "people" ||
+      facts.some(({ value }) => value.attribution),
+    attributionMembers: [
+      ...new Set(
+        facts.flatMap(({ value }) => [
+          ...(value.submitterIds ?? []),
+          ...(value.sourceMemberIds ?? []),
+        ]),
+      ),
+    ].map((id) => ({
+      id,
+      name:
+        crm.data.members.find((m) => m.id === id)?.name ??
+        `${t.attribution.memberId}: ${id}`,
+    })),
+    userId: crm.userId,
+    organizationId: crm.organizationId,
+    timeZone: crm.timeZone,
     members: crm.data.members,
   };
 }
 
-export function RecordFilters({
+export function RecordSort({
   browser,
 }: {
   browser: ReturnType<typeof useRecordBrowser>;
 }) {
-  const { filters, update } = browser;
-  const active = Object.entries(filters).filter(
-    ([key, value]) => value && !(key === "sort" && value === "default"),
-  ).length;
+  const id = useId();
   return (
-    <details className="record-filters">
-      <summary>
-        {t.filters}
-        {active ? ` (${active})` : ""}
-      </summary>
-      <div className="record-filter-fields">
-        <label>
-          {t.tags}
-          <select
-            value={filters.tag}
-            onChange={(e) => update("tag", e.target.value)}
-          >
-            <option value="">{t.allTags}</option>
-            {browser.tags.map(([key, tag]) => (
-              <option key={key} value={key}>
-                {tag}
-              </option>
-            ))}
-          </select>
-        </label>
-        {browser.hasOwner && (
-          <label>
-            {t.owner}
-            <select
-              value={filters.ownerId}
-              onChange={(e) => update("ownerId", e.target.value)}
+    <label className="record-sort" htmlFor={id}>
+      <span>{t.sortBy}</span>
+      <Select
+        id={id}
+        label={t.sortBy}
+        value={browser.filters.sort}
+        onChange={(value) => browser.update("sort", value)}
+        options={[
+          { value: "default", label: t.defaultOrder },
+          { value: "name", label: t.name },
+          { value: "name_desc", label: t.uiRefresh.nameDescending },
+          { value: "amount_desc", label: t.uiRefresh.amountDescending },
+          { value: "amount_asc", label: t.uiRefresh.amountAscending },
+        ]}
+      />
+    </label>
+  );
+}
+
+function FieldFilters({
+  browser,
+}: {
+  browser: ReturnType<typeof useRecordBrowser>;
+}) {
+  const id = useId();
+  const active = browser.fieldDrafts.filter((draft) => draft.key).length;
+  return (
+    <FilterPopover
+      label={t.uiRefresh.customFields}
+      summary={`${t.uiRefresh.customFields}${active ? ` · ${active}` : ""}`}
+      active={active > 0 || browser.fieldInvalid}
+    >
+      <div className="record-field-filters">
+        <small>{t.fieldFilters.hint}</small>
+        {browser.fieldDrafts.map((draft, index) => {
+          const field = fieldDefinition(draft, browser.fieldDefinitions);
+          const fields =
+            field &&
+            !browser.fieldDefinitions.some((item) => item.key === field.key)
+              ? [field, ...browser.fieldDefinitions]
+              : browser.fieldDefinitions;
+          const valueId = `${id}-value-${draft.id}`;
+          return (
+            <fieldset
+              key={draft.id}
+              className="context-editor-card record-field-filter"
             >
-              <option value="">{t.everyone}</option>
-              {browser.members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {!!browser.qualifications.length && (
-          <label>
-            {t.qualification}
-            <select
-              value={filters.qualification}
-              onChange={(e) => update("qualification", e.target.value)}
-            >
-              <option value="">{t.allQualifications}</option>
-              {browser.qualifications.map((value) => (
-                <option key={value} value={value}>
-                  {value.replaceAll("_", " ")}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {!!browser.statuses.length && (
-          <label>
-            {t.status}
-            <select
-              value={filters.status}
-              onChange={(e) => update("status", e.target.value)}
-            >
-              <option value="">{t.allStatuses}</option>
-              {browser.statuses.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <label>
-          {t.dealSize}
-          <select
-            value={filters.size}
-            onChange={(e) => update("size", e.target.value)}
-          >
-            <option value="">{t.anyDealSize}</option>
-            <option value="known">{t.knownDealSize}</option>
-            <option value="unknown">{t.amountUnknown}</option>
-          </select>
-        </label>
-        <label>
-          {t.currency}
-          <select
-            value={filters.currency}
-            onChange={(e) => update("currency", e.target.value)}
-          >
-            <option value="">{t.allCurrencies}</option>
-            {[...new Set(["USD", ...browser.currencies])].map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {t.minimumDealSize}
-          <input
-            type="number"
-            min="0"
-            step={minorStep(filters.currency || "USD")}
-            value={filters.minimum}
-            onChange={(e) => update("minimum", e.target.value)}
-          />
-        </label>
-        <label>
-          {t.maximumDealSize}
-          <input
-            type="number"
-            min="0"
-            step={minorStep(filters.currency || "USD")}
-            value={filters.maximum}
-            onChange={(e) => update("maximum", e.target.value)}
-          />
-        </label>
-        <small>
-          {t.dealFilterCurrency.replace(
-            "{currency}",
-            filters.currency || "USD",
-          )}
-        </small>
-        <label>
-          {t.sortBy}
-          <select
-            value={filters.sort}
-            onChange={(e) => update("sort", e.target.value)}
-          >
-            <option value="default">{t.defaultOrder}</option>
-            <option value="name">{t.name}</option>
-          </select>
-        </label>
-        <button type="button" onClick={browser.clear} disabled={!active}>
-          {t.clearFilters}
+              <legend>
+                {t.fieldFilters.field} {index + 1}
+              </legend>
+              <label htmlFor={`${id}-field-${draft.id}`}>
+                <span>{t.fieldFilters.field}</span>
+                <Select
+                  id={`${id}-field-${draft.id}`}
+                  label={t.fieldFilters.field}
+                  value={draft.key}
+                  onChange={(key) => {
+                    const selected = fields.find((item) => item.key === key);
+                    browser.updateFieldFilter(index, {
+                      key,
+                      label: selected?.label,
+                      type: selected?.type,
+                      operator: "eq",
+                      value: "",
+                      timeZone: "",
+                    });
+                  }}
+                  options={[
+                    { value: "", label: t.fieldFilters.allFields },
+                    ...fields.map((field) => ({
+                      value: field.key,
+                      label: `${field.label} · ${t.contextFields.fieldTypes[field.type]}`,
+                    })),
+                  ]}
+                />
+              </label>
+              {field && (
+                <>
+                  <label htmlFor={`${id}-operator-${draft.id}`}>
+                    <span>{t.fieldFilters.operator}</span>
+                    <Select
+                      id={`${id}-operator-${draft.id}`}
+                      label={t.fieldFilters.operator}
+                      value={draft.operator}
+                      onChange={(operator) =>
+                        browser.updateFieldFilter(index, { operator })
+                      }
+                      options={fieldFilterOperators(field.type).map(
+                        (operator) => ({
+                          value: operator,
+                          label: t.fieldFilters[operator],
+                        }),
+                      )}
+                    />
+                  </label>
+                  {!["exists", "missing"].includes(draft.operator) && (
+                    <>
+                      {field.type === "datetime" && (
+                        <label htmlFor={`${id}-zone-${draft.id}`}>
+                          <span>{t.timezone}</span>
+                          <Select
+                            id={`${id}-zone-${draft.id}`}
+                            label={t.timezone}
+                            value={draft.timeZone || browser.timeZone}
+                            onChange={(timeZone) =>
+                              browser.updateFieldFilter(index, {
+                                timeZone:
+                                  timeZone === browser.timeZone ? "" : timeZone,
+                              })
+                            }
+                            options={[
+                              ...new Set([browser.timeZone, "UTC"]),
+                            ].map((zone) => ({
+                              value: zone,
+                              label: zone,
+                            }))}
+                          />
+                        </label>
+                      )}
+                      <label htmlFor={valueId}>
+                        <span>{t.fieldFilters.value}</span>
+                        {field.type === "boolean" ? (
+                          <Select
+                            id={valueId}
+                            label={t.fieldFilters.value}
+                            value={draft.value || "false"}
+                            onChange={(value) =>
+                              browser.updateFieldFilter(index, { value })
+                            }
+                            options={[
+                              { value: "true", label: t.contextFields.yes },
+                              { value: "false", label: t.contextFields.no },
+                            ]}
+                          />
+                        ) : (
+                          <input
+                            id={valueId}
+                            type={
+                              field.type === "datetime"
+                                ? "datetime-local"
+                                : field.type === "number" ||
+                                    field.type === "date"
+                                  ? field.type
+                                  : "text"
+                            }
+                            step={
+                              field.type === "number"
+                                ? "any"
+                                : field.type === "datetime"
+                                  ? "0.001"
+                                  : undefined
+                            }
+                            value={draft.value}
+                            onChange={(event) =>
+                              browser.updateFieldFilter(index, {
+                                value: event.target.value,
+                              })
+                            }
+                          />
+                        )}
+                      </label>
+                    </>
+                  )}
+                </>
+              )}
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => browser.removeFieldFilter(index)}
+              >
+                {t.contextFields.removeField}
+              </button>
+            </fieldset>
+          );
+        })}
+        <button
+          type="button"
+          disabled={
+            browser.fieldDrafts.length >= 10 || !browser.fieldDefinitions.length
+          }
+          onClick={browser.addFieldFilter}
+        >
+          {t.contextFields.addField}
         </button>
-        {browser.invalid && <p role="alert">{t.invalidDealRange}</p>}
       </div>
-    </details>
+    </FilterPopover>
+  );
+}
+
+export function RecordFilters({
+  browser,
+  hideSort = false,
+  hiddenFields = [],
+}: {
+  browser: ReturnType<typeof useRecordBrowser>;
+  hideSort?: boolean;
+  hiddenFields?: readonly (keyof typeof emptyFilters)[];
+}) {
+  const { filters, update } = browser;
+  const { visible, setVisible } = useFilterVisibility(browser);
+  const id = useId();
+  const active =
+    Object.entries(filters).filter(
+      ([key, value]) => value && !(key === "sort" && value === "default"),
+    ).length +
+    browser.fieldDrafts.filter((draft) => draft.key).length +
+    Number(
+      browser.fieldInvalid && !browser.fieldDrafts.some((draft) => draft.key),
+    );
+  const field = (
+    key: keyof typeof emptyFilters,
+    label: string,
+    options: readonly { value: string; label: string }[],
+    compact = true,
+  ) =>
+    hiddenFields.includes(key) ? null : (
+      <label className={`filter-field filter-${key}`} htmlFor={`${id}-${key}`}>
+        <span className={compact ? "sr-only" : undefined}>{label}</span>
+        <Select
+          id={`${id}-${key}`}
+          label={label}
+          value={filters[key]}
+          onChange={(value) => update(key, value)}
+          options={options}
+          displayValue={
+            !filters[key] && (key === "qualification" || key === "status")
+              ? label
+              : undefined
+          }
+          className={filters[key] ? "filter-active" : ""}
+        />
+      </label>
+    );
+  return (
+    <section className="record-filters" aria-label={t.filters}>
+      <div className="record-filter-row">
+        <button
+          type="button"
+          className="filter-toggle ghost"
+          onClick={() => setVisible(!visible)}
+          aria-expanded={visible}
+          aria-controls={`${id}-controls`}
+          aria-describedby={active > 0 ? `${id}-active` : undefined}
+          aria-label={
+            visible ? t.uiRefresh.hideFilters : t.uiRefresh.showFilters
+          }
+          title={visible ? t.uiRefresh.hideFilters : t.uiRefresh.showFilters}
+        >
+          <SlidersHorizontal size={14} aria-hidden />
+          <span>{t.filters}</span>
+          {active > 0 && (
+            <>
+              <span className="filter-count" aria-hidden>
+                {active}
+              </span>
+              <span id={`${id}-active`} className="sr-only">
+                {t.uiRefresh.activeFilters.replace("{count}", String(active))}
+              </span>
+            </>
+          )}
+        </button>
+        {visible && (
+          <div className="record-filter-controls" id={`${id}-controls`}>
+            {(browser.hasOwner || !!filters.ownerId) &&
+              field("ownerId", t.owner, [
+                { value: "", label: t.everyone },
+                ...browser.members.map((member) => ({
+                  value: member.id,
+                  label: member.name,
+                })),
+              ])}
+            {(!!browser.tags.length || !!filters.tag) &&
+              field("tag", t.tags, [
+                { value: "", label: t.allTags },
+                ...browser.tags.map(([value, label]) => ({ value, label })),
+              ])}
+            <ValueFilter
+              filters={filters}
+              amountMaximum={browser.amountMaximum}
+              currencies={browser.currencies}
+              invalid={browser.invalid}
+              onChange={browser.updateMany}
+            />
+            {(!!browser.fieldDefinitions.length ||
+              browser.fieldDrafts.length > 0 ||
+              browser.fieldInvalid) && <FieldFilters browser={browser} />}
+            {(!!browser.qualifications.length || !!filters.qualification) &&
+              field("qualification", t.qualification, [
+                { value: "", label: t.allQualifications },
+                ...browser.qualifications.map((value) => ({
+                  value,
+                  label: value.replaceAll("_", " "),
+                })),
+              ])}
+            {(!!browser.statuses.length || !!filters.status) &&
+              field("status", t.status, [
+                { value: "", label: t.allStatuses },
+                ...browser.statuses.map((value) => ({ value, label: value })),
+              ])}
+            {(browser.hasAttribution ||
+              !!filters.submittedBy ||
+              !!filters.sourceMemberId ||
+              !!filters.attribution) && (
+              <FilterPopover
+                label={t.uiRefresh.attributionFilters}
+                summary={t.attribution.title}
+                active={
+                  !!(
+                    filters.submittedBy ||
+                    filters.sourceMemberId ||
+                    filters.attribution
+                  )
+                }
+              >
+                <div className="attribution-filter-fields">
+                  {field(
+                    "submittedBy",
+                    t.attribution.submittedBy,
+                    [
+                      { value: "", label: t.attribution.allSubmitters },
+                      {
+                        value: browser.userId,
+                        label: t.attribution.submittedByMe,
+                      },
+                      ...browser.attributionMembers
+                        .filter((m) => m.id !== browser.userId)
+                        .map((m) => ({ value: m.id, label: m.name })),
+                    ],
+                    false,
+                  )}
+                  {field(
+                    "sourceMemberId",
+                    t.attribution.sourceMember,
+                    [
+                      { value: "", label: t.attribution.allSources },
+                      ...browser.attributionMembers.map((m) => ({
+                        value: m.id,
+                        label: m.name,
+                      })),
+                    ],
+                    false,
+                  )}
+                  {field(
+                    "attribution",
+                    t.attribution.title,
+                    [
+                      { value: "", label: t.attribution.allCoverage },
+                      { value: "recorded", label: t.attribution.recorded },
+                      { value: "unknown", label: t.attribution.unknownFilter },
+                      { value: "shared", label: t.attribution.shared },
+                    ],
+                    false,
+                  )}
+                </div>
+              </FilterPopover>
+            )}
+          </div>
+        )}
+        {active > 0 && (
+          <button
+            type="button"
+            className="ghost filter-clear"
+            onClick={browser.clear}
+            aria-label={t.clearFilters}
+            title={t.clearFilters}
+          >
+            <X size={14} aria-hidden />
+          </button>
+        )}
+        {!hideSort && <RecordSort browser={browser} />}
+      </div>
+      {browser.invalid && (
+        <p className="filter-error" role="alert">
+          {t.invalidDealRange}
+        </p>
+      )}
+      {browser.fieldInvalid && (
+        <p className="filter-error" role="alert">
+          {t.fieldFilters.invalid}
+        </p>
+      )}
+    </section>
   );
 }

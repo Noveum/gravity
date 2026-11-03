@@ -31,6 +31,11 @@ export function productSnapshot(
     ...snapshot,
     relationships,
     people,
+    contactAttribution: (snapshot.contactAttribution ?? []).filter(
+      (row) =>
+        personIds.has(row.personId) &&
+        (!row.productId || row.productId === productId),
+    ),
     companies: snapshot.companies.filter(
       (company) =>
         companyIds.has(company.id) ||
@@ -46,6 +51,7 @@ export function productSnapshot(
       ),
     },
     actions: scoped(snapshot.actions),
+    internalTasks: scoped(snapshot.internalTasks),
     sequences: scoped(snapshot.sequences),
     enrollments: scoped(snapshot.enrollments),
     folders: scoped(snapshot.folders),
@@ -54,6 +60,7 @@ export function productSnapshot(
     stages: scoped(snapshot.stages),
     meetings: scoped(snapshot.meetings),
     opportunities: scoped(snapshot.opportunities),
+    archivedOpportunities: scoped(snapshot.archivedOpportunities ?? []),
     pipelines: scoped(snapshot.pipelines),
     messageStats: scoped(snapshot.messageStats),
     touchStats: scoped(snapshot.touchStats),

@@ -1,4 +1,5 @@
 "use client";
+import { instantFromZonedInput, zonedInputValue } from "@crm/core/calendar";
 import type { ClientContext } from "@crm/core/dto";
 import {
   contextSectionKeys,
@@ -42,6 +43,8 @@ export function RelationshipContextDialog({
   const [fields, setFields] = useState<FieldDraft[]>(
     details.fields.map((field) => ({ ...field, value: String(field.value) })),
   );
+  const [timeZone, setTimeZone] = useState(crm.timeZone);
+  const [dateDrafts, setDateDrafts] = useState<Record<string, string>>({});
   const updateSignal = (id: string, patch: Partial<RelationshipSignal>) =>
     setSignals((current) =>
       current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
@@ -50,10 +53,50 @@ export function RelationshipContextDialog({
     setFields((current) =>
       current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     );
+  const invalidDate = (key: string, allowEmpty = false) => {
+    const value = dateDrafts[key];
+    return (
+      value !== undefined &&
+      !(allowEmpty && value === "") &&
+      !instantFromZonedInput(value, timeZone)
+    );
+  };
+  const clearDateDraft = (key: string) =>
+    setDateDrafts((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  const changeTimeZone = (nextZone: string) => {
+    const retained = Object.fromEntries(
+      Object.entries(dateDrafts).filter(
+        ([, value]) => !instantFromZonedInput(value, timeZone),
+      ),
+    );
+    setSignals((current) =>
+      current.map((signal) => {
+        const value = retained[`signal:${signal.id}`];
+        const instant = value && instantFromZonedInput(value, nextZone);
+        return instant ? { ...signal, observedAt: instant } : signal;
+      }),
+    );
+    setFields((current) =>
+      current.map((field) => {
+        const value = retained[`field:${field.id}`];
+        const instant = value && instantFromZonedInput(value, nextZone);
+        return field.type === "datetime" && instant
+          ? { ...field, value: instant }
+          : field;
+      }),
+    );
+    setDateDrafts(retained);
+    setTimeZone(nextZone);
+  };
   return (
     <RecordDialog
       inline
       dirty={
+        Object.keys(dateDrafts).length > 0 ||
         JSON.stringify(signals) !== JSON.stringify(details.signals) ||
         JSON.stringify(fields) !==
           JSON.stringify(
@@ -68,6 +111,14 @@ export function RelationshipContextDialog({
       submitLabel={t.save}
       onClose={onClose}
       onSubmit={async (values) => {
+        if (
+          signals.some((signal) => invalidDate(`signal:${signal.id}`, true)) ||
+          fields.some(
+            (field) =>
+              field.type === "datetime" && invalidDate(`field:${field.id}`),
+          )
+        )
+          return t.contextFields.invalidDatetime;
         const sections = Object.fromEntries(
           contextSectionKeys.map((key) => [key, text(values, key)]),
         );
@@ -110,6 +161,22 @@ export function RelationshipContextDialog({
       }}
     >
       <p className="muted field-hint">{t.contextFields.sharedHint}</p>
+      {(signals.length > 0 ||
+        fields.some((field) => field.type === "datetime")) && (
+        <label>
+          {t.timezone}
+          <select
+            value={timeZone}
+            onChange={(event) => changeTimeZone(event.target.value)}
+          >
+            {[...new Set([crm.timeZone, "UTC"])].map((zone) => (
+              <option key={zone} value={zone}>
+                {zone}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label>
         {t.summary}
         <textarea
@@ -238,24 +305,51 @@ export function RelationshipContextDialog({
           <label>
             {t.contextFields.observedDate}
             <input
-              type="date"
-              value={signal.observedAt?.slice(0, 10) ?? ""}
-              onChange={(event) =>
-                updateSignal(signal.id, {
-                  observedAt: event.target.value
-                    ? `${event.target.value}T00:00:00Z`
-                    : null,
-                })
+              type="datetime-local"
+              step="0.001"
+              aria-invalid={
+                invalidDate(`signal:${signal.id}`, true) || undefined
               }
+              aria-describedby={
+                invalidDate(`signal:${signal.id}`, true)
+                  ? `context-signal-date-error-${signal.id}`
+                  : undefined
+              }
+              value={
+                dateDrafts[`signal:${signal.id}`] ??
+                (signal.observedAt
+                  ? zonedInputValue(signal.observedAt, timeZone, true)
+                  : "")
+              }
+              onChange={(event) => {
+                const value = event.target.value;
+                setDateDrafts((current) => ({
+                  ...current,
+                  [`signal:${signal.id}`]: value,
+                }));
+                const instant = instantFromZonedInput(value, timeZone);
+                if (!value || instant)
+                  updateSignal(signal.id, { observedAt: instant || null });
+              }}
             />
           </label>
+          {invalidDate(`signal:${signal.id}`, true) && (
+            <p
+              role="alert"
+              id={`context-signal-date-error-${signal.id}`}
+              className="field-hint"
+            >
+              {t.contextFields.invalidDatetime}
+            </p>
+          )}
           <button
             type="button"
             className="small"
             aria-label={`${t.contextFields.removeSignal} ${index + 1}`}
-            onClick={() =>
-              setSignals(signals.filter((item) => item.id !== signal.id))
-            }
+            onClick={() => {
+              clearDateDraft(`signal:${signal.id}`);
+              setSignals(signals.filter((item) => item.id !== signal.id));
+            }}
           >
             <Trash2 size={14} aria-hidden="true" />
             {t.contextFields.remove}
@@ -299,12 +393,13 @@ export function RelationshipContextDialog({
             {t.contextFields.fieldType}
             <select
               value={field.type}
-              onChange={(event) =>
+              onChange={(event) => {
+                clearDateDraft(`field:${field.id}`);
                 updateField(field.id, {
                   type: event.target.value as FieldDraft["type"],
                   value: event.target.value === "boolean" ? "false" : "",
-                })
-              }
+                });
+              }}
             >
               {fieldKinds.map((kind) => (
                 <option key={kind} value={kind}>
@@ -330,23 +425,70 @@ export function RelationshipContextDialog({
               <input
                 id={`context-field-${field.id}`}
                 required={field.type !== "text"}
-                type={field.type === "text" ? "text" : field.type}
-                step={field.type === "number" ? "any" : undefined}
-                maxLength={field.type === "url" ? 2000 : 10000}
-                value={field.value}
-                onChange={(event) =>
-                  updateField(field.id, { value: event.target.value })
+                type={
+                  field.type === "datetime"
+                    ? "datetime-local"
+                    : field.type === "text"
+                      ? "text"
+                      : field.type
                 }
+                step={
+                  field.type === "number"
+                    ? "any"
+                    : field.type === "datetime"
+                      ? "0.001"
+                      : undefined
+                }
+                maxLength={field.type === "url" ? 2000 : 10000}
+                aria-invalid={
+                  (field.type === "datetime" &&
+                    invalidDate(`field:${field.id}`)) ||
+                  undefined
+                }
+                aria-describedby={
+                  field.type === "datetime" && invalidDate(`field:${field.id}`)
+                    ? `context-field-date-error-${field.id}`
+                    : undefined
+                }
+                value={
+                  field.type === "datetime"
+                    ? (dateDrafts[`field:${field.id}`] ??
+                      zonedInputValue(field.value, timeZone, true))
+                    : field.value
+                }
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (field.type !== "datetime") {
+                    updateField(field.id, { value });
+                    return;
+                  }
+                  setDateDrafts((current) => ({
+                    ...current,
+                    [`field:${field.id}`]: value,
+                  }));
+                  const instant = instantFromZonedInput(value, timeZone);
+                  if (instant) updateField(field.id, { value: instant });
+                }}
               />
             )}
           </label>
+          {field.type === "datetime" && invalidDate(`field:${field.id}`) && (
+            <p
+              role="alert"
+              id={`context-field-date-error-${field.id}`}
+              className="field-hint"
+            >
+              {t.contextFields.invalidDatetime}
+            </p>
+          )}
           <button
             type="button"
             className="small"
             aria-label={`${t.contextFields.removeField} ${index + 1}`}
-            onClick={() =>
-              setFields(fields.filter((item) => item.id !== field.id))
-            }
+            onClick={() => {
+              clearDateDraft(`field:${field.id}`);
+              setFields(fields.filter((item) => item.id !== field.id));
+            }}
           >
             <Trash2 size={14} aria-hidden="true" />
             {t.contextFields.remove}

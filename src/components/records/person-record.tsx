@@ -13,6 +13,7 @@ import { useDraft } from "../crm/use-draft";
 import { PersonDetails } from "../record-details";
 import { personPath, sectionPath } from "../routes";
 import { EmptyState, LoadingState } from "../ui/states";
+import { ContactAttribution } from "./contact-attribution";
 import { PersonFields } from "./contact-fields";
 import { ContactWorkspace } from "./contact-workspace";
 import { ConversationHistory } from "./conversation-history";
@@ -179,6 +180,7 @@ function ArchivedPersonRecord({ personId }: { personId: string }) {
         ) : (
           <LoadingState rows={3} />
         )}
+        {context && <ContactAttribution context={context} />}
       </div>
       {context?.person && (
         <section className="record-timeline" aria-label={t.activity}>

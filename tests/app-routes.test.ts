@@ -277,12 +277,15 @@ describe("workspace preference", () => {
     expect(chooseBrand([{ id: "p1" }], "p1")).toBe("p1");
     expect(chooseBrand([{ id: "p1" }], "p9")).toBe("");
   });
-  test("cookies are path wide, lax, long lived and cleared when empty", () => {
+  test("workspace cookies persist while product scope lasts only for the session", () => {
     expect(preferenceCookie(workspaceCookie, "lunar", true)).toBe(
       "gravity-workspace=lunar; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
     );
     expect(preferenceCookie(brandCookie, "")).toBe(
       "gravity-brand=; Path=/; Max-Age=0; SameSite=Lax",
+    );
+    expect(preferenceCookie(brandCookie, "p1", true)).toBe(
+      "gravity-brand=p1; Path=/; SameSite=Lax; Secure",
     );
   });
   test("a reload renders the workspace and brand remembered in cookies", async () => {

@@ -15,6 +15,7 @@ const own = {
   id: "own",
   ownerId: "you",
   channel: "gmail" as const,
+  provenance: "provider" as const,
   visibility: "private" as const,
   preview: "Fictional customer conversation",
 };
@@ -22,6 +23,7 @@ const other = {
   id: "other",
   ownerId: "teammate",
   channel: "gmail" as const,
+  provenance: "provider" as const,
   visibility: "product" as const,
   preview: "A different conversation",
 };

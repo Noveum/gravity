@@ -5,14 +5,18 @@ import { useId } from "react";
 import { type RecordTab, useWorkspaceData } from "../crm/crm-context";
 import type { useDraft } from "../crm/use-draft";
 import { PersonDetails, RelatedWork } from "../record-details";
+import { ContactAttribution } from "./contact-attribution";
 import { PersonFields } from "./contact-fields";
+import { ConversationHistory } from "./conversation-history";
 import { MetadataSection } from "./metadata-section";
+import { NativeIngestionPanel } from "./native-ingestion-panel";
 import {
   ActionSummary,
   PersonActivity,
   RelationshipProperties,
 } from "./person-panels";
 import { RelationshipContext } from "./relationship-context";
+import "./contact-workspace.css";
 
 type Action = Parameters<typeof ActionSummary>[0]["action"];
 export function ContactWorkspace({
@@ -95,33 +99,54 @@ export function ContactWorkspace({
         className="contact-tab-content"
       >
         {tab === "timeline" && (
-          <>
-            {context.person && (
-              <PersonFields person={context.person} notesOnly />
-            )}
-            <RelatedWork
-              actions={context.actions}
-              meetings={context.meetings}
-              opportunities={context.opportunities}
-              relationshipId={context.relationship.id}
-              timeZone={crm.timeZone}
-              onAction={onAction}
-              onReveal={crm.reveal}
-              selectedActionId={action?.id}
-              selectedAction={
-                action && (
-                  <ActionSummary action={action} version={draft.version} />
-                )
-              }
-            />
-            <PersonActivity
-              context={context}
-              action={action}
-              draft={draft}
-              hideTabs
-              mode="timeline"
-            />
-          </>
+          <div className="contact-overview">
+            <div className="contact-overview-conversation">
+              <ConversationHistory
+                context={context}
+                timeZone={crm.timeZone}
+                viewerId={crm.userId}
+                memberName={crm.member}
+              />
+              {action?.draft && (
+                <div className="conversation-draft-link">
+                  <div>
+                    <strong>{t.draftFlow.saved}</strong>
+                    <span className="muted">{t.draftFlow.sendHint}</span>
+                  </div>
+                  <button type="button" onClick={() => select("draft")}>
+                    {t.draftFlow.review}
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="contact-overview-support">
+              <RelatedWork
+                actions={context.actions}
+                meetings={context.meetings}
+                opportunities={context.opportunities}
+                relationshipId={context.relationship.id}
+                timeZone={crm.timeZone}
+                onAction={onAction}
+                onReveal={crm.reveal}
+                selectedActionId={action?.id}
+                selectedAction={
+                  action && (
+                    <ActionSummary action={action} version={draft.version} />
+                  )
+                }
+              />
+              {context.person && (
+                <PersonFields person={context.person} notesOnly />
+              )}
+            </div>
+            <div className="contact-overview-drafts">
+              <NativeIngestionPanel
+                relationshipId={context.relationship.id}
+                productId={context.relationship.productId}
+                onAction={onAction}
+              />
+            </div>
+          </div>
         )}
         {tab === "context" && (
           <RelationshipContext
@@ -142,6 +167,10 @@ export function ContactWorkspace({
               action={action}
               includeContext={false}
             />
+            <ContactAttribution
+              key={`${context.person?.id}/${context.relationship.productId}`}
+              context={context}
+            />
             {context.person && (
               <MetadataSection entity="person" record={context.person} />
             )}
@@ -158,7 +187,25 @@ export function ContactWorkspace({
             />
           </>
         )}
-        {(tab === "evidence" || tab === "draft") && (
+        {tab === "draft" && (
+          <div className="contact-draft-workspace">
+            <ConversationHistory
+              context={context}
+              timeZone={crm.timeZone}
+              viewerId={crm.userId}
+              memberName={crm.member}
+              compact
+            />
+            <PersonActivity
+              context={context}
+              action={action}
+              draft={draft}
+              hideTabs
+              mode="draft"
+            />
+          </div>
+        )}
+        {tab === "evidence" && (
           <PersonActivity
             context={context}
             action={action}

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { preciseInstantSchema } from "./datetime";
 
 export const contextSectionKeys = [
   "background",
@@ -17,7 +18,14 @@ export const signalKinds = [
   "engagement",
   "other",
 ] as const;
-export const fieldKinds = ["text", "number", "date", "url", "boolean"] as const;
+export const fieldKinds = [
+  "text",
+  "number",
+  "date",
+  "datetime",
+  "url",
+  "boolean",
+] as const;
 export function safeContextUrl(value: string) {
   try {
     const url = new URL(value);
@@ -41,6 +49,8 @@ export const relationshipSignalSchema = z.strictObject({
   kind: z.enum(signalKinds),
   classification: z.enum(["fact", "hypothesis"]),
   sourceUrl: sourceUrl.nullable(),
+  // Existing signal timestamps were accepted at arbitrary ISO precision and are
+  // stored verbatim in JSON. Editing other context must preserve those values.
   observedAt: z.iso.datetime().nullable(),
 });
 const fieldBase = { id: z.uuid(), label: z.string().trim().min(1).max(100) };
@@ -55,6 +65,11 @@ export const relationshipFieldSchema = z.discriminatedUnion("type", [
     ...fieldBase,
     type: z.literal("date"),
     value: z.iso.date(),
+  }),
+  z.strictObject({
+    ...fieldBase,
+    type: z.literal("datetime"),
+    value: preciseInstantSchema,
   }),
   z.strictObject({ ...fieldBase, type: z.literal("url"), value: sourceUrl }),
   z.strictObject({

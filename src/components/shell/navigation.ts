@@ -33,12 +33,16 @@ export const viewIcons: Record<Section, LucideIcon> = {
 };
 
 export const viewSections: { id: string; title: string; views: Section[] }[] = [
-  { id: "work", title: t.navWork, views: ["overview", "actions", "meetings"] },
+  {
+    id: "work",
+    title: t.navWork,
+    views: ["overview", "opportunities", "actions", "meetings"],
+  },
   { id: "outreach", title: t.navOutreach, views: ["outreach", "sequences"] },
   {
     id: "records",
     title: t.navRecords,
-    views: ["people", "companies", "opportunities", "materials"],
+    views: ["people", "companies", "materials"],
   },
 ];
 export const pinnedViews: Section[] = [

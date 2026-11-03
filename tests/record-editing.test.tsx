@@ -239,7 +239,7 @@ describe("fix round 1", () => {
     ).toMatchObject({ amountMinor: 1250, currency: "JPY" });
     const card = screen
       .getByRole("button", { name: "Fictional yen deal" })
-      .closest("tr") as HTMLElement;
+      .closest("article, tr") as HTMLElement;
     expect(card.textContent).toContain("¥1,250");
   });
 

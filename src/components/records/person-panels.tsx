@@ -1,8 +1,9 @@
 "use client";
+import { instantFromZonedInput, zonedInputValue } from "@crm/core/calendar";
 import type { ClientContext, ClientSnapshot } from "@crm/core/dto";
 import { shortcutFor } from "@crm/core/shortcuts";
 import t from "@crm/i18n/translations/en.json";
-import { Check } from "lucide-react";
+import { CalendarClock, Check, Send } from "lucide-react";
 import { useState } from "react";
 import { dateLabel, label } from "../client-api";
 import { type RecordTab, useCrm } from "../crm/crm-context";
@@ -11,11 +12,15 @@ import { keyInput } from "../keyboard-navigation";
 import { SendDialog } from "../outreach/send-dialog";
 import { initials } from "../shell/workspace-menu";
 import { ShortcutHint } from "../ui/shortcut-hint";
+import { ActionReason } from "./action-reason";
 import { PersonFields } from "./contact-fields";
 import { ConversationHistory } from "./conversation-history";
 import { ConversationSharing } from "./conversation-sharing";
-import { RecordText } from "./record-text";
+import { NativeIngestionPanel } from "./native-ingestion-panel";
+import { RecordDialog } from "./record-dialog";
 import { RelationshipContext } from "./relationship-context";
+import { YoduLifecyclePanel } from "./yodu-lifecycle";
+import "./draft-panels.css";
 
 type Action = ClientSnapshot["actions"][number];
 type DraftState = ReturnType<typeof useDraft>;
@@ -29,7 +34,11 @@ export function findAction(
   const action = snapshot?.actions.find((action) => action.id === actionId);
   const detail = context?.actions.find((action) => action.id === actionId);
   if (snapshot?.compact && action && detail)
-    return { ...action, reason: detail.reason };
+    return {
+      ...action,
+      reason: detail.reason,
+      reasonSource: detail.reasonSource,
+    };
   return action ?? detail;
 }
 
@@ -156,7 +165,13 @@ export function PersonActivity({
         </div>
       )}
       {current === "timeline" && (
-        <ConversationHistory context={context} timeZone={timeZone} />
+        <>
+          <ConversationHistory context={context} timeZone={timeZone} />
+          <NativeIngestionPanel
+            relationshipId={context.relationship.id}
+            productId={context.relationship.productId}
+          />
+        </>
       )}
       {current === "details" && (
         <ConversationSharing
@@ -185,6 +200,13 @@ export function PersonActivity({
       )}
       {current === "evidence" && (
         <>
+          <YoduLifecyclePanel
+            organizationId={organizationId}
+            productId={context.relationship.productId}
+            relationshipId={context.relationship.id}
+            timeZone={timeZone}
+            revision={context.asOf}
+          />
           {context.evidence.map((item) => (
             <article className="evidence-item" key={item.id}>
               <div>
@@ -201,15 +223,24 @@ export function PersonActivity({
         </>
       )}
       {current === "draft" && action && (
-        <DraftPanel action={action} draft={draft} />
+        <DraftPanel key={action.id} action={action} draft={draft} />
       )}
     </>
   );
 }
 
 function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
-  const { busy, mutate, organizationId, userId, personFor } = useCrm();
+  const { busy, mutate, send, organizationId, userId, personFor, timeZone } =
+    useCrm();
   const [sending, setSending] = useState(false);
+  const [schedule, setSchedule] = useState<{
+    actionId: string;
+    version: number;
+    dueAt: string;
+    timeZone: string;
+  } | null>(null);
+  const dirty = draft.draft !== action.draft;
+  const stale = draft.version !== action.version;
   const sendableAction =
     ["reply", "approval", "commitment"].includes(action.kind) &&
     action.owedBy === "us";
@@ -232,7 +263,13 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
     });
   return (
     <div className="draft-panel">
-      <h3>{action.title}</h3>
+      <header className="draft-panel-heading">
+        <div>
+          <span className="draft-eyebrow">{t.draftFlow.reply}</span>
+          <h3>{action.title}</h3>
+        </div>
+        <span className="badge">{label(action.channel)}</span>
+      </header>
       {action.status === "blocked" && (
         <p className="callout warning-text">{t.blockedDetail}</p>
       )}
@@ -248,7 +285,8 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
         onKeyDown={(event) => {
           if (shortcutFor(keyInput(event), ["dialog"], true) === "save") {
             event.preventDefault();
-            event.currentTarget.parentElement
+            event.currentTarget
+              .closest(".draft-panel")
               ?.querySelector<HTMLButtonElement>(
                 "[data-save-draft]:not(:disabled)",
               )
@@ -258,16 +296,30 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
         id="message-draft"
         value={draft.draft}
         onChange={(event) => draft.edit(event.target.value)}
-        rows={9}
+        rows={7}
       />
-      <div className="draft-state">
-        {draft.draft !== action.draft
-          ? t.draftChanged
-          : action.approvedHash
-            ? t.approved
-            : t.draft}
+      <div className="draft-editor-status">
+        <div className="draft-state" aria-live="polite">
+          {!dirty && !!draft.draft.trim() && (
+            <Check size={13} aria-hidden="true" />
+          )}
+          {dirty
+            ? t.draftChanged
+            : !draft.draft.trim()
+              ? t.draftFlow.empty
+              : action.approvedHash
+                ? t.approved
+                : t.draftFlow.saved}
+        </div>
+        <span className="draft-scheduled-date">
+          <CalendarClock size={13} aria-hidden="true" />
+          {t.draftFlow.scheduledFor.replace(
+            "{date}",
+            dateLabel(action.dueAt, timeZone),
+          )}
+        </span>
       </div>
-      {draft.version !== action.version && (
+      {stale && (
         <div className="callout warning-text">
           {t.errors.CONFLICT}
           <button type="button" onClick={draft.reload}>
@@ -275,15 +327,12 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
           </button>
         </div>
       )}
-      <p className="muted">{t.approvalNote}</p>
-      <div className="button-row">
+      <fieldset className="draft-actions" aria-label={t.draftFlow.actions}>
         {action.status === "blocked" ? (
           <button
             type="button"
             className="primary"
-            disabled={
-              busy || !draft.draft.trim() || draft.draft === action.draft
-            }
+            disabled={busy || stale || !draft.draft.trim() || !dirty}
             onClick={() => change("rework", { draft: draft.draft })}
           >
             {t.rework}
@@ -293,40 +342,73 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
             <button
               data-save-draft
               type="button"
-              disabled={busy || draft.draft === action.draft}
+              className={dirty ? "primary" : undefined}
+              disabled={busy || stale || !dirty}
               onClick={() => change("save", { draft: draft.draft })}
             >
               {t.saveDraft}
             </button>
-            <button
-              type="button"
-              className="primary"
-              disabled={
-                busy ||
-                !draft.draft.trim() ||
-                draft.draft !== action.draft ||
-                !!action.approvedHash
-              }
-              onClick={() => change("approve")}
-            >
-              {t.approveDraft}
-            </button>
-            {canSend && (
+            {!action.approvedHash && (
               <button
                 type="button"
-                className="primary"
-                disabled={busy}
-                onClick={() => setSending(true)}
+                className={!dirty ? "primary" : undefined}
+                aria-label={t.approveDraft}
+                disabled={
+                  busy ||
+                  stale ||
+                  !draft.draft.trim() ||
+                  dirty ||
+                  action.status !== "open"
+                }
+                onClick={() => change("approve")}
               >
-                {t.touchVerbs.send}
+                {t.draftFlow.approve}
               </button>
             )}
           </>
         )}
+        {action.status === "open" && (
+          <>
+            <button
+              type="button"
+              disabled={busy || dirty || stale || !draft.draft.trim()}
+              onClick={() =>
+                setSchedule({
+                  actionId: action.id,
+                  version: draft.version,
+                  dueAt: action.dueAt,
+                  timeZone,
+                })
+              }
+            >
+              <CalendarClock size={15} aria-hidden="true" />
+              {t.draftFlow.schedule}
+            </button>
+            {sendableAction &&
+              (action.channel === "gmail" || action.channel === "linkedin") && (
+                <button
+                  type="button"
+                  className={canSend ? "primary" : undefined}
+                  aria-label={t.touchVerbs.send}
+                  disabled={busy || !canSend}
+                  title={!canSend ? t.draftFlow.sendHint : undefined}
+                  onClick={() => setSending(true)}
+                >
+                  <Send size={15} aria-hidden="true" />
+                  {t.draftFlow.send}
+                </button>
+              )}
+          </>
+        )}
+      </fieldset>
+      <div className="draft-action-help">
+        <span>{t.draftSaveHint}</span>
+        <details>
+          <summary>{t.draftFlow.approvalHelp}</summary>
+          <p>{t.approvalNote}</p>
+          <p>{t.sendingNote}</p>
+        </details>
       </div>
-      <p className="coverage-note">
-        {t.draftSaveHint} · {t.sendingNote}
-      </p>
       {sending && (
         <SendDialog
           source={{
@@ -340,6 +422,74 @@ function DraftPanel({ action, draft }: { action: Action; draft: DraftState }) {
           onClose={() => setSending(false)}
           onSent={() => setSending(false)}
         />
+      )}
+      {schedule !== null && (
+        <RecordDialog
+          title={t.draftFlow.scheduleTitle}
+          submitLabel={t.draftFlow.schedule}
+          onClose={() => setSchedule(null)}
+          onSubmit={async (fields) => {
+            const dueAt = instantFromZonedInput(
+              String(fields.get("dueAt") ?? ""),
+              String(fields.get("timeZone") ?? ""),
+            );
+            if (!dueAt) return t.errors.INVALID_INPUT;
+            const result = await send(
+              {
+                operation: "plan",
+                organizationId,
+                items: [
+                  {
+                    actionId: schedule.actionId,
+                    version: schedule.version,
+                    dueAt,
+                  },
+                ],
+              },
+              false,
+              false,
+            );
+            return result.ok ? null : (result.error ?? t.errors.INTERNAL_ERROR);
+          }}
+        >
+          <p className="field-hint">{t.draftFlow.scheduleHint}</p>
+          <label>
+            {t.nativeIngestion.dueAt}
+            <input
+              name="dueAt"
+              data-primary-field
+              type="datetime-local"
+              step="0.001"
+              defaultValue={zonedInputValue(
+                schedule.dueAt,
+                schedule.timeZone,
+                true,
+              )}
+              required
+            />
+          </label>
+          <label>
+            {t.timezone}
+            <select
+              name="timeZone"
+              value={schedule.timeZone}
+              onChange={(event) =>
+                setSchedule({ ...schedule, timeZone: event.target.value })
+              }
+            >
+              {[...new Set([timeZone, schedule.timeZone, "UTC"])].map(
+                (zone) => (
+                  <option key={zone} value={zone}>
+                    {zone}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+          <p className="field-hint">
+            {t.nativeIngestion.zone.replace("{zone}", schedule.timeZone)}
+          </p>
+        </RecordDialog>
       )}
     </div>
   );
@@ -360,7 +510,7 @@ export function ActionSummary({
         {label(action.kind)} · {label(action.status)} ·{" "}
         {dateLabel(action.dueAt, timeZone)}
       </p>
-      <RecordText value={action.reason} />
+      <ActionReason key={action.id} action={action} />
       <button
         type="button"
         disabled={

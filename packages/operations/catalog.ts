@@ -21,12 +21,30 @@ import {
   updateConnectionInput,
 } from "../connectors/service";
 import {
+  bindYoduSubjectSchema,
+  createYoduSourceSchema,
+  listYoduEventsSchema,
+  listYoduSourcesSchema,
+  updateYoduSourceSchema,
+  YoduService,
+} from "../connectors/yodu";
+import {
+  ActionDetailsService,
+  actionDetailsSchema,
+} from "../core/action-details";
+import {
   listAssistantGrants,
   listAssistantGrantsSchema,
   revokeAssistantGrant,
   revokeAssistantSchema,
 } from "../core/assistant-grants";
 import { publishChange } from "../core/changes";
+import {
+  attributionListSchema,
+  ContactAttributionService,
+  contactImportSchema,
+  importBatchSchema,
+} from "../core/contact-attribution";
 import {
   actionChangeSchema,
   actionPlanSchema,
@@ -44,6 +62,12 @@ import {
   workspaceSchema,
 } from "../core/crm";
 import {
+  changeInternalTaskSchema,
+  createInternalTaskSchema,
+  InternalTaskService,
+  listInternalTasksSchema,
+} from "../core/internal-tasks";
+import {
   folderDeleteSchema,
   folderRenameSchema,
   MaterialService,
@@ -54,6 +78,18 @@ import {
   MemberService,
   reactivateMemberSchema,
 } from "../core/members";
+import {
+  MessageHistoryService,
+  messageHistorySchema,
+} from "../core/message-history";
+import {
+  editNativeDraftSchema,
+  ingestDraftSchema,
+  ingestHistorySchema,
+  listNativeDraftsSchema,
+  NativeIngestionService,
+  scheduleNativeDraftSchema,
+} from "../core/native-ingestion";
 import {
   acceptInviteSchema,
   inviteSchema,
@@ -70,6 +106,7 @@ import {
   enrollmentChangeSchema,
   enrollSchema,
   OutreachService,
+  outreachListSchema,
   relationshipChangeSchema,
   sequenceArchiveSchema,
   sequenceCreateSchema,
@@ -99,7 +136,11 @@ import {
   restoreProductSchema,
   updateProductSchema,
 } from "../core/products";
-import { RecordListService, recordListSchema } from "../core/record-list";
+import {
+  nextActionsSchema,
+  RecordListService,
+  recordListSchema,
+} from "../core/record-list";
 import {
   RecordMetadataService,
   recordMetadataSchema,
@@ -110,6 +151,8 @@ import {
   meetingSchema,
   opportunityChangeSchema,
   opportunityCreateSchema,
+  opportunityRemovalSchema,
+  opportunityRestoreSchema,
   personArchiveSchema,
   personUpdateSchema,
   RecordService,
@@ -232,6 +275,169 @@ export function materialBytes(value: string) {
 }
 
 export const operations: Operation[] = [
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "messages",
+    name: "list_message_history",
+    description:
+      "Read a stable paginated history of native and provider messages for an authorized relationship. Only owned or explicitly product-shared threads are returned. A null cursor marks the end of accessible records, never evidence that private or unlinked history does not exist.",
+    schema: messageHistorySchema,
+    run: (c, input) => new MessageHistoryService(c.db).page(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "internal-tasks",
+    name: "list_internal_tasks",
+    description:
+      "List product-owned internal tasks, including recurring tasks, with their current versions. These tasks never dispatch messages.",
+    schema: listInternalTasksSchema,
+    run: (c, input) => new InternalTaskService(c.db).list(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "internal-task-create",
+    name: "create_internal_task",
+    description:
+      "Create an assigned internal task in an authorized product, optionally linked to a relationship. Set a precise ISO due time and IANA time zone, with optional daily, weekly or monthly recurrence. These tasks never send messages.",
+    schema: createInternalTaskSchema,
+    destructive: false,
+    run: (c, input) => new InternalTaskService(c.db).create(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "internal-task-change",
+    name: "change_internal_task",
+    description:
+      "Save, complete or reopen an internal task with its current version. Completing a recurring task advances its due time to the first future calendar occurrence in its time zone, preserving monthly anchors. Completion records an event and never sends messages.",
+    schema: changeInternalTaskSchema,
+    run: (c, input) => new InternalTaskService(c.db).change(c.principal, input),
+  }),
+  operation({
+    api: "integrations",
+    method: "GET",
+    operation: "yodu-sources",
+    name: "get_yodu_sources",
+    description:
+      "Read signed Yodu backend bridge sources and explicit customer mappings for one authorized product. Sources are configured attestations, not independent billing verification; credentials are never returned.",
+    schema: listYoduSourcesSchema,
+    run: (c, input) => new YoduService(c.db).sources(c.principal, input),
+  }),
+  operation({
+    api: "integrations",
+    method: "POST",
+    operation: "yodu-create-source",
+    name: "create_yodu_source",
+    description:
+      "Create a product-scoped Yodu backend bridge source as an administrator. Supply a stable UUID sourceId for retries. Returns a generated signing secret only on first creation; wire the documented bridge in Yodu's backend. This does not connect to a public Yodu billing API.",
+    schema: createYoduSourceSchema,
+    idempotent: true,
+    run: (c, input) => new YoduService(c.db).createSource(c.principal, input),
+  }),
+  operation({
+    api: "integrations",
+    method: "POST",
+    operation: "yodu-update-source",
+    name: "update_yodu_source",
+    description:
+      "Change a source label or enabled status, or rotate its secret, using the current source version. Requires administrator access to the product. Rotation returns its new secret once and immediately rejects the old secret. Existing authenticated event receipts remain unchanged.",
+    schema: updateYoduSourceSchema,
+    run: (c, input) => new YoduService(c.db).updateSource(c.principal, input),
+  }),
+  operation({
+    api: "integrations",
+    method: "POST",
+    operation: "yodu-bind-subject",
+    name: "bind_yodu_subject",
+    description:
+      "Explicitly associate a Yodu source's externalSubjectId with a relationship in the same product. Requires administrator access. Reassigning an existing binding requires its current expectedVersion; facts remain immutable while their CRM association changes. No email guessing, fabricated facts, approval or sending follows.",
+    schema: bindYoduSubjectSchema,
+    idempotent: true,
+    run: (c, input) => new YoduService(c.db).bindSubject(c.principal, input),
+  }),
+  operation({
+    api: "integrations",
+    method: "GET",
+    operation: "yodu-events",
+    name: "list_yodu_events",
+    description:
+      "Read paginated immutable signup/onboarding/payment/activation receipts authenticated by a configured Yodu backend source. Optionally filter by source, relationship or unmatched external subjects. Source attestation is not independent processor proof or evidence of a current paid subscription. No public write operation can create a verified event.",
+    schema: listYoduEventsSchema,
+    run: (c, input) => new YoduService(c.db).events(c.principal, input),
+  }),
+
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "ingest-history",
+    name: "ingest_history",
+    idempotent: true,
+    description:
+      "Record historical Gmail/LinkedIn messages as native CRM history without a connected provider account. Supply immutable sourceThreadId/sourceMessageId identifiers, exact occurredAt, direction and body. Records stay private to the acting owner until set_conversation_visibility explicitly shares the thread. Duplicate identical messages are safe; changed content or a source linked elsewhere returns INGESTION_CONFLICT. Future dates are refused. History invalidates existing outreach approval but never sends, completes current tasks or pauses sequences merely because it was imported.",
+    schema: ingestHistorySchema,
+    run: (c, input) =>
+      new NativeIngestionService(c.db).history(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "native-drafts",
+    name: "list_native_drafts",
+    description:
+      "List your private drafts for a permitted person/product relationship with stable pagination. Follow nextCursor as cursor to read every draft. Undated drafts have no approval or due time and cannot send. scheduledActionId points to the separately scheduled action, if any.",
+    schema: listNativeDraftsSchema,
+    run: (c, input) =>
+      new NativeIngestionService(c.db).drafts(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "ingest-draft",
+    name: "ingest_draft",
+    idempotent: true,
+    description:
+      "Record an undated Gmail/LinkedIn draft privately with a stable sourceId, title, body and readable reason. Does not fabricate a historical message, due date, approval or send. Identical retries return the same draft; changed source content returns INGESTION_CONFLICT.",
+    schema: ingestDraftSchema,
+    run: (c, input) =>
+      new NativeIngestionService(c.db).draft(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "edit-native-draft",
+    name: "edit_native_draft",
+    description:
+      "Edit your own unscheduled native draft using its current version. Changes cannot grant approval or dispatch. A scheduled draft is retained as source and can no longer be edited; edit the action instead.",
+    schema: editNativeDraftSchema,
+    run: (c, input) =>
+      new NativeIngestionService(c.db).edit(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "schedule-native-draft",
+    name: "schedule_native_draft",
+    idempotent: true,
+    description:
+      "Explicitly convert your undated draft into one ordinary reply action with a precise dueAt and its current version. Repeating returns the same action if dueAt matches. This preserves the private source, copies the current draft, and requires fresh review/approval before explicit send_action. It never sends.",
+    schema: scheduleNativeDraftSchema,
+    run: (c, input) =>
+      new NativeIngestionService(c.db).schedule(c.principal, input),
+  }),
+
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "action-details",
+    name: "update_action_reason",
+    description:
+      "Replace an action's reason with readable notes using its current version. The original source is preserved, including legacy JSON. Editing invalidates approval, preserves completion/blocking state and never sends. Private source access and current product write access are required.",
+    schema: actionDetailsSchema,
+    run: (c, input) => new ActionDetailsService(c.db).save(c.principal, input),
+  }),
   operation({
     api: "files",
     method: "GET",
@@ -621,9 +827,24 @@ export const operations: Operation[] = [
     operation: "records",
     name: "list_records",
     description:
-      "Page authorized people/clients, companies, relationships, deals, meetings, sequences or materials. Search is applied only to readable records.",
+      "Page authorized people/clients, companies, relationships, deals, meetings, actions, sequences or materials. Apply query, tag, ownerId, qualification, status, size (known/unknown), currency, minimum/maximum in currency minor units, pipelineId/stageId, action kind/owedBy and sort (default/name/name_desc/amount_asc/amount_desc). Filters use the same visible metadata and owner inheritance as the UI, run before paging, and never widen product or private-history access. Amount sorts group currencies without conversion and put unknown amounts last. Attribution filters apply to people only. fieldFilters accepts [{label,type,operator,value?}] (encode the same array as JSON for HTTP GET): normalized label and type match product-wide, and all predicates must match within one permitted relationship. Types include datetime ISO instants; operators are eq, contains, gt, gte, lt, lte, exists and missing with type validation.",
     schema: recordListSchema,
     run: (c, input) => new RecordListService(c.db).page(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "next-actions",
+    name: "list_next_actions",
+    description:
+      "Page next actions using the same search, owner, relationship tags/qualification/deal-size, status, fieldFilters and sort filters as the UI. Custom field predicates match within one permitted relationship using the same typed operators as list_records. Use kind=reply for replies to handle, kind=commitment for promises, or owedBy=them for awaiting them. Only scheduled actions qualify: contact tags and imported prose are not promises, replies or sends. An explicit status takes precedence over includeCompleted. Without a status, completed actions are excluded unless includeCompleted is the string true. Private source actions remain visible only to their conversation owner or the product when shared.",
+    schema: nextActionsSchema,
+    run: (c, input) =>
+      new RecordListService(c.db).page(
+        c.principal,
+        recordListSchema.parse({ ...input, entity: "actions" }),
+        !input.status && input.includeCompleted !== "true",
+      ),
   }),
   operation({
     api: "crm",
@@ -631,8 +852,14 @@ export const operations: Operation[] = [
     operation: "sequence",
     name: "get_sequence",
     description:
-      "Read a permitted sequence, its ordered steps and current enrollments.",
-    schema: scopeSchema.extend({ sequenceId: z.uuid() }),
+      "Read an authorized sequence's steps, current sequence.version and enrollments with their versions. Find sequence IDs with list_records(entity=sequences). Read this before update_sequence, archive_sequence or restore_sequence; use enrollment versions for change_enrollment.",
+    schema: scopeSchema.extend({
+      sequenceId: z
+        .uuid()
+        .describe(
+          "Sequence ID from list_records with entity=sequences or get_workspace.",
+        ),
+    }),
     run: async (c, input) => {
       const snapshot = await crm(c).snapshot(c.principal, input);
       const sequence = snapshot.sequences.find(
@@ -653,7 +880,7 @@ export const operations: Operation[] = [
     operation: "create-sequence",
     name: "create_sequence",
     description:
-      "Create a product sequence with ordered steps, delays, channels and templates. This never sends messages.",
+      "Create a reusable outreach sequence in an active product with write access. Supply 1–10 steps; number controls order, delayDays controls timing and followUp labels the display group. Templates are copied verbatim, so personalize each touch with edit_touch_draft before approval. Next preview enrollment with enroll_in_sequence(dryRun=true). Creating a sequence does not enroll contacts or send messages.",
     schema: sequenceCreateSchema,
     destructive: false,
     run: (c, input) => outreach(c).createSequence(c.principal, input),
@@ -700,6 +927,43 @@ export const operations: Operation[] = [
     }),
     run: (c, input) =>
       crm(c).snapshot(c.principal, input, input.compact === "true"),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "import-batch",
+    name: "create_contact_import_batch",
+    idempotent: true,
+    destructive: false,
+    description:
+      "Create an immutable contact import batch. submittedBy, transport and MCP client/grant are server assigned. sourceMemberId is an explicitly declared source member, not the uploader. Use a stable submissionKey for retries; changed metadata conflicts. Source member must currently access this product. No file contents or credentials in label/key.",
+    schema: importBatchSchema,
+    run: (c, input) =>
+      new ContactAttributionService(c.db).createBatch(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "contact-import",
+    name: "record_contact_import",
+    idempotent: true,
+    destructive: false,
+    description:
+      "Append reviewed import provenance to an existing contact with a relationship in this product, without changing original creator or owner. Requires current person version, your own batchId and stable sourceRecordId. Exact retries are idempotent; changing the source row's target conflicts. For new contacts pass importSource to create_person. Never infer the historical importer from ownership.",
+    schema: contactImportSchema,
+    run: (c, input) =>
+      new ContactAttributionService(c.db).recordImport(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "GET",
+    operation: "contact-attribution",
+    name: "get_contact_attribution",
+    description:
+      "Page recorded creator, submitters, declared source members, edit history and owner-private provider import metadata. Unknown historical attribution remains null; owners are separate from contributors. Names remain readable for inactive members. Never exposes private transcript bodies or another member's provider metadata.",
+    schema: attributionListSchema,
+    run: (c, input) =>
+      new ContactAttributionService(c.db).list(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -775,6 +1039,28 @@ export const operations: Operation[] = [
       "Create or update a deal: amountMinor, currency, owner, probability, expectedCloseDate, stage, outcome and context. amountMinor uses ISO minor units (USD cents, JPY whole yen, KWD thousandths). Unknown amount/probability is null; zero is valid. Probability is an integer percentage 0-100. Open deals with both fields contribute amount times probability to forecasts, separately by currency. Do not infer amounts from contact estimates or company revenue. Updates require its current ID/version.",
     schema: opportunitySchema,
     run: (c, input) => crm(c).saveOpportunity(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "opportunity-delete",
+    name: "delete_deal",
+    description:
+      "Reversibly remove a duplicate or unwanted deal with its current opportunityId/version. Archives the record and removes it from active lists, boards and forecasts while retaining its amount, currency, outcome, history and audit trail. Restore with restore_deal. Requires current organization/product write access.",
+    schema: opportunityRemovalSchema,
+    run: (c, input) =>
+      records(c).archiveOpportunity(c.principal, { ...input, archived: true }),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "opportunity-restore",
+    name: "restore_deal",
+    description:
+      "Restore a removed deal with its current opportunityId/version from get_workspace.archivedOpportunities. Retains its original outcome and history. If its old stage was retired or changed category, explicitly provide an active same-product stageId with the original outcome category. Requires current write access and an active product/contact.",
+    schema: opportunityRestoreSchema,
+    run: (c, input) =>
+      records(c).archiveOpportunity(c.principal, { ...input, archived: false }),
   }),
   operation({
     api: "crm",
@@ -929,7 +1215,7 @@ export const operations: Operation[] = [
     operation: "person",
     name: "create_person",
     description:
-      "Create a person/product relationship or add an existing person to a product. Optionally schedule research. Use context for a readable summary and contextDetails for background, needs, timing, budget, decisionProcess, risks, history, sourced signals and typed custom fields. These notes are product-shared; do not dump serialized imports or private thread contents into them.",
+      "Create a person/product relationship or add an existing person to a product. Optionally schedule research. For imports first create_contact_import_batch, then pass importSource {batchId, sourceRecordId} with a stable row identifier; exact retries return the same contact. Submitter is the authenticated actor, and declared source is separate from relationship owner. Use context for a readable summary and contextDetails for background, needs, timing, budget, decisionProcess, risks, history, sourced signals and typed custom fields. These notes are product-shared; do not dump serialized imports or private thread contents into them.",
     schema: personSchema,
     destructive: false,
     run: (c, input) => crm(c).createPerson(c.principal, input),
@@ -940,7 +1226,7 @@ export const operations: Operation[] = [
     operation: "person-update",
     name: "update_person",
     description:
-      "Edit contact fields, company and summary with optimistic version checking. Email/channel edits invalidate affected approvals. Assistants cannot change the email addresses or LinkedIn profile of a do-not-contact person; that returns HUMAN_ACTION_REQUIRED. An email or LinkedIn profile that already belongs to another person in the organization returns PERSON_EXISTS.",
+      "Edit contact fields, company and summary with optimistic version checking. Omitted summary is preserved; an explicit empty summary clears it. Email/channel edits invalidate affected approvals. Assistants cannot change the email addresses or LinkedIn profile of a do-not-contact person; that returns HUMAN_ACTION_REQUIRED. An email or LinkedIn profile that already belongs to another person in the organization returns PERSON_EXISTS.",
     schema: personUpdateSchema,
     run: (c, input) => records(c).updatePerson(c.principal, input),
   }),
@@ -1094,8 +1380,8 @@ export const operations: Operation[] = [
     operation: "due",
     name: "list_due_touches",
     description:
-      "Read today's due outreach touches, drafts and send-gate warnings in the workspace timezone.",
-    schema: scopeSchema,
+      "Read today's due outreach touches, drafts and send-gate warnings in the workspace timezone. Supports query, ownerId, tag, qualification, status, known/unknown size, currency, minimum/maximum in minor units, channel, outreach pipelineId/stageId, typed fieldFilters and the UI's name/amount sorts. Custom field predicates match within one readable relationship using the same typed operators as list_records. Reads never send messages or create enrollments.",
+    schema: outreachListSchema,
     run: (c, input) => outreach(c).dueTouches(c.principal, input),
   }),
   operation({
@@ -1104,8 +1390,8 @@ export const operations: Operation[] = [
     operation: "queue",
     name: "get_outreach_queue",
     description:
-      "Read outreach enrollments and queue across authorized products.",
-    schema: scopeSchema,
+      "Read outreach enrollments and queue across authorized products. Supports the same query, ownerId, tag, qualification, status, known/unknown size, currency, minimum/maximum in minor units, channel, outreach pipelineId/stageId, typed fieldFilters and name/amount sorts as the UI. Custom field predicates match within one readable relationship using the same typed operators as list_records; archived contacts have no visible fields. Empty queues mean no matching real sequence enrollments, not absent imported contact history. Reads never send messages.",
+    schema: outreachListSchema,
     run: (c, input) => outreach(c).queue(c.principal, input),
   }),
   operation({
@@ -1134,7 +1420,7 @@ export const operations: Operation[] = [
     operation: "advance",
     name: "advance_sequences",
     description:
-      "Plan the next eligible sequence touches. Does not send messages.",
+      "Advance running enrollments in productId, or across all authorized products in the organization when productId is omitted. Plans the next eligible touch only after the previous step is sent, skipped or expired and its delay has elapsed; may also complete enrollments or pause do-not-contact enrollments. Returns created/completed/paused counts. Next inspect get_outreach_queue or list_due_touches. Never sends messages.",
     schema: scopeSchema,
     destructive: false,
     run: (c, input) => outreach(c).advanceEnrollments(c.principal, input),
@@ -1145,7 +1431,7 @@ export const operations: Operation[] = [
     operation: "enroll",
     name: "enroll_in_sequence",
     description:
-      "Enroll product relationships in an outreach sequence; dryRun previews eligibility without creating enrollments.",
+      "Enroll relationship IDs in an active sequence belonging to the same product, with product write access. Get relationship IDs from list_records(entity=relationships) or get_person_context; do not pass person IDs. Use dryRun=true first to preview eligibility and skipped reasons. A real enrollment creates running enrollments and immediately plans eligible first touches. Next inspect get_outreach_queue and personalize copied templates with edit_touch_draft. Never sends messages.",
     schema: enrollSchema,
     destructive: false,
     run: (c, input) => outreach(c).enroll(c.principal, input),
@@ -1156,7 +1442,7 @@ export const operations: Operation[] = [
     operation: "draft",
     name: "edit_touch_draft",
     description:
-      "Save an outreach draft using its current version; editing clears prior approval.",
+      "Save a personalized outreach draft using the current touch.version from get_touch. Approval is preserved only when the resulting draft hash still matches the approved hash; otherwise it is cleared. Saving an identical draft with an unchanged hash preserves approval. Sequence templates are copied verbatim: replace all placeholders in the draft before approve_touch. This does not send a message.",
     schema: touchDraftSchema,
     run: (c, input) => outreach(c).editDraft(c.principal, input),
   }),
@@ -1166,7 +1452,7 @@ export const operations: Operation[] = [
     operation: "approve",
     name: "approve_touch",
     description:
-      "Approve the current draft, recipient and channel with its current version. Approval does not dispatch anything.",
+      "Approve the current draft, recipient and channel using the current touch.version from get_touch. Review the latest conversation and replace any template placeholders with edit_touch_draft first; the server sends draft text verbatim. Approval never dispatches a message. Check get_send_readiness before a separately authorized send_touch.",
     schema: touchApproveSchema,
     run: (c, input) => outreach(c).approve(c.principal, input),
   }),
@@ -1214,7 +1500,7 @@ export const operations: Operation[] = [
     operation: "enrollment",
     name: "change_enrollment",
     description:
-      "Pause, resume or stop an enrollment using its current version.",
+      "Pause a running enrollment, resume a paused enrollment or permanently stop one using its current enrollment.version from get_sequence.enrollments. get_outreach_queue.paused also supplies enrollment versions; running queue entries supply touch versions and cannot provide this version. Pause preserves open touches; stop expires open touches and clears their approvals. Resume requires an active product/sequence and a contact who is not do-not-contact, and may plan an eligible next touch. Never sends messages.",
     schema: enrollmentChangeSchema,
     run: (c, input) => outreach(c).changeEnrollment(c.principal, input),
   }),
@@ -1234,7 +1520,7 @@ export const operations: Operation[] = [
     operation: "sequence",
     name: "update_sequence",
     description:
-      "Edit a sequence's ordered steps, delays, channels, templates and name using its current version. Pending drafts/approvals are recomputed.",
+      "Replace the complete steps array and optionally rename a sequence using its current sequence.version from get_sequence. Retain every step to keep and preserve its number. Updates channel/template/followUp only on planned touches and expires planned touches for removed steps. Drafted/approved content and existing due times are not rewritten, but removing steps can complete enrollments and expire remaining open touches, clearing their approvals. Then plans eligible next touches. Returns sequence and changedTouches; refetch after CONFLICT. Never sends messages.",
     schema: sequenceUpdateSchema,
     run: (c, input) => outreach(c).updateSequence(c.principal, input),
   }),
@@ -1264,7 +1550,7 @@ export const operations: Operation[] = [
     operation: "overview",
     name: "get_integrations",
     description:
-      "Read the acting user's authorized connections and paged import-review items. Provider secrets are never returned.",
+      "Read the acting user's authorized connections, paged import-review items and owner-private failedReceipts. Follow nextFailedReceiptCursor as failedReceiptCursor; explicitly discard a failed receipt with ignore_import only after review. Provider secrets and raw failed payloads are never returned.",
     schema: integrationOverviewInput,
     publish: false,
     run: (c, input) => integrations(c).overview(c.principal, input),
@@ -1363,7 +1649,7 @@ export const operations: Operation[] = [
     operation: "ignore",
     name: "ignore_import",
     description:
-      "Ignore an owned import-review item without attaching it as product context.",
+      "Ignore an owned import-review item, or explicitly discard an owned failed receipt from get_integrations.failedReceipts by its itemId. Discard retains the original receipt and audit trail, requires no active worker lease, and invalidates related approvals. Never sends a message.",
     schema: integrationScope.extend({ itemId: z.uuid() }),
     run: (c, input) =>
       integrations(c).link(c.principal, input.organizationId, input.itemId),
@@ -1553,6 +1839,9 @@ const workspaceAdministration = [
   "restore_product",
 ];
 const adminOperations = new Set([
+  "create_yodu_source",
+  "update_yodu_source",
+  "bind_yodu_subject",
   "list_assistant_grants",
   "resolve_delivery",
   "create_workspace",
@@ -1586,6 +1875,11 @@ const humanSessionOperations = new Set([
   "reactivate_member",
 ]);
 const ownerOperations = new Set([
+  "ingest_history",
+  "list_native_drafts",
+  "ingest_draft",
+  "edit_native_draft",
+  "schedule_native_draft",
   "list_unipile_accounts",
   "register_unipile_webhooks",
   "set_conversation_visibility",

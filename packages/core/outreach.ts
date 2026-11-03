@@ -5,6 +5,7 @@ import {
   eq,
   gt,
   gte,
+  ilike,
   inArray,
   isNotNull,
   isNull,
@@ -18,8 +19,15 @@ import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import { zonedDayBounds } from "./calendar";
+import { recordContactSubmission } from "./contact-attribution";
+import {
+  contactIdentityIds,
+  contactIdsForParticipants,
+} from "./contact-history";
 import { scopeSchema } from "./crm";
 import { draftHash, draftSubject } from "./drafts";
+import { fieldFilterConditions } from "./field-filter-sql";
+import { fieldFiltersSchema } from "./field-filters";
 import { assertProductAccess, reassignTouches } from "./members";
 import { planEnrollment } from "./outreach-planner";
 import {
@@ -32,6 +40,12 @@ import {
 } from "./outreach-rules";
 import { authorize, DomainError, type Principal } from "./policy";
 import { assertProductActive } from "./products";
+import {
+  recordFactConditions,
+  recordFilterFields,
+  relationshipFactSql,
+  type SqlRecordFacts,
+} from "./record-filters";
 import {
   emptyRelationshipDetails,
   fitsRelationshipInput,
@@ -56,11 +70,95 @@ const version = z.number().int().positive();
 const touchScope = scopeSchema.extend({ touchId: z.uuid() });
 
 export const enrollSchema = scopeSchema.extend({
-  sequenceId: z.uuid(),
-  relationshipIds: z.array(z.uuid()).min(1).max(200),
-  dryRun: z.boolean().default(false),
+  sequenceId: z
+    .uuid()
+    .describe(
+      "An active sequence ID from get_sequence or list_records with entity=sequences.",
+    ),
+  relationshipIds: z
+    .array(z.uuid())
+    .min(1)
+    .max(200)
+    .describe(
+      "Product relationship IDs from list_records with entity=relationships or get_person_context; these are not person IDs. Each relationship must belong to the sequence's product. Duplicate IDs are deduplicated.",
+    ),
+  dryRun: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Use true first to preview eligible and skipped relationships without writes; eligible entries have enrollmentId=null. False creates running enrollments and immediately plans any first touch whose delay has elapsed, without sending.",
+    ),
 });
 export const touchQuerySchema = touchScope;
+export const outreachListSchema = scopeSchema
+  .extend({
+    ...recordFilterFields,
+    fieldFilters: fieldFiltersSchema,
+    status: z
+      .enum([
+        "planned",
+        "drafted",
+        "approved",
+        "sent",
+        "skipped",
+        "expired",
+        "paused",
+      ])
+      .optional(),
+    channel: z.enum(["gmail", "linkedin"]).optional(),
+    stageId: z.uuid().optional(),
+    pipelineId: z.uuid().optional(),
+  })
+  .refine(
+    (input) =>
+      input.minimum === undefined ||
+      input.maximum === undefined ||
+      input.minimum <= input.maximum,
+  );
+
+function outreachFilters(
+  input: z.infer<typeof outreachListSchema>,
+  facts: SqlRecordFacts,
+  status: SQL,
+  searchable: SQL[],
+) {
+  const term = `%${input.query.replace(/[\\%_]/g, "\\$&")}%`;
+  return [
+    ...recordFactConditions(input, { ...facts, status }),
+    ...fieldFilterConditions(
+      sql`CASE WHEN ${s.people.archivedAt} IS NULL THEN ${s.relationships.contextDetails} ELSE '{}'::jsonb END`,
+      input.fieldFilters,
+    ),
+    input.query
+      ? or(...searchable.map((value) => ilike(value, term)))
+      : undefined,
+    input.stageId ? eq(s.relationships.stageId, input.stageId) : undefined,
+    input.pipelineId
+      ? sql`EXISTS (SELECT 1 FROM ${s.stages} WHERE ${s.stages.id} = ${s.relationships.stageId} AND ${s.stages.organizationId} = ${input.organizationId} AND ${s.stages.productId} = ${s.relationships.productId} AND ${s.stages.pipelineId} = ${input.pipelineId})`
+      : undefined,
+  ];
+}
+
+function outreachOrder(
+  input: z.infer<typeof outreachListSchema>,
+  facts: SqlRecordFacts,
+  defaultOrder: SQL[],
+  id: SQL,
+) {
+  if (input.sort === "default") return defaultOrder;
+  if (input.sort.startsWith("amount_") && facts.amount && facts.currency)
+    return [
+      sql`${facts.amount} IS NULL ASC`,
+      asc(facts.currency),
+      input.sort === "amount_desc" ? desc(facts.amount) : asc(facts.amount),
+      asc(s.people.name),
+      asc(id),
+    ];
+  return [
+    input.sort === "name_desc" ? desc(s.people.name) : asc(s.people.name),
+    asc(id),
+  ];
+}
 export const touchDraftSchema = touchScope.extend({
   version,
   draft: z.string().max(20000),
@@ -81,9 +179,17 @@ export const touchSnoozeSchema = touchScope.extend({
   dueAt: z.iso.datetime(),
 });
 export const enrollmentChangeSchema = scopeSchema.extend({
-  enrollmentId: z.uuid(),
-  version,
-  command: z.enum(["pause", "resume", "stop"]),
+  enrollmentId: z
+    .uuid()
+    .describe("Enrollment ID from get_sequence or get_outreach_queue."),
+  version: version.describe(
+    "Current enrollment.version from get_sequence.enrollments, or from get_outreach_queue.paused for a paused enrollment. Running queue entries contain touch versions, not enrollment versions. Refetch after CONFLICT before deciding whether to retry.",
+  ),
+  command: z
+    .enum(["pause", "resume", "stop"])
+    .describe(
+      "Pause a running enrollment, resume a paused enrollment, or permanently stop it and expire its open touches. Resume requires an active product/sequence and a contact who is not do-not-contact; it may plan the next eligible touch but never sends.",
+    ),
 });
 export const relationshipChangeSchema = scopeSchema
   .extend({
@@ -109,17 +215,62 @@ export const relationshipChangeSchema = scopeSchema
   )
   .refine(fitsRelationshipInput);
 const stepSchema = z.object({
-  number: z.number().int().min(1).max(20),
-  name: z.string().trim().min(1).max(100),
-  delayDays: z.number().int().min(0).max(365),
-  channel: z.enum(["gmail", "linkedin"]),
-  template: z.string().max(20000).default(""),
-  followUp: z.number().int().min(0).max(3),
+  number: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .describe(
+      "Unique step number used for ascending execution order and matching existing touches. Preserve the number when editing the same step; numbers need not be consecutive.",
+    ),
+  name: z.string().trim().min(1).max(100).describe("Human-readable step name."),
+  delayDays: z
+    .number()
+    .int()
+    .min(0)
+    .max(365)
+    .describe(
+      "Elapsed 24-hour days from enrollment for the first step, or from the previous step's sent/closed time for later steps. Zero makes the step immediately eligible; contact cooldown and quiet hours may move its due time later.",
+    ),
+  channel: z
+    .enum(["gmail", "linkedin"])
+    .describe(
+      "Channel for the planned touch. Provider connection/consent and current send readiness are checked separately when explicitly sending.",
+    ),
+  template: z
+    .string()
+    .max(20000)
+    .default("")
+    .describe(
+      "Initial draft text copied verbatim to planned touches; template variables are not rendered. Personalize with edit_touch_draft before approval and explicit sending.",
+    ),
+  followUp: z
+    .number()
+    .int()
+    .min(0)
+    .max(3)
+    .describe(
+      "Outreach display group: 0=first touch, 1=follow-up 1, 2=follow-up 2, 3=follow-up 3. Independent of number and delayDays; this label does not control execution order or timing.",
+    ),
 });
 export const sequenceUpdateSchema = scopeSchema.extend({
-  sequenceId: z.uuid(),
-  version,
-  name: z.string().trim().min(1).max(100).optional(),
+  sequenceId: z
+    .uuid()
+    .describe(
+      "Sequence ID from get_sequence or list_records with entity=sequences.",
+    ),
+  version: version.describe(
+    "Current sequence.version from get_sequence. Refetch after CONFLICT and review the latest sequence before resubmitting changes.",
+  ),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe(
+      "Replacement sequence name; omit to keep the current name. The complete steps array is still required.",
+    ),
   steps: z
     .array(stepSchema)
     .min(1)
@@ -127,16 +278,36 @@ export const sequenceUpdateSchema = scopeSchema.extend({
     .refine(
       (steps) =>
         new Set(steps.map((step) => step.number)).size === steps.length,
+    )
+    .describe(
+      "Complete replacement array of 1–10 steps with unique numbers, sorted by number on save. Include every step to retain; omitted steps are removed. Planned touch channel/template/followUp may change, and removed planned steps expire. Drafted/approved content and existing due times are not rewritten, but removing steps can complete enrollments and expire remaining open touches, clearing their approvals.",
     ),
 });
 export const sequenceCreateSchema = scopeSchema.extend({
-  productId: z.uuid(),
-  name: z.string().trim().min(1).max(100),
-  steps: sequenceUpdateSchema.shape.steps,
+  productId: z
+    .uuid()
+    .describe(
+      "Active product ID to own this sequence; requires write access to that product.",
+    ),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .describe("Human-readable sequence name."),
+  steps: sequenceUpdateSchema.shape.steps.describe(
+    "Initial array of 1–10 steps with unique numbers, sorted by number on save. Creating the sequence does not enroll relationships or send messages.",
+  ),
 });
 export const sequenceArchiveSchema = scopeSchema.extend({
-  sequenceId: z.uuid(),
-  version,
+  sequenceId: z
+    .uuid()
+    .describe(
+      "Sequence ID from get_sequence or list_records with entity=sequences.",
+    ),
+  version: version.describe(
+    "Current sequence.version from get_sequence; refetch after CONFLICT.",
+  ),
 });
 export const sequenceRestoreSchema = sequenceArchiveSchema;
 export const contactRulesSchema = z.object({
@@ -286,11 +457,42 @@ async function lastContacts(
       ),
     )
     .groupBy(s.relationships.personId);
-  return new Map(
+  const contacts = new Map(
     rows.flatMap((row) =>
       row.last ? [[row.personId, row.last.getTime()] as const] : [],
     ),
   );
+  // Imported/native outbound messages are actual contact history, even when
+  // they were never dispatched through a Gravity touch or delivery.
+  const messages = await db
+    .select({
+      personId: s.relationships.personId,
+      last: max(s.messages.occurredAt),
+    })
+    .from(s.messages)
+    .innerJoin(
+      s.conversations,
+      eq(s.conversations.id, s.messages.conversationId),
+    )
+    .innerJoin(
+      s.relationships,
+      eq(s.relationships.id, s.conversations.relationshipId),
+    )
+    .where(
+      and(
+        eq(s.messages.organizationId, organizationId),
+        inArray(s.relationships.personId, [...personIds]),
+        eq(s.messages.direction, "outbound"),
+      ),
+    )
+    .groupBy(s.relationships.personId);
+  for (const message of messages)
+    if (message.last)
+      contacts.set(
+        message.personId,
+        Math.max(contacts.get(message.personId) ?? 0, message.last.getTime()),
+      );
+  return contacts;
 }
 
 async function sentOnDay(
@@ -321,14 +523,47 @@ async function sentOnDay(
         eq(s.deliveries.organizationId, organizationId),
         eq(s.deliveries.ownerId, senderId),
         or(
-          inArray(s.deliveries.status, ["sending", "unknown", "accepted"]),
-          and(eq(s.deliveries.status, "sent"), isNull(s.deliveries.touchId)),
+          and(
+            inArray(s.deliveries.status, ["sending", "unknown", "accepted"]),
+            gte(
+              sql`coalesce(${s.deliveries.sentAt}, ${s.deliveries.createdAt})`,
+              new Date(start).toISOString(),
+            ),
+            lt(
+              sql`coalesce(${s.deliveries.sentAt}, ${s.deliveries.createdAt})`,
+              new Date(end).toISOString(),
+            ),
+          ),
+          and(
+            eq(s.deliveries.status, "sent"),
+            isNull(s.deliveries.touchId),
+            gte(s.deliveries.sentAt, new Date(start)),
+            lt(s.deliveries.sentAt, new Date(end)),
+          ),
         ),
-        gte(s.deliveries.createdAt, new Date(start)),
-        lt(s.deliveries.createdAt, new Date(end)),
       ),
     );
-  return (row?.count ?? 0) + (reservations?.count ?? 0);
+  const [observed] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(s.messages)
+    .innerJoin(
+      s.conversations,
+      eq(s.conversations.id, s.messages.conversationId),
+    )
+    .where(
+      and(
+        eq(s.messages.organizationId, organizationId),
+        eq(s.conversations.ownerId, senderId),
+        eq(s.messages.direction, "outbound"),
+        gte(s.messages.occurredAt, new Date(start)),
+        lt(s.messages.occurredAt, new Date(end)),
+        sql`NOT EXISTS (SELECT 1 FROM ${s.deliveries} WHERE ${s.deliveries.organizationId} = ${organizationId}::uuid AND (CASE WHEN ${s.deliveries.channel} = 'linkedin' THEN ${s.deliveries.externalThreadId} || ':' || ${s.deliveries.externalMessageId} ELSE ${s.deliveries.externalMessageId} END) = ${s.messages.providerMessageId} AND ${s.deliveries.connectionId} = ${s.messages.connectionId})`,
+        sql`NOT EXISTS (SELECT 1 FROM ${s.touches} WHERE ${s.touches.organizationId} = ${organizationId}::uuid AND ${s.touches.externalMessageId} = ${s.messages.providerMessageId} AND ${s.touches.channel} = ${s.conversations.channel} AND ${s.messages.connectionId} IS NOT NULL)`,
+      ),
+    );
+  return (
+    (row?.count ?? 0) + (reservations?.count ?? 0) + (observed?.count ?? 0)
+  );
 }
 
 async function expireOpenTouches(
@@ -681,14 +916,36 @@ export async function outboundGate(
   senderId: string,
   person: Pick<
     typeof s.people.$inferSelect,
-    "id" | "doNotContact" | "timeZone"
+    "id" | "doNotContact" | "timeZone" | "email" | "otherEmails" | "linkedinUrl"
   >,
   now: number,
 ) {
-  return (await gateContext(db, organizationId, [person.id], now))(
-    { senderId },
-    person,
-  );
+  const identities = await contactIdentityIds(db, organizationId, person);
+  const [rules, zone, contacts] = await Promise.all([
+    readContactRules(db, organizationId),
+    workspaceZone(db, organizationId),
+    lastContacts(db, organizationId, identities),
+  ]);
+  const [excluded] = await db
+    .select({ id: s.people.id })
+    .from(s.people)
+    .where(
+      and(
+        eq(s.people.organizationId, organizationId),
+        inArray(s.people.id, identities),
+        eq(s.people.doNotContact, true),
+      ),
+    )
+    .limit(1);
+  return sendWindow({
+    now,
+    doNotContact: person.doNotContact || !!excluded,
+    timeZone: person.timeZone ?? zone,
+    workspaceTimeZone: zone,
+    lastContactAt: contacts.size ? Math.max(...contacts.values()) : null,
+    sentTodayBySender: await sentOnDay(db, organizationId, senderId, now, zone),
+    rules,
+  });
 }
 
 export async function pauseForReply(
@@ -773,18 +1030,7 @@ export async function peopleByEmail(
   organizationId: string,
   email: string,
 ) {
-  const lowered = email.trim().toLowerCase();
-  if (!lowered) return [];
-  const rows = await db
-    .select({ id: s.people.id })
-    .from(s.people)
-    .where(
-      and(
-        eq(s.people.organizationId, organizationId),
-        sql`(lower(${s.people.email}) = ${lowered} OR ${s.people.otherEmails} ?| array[${lowered}]::text[])`,
-      ),
-    );
-  return rows.map((row) => row.id);
+  return contactIdsForParticipants(db, organizationId, [email]);
 }
 
 export class OutreachService {
@@ -795,14 +1041,15 @@ export class OutreachService {
 
   async advanceEnrollments(
     principal: Principal,
-    input: { organizationId: string },
+    input: z.infer<typeof scopeSchema>,
   ) {
+    input = scopeSchema.parse(input);
     requireWriteActor(principal);
     const permission = await authorize(
       this.db,
       principal,
       input.organizationId,
-      undefined,
+      input.productId,
       true,
     );
     return this.db.transaction((tx) =>
@@ -810,7 +1057,11 @@ export class OutreachService {
         tx,
         principal,
         input.organizationId,
-        permission.products.map((product) => product.id),
+        permission.products
+          .filter(
+            (product) => !input.productId || product.id === input.productId,
+          )
+          .map((product) => product.id),
         this.clock(),
       ),
     );
@@ -976,7 +1227,11 @@ export class OutreachService {
     });
   }
 
-  async dueTouches(principal: Principal, scope: z.infer<typeof scopeSchema>) {
+  async dueTouches(
+    principal: Principal,
+    input: z.input<typeof outreachListSchema>,
+  ) {
+    const scope = outreachListSchema.parse(input);
     const permission = await authorize(
       this.db,
       principal,
@@ -986,6 +1241,11 @@ export class OutreachService {
     const productIds = permission.products
       .map((product) => product.id)
       .filter((id) => !scope.productId || id === scope.productId);
+    const facts = relationshipFactSql(
+      sql`${s.touches.relationshipId}`,
+      scope.organizationId,
+      productIds,
+    );
     const now = this.clock();
     const zone = await workspaceZone(this.db, scope.organizationId);
     const [, endOfToday] = zonedDayBounds(now, zone);
@@ -1032,9 +1292,21 @@ export class OutreachService {
               lt(s.touches.dueAt, new Date(endOfToday)),
               eq(s.enrollments.status, "running"),
               isNull(s.people.archivedAt),
+              scope.channel ? eq(s.touches.channel, scope.channel) : undefined,
+              ...outreachFilters(scope, facts, sql`${s.touches.status}`, [
+                sql`${s.people.name}`,
+                sql`${s.touches.draft}`,
+              ]),
             ),
           )
-          .orderBy(asc(s.touches.dueAt), asc(s.touches.id))
+          .orderBy(
+            ...outreachOrder(
+              scope,
+              facts,
+              [asc(s.touches.dueAt), asc(s.touches.id)],
+              sql`${s.touches.id}`,
+            ),
+          )
       : [];
     const gate = await gateContext(
       this.db,
@@ -1063,7 +1335,8 @@ export class OutreachService {
     };
   }
 
-  async queue(principal: Principal, scope: z.infer<typeof scopeSchema>) {
+  async queue(principal: Principal, input: z.input<typeof outreachListSchema>) {
+    const scope = outreachListSchema.parse(input);
     const permission = await authorize(
       this.db,
       principal,
@@ -1073,6 +1346,11 @@ export class OutreachService {
     const productIds = permission.products
       .map((product) => product.id)
       .filter((id) => !scope.productId || id === scope.productId);
+    const facts = relationshipFactSql(
+      sql`${s.touches.relationshipId}`,
+      scope.organizationId,
+      productIds,
+    );
     const now = this.clock();
     const asOf = new Date(now).toISOString();
     if (!productIds.length)
@@ -1127,6 +1405,11 @@ export class OutreachService {
         and(
           eq(s.touches.organizationId, scope.organizationId),
           inArray(s.touches.productId, productIds),
+          scope.channel ? eq(s.touches.channel, scope.channel) : undefined,
+          ...outreachFilters(scope, facts, sql`${s.touches.status}`, [
+            sql`${s.people.name}`,
+            sql`${s.touches.draft}`,
+          ]),
           or(
             and(
               inArray(s.touches.status, [...openStatuses]),
@@ -1140,7 +1423,14 @@ export class OutreachService {
           ),
         ),
       )
-      .orderBy(asc(s.touches.dueAt), asc(s.touches.id));
+      .orderBy(
+        ...outreachOrder(
+          scope,
+          facts,
+          [asc(s.touches.dueAt), asc(s.touches.id)],
+          sql`${s.touches.id}`,
+        ),
+      );
     const gate = await gateContext(
       this.db,
       scope.organizationId,
@@ -1165,6 +1455,11 @@ export class OutreachService {
         const window = await gate(touch, who);
         return { ...base, allowed: window.allowed, ...gateData(window) };
       }),
+    );
+    const pausedFacts = relationshipFactSql(
+      sql`${s.enrollments.relationshipId}`,
+      scope.organizationId,
+      productIds,
     );
     const paused = await this.db
       .select({
@@ -1201,9 +1496,23 @@ export class OutreachService {
           eq(s.enrollments.organizationId, scope.organizationId),
           inArray(s.enrollments.productId, productIds),
           eq(s.enrollments.status, "paused"),
+          scope.channel
+            ? sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${s.sequences.steps}) AS step(value) WHERE step.value->>'channel' = ${scope.channel})`
+            : undefined,
+          ...outreachFilters(scope, pausedFacts, sql`${s.enrollments.status}`, [
+            sql`${s.people.name}`,
+            sql`${s.sequences.name}`,
+          ]),
         ),
       )
-      .orderBy(desc(s.relationships.lastInboundAt), asc(s.enrollments.id));
+      .orderBy(
+        ...outreachOrder(
+          scope,
+          pausedFacts,
+          [desc(s.relationships.lastInboundAt), asc(s.enrollments.id)],
+          sql`${s.enrollments.id}`,
+        ),
+      );
     return {
       drafts: listed.filter(
         (touch) => touch.status === "planned" || touch.status === "drafted",
@@ -1211,8 +1520,10 @@ export class OutreachService {
       approved: listed.filter((touch) => touch.status === "approved"),
       sent: listed
         .filter((touch) => touch.status === "sent")
-        .sort(
-          (a, b) => (b.sentAt?.getTime() ?? 0) - (a.sentAt?.getTime() ?? 0),
+        .sort((a, b) =>
+          scope.sort === "default"
+            ? (b.sentAt?.getTime() ?? 0) - (a.sentAt?.getTime() ?? 0)
+            : 0,
         ),
       paused: paused.map(({ enrollment, person: who, ...row }) => ({
         ...enrollment,
@@ -1969,6 +2280,12 @@ export class OutreachService {
         )
         .returning();
       if (!updated) throw new DomainError("CONFLICT", 409);
+      await recordContactSubmission(tx, principal, {
+        organizationId: input.organizationId,
+        productId: relationship.productId,
+        personId: relationship.personId,
+        kind: "updated",
+      });
       const edited =
         input.context !== undefined ||
         input.contextDetails !== undefined ||
@@ -2425,6 +2742,11 @@ export class OutreachService {
         )
         .returning();
       if (!updated) throw new DomainError("CONFLICT", 409);
+      await recordContactSubmission(tx, principal, {
+        organizationId: input.organizationId,
+        personId: person.id,
+        kind: "updated",
+      });
       await tx.insert(s.changeEvents).values({
         organizationId: input.organizationId,
         actorId: principal.userId,

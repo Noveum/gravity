@@ -9,11 +9,15 @@ export function RecordActions({
   onEdit,
   onArchive,
   inlineEditing = false,
+  archiveLabel = t.archive,
+  archiveConfirm = t.inlineEditing.archiveConfirm,
 }: {
   busy: boolean;
   onEdit: () => void;
   onArchive: () => void;
   inlineEditing?: boolean;
+  archiveLabel?: string;
+  archiveConfirm?: string;
 }) {
   const [confirming, setConfirming] = useState(false);
   return (
@@ -40,15 +44,12 @@ export function RecordActions({
         )}
         <MenuItem disabled={busy} onSelect={() => setConfirming(true)}>
           <Archive size={13} aria-hidden />
-          {t.archive}
+          {archiveLabel}
         </MenuItem>
       </DropdownMenu>
       {confirming && (
-        <fieldset
-          className="inline-archive"
-          aria-label={t.inlineEditing.archiveConfirm}
-        >
-          <p>{t.inlineEditing.archiveConfirm}</p>
+        <fieldset className="inline-archive" aria-label={archiveConfirm}>
+          <p>{archiveConfirm}</p>
           <button
             type="button"
             disabled={busy}

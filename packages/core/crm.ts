@@ -20,6 +20,19 @@ import type { Database } from "../database/client";
 import * as s from "../database/schema";
 import t from "../i18n/translations/en.json";
 import { overview as calculateOverview } from "./analytics";
+import {
+  attributionHash,
+  ContactAttributionService,
+  importSourceSchema,
+  importSubmission,
+  recordContactSubmission,
+} from "./contact-attribution";
+import {
+  contactIdentityIds,
+  lockContactDirectory,
+  messageHistoryCursor,
+  messageHistoryCursorTimestamp,
+} from "./contact-history";
 import { draftHash, draftSubject } from "./drafts";
 import { serialize } from "./dto";
 import {
@@ -34,12 +47,14 @@ import { tagsSchema } from "./record-tags";
 import {
   emptyRelationshipDetails,
   fitsRelationshipInput,
+  type RelationshipField,
   relationshipDetailsPatchSchema,
   relationshipDetailsSchema,
 } from "./relationship-context";
 import {
   activeCompany,
   assertActiveRelationships,
+  clearApprovals,
   companyVisible,
   emailTaken,
   personVisible,
@@ -121,6 +136,7 @@ export const personSchema = scopeSchema
     contextDetails: relationshipDetailsPatchSchema.optional(),
     review: z.boolean().default(true),
     channel: z.enum(["gmail", "linkedin"]).default("gmail"),
+    importSource: importSourceSchema.optional(),
   })
   .refine((value) => !!value.personId !== !!value.name, {
     message: "Provide a new name or existing person",
@@ -381,6 +397,47 @@ export class CrmService {
         .from(s.organizations)
         .where(eq(s.organizations.id, input.organizationId))
         .for("update");
+      const requestHash = attributionHash({
+        operation: "create-person",
+        ...personSchema.parse(input),
+      });
+      const submission = await importSubmission(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        input.importSource,
+        requestHash,
+      );
+      if (submission?.previous) {
+        const [priorPerson] = await tx
+          .select()
+          .from(s.people)
+          .where(
+            and(
+              eq(s.people.id, submission.previous.personId),
+              eq(s.people.organizationId, input.organizationId),
+            ),
+          );
+        const [priorRelationship] = await tx
+          .select()
+          .from(s.relationships)
+          .where(
+            and(
+              eq(s.relationships.personId, submission.previous.personId),
+              eq(s.relationships.organizationId, input.organizationId),
+              eq(s.relationships.productId, input.productId),
+            ),
+          );
+        if (!priorPerson || priorPerson.archivedAt || !priorRelationship)
+          throw new DomainError("RECORD_ARCHIVED", 409);
+        return {
+          personId: priorPerson.id,
+          relationshipId: priorRelationship.id,
+          productId: input.productId,
+        };
+      }
+      const created = !input.personId;
       let personId = input.personId;
       const productIds = permission.products.map((p) => p.id);
       if (personId) {
@@ -456,6 +513,15 @@ export class CrmService {
         .onConflictDoNothing()
         .returning();
       if (!relationship) throw new DomainError("CONFLICT", 409);
+      await recordContactSubmission(tx, principal, {
+        organizationId: input.organizationId,
+        productId: input.productId,
+        personId,
+        kind: created ? "created" : "submitted",
+        submission,
+        sourceRecordId: input.importSource?.sourceRecordId,
+        requestHash,
+      });
       if (input.review)
         await tx.insert(s.actions).values({
           organizationId: input.organizationId,
@@ -580,6 +646,9 @@ export class CrmService {
       this.db
         .select({
           ...relationshipColumns,
+          contextFields: sql<
+            RelationshipField[]
+          >`coalesce(${s.relationships.contextDetails}->'fields', '[]'::jsonb)`,
           context: compact ? sql<string>`''` : s.relationships.context,
         })
         .from(s.relationships)
@@ -589,6 +658,9 @@ export class CrmService {
         .select({
           ...getTableColumns(s.actions),
           reason: compact ? sql<string>`''` : s.actions.reason,
+          reasonSource: compact
+            ? sql<string | null>`null`
+            : s.actions.reasonSource,
         })
         .from(s.actions)
         .where(
@@ -843,8 +915,15 @@ export class CrmService {
           archivedCompanies.get(companyId) ??
           [],
       );
+    const internalTasks = await new (
+      await import("./internal-tasks")
+    ).InternalTaskService(this.db).list(principal, scope);
     return {
+      internalTasks,
       compact,
+      contactAttribution: await new ContactAttributionService(
+        this.db,
+      ).summaries(principal, scope.organizationId, ids),
       products: permission.products.filter((product) => !product.archivedAt),
       archivedProducts: permission.products.filter(
         (product) => product.archivedAt,
@@ -879,7 +958,11 @@ export class CrmService {
           }))
         : activeRelationships,
       actions: compact
-        ? active(actions).map((action) => ({ ...action, reason: "" }))
+        ? active(actions).map((action) => ({
+            ...action,
+            reason: "",
+            reasonSource: null,
+          }))
         : active(actions),
       sequences,
       enrollments: active(enrollments),
@@ -889,7 +972,11 @@ export class CrmService {
       stages: stages.filter((stage) => stage.pipeline === "deal"),
       outreachStages: stages.filter((stage) => stage.pipeline === "outreach"),
       meetings: active(meetings),
-      opportunities: active(opportunities),
+      opportunities: active(opportunities).filter((deal) => !deal.archivedAt),
+      archivedOpportunities:
+        principal.source === "mcp" && principal.readOnly !== false
+          ? []
+          : active(opportunities).filter((deal) => deal.archivedAt),
       pipelines,
       messageStats,
       touchStats: active(touchStats),
@@ -952,6 +1039,7 @@ export class CrmService {
       .where(
         and(
           eq(s.conversations.organizationId, organizationId),
+          eq(s.conversations.productId, relationship.productId),
           eq(s.conversations.relationshipId, relationshipId),
           or(
             eq(s.conversations.visibility, "product"),
@@ -959,14 +1047,17 @@ export class CrmService {
           ),
         ),
       );
-    const [messages, evidence, actions] = await Promise.all([
+    const [messageRows, evidence, actions] = await Promise.all([
       this.db
         .select({
           id: s.messages.id,
           conversationId: s.messages.conversationId,
           direction: s.messages.direction,
           body: s.messages.body,
+          providerMessageId: s.messages.providerMessageId,
+          provenance: s.conversations.provenance,
           occurredAt: s.messages.occurredAt,
+          cursorOccurredAt: messageHistoryCursorTimestamp,
           channel: s.conversations.channel,
         })
         .from(s.messages)
@@ -977,14 +1068,18 @@ export class CrmService {
         .where(
           and(
             eq(s.messages.organizationId, organizationId),
-            inArray(
-              s.messages.conversationId,
-              sources.map((source) => source.id),
+            eq(s.messages.productId, relationship.productId),
+            eq(s.conversations.organizationId, organizationId),
+            eq(s.conversations.productId, relationship.productId),
+            eq(s.conversations.relationshipId, relationshipId),
+            or(
+              eq(s.conversations.visibility, "product"),
+              eq(s.conversations.ownerId, principal.userId),
             ),
           ),
         )
-        .orderBy(desc(s.messages.occurredAt))
-        .limit(30),
+        .orderBy(desc(s.messages.occurredAt), desc(s.messages.id))
+        .limit(31),
       this.db
         .select()
         .from(s.evidence)
@@ -1000,17 +1095,35 @@ export class CrmService {
         .where(
           and(
             eq(s.actions.organizationId, organizationId),
+            eq(s.actions.productId, relationship.productId),
             eq(s.actions.relationshipId, relationshipId),
             or(
               isNull(s.actions.sourceConversationId),
               inArray(
                 s.actions.sourceConversationId,
-                sources.map((source) => source.id),
+                this.db
+                  .select({ id: s.conversations.id })
+                  .from(s.conversations)
+                  .where(
+                    and(
+                      eq(s.conversations.organizationId, organizationId),
+                      eq(s.conversations.productId, relationship.productId),
+                      eq(s.conversations.relationshipId, relationshipId),
+                      or(
+                        eq(s.conversations.visibility, "product"),
+                        eq(s.conversations.ownerId, principal.userId),
+                      ),
+                    ),
+                  ),
               ),
             ),
           ),
         ),
     ]);
+    const messagePage = messageRows.slice(0, 30);
+    const messages = messagePage.map(
+      ({ cursorOccurredAt: _, ...message }) => message,
+    );
     const [company] = person?.companyId
       ? await this.db
           .select()
@@ -1052,6 +1165,7 @@ export class CrmService {
           and(
             eq(s.opportunities.organizationId, organizationId),
             eq(s.opportunities.relationshipId, relationshipId),
+            isNull(s.opportunities.archivedAt),
           ),
         ),
     ]);
@@ -1064,16 +1178,23 @@ export class CrmService {
       meetings,
       opportunities,
       messages,
-      conversations: sources.map(({ id, ownerId, channel, visibility }) => ({
-        id,
-        ownerId,
-        channel,
-        visibility,
-        preview:
-          messages
-            .find((message) => message.conversationId === id)
-            ?.body.slice(0, 160) ?? null,
-      })),
+      messagesNextCursor:
+        messageRows.length > 30
+          ? messageHistoryCursor(messagePage.at(-1))
+          : null,
+      conversations: sources.map(
+        ({ id, ownerId, channel, visibility, provenance }) => ({
+          id,
+          ownerId,
+          channel,
+          visibility,
+          provenance,
+          preview:
+            messages
+              .find((message) => message.conversationId === id)
+              ?.body.slice(0, 160) ?? null,
+        }),
+      ),
       evidence,
       actions,
       asOf: new Date().toISOString(),
@@ -1094,18 +1215,63 @@ export class CrmService {
         value.productId,
         true,
       );
-      const [source] = await tx
-        .select()
-        .from(s.conversations)
-        .where(
+      await lockContactDirectory(tx, value.organizationId);
+      await authorize(
+        tx,
+        principal,
+        value.organizationId,
+        value.productId,
+        true,
+      );
+      const sourceRow = () =>
+        tx
+          .select()
+          .from(s.conversations)
+          .where(
+            and(
+              eq(s.conversations.id, value.conversationId),
+              eq(s.conversations.organizationId, value.organizationId),
+              eq(s.conversations.productId, value.productId),
+              eq(s.conversations.ownerId, principal.userId),
+            ),
+          );
+      const [found] = await sourceRow();
+      if (!found) throw new DomainError("NOT_FOUND", 404);
+      const [subject] = await tx
+        .select({ person: getTableColumns(s.people) })
+        .from(s.relationships)
+        .innerJoin(
+          s.people,
           and(
-            eq(s.conversations.id, value.conversationId),
-            eq(s.conversations.organizationId, value.organizationId),
-            eq(s.conversations.productId, value.productId),
-            eq(s.conversations.ownerId, principal.userId),
+            eq(s.people.organizationId, s.relationships.organizationId),
+            eq(s.people.id, s.relationships.personId),
           ),
         )
+        .where(
+          and(
+            eq(s.relationships.organizationId, value.organizationId),
+            eq(s.relationships.productId, value.productId),
+            eq(s.relationships.id, found.relationshipId),
+          ),
+        );
+      if (!subject) throw new DomainError("NOT_FOUND", 404);
+      const identities = await contactIdentityIds(
+        tx,
+        value.organizationId,
+        subject.person,
+      );
+      await tx
+        .select({ id: s.people.id })
+        .from(s.people)
+        .where(
+          and(
+            eq(s.people.organizationId, value.organizationId),
+            inArray(s.people.id, identities),
+          ),
+        )
+        .orderBy(asc(s.people.id))
         .for("update");
+      const [source] = await sourceRow().for("update");
       // Product access (including admin access) never transfers mailbox ownership.
       if (!source) throw new DomainError("NOT_FOUND", 404);
       if (source.visibility !== value.expectedVisibility)
@@ -1115,6 +1281,8 @@ export class CrmService {
         .update(s.conversations)
         .set({ visibility: value.visibility })
         .where(eq(s.conversations.id, source.id));
+      for (const personId of identities)
+        await clearApprovals(tx, principal, value.organizationId, personId);
       await tx.insert(s.changeEvents).values({
         organizationId: source.organizationId,
         productId: source.productId,
@@ -1239,11 +1407,50 @@ export class CrmService {
       const [found] = await actionRow();
       if (!found) throw new DomainError("NOT_FOUND", 404);
       await authorizeAction(tx, principal, found);
+      if (input.productId && input.productId !== found.productId)
+        throw new DomainError("FORBIDDEN", 403);
+      await lockContactDirectory(tx, input.organizationId);
+      const [subject] = await tx
+        .select({ person: getTableColumns(s.people) })
+        .from(s.relationships)
+        .innerJoin(
+          s.people,
+          and(
+            eq(s.people.organizationId, s.relationships.organizationId),
+            eq(s.people.id, s.relationships.personId),
+          ),
+        )
+        .where(
+          and(
+            eq(s.relationships.organizationId, input.organizationId),
+            eq(s.relationships.id, found.relationshipId),
+          ),
+        );
+      if (!subject) throw new DomainError("NOT_FOUND", 404);
+      const identities = await contactIdentityIds(
+        tx,
+        input.organizationId,
+        subject.person,
+      );
+      // History ingestion and delivery claims take these locks before action rows.
+      // Approval must observe the same serialized history state.
+      await tx
+        .select({ id: s.people.id })
+        .from(s.people)
+        .where(
+          and(
+            eq(s.people.organizationId, input.organizationId),
+            inArray(s.people.id, identities),
+          ),
+        )
+        .orderBy(asc(s.people.id))
+        .for("update");
       await assertActiveRelationships(tx, input.organizationId, [
         found.relationshipId,
       ]);
       const [action] = await actionRow().for("update");
       if (!action) throw new DomainError("NOT_FOUND", 404);
+      await authorizeAction(tx, principal, action);
       if (action.version !== input.version)
         throw new DomainError("CONFLICT", 409);
       const [dispatch] = await tx
@@ -1724,6 +1931,14 @@ export class CrmService {
         input.productId,
         true,
       );
+      await lockContactDirectory(tx, input.organizationId);
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
       if (!input.id)
         await assertProductActive(tx, input.organizationId, input.productId);
       const [relationship] = await tx
@@ -1786,6 +2001,7 @@ export class CrmService {
         throw new DomainError("FORBIDDEN", 403);
       if (existing && existing.version !== input.version)
         throw new DomainError("CONFLICT", 409);
+      if (existing?.archivedAt) throw new DomainError("RECORD_ARCHIVED", 409);
       const { id, version: _version, ...values } = input;
       const now = new Date();
       const fields = {

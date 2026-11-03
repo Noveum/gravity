@@ -99,6 +99,39 @@ function read(query: string, user = demoUser) {
     }),
   );
 }
+test("HTTP contact updates preserve an omitted summary and allow explicit clearing", async () => {
+  const createdResponse = await crm({
+    operation: "person",
+    organizationId: demoId(1),
+    productId: demoId(10),
+    name: "Fictional HTTP notes",
+    review: false,
+  });
+  expect(createdResponse.status).toBe(200);
+  const created = await createdResponse.json();
+  const save = async (version: number, changes: object) => {
+    const response = await crm({
+      operation: "person-update",
+      organizationId: demoId(1),
+      productId: demoId(10),
+      personId: created.personId,
+      version,
+      name: "Fictional HTTP notes",
+      ...changes,
+    });
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const original = await save(1, {
+    summary: "Fictional HTTP summary retained.",
+  });
+  const renamed = await save(original.version, {
+    name: "Fictional HTTP renamed",
+  });
+  expect(renamed.summary).toBe("Fictional HTTP summary retained.");
+  const cleared = await save(renamed.version, { summary: "" });
+  expect(cleared.summary).toBe("");
+});
 
 test("analytics HTTP reads and versioned deal mutations enforce scope and return usable fields", async () => {
   const report = await read(
@@ -632,7 +665,7 @@ describe("workspace links", () => {
       }),
     );
   }
-  test("a member's workspace link stores the slug and brand, then lands on a safe path", async () => {
+  test("a member's workspace link stores the slug and session product scope, then lands on a safe path", async () => {
     const response = await follow(
       `workspace=lunar&productId=${demoId(13)}&next=${encodeURIComponent("/people?x=1")}`,
     );
@@ -640,7 +673,7 @@ describe("workspace links", () => {
     expect(response.headers.get("location")).toBe("/people?x=1");
     expect(response.headers.getSetCookie()).toEqual([
       "gravity-workspace=lunar; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
-      `gravity-brand=${demoId(13)}; Path=/; Max-Age=31536000; SameSite=Lax; Secure`,
+      `gravity-brand=${demoId(13)}; Path=/; SameSite=Lax; Secure`,
     ]);
     const byId = await follow(`organizationId=${demoId(1)}`);
     expect(byId.headers.get("location")).toBe("/actions");

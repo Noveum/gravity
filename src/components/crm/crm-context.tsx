@@ -25,6 +25,7 @@ import {
   sectionPath,
 } from "../routes";
 import { useToasts } from "../ui/toaster";
+import { currentViewQuery, replaceViewQuery } from "../view-query";
 import { rememberBrand, rememberWorkspace } from "../workspace-preference";
 import { DraftBuffersProvider, useDraftBufferActions } from "./draft-buffers";
 import { LocalRecordVersions } from "./local-record-versions";
@@ -69,7 +70,9 @@ export type ViewVerb =
   | "touch-undo"
   | "move-next"
   | "move-previous"
-  | "move-to";
+  | "move-to"
+  | "board-layout"
+  | "list-layout";
 export type ViewVerbs = Partial<Record<ViewVerb, () => boolean>>;
 export interface RecordDialogState {
   kind: "person" | "company" | "meeting" | "opportunity";
@@ -110,6 +113,10 @@ function useCrmState({
   const [organizations, setOrganizations] = useState(initialOrganizations);
   const [organizationId, setOrganizationId] = useState(initialOrganizationId);
   const [productId, setProductId] = useState(initialProductId);
+  useEffect(() => {
+    // Convert existing persistent product cookies to the current browser session.
+    rememberBrand(productId);
+  }, [productId]);
   const [peekState, setPeekState] = useState(() => {
     const blocked =
       pathname === homePath && unfiltered
@@ -371,7 +378,27 @@ function useCrmState({
     if (!canLeaveEditor()) return;
     resetRecordState();
     setProductId(id);
-    rememberBrand(id);
+    setSearchState({ path: pathname, text: "" });
+    const next = currentViewQuery();
+    for (const key of [
+      "pipeline",
+      "stage",
+      "owner",
+      "tag",
+      "submittedBy",
+      "sourceMemberId",
+      "attribution",
+      "qualification",
+      "status",
+      "currency",
+      "minimum",
+      "maximum",
+      "size",
+      "sort",
+      "fieldFilters",
+    ])
+      next.delete(key);
+    replaceViewQuery(next);
   }
   function rememberRecord() {
     if (peek.relationshipId || peek.personId || peek.companyId || peek.fileId)
@@ -585,9 +612,18 @@ function useCrmState({
             ? patchRecords(previous, changed.operation ?? "", result)
             : previous,
         );
-      if (changed.operation === "action") {
+      if (["action", "action-details"].includes(changed.operation ?? "")) {
         const updatedAction = result as Snapshot["actions"][number];
-        draftBuffers.drop(updatedAction.id, changed.actionId ?? "");
+        if (
+          changed.operation === "action-details" &&
+          typeof changed.version === "number"
+        )
+          draftBuffers.rebase(
+            updatedAction.id,
+            changed.version,
+            updatedAction.version,
+          );
+        else draftBuffers.drop(updatedAction.id, changed.actionId ?? "");
         setData((previous) =>
           previous
             ? {
@@ -887,6 +923,23 @@ export function patchRecords(
         result as Snapshot["meetings"][number],
       ),
     };
+  if (
+    operation === "opportunity-delete" ||
+    operation === "opportunity-restore"
+  ) {
+    const deal = result as Snapshot["opportunities"][number];
+    return {
+      ...snapshot,
+      opportunities: deal.archivedAt
+        ? snapshot.opportunities.filter((row) => row.id !== deal.id)
+        : upsert(snapshot.opportunities, deal),
+      archivedOpportunities: deal.archivedAt
+        ? upsert(snapshot.archivedOpportunities ?? [], deal)
+        : (snapshot.archivedOpportunities ?? []).filter(
+            (row) => row.id !== deal.id,
+          ),
+    };
+  }
   if (
     operation === "deal" ||
     operation === "opportunity" ||

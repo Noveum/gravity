@@ -4,7 +4,6 @@ import {
   type Movement,
   toggleSelection,
 } from "@crm/core/shortcuts";
-import t from "@crm/i18n/translations/en.json";
 import type { RefObject } from "react";
 import { toggleTheme } from "../appearance";
 import { type RecordTab, useCrm } from "../crm/crm-context";
@@ -177,12 +176,14 @@ export function useShellShortcuts({
       return true;
     },
     product: () => {
-      const filter = document.querySelector<HTMLSelectElement>(
-        `select[aria-label="${t.product}"]`,
+      const filter = document.querySelector<HTMLElement>(
+        `.product-picker [role="combobox"]`,
       );
       filter?.focus();
       return !!filter;
     },
+    "board-layout": () => crm.runVerb("board-layout"),
+    "list-layout": () => crm.runVerb("list-layout"),
     back: backOut,
     next: move("next"),
     previous: move("previous"),

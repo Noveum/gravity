@@ -7,6 +7,12 @@ import {
 } from "react";
 
 const listeners = new Set<() => void>();
+// Next integrates native history updates with useSearchParams. Mirror that behavior here.
+const nativeReplaceState = window.history.replaceState.bind(window.history);
+window.history.replaceState = (...args) => {
+  nativeReplaceState(...args);
+  emit();
+};
 function emit() {
   for (const listener of listeners) listener();
 }

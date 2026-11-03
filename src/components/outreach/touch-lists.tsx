@@ -1,7 +1,6 @@
 "use client";
 import t from "@crm/i18n/translations/en.json";
 import type { ReactNode } from "react";
-import { useCrm } from "../crm/crm-context";
 import type { Touch } from "./outreach-data";
 import { followUpLabel } from "./touch-labels";
 import { touchOverdue } from "./touch-row";
@@ -46,22 +45,15 @@ export function TouchGroup({
 
 export function FollowUpGroups<T extends Touch>({
   touches,
-  now,
   row,
   all = touches,
 }: {
   touches: readonly T[];
-  now: number;
   row: (touch: T) => ReactNode;
   all?: readonly T[];
 }) {
-  const { timeZone } = useCrm();
   return [0, 1, 2, 3].map((followUp) => {
-    const list = byUrgency(
-      touches.filter((touch) => touch.followUp === followUp),
-      now,
-      timeZone,
-    );
+    const list = touches.filter((touch) => touch.followUp === followUp);
     if (!list.length) return null;
     return (
       <TouchGroup

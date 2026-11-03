@@ -32,7 +32,14 @@ export function CompaniesView() {
   const index = useRecordIndex();
   const browser = useRecordBrowser(
     companies,
-    (company) => company,
+    (company) => ({
+      ...company,
+      fieldGroups: (index.byCompany.get(company.id) ?? []).flatMap((person) =>
+        (index.byPerson.get(person.id) ?? []).map(
+          (relationship) => relationship.contextFields ?? [],
+        ),
+      ),
+    }),
     (company) => company.name,
   );
   usePruneSelection(browser.page.items.map((item) => item.id));

@@ -1,3 +1,5 @@
+export const MAX_CSV_IMPORT_ROWS = 1000;
+
 export const allowedFields = [
   "name",
   "email",
@@ -35,7 +37,11 @@ export function parseCsv(text: string): ParsedCsv {
   };
   const finishRow = () => {
     finishField();
-    if (row.some(Boolean)) lines.push(row);
+    if (row.some(Boolean)) {
+      lines.push(row);
+      if (lines.length > MAX_CSV_IMPORT_ROWS + 1)
+        throw new Error("CSV_ROW_LIMIT");
+    }
     row = [];
   };
   for (let i = 0; i < clean.length; i++) {

@@ -1,5 +1,9 @@
 "use client";
-import { detectColumnMapping, parseCsv } from "@crm/core/csv";
+import {
+  detectColumnMapping,
+  MAX_CSV_IMPORT_ROWS,
+  parseCsv,
+} from "@crm/core/csv";
 import type { ClientSnapshot } from "@crm/core/dto";
 import t from "@crm/i18n/translations/en.json";
 import {
@@ -11,7 +15,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { errorText, requestJson } from "../client-api";
 import { useModalLifecycle } from "../modal-lifecycle";
 import { Select } from "../ui/select";
@@ -26,6 +30,16 @@ import type {
   ImportResult as ImportResponse,
   PreviewResult as PreviewResponse,
 } from "@crm/core/csv-import";
+
+type ReviewedInput = {
+  organizationId: string;
+  productId: string;
+  csvText: string;
+  columnMapping: Record<string, string>;
+  purpose: "buyer" | "partner";
+  mode: "contacts" | "companies";
+  label: string;
+};
 
 const issueText = (code: string) =>
   t.csvIssues[code as keyof typeof t.csvIssues] ?? t.errors.INVALID_INPUT;
@@ -62,6 +76,18 @@ export function CsvImportDialog({
   useModalLifecycle(modal);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileGeneration = useRef(0);
+  const readingFile = useRef(false);
+  const [fileReading, setFileReading] = useState(false);
+  const [reviewedInput, setReviewedInput] = useState<ReviewedInput | null>(
+    null,
+  );
+  useEffect(
+    () => () => {
+      fileGeneration.current++;
+    },
+    [],
+  );
   const [file, setFile] = useState<File | null>(null);
   const [csvText, setCsvText] = useState("");
   const [productId, setProductId] = useState(
@@ -103,10 +129,23 @@ export function CsvImportDialog({
   }
 
   async function handleFileSelect(selectedFile: File) {
+    const generation = ++fileGeneration.current;
+    readingFile.current = true;
+    setFileReading(true);
     setError("");
     setFile(selectedFile);
+    setCsvText("");
+    setHeaders([]);
+    setColumnMapping({});
+    setTotalRows(0);
+    setPreview(null);
+    setReviewedInput(null);
+    setSummary(null);
+    setStep("upload");
+    setLoading(false);
     try {
       const text = await readFileText(selectedFile);
+      if (generation !== fileGeneration.current) return;
       const parsed = parseCsv(text);
       setCsvText(text);
       setHeaders(parsed.headers);
@@ -114,16 +153,23 @@ export function CsvImportDialog({
       const detected = detectColumnMapping(parsed.headers);
       setColumnMapping(detected);
     } catch (err) {
+      if (generation !== fileGeneration.current) return;
       setFile(null);
       setCsvText("");
       setHeaders([]);
       setColumnMapping({});
       setTotalRows(0);
       setError(errorText(err));
+    } finally {
+      if (generation === fileGeneration.current) {
+        readingFile.current = false;
+        setFileReading(false);
+      }
     }
   }
 
   async function runPreview(currentMapping?: Record<string, string>) {
+    if (readingFile.current) return;
     if (!csvText) {
       setError(t.selectFilePrompt);
       return;
@@ -148,6 +194,16 @@ export function CsvImportDialog({
       setError(t.csvRequiredCompanyMissing);
       return;
     }
+    const generation = fileGeneration.current;
+    const candidate: ReviewedInput = {
+      organizationId,
+      productId,
+      csvText,
+      columnMapping: { ...mapping },
+      purpose,
+      mode,
+      label: file?.name || t.importCsv,
+    };
     setLoading(true);
     setError("");
     try {
@@ -155,16 +211,13 @@ export function CsvImportDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ...candidate,
           operation: "csv-import-preview",
-          organizationId,
-          productId,
-          csvText,
-          columnMapping: mapping,
-          purpose,
-          mode,
         }),
       });
+      if (generation !== fileGeneration.current) return;
       setPreview(res);
+      setReviewedInput(candidate);
       setStep("preview");
       if (res.summary.validCount > 0) {
         setPreviewTab("valid");
@@ -174,14 +227,14 @@ export function CsvImportDialog({
         setPreviewTab("invalid");
       }
     } catch (err) {
-      setError(errorText(err));
+      if (generation === fileGeneration.current) setError(errorText(err));
     } finally {
-      setLoading(false);
+      if (generation === fileGeneration.current) setLoading(false);
     }
   }
 
   async function executeImport(skipDuplicates: boolean) {
-    if (!csvText || !productId) return;
+    if (!reviewedInput || readingFile.current) return;
     setLoading(true);
     setError("");
     try {
@@ -189,15 +242,9 @@ export function CsvImportDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ...reviewedInput,
           operation: "csv-import",
-          organizationId,
-          productId,
-          csvText,
-          columnMapping,
-          purpose,
-          mode,
           skipDuplicates,
-          label: file?.name || t.importCsv,
         }),
       });
       setSummary(res);
@@ -224,6 +271,9 @@ export function CsvImportDialog({
         <div>
           <h2 id="import-dialog-title">{t.csvImportTitle}</h2>
           <p className="muted">{t.csvImportDescription}</p>
+          <p className="muted">
+            {t.csvRowLimit.replace("{count}", String(MAX_CSV_IMPORT_ROWS))}
+          </p>
         </div>
         <button
           type="button"
@@ -243,6 +293,7 @@ export function CsvImportDialog({
       )}
 
       {loading && <LoadingState />}
+      {fileReading && <p role="status">{t.csvReadingFile}</p>}
 
       {!loading && step === "upload" && (
         <div className="import-step-upload">
@@ -402,7 +453,7 @@ export function CsvImportDialog({
             <button
               type="button"
               className="primary"
-              disabled={!file}
+              disabled={!file || fileReading || !csvText}
               onClick={() => void runPreview()}
             >
               {t.previewCsvImport} <ArrowRight size={14} aria-hidden />

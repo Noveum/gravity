@@ -153,7 +153,7 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
     if (!tool) throw new Error(`Missing tool: ${operation.name}`);
     expect(tool.inputSchema.type).toBe("object");
     expect(tool.inputSchema.properties).not.toHaveProperty("organizationId");
-    expect(tool.annotations?.readOnlyHint).toBe(operation.method === "GET");
+    expect(tool.annotations?.readOnlyHint).toBe(operation.access === "read");
   }
   const readonly = await rpcResult(
     specTypeSchemas.ListToolsResult,
@@ -162,7 +162,9 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
     { ...writable, readOnly: true },
   );
   const readNames = readonly.tools.map((tool) => tool.name);
-  for (const operation of operations.filter((item) => item.method !== "GET")) {
+  for (const operation of operations.filter(
+    (item) => item.access === "write",
+  )) {
     expect(readNames).not.toContain(operation.name);
   }
   const capabilities = fullCapabilitiesSchema.parse(
@@ -472,7 +474,7 @@ test("each assistant scope combination lists only its tools and refuses the rest
     .filter((item) => item.permission === "crm:send")
     .map((item) => item.name);
   const writeNames = operations
-    .filter((item) => item.method !== "GET" && !item.permission)
+    .filter((item) => item.access === "write" && !item.permission)
     .map((item) => item.name);
   const readNames = operations
     .filter((item) => item.method === "GET")
@@ -1673,4 +1675,53 @@ test("an assistant cannot change where a do-not-contact person is reached", asyn
     },
   );
   expect(edited.email).toBe("new-route@example.test");
+});
+
+test("read-only MCP exposes POST CSV preview with read scopes and truthful annotations", async () => {
+  const principal = { ...writable, readOnly: true };
+  const discovered = await rpcResult(
+    specTypeSchemas.ListToolsResult,
+    "tools/list",
+    {},
+    principal,
+  );
+  const preview = discovered.tools.find(
+    (tool) => tool.name === "preview_csv_import",
+  );
+  expect(preview?.annotations).toMatchObject({
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+  });
+  expect(
+    discovered.tools.some((tool) => tool.name === "import_contacts_csv"),
+  ).toBe(false);
+  const audit = permissionAuditSchema.parse(
+    await call("get_permission_audit", {}, principal),
+  );
+  expect(
+    audit.operations.find(
+      (operation) => operation.name === "preview_csv_import",
+    ),
+  ).toMatchObject({ available: true, requirements: { scopes: ["crm:read"] } });
+  const result = await call(
+    "preview_csv_import",
+    {
+      productId: demoId(10),
+      csvText:
+        "Company,Domain\nRead Preview Fixture,readonly-preview.example.test",
+      mode: "companies",
+    },
+    principal,
+  );
+  expect(result).toMatchObject({ summary: { validCount: 1 } });
+  const rejected = await rpc(
+    "tools/call",
+    {
+      name: "import_contacts_csv",
+      arguments: { productId: demoId(10), csvText: "Name\nNo write" },
+    },
+    principal,
+  );
+  expect("error" in rejected).toBe(true);
 });

@@ -311,7 +311,8 @@
     "PENDING_HISTORY_REVIEW_REQUIRED": "Review and link or ignore pending imported history for this contact before sending.",
     "CSV_STRUCTURE_INVALID": "Check the CSV: use unique, non-empty headers, the same number of columns in every row, and correctly escaped quotes.",
     "CSV_MAPPING_INVALID": "Map each imported field once, using columns from this file. Company imports accept company fields only.",
-    "FILE_READ_ERROR": "This file could not be read. Choose the file again."
+    "FILE_READ_ERROR": "This file could not be read. Choose the file again.",
+    "CSV_ROW_LIMIT": "Choose a CSV with at most 1,000 data rows. Split larger files before importing."
   },
   "consentAccess": "Access",
   "consentLevelRead": "Read",
@@ -2651,5 +2652,7 @@
     "PERSON_LINKEDIN_EXISTS": "This LinkedIn profile matches an existing contact in this organization.",
     "COMPANY_DOMAIN_EXISTS": "This domain matches an existing company in this organization.",
     "CSV_DUPLICATE": "This identity appears multiple times in this CSV."
-  }
+  },
+  "csvRowLimit": "CSV imports support up to {count} data rows per file.",
+  "csvReadingFile": "Reading CSV file…"
 }

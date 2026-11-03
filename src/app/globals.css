@@ -6312,9 +6312,11 @@ nav.list-pagination > label:has(select) {
   border-radius: var(--gravity-radius);
   padding: 4px;
 }
-.import-dialog .dialog-header .icon-button:hover {
-  color: var(--gravity-text);
-  background: var(--gravity-hover);
+@media (hover: hover) {
+  .import-dialog .dialog-header .icon-button:hover {
+    color: var(--gravity-text);
+    background: var(--gravity-hover);
+  }
 }
 .import-settings-grid {
   display: grid;
@@ -6354,7 +6356,13 @@ nav.list-pagination > label:has(select) {
   text-align: center;
   margin-bottom: 20px;
 }
-.import-dialog button.file-drop-zone:hover,
+@media (hover: hover) {
+  .import-dialog button.file-drop-zone:hover {
+    border-color: var(--gravity-accent);
+    background: var(--gravity-surface-3);
+    outline: none;
+  }
+}
 .import-dialog button.file-drop-zone:focus-visible {
   border-color: var(--gravity-accent);
   background: var(--gravity-surface-3);
@@ -6523,8 +6531,10 @@ nav.list-pagination > label:has(select) {
     border-color var(--duration-fast);
   border-radius: 0;
 }
-.preview-tabs .tab:hover {
-  color: var(--gravity-text);
+@media (hover: hover) {
+  .preview-tabs .tab:hover {
+    color: var(--gravity-text);
+  }
 }
 .preview-tabs .tab.active {
   color: var(--gravity-accent);

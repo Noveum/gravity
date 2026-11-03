@@ -1,8 +1,9 @@
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
   CopyObjectCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -14,6 +15,7 @@ import { isDemoMode } from "../database/client";
 export interface FileStorage {
   uploadUrl(key: string, mimeType: string, size: number): Promise<string>;
   sealUpload(source: string, target: string, size: number): Promise<void>;
+  deleteObject(key: string): Promise<void>;
   downloadUrl(
     key: string,
     name: string,
@@ -104,6 +106,9 @@ export function objectStorage(
         if (bytes.length !== size) throw new DomainError("FILE_SIZE", 413);
         await writeLocalUpload(target, bytes);
       },
+      deleteObject: async (key) => {
+        await rm(path(key), { force: true });
+      },
       downloadUrl: async (key) => `local:${key}`,
       readText: async (key) => decodeText(await readLocalObject(key)),
       readChunks: async function* (key) {
@@ -159,6 +164,9 @@ export function objectStorage(
           ContentType: "application/octet-stream",
         }),
       );
+    },
+    deleteObject: async (Key) => {
+      await client.send(new DeleteObjectCommand({ Bucket, Key }));
     },
     downloadUrl: async (
       Key,

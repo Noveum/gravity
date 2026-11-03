@@ -18,6 +18,7 @@ function storageFor(bytes: Uint8Array) {
   return {
     uploadUrl: async () => "https://storage.example.test/upload",
     sealUpload: vi.fn(async () => {}),
+    deleteObject: async () => {},
     downloadUrl: async () => "https://storage.example.test/download",
     readText: async () => "",
     readChunks: vi.fn(async function* () {

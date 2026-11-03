@@ -211,27 +211,9 @@ export async function completeAssetUpload(
   },
   storage: FileStorage = objectStorage("materials"),
 ) {
-  return db.transaction(async (tx) => {
-    await authorize(tx, principal, input.organizationId, input.productId, true);
-    const [reserved] = await tx
-      .select()
-      .from(s.assetUpload)
-      .where(
-        and(
-          eq(s.assetUpload.id, input.uploadId),
-          eq(s.assetUpload.organizationId, input.organizationId),
-          eq(s.assetUpload.productId, input.productId),
-          eq(s.assetUpload.uploadedBy, principal.userId),
-        ),
-      )
-      .for("update");
-    if (!reserved) throw new DomainError("NOT_FOUND", 404);
-    if (reserved.completedAssetId) {
-      await tx
-        .select({ id: s.organizations.id })
-        .from(s.organizations)
-        .where(eq(s.organizations.id, input.organizationId))
-        .for("share");
+  let attemptedKey: string | undefined;
+  try {
+    return await db.transaction(async (tx) => {
       await authorize(
         tx,
         principal,
@@ -239,109 +221,208 @@ export async function completeAssetUpload(
         input.productId,
         true,
       );
-      const [asset] = await tx
+      const [reserved] = await tx
         .select()
-        .from(s.assets)
+        .from(s.assetUpload)
         .where(
           and(
-            eq(s.assets.id, reserved.completedAssetId),
-            eq(s.assets.organizationId, input.organizationId),
-            eq(s.assets.productId, input.productId),
+            eq(s.assetUpload.id, input.uploadId),
+            eq(s.assetUpload.organizationId, input.organizationId),
+            eq(s.assetUpload.productId, input.productId),
+            eq(s.assetUpload.uploadedBy, principal.userId),
+          ),
+        )
+        .for("update");
+      if (!reserved) throw new DomainError("NOT_FOUND", 404);
+      if (reserved.completedAssetId) {
+        await tx
+          .select({ id: s.organizations.id })
+          .from(s.organizations)
+          .where(eq(s.organizations.id, input.organizationId))
+          .for("share");
+        await authorize(
+          tx,
+          principal,
+          input.organizationId,
+          input.productId,
+          true,
+        );
+        const [asset] = await tx
+          .select()
+          .from(s.assets)
+          .where(
+            and(
+              eq(s.assets.id, reserved.completedAssetId),
+              eq(s.assets.organizationId, input.organizationId),
+              eq(s.assets.productId, input.productId),
+            ),
+          );
+        if (!asset) throw new DomainError("NOT_FOUND", 404);
+        return { id: asset.id, name: asset.name };
+      }
+      if (reserved.expiresAt.getTime() < Date.now())
+        throw new DomainError("CONFLICT", 409);
+      const [folder] = await tx
+        .select()
+        .from(s.folders)
+        .where(
+          and(
+            eq(s.folders.id, reserved.folderId),
+            eq(s.folders.organizationId, reserved.organizationId),
+            eq(s.folders.productId, reserved.productId),
           ),
         );
-      if (!asset) throw new DomainError("NOT_FOUND", 404);
-      return { id: asset.id, name: asset.name };
-    }
-    if (reserved.expiresAt.getTime() < Date.now())
-      throw new DomainError("CONFLICT", 409);
-    const [folder] = await tx
-      .select()
-      .from(s.folders)
-      .where(
-        and(
-          eq(s.folders.id, reserved.folderId),
-          eq(s.folders.organizationId, reserved.organizationId),
-          eq(s.folders.productId, reserved.productId),
-        ),
-      );
-    if (!folder) throw new DomainError("NOT_FOUND", 404);
-    const allowedStages = await tx
-      .select()
-      .from(s.stages)
-      .where(
-        and(
-          eq(s.stages.organizationId, reserved.organizationId),
-          eq(s.stages.productId, reserved.productId),
-        ),
-      );
-    if (
-      reserved.stageIds.some(
-        (id) => !allowedStages.some((stage) => stage.id === id),
+      if (!folder) throw new DomainError("NOT_FOUND", 404);
+      const allowedStages = await tx
+        .select()
+        .from(s.stages)
+        .where(
+          and(
+            eq(s.stages.organizationId, reserved.organizationId),
+            eq(s.stages.productId, reserved.productId),
+          ),
+        );
+      if (
+        reserved.stageIds.some(
+          (id) => !allowedStages.some((stage) => stage.id === id),
+        )
       )
-    )
-      throw new DomainError("FORBIDDEN", 403);
-    // A fresh private target is never exposed through an upload URL. Serialize
-    // completion on its reservation so retries cannot overwrite an accepted object.
-    const assetId = randomUUID();
-    const finalKey = `${reserved.organizationId}/files/${assetId}`;
-    await storage.sealUpload(reserved.storageKey, finalKey, reserved.size);
-    const sha256 = await validateSealedMaterial(
-      storage,
-      finalKey,
-      reserved.size,
-      reserved.mimeType,
-    );
-    if (reserved.sha256 && reserved.sha256.toLowerCase() !== sha256)
-      throw new DomainError("FILE_CHECKSUM", 400);
-    // Membership administration locks the organization. Take the matching read
-    // lock after storage I/O so access cannot change between this check and commit.
-    await tx
-      .select({ id: s.organizations.id })
-      .from(s.organizations)
-      .where(eq(s.organizations.id, input.organizationId))
-      .for("share");
-    // Storage I/O may outlive an authorization change; check current access again.
-    await authorize(tx, principal, input.organizationId, input.productId, true);
-    await assertProductActive(tx, input.organizationId, input.productId);
-    if (reserved.expiresAt.getTime() < Date.now())
-      throw new DomainError("CONFLICT", 409);
-    const [asset] = await tx
-      .insert(s.assets)
-      .values({
-        id: assetId,
-        organizationId: reserved.organizationId,
-        productId: reserved.productId,
-        folderId: reserved.folderId,
-        name: reserved.name,
-        storageKey: finalKey,
-        mimeType: reserved.mimeType,
-        size: reserved.size,
-        sha256,
-        uploadedBy: principal.userId,
-      })
-      .returning();
-    if (reserved.stageIds.length)
-      await tx.insert(s.assetStages).values(
-        [...new Set(reserved.stageIds)].map((stageId) => ({
+        throw new DomainError("FORBIDDEN", 403);
+      // The reservation durably identifies one private target, including after a
+      // crash or lost database acknowledgement. Retry never multiplies sealed keys.
+      // The reservation lock and completion receipt protect accepted objects.
+      const assetId = reserved.id;
+      const finalKey = `${reserved.organizationId}/files/${assetId}`;
+      attemptedKey = finalKey;
+      await storage.sealUpload(reserved.storageKey, finalKey, reserved.size);
+      const sha256 = await validateSealedMaterial(
+        storage,
+        finalKey,
+        reserved.size,
+        reserved.mimeType,
+      );
+      if (reserved.sha256 && reserved.sha256.toLowerCase() !== sha256)
+        throw new DomainError("FILE_CHECKSUM", 400);
+      // Membership administration locks the organization. Take the matching read
+      // lock after storage I/O so access cannot change between this check and commit.
+      await tx
+        .select({ id: s.organizations.id })
+        .from(s.organizations)
+        .where(eq(s.organizations.id, input.organizationId))
+        .for("share");
+      // Storage I/O may outlive an authorization change; check current access again.
+      await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
+      await assertProductActive(tx, input.organizationId, input.productId);
+      if (reserved.expiresAt.getTime() < Date.now())
+        throw new DomainError("CONFLICT", 409);
+      const [asset] = await tx
+        .insert(s.assets)
+        .values({
+          id: assetId,
           organizationId: reserved.organizationId,
           productId: reserved.productId,
-          assetId: asset.id,
-          stageId,
-        })),
-      );
-    await tx.insert(s.changeEvents).values({
-      organizationId: reserved.organizationId,
-      productId: reserved.productId,
-      actorId: principal.userId,
-      type: "asset.uploaded",
-      entityId: asset.id,
+          folderId: reserved.folderId,
+          name: reserved.name,
+          storageKey: finalKey,
+          mimeType: reserved.mimeType,
+          size: reserved.size,
+          sha256,
+          uploadedBy: principal.userId,
+        })
+        .returning();
+      if (reserved.stageIds.length)
+        await tx.insert(s.assetStages).values(
+          [...new Set(reserved.stageIds)].map((stageId) => ({
+            organizationId: reserved.organizationId,
+            productId: reserved.productId,
+            assetId: asset.id,
+            stageId,
+          })),
+        );
+      await tx.insert(s.changeEvents).values({
+        organizationId: reserved.organizationId,
+        productId: reserved.productId,
+        actorId: principal.userId,
+        type: "asset.uploaded",
+        entityId: asset.id,
+      });
+      await tx
+        .update(s.assetUpload)
+        .set({ completedAssetId: asset.id })
+        .where(eq(s.assetUpload.id, input.uploadId));
+      return { id: asset.id, name: asset.name };
     });
-    await tx
-      .update(s.assetUpload)
-      .set({ completedAssetId: asset.id })
-      .where(eq(s.assetUpload.id, input.uploadId));
-    return { id: asset.id, name: asset.name };
-  });
+  } catch (error) {
+    if (attemptedKey) {
+      const finalKey = attemptedKey;
+      try {
+        const committed = await db.transaction(async (tx) => {
+          // A fresh transaction must observe the first transaction's durable
+          // outcome. This lock also prevents deletion racing a successful retry.
+          const [receipt] = await tx
+            .select()
+            .from(s.assetUpload)
+            .where(
+              and(
+                eq(s.assetUpload.id, input.uploadId),
+                eq(s.assetUpload.organizationId, input.organizationId),
+                eq(s.assetUpload.productId, input.productId),
+                eq(s.assetUpload.uploadedBy, principal.userId),
+              ),
+            )
+            .for("update");
+          const [asset] = await tx
+            .select()
+            .from(s.assets)
+            .where(
+              and(
+                eq(s.assets.organizationId, input.organizationId),
+                eq(s.assets.productId, input.productId),
+                eq(s.assets.storageKey, finalKey),
+              ),
+            );
+          // Never infer rollback from a rejected COMMIT promise. Any asset or
+          // completed receipt protects its object, even if the caller lost access.
+          if (asset || receipt?.completedAssetId) {
+            if (
+              asset &&
+              receipt?.completedAssetId === asset.id &&
+              !(error instanceof DomainError)
+            ) {
+              await tx
+                .select({ id: s.organizations.id })
+                .from(s.organizations)
+                .where(eq(s.organizations.id, input.organizationId))
+                .for("share");
+              await authorize(
+                tx,
+                principal,
+                input.organizationId,
+                input.productId,
+                true,
+              );
+              return { id: asset.id, name: asset.name };
+            }
+            return undefined;
+          }
+          await storage.deleteObject(finalKey);
+          return undefined;
+        });
+        if (committed) return committed;
+      } catch {
+        // An unavailable database cannot establish rollback; preserve bytes.
+        // The reservation's stable target remains reconcilable by a later retry.
+        // Storage cleanup failure likewise retains at most that one target.
+      }
+    }
+    throw error;
+  }
 }
 
 export async function downloadAsset(

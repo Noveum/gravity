@@ -31,7 +31,6 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useSearchParams } from "next/navigation";
 import {
   type DragEvent,
   type ReactNode,
@@ -43,6 +42,7 @@ import {
 import { errorText } from "../client-api";
 import { useWorkspaceData } from "../crm/crm-context";
 import { submitOnSaveKey } from "../modal-lifecycle";
+import { pushViewQuery, replaceViewQuery, useViewQuery } from "../view-query";
 import {
   command,
   detail,
@@ -88,7 +88,7 @@ function Icon({ entry }: { entry: FileEntry }) {
 }
 export function FileLibrary() {
   const crm = useWorkspaceData();
-  const params = useSearchParams();
+  const params = useViewQuery();
   const linkedFileId = params.get("open") ?? "";
   const linkedProductId = params.get("productId") ?? "";
   const openedLink = useRef("");
@@ -117,7 +117,7 @@ export function FileLibrary() {
         value={productId}
         onChange={(event) => {
           setSelectedProduct(event.target.value);
-          window.history.replaceState(null, "", "/files");
+          replaceViewQuery(new URLSearchParams());
         }}
       >
         {crm.data.products.map((product) => (
@@ -172,7 +172,7 @@ function Browser({
   productControl: ReactNode;
 }) {
   const crm = useWorkspaceData();
-  const params = useSearchParams();
+  const params = useViewQuery();
   const parentId = params.get("folder");
   const cacheScope = `${scope.organizationId}/${scope.productId}`;
   const client = useQueryClient();
@@ -272,7 +272,7 @@ function Browser({
     selected.every((entry) => entry.ownerId === crm.userId && entry.canEdit);
   function navigate(id: string | null) {
     if (!crm.canLeaveEditor()) return;
-    window.history.pushState(null, "", id ? `/files?folder=${id}` : "/files");
+    pushViewQuery(new URLSearchParams(id ? { folder: id } : {}));
     root.current?.focus();
   }
   async function run(operation: string, input: object) {

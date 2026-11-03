@@ -11,7 +11,6 @@ import {
 import type { RelationshipField } from "@crm/core/relationship-context";
 import t from "@crm/i18n/translations/en.json";
 import { SlidersHorizontal, X } from "lucide-react";
-import { useSearchParams } from "next/navigation";
 import { type ReactNode, useId, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { useWorkspaceData } from "../crm/crm-context";
@@ -19,7 +18,11 @@ import { useFilterVisibility } from "../filter-visibility";
 import { minorStep } from "../money";
 import { FilterPopover } from "../ui/filter-popover";
 import { Select } from "../ui/select";
-import { currentViewQuery, replaceViewQuery } from "../view-query";
+import {
+  currentViewQuery,
+  replaceViewQuery,
+  useViewQuery,
+} from "../view-query";
 import { ValueFilter } from "./value-filter";
 
 export interface RecordFacts {
@@ -303,7 +306,7 @@ export function useRecordBrowser<T>(
 ) {
   const crm = useWorkspaceData();
   const scope = `${crm.organizationId}/${crm.productId}/${crm.pathname}/${crm.listFilterKey}`;
-  const query = useSearchParams();
+  const query = useViewQuery();
   const fieldScope = `${crm.organizationId}/${crm.productId}/${crm.pathname}/${crm.timeZone}`;
   const serializedFields = query.get("fieldFilters") ?? "";
   const fieldQuery = useMemo(

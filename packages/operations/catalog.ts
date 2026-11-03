@@ -62,6 +62,11 @@ import {
   workspaceSchema,
 } from "../core/crm";
 import {
+  CsvImportService,
+  csvImportPreviewSchema,
+  csvImportSchema,
+} from "../core/csv-import";
+import {
   changeInternalTaskSchema,
   createInternalTaskSchema,
   InternalTaskService,
@@ -187,6 +192,7 @@ export interface Operation {
   name: string;
   api: "crm" | "outreach" | "integrations" | "materials" | "grants" | "files";
   method: "GET" | "POST" | "DELETE";
+  access: "read" | "write";
   operation: string;
   description: string;
   schema: z.ZodObject;
@@ -201,23 +207,27 @@ export interface Operation {
 function operation<S extends z.ZodObject>(
   definition: Omit<
     Operation,
-    "schema" | "execute" | "idempotent" | "destructive"
+    "schema" | "execute" | "idempotent" | "destructive" | "access"
   > & {
     schema: S;
     run: (context: OperationContext, input: z.output<S>) => Promise<unknown>;
     idempotent?: boolean;
     destructive?: boolean;
     publish?: boolean;
+    access?: Operation["access"];
   },
 ): Operation {
+  const access =
+    definition.access ?? (definition.method === "GET" ? "read" : "write");
   return {
     ...definition,
-    idempotent: definition.idempotent ?? definition.method === "GET",
-    destructive: definition.destructive ?? definition.method !== "GET",
+    access,
+    idempotent: definition.idempotent ?? access === "read",
+    destructive: definition.destructive ?? access === "write",
     async execute(context, input) {
       const parsed = definition.schema.parse(input);
       const value = await definition.run(context, parsed);
-      if (definition.method !== "GET" && definition.publish !== false) {
+      if (access === "write" && definition.publish !== false) {
         const fields = parsed as { organizationId?: string };
         const output = value as
           | { organizationId?: string; id?: string }
@@ -975,6 +985,32 @@ export const operations: Operation[] = [
     schema: attributionListSchema,
     run: (c, input) =>
       new ContactAttributionService(c.db).list(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "csv-import-preview",
+    name: "preview_csv_import",
+    access: "read",
+    idempotent: true,
+    destructive: false,
+    publish: false,
+    description:
+      "Preview CSV with mode=contacts (default) or mode=companies for company-only files. Map each field once. Returns structured validation codes and organization-wide email/alias, LinkedIn and company-domain collisions without disclosing stored records. No writes.",
+    schema: csvImportPreviewSchema,
+    run: (c, input) => new CsvImportService(c.db).preview(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "csv-import",
+    name: "import_contacts_csv",
+    idempotent: false,
+    destructive: true,
+    description:
+      "Import CSV with mode=contacts (default) to create people and product relationships, or mode=companies to create organization companies without people or relationships. Preview first with preview_csv_import. Duplicate identities require review: by default they reject with PERSON_EXISTS or COMPANY_EXISTS; skipDuplicates imports only valid non-duplicate rows. Authenticated attribution is recorded for contacts. This operation is not idempotent; inspect state after an unknown outcome before attempting another import.",
+    schema: csvImportSchema,
+    run: (c, input) => new CsvImportService(c.db).importCsv(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -1928,7 +1964,7 @@ const ownerOperations = new Set([
 export function operationRequirements(item: Operation) {
   return {
     scopes:
-      item.method === "GET"
+      item.access === "read"
         ? ["crm:read"]
         : [
             "crm:read",
@@ -1949,7 +1985,7 @@ export function operationAvailable(
 ) {
   const requirements = operationRequirements(item);
   return (
-    (item.method === "GET" ||
+    (item.access === "read" ||
       principal.source === "session" ||
       principal.readOnly === false) &&
     (!item.permission ||
@@ -1993,6 +2029,7 @@ export async function permissionAudit(
       name: item.name,
       api: `/api/${item.api}`,
       method: item.method,
+      access: item.access,
       operation: item.operation,
       available: operationAvailable(item, context.principal, membership.role),
       requirements: operationRequirements(item),
@@ -2013,7 +2050,7 @@ export async function executeMcpOperation(
     context.principal,
     organizationId,
     undefined,
-    item.method !== "GET",
+    item.access === "write",
   );
   const parsed = operationInput(item).parse(input);
   return item.execute(context, {

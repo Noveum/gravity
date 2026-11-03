@@ -232,6 +232,8 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
         "member-remove",
         "member-reactivate",
         "organization-settings",
+        "csv-import-preview",
+        "csv-import",
       ].includes(body.operation)
     ) {
       try {

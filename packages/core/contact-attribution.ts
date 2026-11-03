@@ -119,7 +119,10 @@ export async function recordContactSubmission(
     personId: string;
     productId?: string;
     kind: "created" | "submitted" | "updated";
-    submission?: Awaited<ReturnType<typeof importSubmission>>;
+    submission?: Pick<
+      NonNullable<Awaited<ReturnType<typeof importSubmission>>>,
+      "batch"
+    > | null;
     sourceRecordId?: string;
     requestHash?: string;
   },

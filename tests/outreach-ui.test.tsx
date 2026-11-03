@@ -337,7 +337,7 @@ describe("touch rows, the draft drawer and paused work", () => {
       name: `${t.stop}: Mira Chen`,
     });
     fireEvent.click(stop);
-    const dialog = await screen.findByRole("region", {
+    const dialog = await screen.findByRole("dialog", {
       name: t.stopEnrollmentTitle.replace("{name}", "Mira Chen"),
     });
     expect(dialog.textContent).toContain("Thoughtful introduction");

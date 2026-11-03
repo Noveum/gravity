@@ -141,6 +141,29 @@ test("keyboard sliders emit one atomic range update and restoring the full range
   );
 });
 
+test("a slider preserves a numeric edit before URL-derived filter props catch up", async () => {
+  const changed = vi.fn();
+  render(
+    <ValueFilter
+      filters={{ ...empty, minimum: "50", maximum: "6000" }}
+      amountMaximum={10000}
+      currencies={["USD"]}
+      invalid={false}
+      onChange={changed}
+    />,
+  );
+  const controls = open();
+  fireEvent.change(controls.getByLabelText(t.minimumDealSize), {
+    target: { value: "1000" },
+  });
+  controls.getByRole("slider", { name: t.uiRefresh.maximumSlider }).focus();
+  await userEvent.setup().keyboard("{ArrowLeft}");
+  expect(changed).toHaveBeenLastCalledWith({
+    minimum: "1000.00",
+    maximum: "5900.00",
+  });
+});
+
 test.each([
   { currency: "JPY", step: "1", minimum: "125", maximum: "999" },
   { currency: "USD", step: "0.01", minimum: "125.50", maximum: "999.99" },

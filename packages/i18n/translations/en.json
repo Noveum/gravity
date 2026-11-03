@@ -2663,7 +2663,7 @@
   "duplicateRecord": "Duplicate record (merged & removed)",
   "selectDuplicateRecord": "Select record to merge…",
   "swapCanonical": "Swap canonical record",
-  "mergeNotice": "Both records’ history will move to the canonical record. Empty relationship notes are filled from the duplicate; conflicting values remain in Merge history. Duplicate active sequence enrollments are stopped and their pending touches skipped. Private conversations keep their owners and visibility. Approvals must be reviewed again. The duplicate record is removed.",
+  "mergeNotice": "Both records’ history will move to the canonical record. Empty relationship notes are filled from the duplicate; original values, including any additional fields beyond the editor limits, remain in Merge history. Duplicate active sequence enrollments are stopped and their pending touches skipped. Private conversations keep their owners and visibility. Approvals must be reviewed again. The duplicate record is removed.",
   "mergeFieldConflict": "Conflicting field",
   "mergeUseLeft": "Keep canonical value",
   "mergeUseRight": "Use duplicate value",

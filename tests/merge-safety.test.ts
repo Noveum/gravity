@@ -8,7 +8,10 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 import { ContactAttributionService } from "../packages/core/contact-attribution";
 import { CrmService } from "../packages/core/crm";
 import { RecordService } from "../packages/core/records";
-import { emptyRelationshipDetails } from "../packages/core/relationship-context";
+import {
+  emptyRelationshipDetails,
+  relationshipDetailsSchema,
+} from "../packages/core/relationship-context";
 import type { Database } from "../packages/database/client";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
@@ -772,4 +775,47 @@ test("merge schema rejects invalid contact time zones", () => {
       timeZone: "not/a/timezone",
     }).success,
   ).toBe(false);
+});
+
+test("merge keeps editable structured fields valid while retaining overflow in history", async () => {
+  const p = await pair();
+  const fields = Array.from({ length: 50 }, (_, index) => ({
+    id: randomUUID(),
+    label: `Field ${index}`,
+    type: "text" as const,
+    value: `Value ${index}`,
+  }));
+  await local.db
+    .update(s.relationships)
+    .set({ contextDetails: { ...emptyRelationshipDetails(), fields } })
+    .where(eq(s.relationships.id, p.sr.id));
+  await local.db
+    .update(s.relationships)
+    .set({
+      contextDetails: {
+        ...emptyRelationshipDetails(),
+        fields: [
+          {
+            id: randomUUID(),
+            label: "Canonical field",
+            type: "text",
+            value: "Canonical",
+          },
+        ],
+      },
+    })
+    .where(eq(s.relationships.id, p.tr.id));
+  await new RecordService(local.db).mergeRecords(admin, p.input);
+  const [merged] = await local.db
+    .select()
+    .from(s.relationships)
+    .where(eq(s.relationships.id, p.tr.id));
+  expect(
+    relationshipDetailsSchema.safeParse(merged.contextDetails).success,
+  ).toBe(true);
+  expect(merged.mergeHistory).toEqual([
+    expect.objectContaining({
+      contextDetails: expect.objectContaining({ fields }),
+    }),
+  ]);
 });

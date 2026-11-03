@@ -1276,23 +1276,28 @@ export class RecordService {
               "history",
             ] as const)
               contextDetails[key] ||= sr.contextDetails[key];
+            // Keep the editable arrays within their full schema bounds;
+            // every overflow/conflict remains available in the source snapshot.
             const combine = <T extends { id: string }>(
               canonical: T[],
               incoming: T[],
+              limit: number,
             ) => {
               const ids = new Set(canonical.map((item) => item.id));
               return [
                 ...canonical,
                 ...incoming.filter((item) => !ids.has(item.id)),
-              ];
+              ].slice(0, limit);
             };
             contextDetails.signals = combine(
               tr.contextDetails.signals,
               sr.contextDetails.signals,
+              100,
             );
             contextDetails.fields = combine(
               tr.contextDetails.fields,
               sr.contextDetails.fields,
+              50,
             );
             const latest = (a: Date | null, b: Date | null) =>
               !a ? b : !b ? a : a > b ? a : b;
@@ -1309,7 +1314,7 @@ export class RecordService {
                     ? sr.nextStepDueAt
                     : (tr.nextStepDueAt ?? sr.nextStepDueAt),
                 stageId: tr.stageId ?? sr.stageId,
-                tags: [...new Set([...tr.tags, ...sr.tags])],
+                tags: [...new Set([...tr.tags, ...sr.tags])].slice(0, 30),
                 amountMinor: tr.amountMinor ?? sr.amountMinor,
                 currency:
                   tr.amountMinor === null && sr.amountMinor !== null

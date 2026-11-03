@@ -1164,13 +1164,6 @@
       "repository": "git+https://github.com/vitest-dev/vitest.git"
     },
     {
-      "name": "abort-controller",
-      "version": "3.0.0",
-      "license": "MIT",
-      "direct": false,
-      "repository": "git+https://github.com/mysticatea/abort-controller.git"
-    },
-    {
       "name": "ansi-regex",
       "version": "5.0.1",
       "license": "MIT",
@@ -1186,14 +1179,21 @@
     },
     {
       "name": "archiver",
-      "version": "7.0.1",
+      "version": "5.3.2",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/archiverjs/node-archiver.git"
     },
     {
       "name": "archiver-utils",
-      "version": "5.0.2",
+      "version": "2.1.0",
+      "license": "MIT",
+      "direct": false,
+      "repository": "https://github.com/archiverjs/archiver-utils.git"
+    },
+    {
+      "name": "archiver-utils",
+      "version": "3.0.4",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/archiverjs/archiver-utils.git"
@@ -1227,13 +1227,6 @@
       "repository": "https://github.com/caolan/async.git"
     },
     {
-      "name": "b4a",
-      "version": "1.9.0",
-      "license": "Apache-2.0",
-      "direct": false,
-      "repository": "git+https://github.com/holepunchto/b4a.git"
-    },
-    {
       "name": "bail",
       "version": "2.0.2",
       "license": "MIT",
@@ -1246,41 +1239,6 @@
       "license": "MIT",
       "direct": false,
       "repository": "git://github.com/juliangruber/balanced-match.git"
-    },
-    {
-      "name": "bare-events",
-      "version": "2.9.2",
-      "license": "Apache-2.0",
-      "direct": false,
-      "repository": "git+https://github.com/holepunchto/bare-events.git"
-    },
-    {
-      "name": "bare-fs",
-      "version": "4.8.4",
-      "license": "Apache-2.0",
-      "direct": false,
-      "repository": "git+https://github.com/holepunchto/bare-fs.git"
-    },
-    {
-      "name": "bare-path",
-      "version": "3.1.2",
-      "license": "Apache-2.0",
-      "direct": false,
-      "repository": "git+https://github.com/holepunchto/bare-path.git"
-    },
-    {
-      "name": "bare-stream",
-      "version": "2.13.4",
-      "license": "Apache-2.0",
-      "direct": false,
-      "repository": "git+https://github.com/holepunchto/bare-stream.git"
-    },
-    {
-      "name": "bare-url",
-      "version": "2.5.5",
-      "license": "Apache-2.0",
-      "direct": false,
-      "repository": "git+https://github.com/holepunchto/bare-url.git"
     },
     {
       "name": "base64-js",
@@ -1318,22 +1276,15 @@
       "repository": "https://github.com/lojjic/bidi-js.git"
     },
     {
-      "name": "big-integer",
-      "version": "1.6.52",
-      "license": "Unlicense",
-      "direct": false,
-      "repository": "git@github.com:peterolson/BigInteger.js.git"
-    },
-    {
-      "name": "binary",
-      "version": "0.3.0",
+      "name": "bl",
+      "version": "4.1.0",
       "license": "MIT",
       "direct": false,
-      "repository": "http://github.com/substack/node-binary.git"
+      "repository": "https://github.com/rvagg/bl.git"
     },
     {
       "name": "bluebird",
-      "version": "3.4.7",
+      "version": "3.7.2",
       "license": "MIT",
       "direct": false,
       "repository": "git://github.com/petkaantonov/bluebird.git"
@@ -1354,14 +1305,14 @@
     },
     {
       "name": "buffer",
-      "version": "6.0.3",
+      "version": "5.7.1",
       "license": "MIT",
       "direct": false,
       "repository": "git://github.com/feross/buffer.git"
     },
     {
       "name": "buffer-crc32",
-      "version": "1.0.0",
+      "version": "0.2.13",
       "license": "MIT",
       "direct": false,
       "repository": "git://github.com/brianloveswords/buffer-crc32.git"
@@ -1372,21 +1323,6 @@
       "license": "MIT",
       "direct": false,
       "repository": "LinusU/buffer-from"
-    },
-    {
-      "name": "buffer-indexof-polyfill",
-      "version": "1.0.2",
-      "license": "MIT",
-      "direct": false,
-      "repository": "git+https://github.com/sarosia/buffer-indexof-polyfill.git"
-    },
-    {
-      "name": "buffers",
-      "version": "0.1.1",
-      "license": "MIT",
-      "direct": false,
-      "repository": "http://github.com/substack/node-buffers.git",
-      "resolutionSource": "https://sources.debian.org/copyright/license/node-buffers/0.1.1-2/"
     },
     {
       "name": "caniuse-lite",
@@ -1408,13 +1344,6 @@
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/chaijs/chai"
-    },
-    {
-      "name": "chainsaw",
-      "version": "0.1.0",
-      "license": "MIT/X11",
-      "direct": false,
-      "repository": "http://github.com/substack/node-chainsaw.git"
     },
     {
       "name": "character-entities",
@@ -1460,7 +1389,7 @@
     },
     {
       "name": "compress-commons",
-      "version": "6.0.2",
+      "version": "4.1.2",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/archiverjs/node-compress-commons.git"
@@ -1481,7 +1410,7 @@
     },
     {
       "name": "crc32-stream",
-      "version": "6.0.0",
+      "version": "4.0.3",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/archiverjs/node-crc32-stream.git"
@@ -1627,6 +1556,13 @@
       "repository": "git+https://github.com/apache/echarts.git"
     },
     {
+      "name": "end-of-stream",
+      "version": "1.4.5",
+      "license": "MIT",
+      "direct": false,
+      "repository": "git://github.com/mafintosh/end-of-stream.git"
+    },
+    {
       "name": "entities",
       "version": "8.1.0",
       "license": "BSD-2-Clause",
@@ -1667,27 +1603,6 @@
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/Rich-Harris/estree-walker"
-    },
-    {
-      "name": "event-target-shim",
-      "version": "5.0.1",
-      "license": "MIT",
-      "direct": false,
-      "repository": "https://github.com/mysticatea/event-target-shim.git"
-    },
-    {
-      "name": "events",
-      "version": "3.3.0",
-      "license": "MIT",
-      "direct": false,
-      "repository": "git://github.com/Gozala/events.git"
-    },
-    {
-      "name": "events-universal",
-      "version": "1.0.1",
-      "license": "Apache-2.0",
-      "direct": false,
-      "repository": "git+https://github.com/holepunchto/events-universal.git"
     },
     {
       "name": "eventsource",
@@ -1732,13 +1647,6 @@
       "repository": "git+https://github.com/C2FO/fast-csv.git"
     },
     {
-      "name": "fast-fifo",
-      "version": "1.3.2",
-      "license": "MIT",
-      "direct": false,
-      "repository": "https://github.com/mafintosh/fast-fifo.git"
-    },
-    {
       "name": "fdir",
       "version": "6.5.0",
       "license": "MIT",
@@ -1746,18 +1654,25 @@
       "repository": "git+https://github.com/thecodrr/fdir.git"
     },
     {
+      "name": "fs-constants",
+      "version": "1.0.0",
+      "license": "MIT",
+      "direct": false,
+      "repository": "https://github.com/mafintosh/fs-constants.git"
+    },
+    {
+      "name": "fs-extra",
+      "version": "11.3.1",
+      "license": "MIT",
+      "direct": false,
+      "repository": "https://github.com/jprichardson/node-fs-extra"
+    },
+    {
       "name": "fsevents",
       "version": "2.3.3",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/fsevents/fsevents.git"
-    },
-    {
-      "name": "fstream",
-      "version": "1.0.12",
-      "license": "ISC",
-      "direct": false,
-      "repository": "https://github.com/npm/fstream.git"
     },
     {
       "name": "get-nonce",
@@ -1886,13 +1801,6 @@
       "repository": "https://github.com/mathiasbynens/is-potential-custom-element-name.git"
     },
     {
-      "name": "is-stream",
-      "version": "2.0.1",
-      "license": "MIT",
-      "direct": false,
-      "repository": "sindresorhus/is-stream"
-    },
-    {
       "name": "isarray",
       "version": "1.0.0",
       "license": "MIT",
@@ -1926,6 +1834,13 @@
       "license": "MIT",
       "direct": true,
       "repository": "git+https://github.com/jsdom/jsdom.git"
+    },
+    {
+      "name": "jsonfile",
+      "version": "6.2.1",
+      "license": "MIT",
+      "direct": false,
+      "repository": "git@github.com:jprichardson/node-jsonfile.git"
     },
     {
       "name": "jszip",
@@ -1970,15 +1885,15 @@
       "repository": "https://github.com/parcel-bundler/lightningcss.git"
     },
     {
-      "name": "listenercount",
-      "version": "1.0.1",
-      "license": "ISC",
+      "name": "lodash.defaults",
+      "version": "4.2.0",
+      "license": "MIT",
       "direct": false,
-      "repository": "git@github.com:jden/node-listenercount.git"
+      "repository": "lodash/lodash"
     },
     {
-      "name": "lodash",
-      "version": "4.18.1",
+      "name": "lodash.difference",
+      "version": "4.5.0",
       "license": "MIT",
       "direct": false,
       "repository": "lodash/lodash"
@@ -1986,6 +1901,13 @@
     {
       "name": "lodash.escaperegexp",
       "version": "4.1.2",
+      "license": "MIT",
+      "direct": false,
+      "repository": "lodash/lodash"
+    },
+    {
+      "name": "lodash.flatten",
+      "version": "4.4.0",
       "license": "MIT",
       "direct": false,
       "repository": "lodash/lodash"
@@ -2026,8 +1948,22 @@
       "repository": "lodash/lodash"
     },
     {
+      "name": "lodash.isplainobject",
+      "version": "4.0.6",
+      "license": "MIT",
+      "direct": false,
+      "repository": "lodash/lodash"
+    },
+    {
       "name": "lodash.isundefined",
       "version": "3.0.1",
+      "license": "MIT",
+      "direct": false,
+      "repository": "lodash/lodash"
+    },
+    {
+      "name": "lodash.union",
+      "version": "4.6.0",
       "license": "MIT",
       "direct": false,
       "repository": "lodash/lodash"
@@ -2411,13 +2347,6 @@
       "repository": "https://github.com/isaacs/minipass"
     },
     {
-      "name": "mkdirp",
-      "version": "3.0.1",
-      "license": "MIT",
-      "direct": false,
-      "repository": "https://github.com/isaacs/node-mkdirp.git"
-    },
-    {
       "name": "ms",
       "version": "2.1.3",
       "license": "MIT",
@@ -2460,6 +2389,13 @@
       "repository": "vercel/next.js"
     },
     {
+      "name": "node-int64",
+      "version": "0.4.0",
+      "license": "MIT",
+      "direct": false,
+      "repository": "https://github.com/broofa/node-int64"
+    },
+    {
       "name": "normalize-path",
       "version": "3.0.0",
       "license": "MIT",
@@ -2472,6 +2408,13 @@
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/sxzz/obug.git"
+    },
+    {
+      "name": "once",
+      "version": "1.4.0",
+      "license": "ISC",
+      "direct": false,
+      "repository": "git://github.com/isaacs/once"
     },
     {
       "name": "pako",
@@ -2579,13 +2522,6 @@
       "repository": "https://github.com/facebook/jest.git"
     },
     {
-      "name": "process",
-      "version": "0.11.10",
-      "license": "MIT",
-      "direct": false,
-      "repository": "git://github.com/shtylman/node-process.git"
-    },
-    {
       "name": "process-nextick-args",
       "version": "2.0.1",
       "license": "MIT",
@@ -2670,13 +2606,6 @@
       "repository": "git://github.com/nodejs/readable-stream"
     },
     {
-      "name": "readable-stream",
-      "version": "4.8.0",
-      "license": "MIT",
-      "direct": false,
-      "repository": "https://github.com/nodejs/readable-stream"
-    },
-    {
       "name": "readdir-glob",
       "version": "1.1.3",
       "license": "Apache-2.0",
@@ -2724,13 +2653,6 @@
       "license": "MIT",
       "direct": false,
       "repository": "privatenumber/resolve-pkg-maps"
-    },
-    {
-      "name": "rimraf",
-      "version": "2.7.1",
-      "license": "ISC",
-      "direct": false,
-      "repository": "git://github.com/isaacs/rimraf.git"
     },
     {
       "name": "rolldown",
@@ -2859,13 +2781,6 @@
       "repository": "unjs/std-env"
     },
     {
-      "name": "streamx",
-      "version": "2.28.1",
-      "license": "MIT",
-      "direct": false,
-      "repository": "https://github.com/mafintosh/streamx.git"
-    },
-    {
       "name": "string_decoder",
       "version": "1.1.1",
       "license": "MIT",
@@ -2909,24 +2824,10 @@
     },
     {
       "name": "tar-stream",
-      "version": "3.2.2",
+      "version": "2.2.0",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/mafintosh/tar-stream.git"
-    },
-    {
-      "name": "teex",
-      "version": "1.0.1",
-      "license": "MIT",
-      "direct": false,
-      "repository": "https://github.com/mafintosh/teex.git"
-    },
-    {
-      "name": "text-decoder",
-      "version": "1.2.7",
-      "license": "Apache-2.0",
-      "direct": false,
-      "repository": "git+https://github.com/holepunchto/text-decoder.git"
     },
     {
       "name": "tinybench",
@@ -2983,13 +2884,6 @@
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/jsdom/tr46.git"
-    },
-    {
-      "name": "traverse",
-      "version": "0.3.9",
-      "license": "MIT/X11",
-      "direct": false,
-      "repository": "http://github.com/substack/js-traverse.git"
     },
     {
       "name": "trim-lines",
@@ -3090,8 +2984,15 @@
       "repository": "syntax-tree/unist-util-visit-parents"
     },
     {
+      "name": "universalify",
+      "version": "2.0.1",
+      "license": "MIT",
+      "direct": false,
+      "repository": "git+https://github.com/RyanZim/universalify.git"
+    },
+    {
       "name": "unzipper",
-      "version": "0.10.14",
+      "version": "0.12.5",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/ZJONSSON/node-unzipper.git"
@@ -3202,6 +3103,13 @@
       "repository": "https://github.com/mafintosh/why-is-node-running.git"
     },
     {
+      "name": "wrappy",
+      "version": "1.0.2",
+      "license": "ISC",
+      "direct": false,
+      "repository": "https://github.com/npm/wrappy"
+    },
+    {
       "name": "xml-name-validator",
       "version": "5.0.0",
       "license": "Apache-2.0",
@@ -3217,7 +3125,7 @@
     },
     {
       "name": "zip-stream",
-      "version": "6.0.1",
+      "version": "4.1.1",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/archiverjs/node-zip-stream.git"

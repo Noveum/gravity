@@ -20,12 +20,12 @@ test("all CRM and authentication tables have RLS with only the trusted server po
     SELECT relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'r'
   `);
-  expect(tables.rows).toHaveLength(54);
+  expect(tables.rows).toHaveLength(55);
   expect(tables.rows.every((table) => table.relrowsecurity)).toBe(true);
   const policies = await local.client.query<{ roles: string[] }>(`
     SELECT roles FROM pg_policies WHERE schemaname = 'public'
   `);
-  expect(policies.rows).toHaveLength(54);
+  expect(policies.rows).toHaveLength(55);
   expect(
     policies.rows.every((policy) => policy.roles.join() === "gravity_app"),
   ).toBe(true);
@@ -41,6 +41,7 @@ test("browser roles cannot read CRM, sessions, or signing keys even if table gra
       "invitations",
       "file_entry",
       "file_upload",
+      "asset_upload",
       "contact_import_batches",
       "contact_contributions",
       "internal_tasks",
@@ -87,7 +88,7 @@ test("runtime role holds read and write grants on every public table", async () 
       WHERE n.nspname = 'public' AND c.relkind = 'r'
       ORDER BY c.relname
     `);
-    expect(tables.rows).toHaveLength(54);
+    expect(tables.rows).toHaveLength(55);
     expect(
       tables.rows
         .filter((table) => !table.granted)
@@ -173,6 +174,7 @@ test("file and attribution migrations remove inherited browser and bypass-RLS se
       for (const table of [
         "file_entry",
         "file_upload",
+        "asset_upload",
         "contact_import_batches",
         "contact_contributions",
       ]) {

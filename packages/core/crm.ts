@@ -590,6 +590,7 @@ export class CrmService {
     const {
       contextDetails: _contextDetails,
       contextSource: _contextSource,
+      mergeHistory: _mergeHistory,
       ...relationshipColumns
     } = getTableColumns(s.relationships);
     const readableConversations = await this.db
@@ -646,6 +647,9 @@ export class CrmService {
       this.db
         .select({
           ...relationshipColumns,
+          mergeHistory: compact
+            ? sql<Record<string, unknown>[]>`'[]'::jsonb`
+            : s.relationships.mergeHistory,
           contextFields: sql<
             RelationshipField[]
           >`coalesce(${s.relationships.contextDetails}->'fields', '[]'::jsonb)`,

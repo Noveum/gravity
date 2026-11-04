@@ -21,6 +21,7 @@ import { focusedRecord, navigableRecords } from "./keyboard-navigation";
 import { EnrollDialog } from "./outreach/enroll-dialog";
 import { ResizeHandle, usePanelLayout } from "./panel-layout";
 import { ProductDialog } from "./product-dialog";
+import { CsvImportDialog } from "./records/csv-import-dialog";
 import { PeekPanel } from "./records/peek-panel";
 import {
   actionFilters,
@@ -666,6 +667,57 @@ function CrmShell({ children }: { children: ReactNode }) {
                   crm.setPersonDialog(true);
                 },
               },
+              ...(section === "people" &&
+              (recordId || crm.selection.selected[0] || paletteFocus.current)
+                ? [
+                    {
+                      id: "merge-person",
+                      title: t.mergePerson,
+                      shortcut: "",
+                      run: () => {
+                        const target =
+                          recordId ||
+                          crm.selection.selected[0] ||
+                          paletteFocus.current;
+                        if (target)
+                          crm.openRecordDialog({
+                            kind: "merge",
+                            id: target,
+                            entity: "person",
+                          });
+                      },
+                    },
+                  ]
+                : []),
+              ...(section === "companies" &&
+              (recordId || crm.selection.selected[0] || paletteFocus.current)
+                ? [
+                    {
+                      id: "merge-company",
+                      title: t.mergeCompany,
+                      shortcut: "",
+                      run: () => {
+                        const target =
+                          recordId ||
+                          crm.selection.selected[0] ||
+                          paletteFocus.current;
+                        if (target)
+                          crm.openRecordDialog({
+                            kind: "merge",
+                            id: target,
+                            entity: "company",
+                          });
+                      },
+                    },
+                  ]
+                : []),
+              {
+                id: "import-csv",
+                title: t.importCsv,
+                shortcut: "",
+                disabled: !data?.products.length,
+                run: () => crm.setImportDialog(true),
+              },
               ...(section === "sequences" || outreachTab === "sequences"
                 ? [
                     {
@@ -711,6 +763,19 @@ function CrmShell({ children }: { children: ReactNode }) {
                 : (result.error ?? t.errors.INTERNAL_ERROR);
             }}
             onClose={() => setProductDialog("")}
+          />
+        )}
+        {crm.importDialog && data && (
+          <CsvImportDialog
+            initialMode={section === "companies" ? "companies" : "contacts"}
+            data={data}
+            organizationId={organizationId}
+            productId={crm.productId}
+            onClose={() => crm.setImportDialog(false)}
+            onImported={async () => {
+              await crm.refresh();
+              crm.notify(t.updated, "success");
+            }}
           />
         )}
         {!data ? (

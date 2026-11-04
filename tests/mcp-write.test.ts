@@ -13,6 +13,7 @@ import { RecordService } from "../packages/core/records";
 import { createLocalDatabase } from "../packages/database/client";
 import * as s from "../packages/database/schema";
 import { demoId, demoUser, seedDemo } from "../packages/database/seed";
+import { writeLocalUpload } from "../packages/files/storage";
 import { guideTopics } from "../packages/mcp/guidance";
 import { principalForGrant } from "../packages/mcp/server";
 import {
@@ -152,7 +153,7 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
     if (!tool) throw new Error(`Missing tool: ${operation.name}`);
     expect(tool.inputSchema.type).toBe("object");
     expect(tool.inputSchema.properties).not.toHaveProperty("organizationId");
-    expect(tool.annotations?.readOnlyHint).toBe(operation.method === "GET");
+    expect(tool.annotations?.readOnlyHint).toBe(operation.access === "read");
   }
   const readonly = await rpcResult(
     specTypeSchemas.ListToolsResult,
@@ -161,7 +162,9 @@ test("MCP discovery exposes every business API with valid schemas and read-only 
     { ...writable, readOnly: true },
   );
   const readNames = readonly.tools.map((tool) => tool.name);
-  for (const operation of operations.filter((item) => item.method !== "GET")) {
+  for (const operation of operations.filter(
+    (item) => item.access === "write",
+  )) {
     expect(readNames).not.toContain(operation.name);
   }
   const capabilities = fullCapabilitiesSchema.parse(
@@ -471,7 +474,7 @@ test("each assistant scope combination lists only its tools and refuses the rest
     .filter((item) => item.permission === "crm:send")
     .map((item) => item.name);
   const writeNames = operations
-    .filter((item) => item.method !== "GET" && !item.permission)
+    .filter((item) => item.access === "write" && !item.permission)
     .map((item) => item.name);
   const readNames = operations
     .filter((item) => item.method === "GET")
@@ -1162,44 +1165,63 @@ test("MCP can upload contract PDFs and download exact bytes without crossing pro
     productId: demoId(11),
     name: "Fictional contracts",
   });
-  const dataBase64 = Buffer.from(
-    "%PDF-1.7\nFictional contract\n%%EOF",
-  ).toString("base64");
+  const bytes = Buffer.from("%PDF-1.7\nFictional contract\n%%EOF");
   const input = {
     productId: demoId(11),
     folderId: folder.id,
     name: "Fictional contract.pdf",
     mimeType: "application/pdf",
-    dataBase64,
+    size: bytes.length,
   };
   expect(
-    (await call("upload_material", { ...input, dataBase64: "not base64" }))
-      .error,
-  ).toContain("INVALID_INPUT");
-  const asset = await call("upload_material", input);
-  expect(asset.error).toBeUndefined();
-  const file = await call("download_material", { assetId: asset.id });
+    (await call("reserve_material_upload", { ...input, size: -1 })).error,
+  ).toBeDefined();
+  const reservation = await call("reserve_material_upload", input);
+  expect(reservation.error).toBeUndefined();
+  expect(reservation.uploadId).toBeDefined();
+  expect(reservation.url).toBeDefined();
+
+  // An unfinished upload must never be listed
+  const snapshotBefore = await call("list_materials", {
+    productId: demoId(11),
+  });
+  expect(
+    snapshotBefore.assets?.some(
+      (a: { id: string }) => a.id === reservation.uploadId,
+    ),
+  ).toBe(false);
+
+  await writeLocalUpload(`${demoId(1)}/pending/${reservation.uploadId}`, bytes);
+
+  const completed = await call("complete_material_upload", {
+    productId: demoId(11),
+    uploadId: reservation.uploadId,
+  });
+  expect(completed.error).toBeUndefined();
+  expect(completed.id).toBeDefined();
+
+  const file = await call("download_material", { assetId: completed.id });
   expect(file.mimeType).toBe("application/pdf");
-  expect(file.dataBase64).toBe(dataBase64);
+  expect(file.url).toBeDefined();
+  expect(file.dataBase64).toBeUndefined();
   expect(file.sha256).toMatch(/^[a-f0-9]{64}$/);
   expect(
     (
       await call(
         "download_material",
-        { assetId: asset.id },
+        { assetId: completed.id },
         { ...writable, productIds: [demoId(10)] },
       )
     ).error,
   ).toContain("FORBIDDEN");
-  expect(
-    (
-      await call("upload_material", {
-        ...input,
-        mimeType: "application/pdf",
-        dataBase64: Buffer.from("not a pdf").toString("base64"),
-      })
-    ).error,
-  ).toContain("FILE_TYPE");
+  const textAsset = await call("create_material", {
+    productId: demoId(11),
+    folderId: folder.id,
+    name: "Draft notes.md",
+    mimeType: "text/markdown",
+    content: "# Draft notes",
+  });
+  expect(textAsset.error).toBeUndefined();
 });
 
 test("MCP supports atomic follow-up planning and new workspaces without silently widening its grant", async () => {
@@ -1653,4 +1675,53 @@ test("an assistant cannot change where a do-not-contact person is reached", asyn
     },
   );
   expect(edited.email).toBe("new-route@example.test");
+});
+
+test("read-only MCP exposes POST CSV preview with read scopes and truthful annotations", async () => {
+  const principal = { ...writable, readOnly: true };
+  const discovered = await rpcResult(
+    specTypeSchemas.ListToolsResult,
+    "tools/list",
+    {},
+    principal,
+  );
+  const preview = discovered.tools.find(
+    (tool) => tool.name === "preview_csv_import",
+  );
+  expect(preview?.annotations).toMatchObject({
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+  });
+  expect(
+    discovered.tools.some((tool) => tool.name === "import_contacts_csv"),
+  ).toBe(false);
+  const audit = permissionAuditSchema.parse(
+    await call("get_permission_audit", {}, principal),
+  );
+  expect(
+    audit.operations.find(
+      (operation) => operation.name === "preview_csv_import",
+    ),
+  ).toMatchObject({ available: true, requirements: { scopes: ["crm:read"] } });
+  const result = await call(
+    "preview_csv_import",
+    {
+      productId: demoId(10),
+      csvText:
+        "Company,Domain\nRead Preview Fixture,readonly-preview.example.test",
+      mode: "companies",
+    },
+    principal,
+  );
+  expect(result).toMatchObject({ summary: { validCount: 1 } });
+  const rejected = await rpc(
+    "tools/call",
+    {
+      name: "import_contacts_csv",
+      arguments: { productId: demoId(10), csvText: "Name\nNo write" },
+    },
+    principal,
+  );
+  expect("error" in rejected).toBe(true);
 });

@@ -339,13 +339,13 @@ describe("archiving products", () => {
         { productId: demoId(10), pipeline: "outreach", name: "Fixture stage" },
       ],
       [
-        "upload_material",
+        "reserve_material_upload",
         {
           productId: demoId(10),
           folderId: demoId(900),
           name: "fixture.txt",
           mimeType: "text/plain",
-          dataBase64: Buffer.from("Fixture").toString("base64"),
+          size: 7,
         },
       ],
     ];

@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     assertMutationOrigin(request);
     const principal = await currentPrincipal(request.headers);
     const input = JSON.parse(
-      new TextDecoder().decode(await limitedBody(request, 100000)),
+      new TextDecoder().decode(await limitedBody(request, 2000000)),
     );
     const operation = apiOperation("crm", "POST", input.operation);
     return Response.json(

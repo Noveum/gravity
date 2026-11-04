@@ -613,7 +613,7 @@ test.each(["crm:read", "crm:read crm:write", "crm:read crm:write crm:send"])(
         token_endpoint_auth_method: "none",
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        scope: `${scope} offline_access`,
+        scope: "crm:read crm:write crm:send offline_access",
       },
       state: () => "sdk-state",
       clientInformation: () => clientInformation,
@@ -656,6 +656,9 @@ test.each(["crm:read", "crm:read crm:write", "crm:read crm:write crm:send"])(
       );
       expect(authorizationUrl.searchParams.get("resource")).toBe(
         `${origin}/mcp`,
+      );
+      expect(authorizationUrl.searchParams.get("scope")?.split(" ")).toEqual(
+        expect.arrayContaining(["crm:read", "crm:write", "crm:send"]),
       );
       const start = await call(
         authorizationUrl.pathname.replace("/api/auth", "") +
@@ -705,6 +708,16 @@ test.each(["crm:read", "crm:read crm:write", "crm:read crm:write crm:send"])(
     try {
       await connected.connect(authenticatedTransport);
       const tools = await connected.listTools();
+      const identity = await connected.callTool({
+        name: "get_me",
+        arguments: {},
+      });
+      expect(identity.isError).not.toBe(true);
+      expect(identity.structuredContent).toMatchObject({
+        organizationId: organization.id,
+        productIds: [product.id],
+        permissions: scope.split(" "),
+      });
       expect(tools.tools.map((tool) => tool.name)).toContain("list_products");
       expect(
         tools.tools.find((tool) => tool.name === "get_agent_guide")

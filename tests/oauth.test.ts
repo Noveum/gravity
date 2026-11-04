@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/client";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { flowKey, withOAuthRequest } from "../packages/auth/flow";
@@ -582,190 +582,269 @@ test("MCP accepts its configured browser Origin and returns OAuth discovery", as
   );
 });
 
-test("official MCP client discovers OAuth, registers, completes PKCE and reads and writes only its selected product", async () => {
-  const service = new CrmService(local.db);
-  const principal = { userId, source: "session" as const };
-  const organization = await service.createOrganization(principal, "SDK Org");
-  const product = await service.createProduct(
-    principal,
-    organization.id,
-    "SDK Selected Product",
-  );
-  const hiddenProduct = await service.createProduct(
-    principal,
-    organization.id,
-    "SDK Hidden Product",
-  );
-  let clientInformation: StoredOAuthClientInformation | undefined;
-  let tokens: StoredOAuthTokens | undefined;
-  let verifier = "";
-  let authorizationUrl: URL | undefined;
-  let discoveryState: OAuthDiscoveryState | undefined;
-  const provider: OAuthClientProvider = {
-    redirectUrl: `${origin}/sdk-callback`,
-    clientMetadata: {
-      client_name: "Fictional SDK assistant",
-      redirect_uris: [`${origin}/sdk-callback`],
-      token_endpoint_auth_method: "none",
-      grant_types: ["authorization_code", "refresh_token"],
-      response_types: ["code"],
-      scope: "crm:read crm:write crm:send offline_access",
-    },
-    state: () => "sdk-state",
-    clientInformation: () => clientInformation,
-    saveClientInformation: (value) => {
-      clientInformation = value;
-    },
-    tokens: () => tokens,
-    saveTokens: (value) => {
-      tokens = value;
-    },
-    saveCodeVerifier: (value) => {
-      verifier = value;
-    },
-    codeVerifier: () => verifier,
-    discoveryState: () => discoveryState,
-    saveDiscoveryState: (value) => {
-      discoveryState = value;
-    },
-    redirectToAuthorization: (url) => {
-      authorizationUrl = url;
-    },
-  };
-  const transport = new StreamableHTTPClientTransport(
-    new URL(`${origin}/mcp`),
-    { authProvider: provider },
-  );
-  const client = new Client({
-    name: "gravity-sdk-qualification",
-    version: "1.0.0",
-  });
-  try {
-    await expect(client.connect(transport)).rejects.toBeInstanceOf(
-      UnauthorizedError,
+test.each(["crm:read", "crm:read crm:write", "crm:read crm:write crm:send"])(
+  "official MCP client completes OAuth and enforces selected products and scopes (%s)",
+  async (scope) => {
+    const writable = scope.split(" ").includes("crm:write");
+    const canSend = scope.split(" ").includes("crm:send");
+    const service = new CrmService(local.db);
+    const principal = { userId, source: "session" as const };
+    const organization = await service.createOrganization(principal, "SDK Org");
+    const product = await service.createProduct(
+      principal,
+      organization.id,
+      "SDK Selected Product",
     );
-    expect(clientInformation?.client_id).toBeTruthy();
-    expect(authorizationUrl).toBeDefined();
-    if (!authorizationUrl) throw new Error("TEST_AUTHORIZATION_MISSING");
-    expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe(
-      "S256",
+    const hiddenProduct = await service.createProduct(
+      principal,
+      organization.id,
+      "SDK Hidden Product",
     );
-    expect(authorizationUrl.searchParams.get("resource")).toBe(`${origin}/mcp`);
-    const start = await call(
-      authorizationUrl.pathname.replace("/api/auth", "") +
-        authorizationUrl.search,
-    );
-    expect(start.url).toContain("/authorize?");
-    const signed = new URL(start.url, origin).search.slice(1);
-    const [grant] = await local.db
-      .insert(schema.mcpGrants)
-      .values({
-        organizationId: organization.id,
-        userId,
-        productIds: [product.id],
-      })
-      .returning();
-    await local.db
-      .insert(schema.oauthSelections)
-      .values({ sessionId, flowKey: flowKey(signed), grantId: grant.id });
-    const continued = await call("/oauth2/continue", {
-      postLogin: true,
-      oauth_query: signed,
-    });
-    const consent = await call("/oauth2/consent", {
-      accept: true,
-      oauth_query: new URL(continued.url, origin).search.slice(1),
-    });
-    const callback = new URL(consent.url);
-    expect(callback.searchParams.get("state")).toBe("sdk-state");
-    await transport.finishAuth(callback.searchParams);
-    expect(tokens?.access_token).toBeTruthy();
-  } finally {
-    await client.close();
-  }
-  const connected = new Client({
-    name: "gravity-sdk-qualification",
-    version: "1.0.0",
-  });
-  const authenticatedTransport = new StreamableHTTPClientTransport(
-    new URL(`${origin}/mcp`),
-    { authProvider: provider },
-  );
-  try {
-    await connected.connect(authenticatedTransport);
-    const tools = await connected.listTools();
-    expect(tools.tools.map((tool) => tool.name)).toContain("list_products");
-    expect(
-      tools.tools.find((tool) => tool.name === "get_agent_guide")?.outputSchema
-        ?.type,
-    ).toBe("object");
-    const guide = await connected.callTool({
-      name: "get_agent_guide",
-      arguments: { topic: "sequences" },
-    });
-    expect(guide.isError).not.toBe(true);
-    const workflow = agentGuideOutputSchema.parse(guide.structuredContent);
-    expect(workflow.topic).toBe("sequences");
-    expect(workflow.steps.length).toBeGreaterThan(0);
-    expect(
-      tools.tools.some(
-        (tool) =>
-          tool.name === "create_person" &&
-          tool.annotations?.readOnlyHint === false,
-      ),
-    ).toBe(true);
-    const products = await connected.callTool({
-      name: "list_products",
-      arguments: {},
-    });
-    expect(JSON.stringify(products)).toContain("SDK Selected Product");
-    expect(JSON.stringify(products)).not.toContain("SDK Hidden Product");
-    const forbidden = await connected.callTool({
-      name: "list_next_actions",
-      arguments: { productId: hiddenProduct.id },
-    });
-    expect(forbidden.isError).toBe(true);
-    expect(JSON.stringify(forbidden)).toContain("FORBIDDEN");
-    const created = await connected.callTool({
-      name: "create_person",
-      arguments: {
-        productId: product.id,
-        name: "Fictional OAuth buyer",
-        review: false,
+    let clientInformation: StoredOAuthClientInformation | undefined;
+    let tokens: StoredOAuthTokens | undefined;
+    let verifier = "";
+    let authorizationUrl: URL | undefined;
+    let discoveryState: OAuthDiscoveryState | undefined;
+    const provider: OAuthClientProvider = {
+      redirectUrl: `${origin}/sdk-callback`,
+      clientMetadata: {
+        client_name: "Fictional SDK assistant",
+        redirect_uris: [`${origin}/sdk-callback`],
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        scope: `${scope} offline_access`,
       },
+      state: () => "sdk-state",
+      clientInformation: () => clientInformation,
+      saveClientInformation: (value) => {
+        clientInformation = value;
+      },
+      tokens: () => tokens,
+      saveTokens: (value) => {
+        tokens = value;
+      },
+      saveCodeVerifier: (value) => {
+        verifier = value;
+      },
+      codeVerifier: () => verifier,
+      discoveryState: () => discoveryState,
+      saveDiscoveryState: (value) => {
+        discoveryState = value;
+      },
+      redirectToAuthorization: (url) => {
+        authorizationUrl = url;
+      },
+    };
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`${origin}/mcp`),
+      { authProvider: provider },
+    );
+    const client = new Client({
+      name: "gravity-sdk-qualification",
+      version: "1.0.0",
     });
-    expect(created.isError).not.toBe(true);
-    expect(
-      (
-        await service.snapshot(principal, {
+    try {
+      await expect(client.connect(transport)).rejects.toBeInstanceOf(
+        UnauthorizedError,
+      );
+      expect(clientInformation?.client_id).toBeTruthy();
+      expect(authorizationUrl).toBeDefined();
+      if (!authorizationUrl) throw new Error("TEST_AUTHORIZATION_MISSING");
+      expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe(
+        "S256",
+      );
+      expect(authorizationUrl.searchParams.get("resource")).toBe(
+        `${origin}/mcp`,
+      );
+      const start = await call(
+        authorizationUrl.pathname.replace("/api/auth", "") +
+          authorizationUrl.search,
+      );
+      expect(start.url).toContain("/authorize?");
+      const signed = new URL(start.url, origin).search.slice(1);
+      const [grant] = await local.db
+        .insert(schema.mcpGrants)
+        .values({
           organizationId: organization.id,
-          productId: product.id,
+          userId,
+          productIds: [product.id],
         })
-      ).people.some((p) => p.name === "Fictional OAuth buyer"),
-    ).toBe(true);
-    const deniedWrite = await connected.callTool({
-      name: "create_person",
-      arguments: {
-        productId: hiddenProduct.id,
-        name: "Forbidden OAuth buyer",
-        review: false,
-      },
+        .returning();
+      await local.db
+        .insert(schema.oauthSelections)
+        .values({ sessionId, flowKey: flowKey(signed), grantId: grant.id });
+      const continued = await call("/oauth2/continue", {
+        postLogin: true,
+        oauth_query: signed,
+      });
+      const consent = await call("/oauth2/consent", {
+        accept: true,
+        scope: `${scope} offline_access`,
+        oauth_query: new URL(continued.url, origin).search.slice(1),
+      });
+      const callback = new URL(consent.url);
+      expect(callback.searchParams.get("state")).toBe("sdk-state");
+      await transport.finishAuth(callback.searchParams);
+      expect(tokens?.access_token).toBeTruthy();
+      if (!tokens) throw new Error("TEST_TOKENS_MISSING");
+      const grantedScopes = tokenClaims(tokens.access_token).scope.split(" ");
+      expect(grantedScopes.includes("crm:write")).toBe(writable);
+      expect(grantedScopes.includes("crm:send")).toBe(canSend);
+    } finally {
+      await client.close();
+    }
+    const connected = new Client({
+      name: "gravity-sdk-qualification",
+      version: "1.0.0",
     });
-    expect(deniedWrite.isError).toBe(true);
-    expect(JSON.stringify(deniedWrite)).toContain("FORBIDDEN");
-    const capabilities = await connected.callTool({
-      name: "get_capabilities",
-      arguments: {},
-    });
-    expect(capabilities.isError).not.toBe(true);
-    await local.db
-      .update(schema.mcpGrants)
-      .set({ active: false })
-      .where(eq(schema.mcpGrants.userId, userId));
-    await expect(
-      connected.callTool({ name: "list_products", arguments: {} }),
-    ).rejects.toThrow();
-  } finally {
-    await connected.close();
-  }
-});
+    const authenticatedTransport = new StreamableHTTPClientTransport(
+      new URL(`${origin}/mcp`),
+      { authProvider: provider },
+    );
+    try {
+      await connected.connect(authenticatedTransport);
+      const tools = await connected.listTools();
+      expect(tools.tools.map((tool) => tool.name)).toContain("list_products");
+      expect(
+        tools.tools.find((tool) => tool.name === "get_agent_guide")
+          ?.outputSchema?.type,
+      ).toBe("object");
+      const guide = await connected.callTool({
+        name: "get_agent_guide",
+        arguments: { topic: "sequences" },
+      });
+      expect(guide.isError).not.toBe(true);
+      const workflow = agentGuideOutputSchema.parse(guide.structuredContent);
+      expect(workflow.topic).toBe("sequences");
+      expect(workflow.steps.length).toBeGreaterThan(0);
+      expect(
+        tools.tools.some(
+          (tool) =>
+            tool.name === "create_person" &&
+            tool.annotations?.readOnlyHint === false,
+        ),
+      ).toBe(writable);
+      const products = await connected.callTool({
+        name: "list_products",
+        arguments: {},
+      });
+      expect(JSON.stringify(products)).toContain("SDK Selected Product");
+      expect(JSON.stringify(products)).not.toContain("SDK Hidden Product");
+      const forbidden = await connected.callTool({
+        name: "list_next_actions",
+        arguments: { productId: hiddenProduct.id },
+      });
+      expect(forbidden.isError).toBe(true);
+      expect(JSON.stringify(forbidden)).toContain("FORBIDDEN");
+      const preview = await connected.callTool({
+        name: "preview_csv_import",
+        arguments: {
+          productId: product.id,
+          csvText:
+            "Company,Domain\nSDK Preview Fixture,sdk-preview.example.test",
+          mode: "companies",
+        },
+      });
+      expect(preview.isError).not.toBe(true);
+      expect(preview.structuredContent).toMatchObject({
+        summary: { validCount: 1 },
+      });
+      expect(
+        tools.tools.find((tool) => tool.name === "preview_csv_import")
+          ?.annotations,
+      ).toMatchObject({ readOnlyHint: true, idempotentHint: true });
+      expect(
+        tools.tools.some((tool) => tool.name === "import_contacts_csv"),
+      ).toBe(writable);
+      expect(tools.tools.some((tool) => tool.name === "send_touch")).toBe(
+        canSend,
+      );
+      expect(tools.tools.some((tool) => tool.name === "send_action")).toBe(
+        canSend,
+      );
+      if (writable) {
+        const created = await connected.callTool({
+          name: "create_person",
+          arguments: {
+            productId: product.id,
+            name: "Fictional OAuth buyer",
+            review: false,
+          },
+        });
+        expect(created.isError).not.toBe(true);
+        expect(
+          (
+            await service.snapshot(principal, {
+              organizationId: organization.id,
+              productId: product.id,
+            })
+          ).people.some((p) => p.name === "Fictional OAuth buyer"),
+        ).toBe(true);
+        const deniedWrite = await connected.callTool({
+          name: "create_person",
+          arguments: {
+            productId: hiddenProduct.id,
+            name: "Forbidden OAuth buyer",
+            review: false,
+          },
+        });
+        expect(deniedWrite.isError).toBe(true);
+        expect(JSON.stringify(deniedWrite)).toContain("FORBIDDEN");
+      } else {
+        await expect(
+          connected.callTool({
+            name: "create_person",
+            arguments: {
+              productId: product.id,
+              name: "Forbidden readonly write",
+            },
+          }),
+        ).rejects.toThrow();
+      }
+      if (!canSend) {
+        await expect(
+          connected.callTool({
+            name: "send_touch",
+            arguments: { touchId: randomBytes(16).toString("hex") },
+          }),
+        ).rejects.toThrow();
+      }
+      const capabilities = await connected.callTool({
+        name: "get_capabilities",
+        arguments: {},
+      });
+      expect(capabilities.isError).not.toBe(true);
+      await local.db
+        .update(schema.memberships)
+        .set({ active: false })
+        .where(
+          and(
+            eq(schema.memberships.organizationId, organization.id),
+            eq(schema.memberships.userId, userId),
+          ),
+        );
+      await expect(
+        connected.callTool({ name: "list_products", arguments: {} }),
+      ).rejects.toThrow();
+      await local.db
+        .update(schema.memberships)
+        .set({ active: true })
+        .where(
+          and(
+            eq(schema.memberships.organizationId, organization.id),
+            eq(schema.memberships.userId, userId),
+          ),
+        );
+      await local.db
+        .update(schema.mcpGrants)
+        .set({ active: false })
+        .where(eq(schema.mcpGrants.userId, userId));
+      await expect(
+        connected.callTool({ name: "list_products", arguments: {} }),
+      ).rejects.toThrow();
+    } finally {
+      await connected.close();
+    }
+  },
+);

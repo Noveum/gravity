@@ -89,6 +89,8 @@ export const contactContributions = pgTable(
     id: id(),
     organizationId: organizationId(),
     personId: uuid("person_id").notNull(),
+    // Original identity retained when its attribution moves to a canonical person.
+    mergedFromPersonId: uuid("merged_from_person_id"),
     productId: uuid("product_id"),
     actorId: text("actor_id"),
     sourceMemberId: text("source_member_id"),
@@ -166,7 +168,7 @@ export const contactContributions = pgTable(
     ),
     uniqueIndex("contact_contributions_original_creator")
       .on(t.personId)
-      .where(sql`${t.kind} = 'created'`),
+      .where(sql`${t.kind} = 'created' AND ${t.mergedFromPersonId} IS NULL`),
     check(
       "contact_contribution_batch_row",
       sql`((${t.batchId} IS NULL) = (${t.requestHash} IS NULL)) AND (${t.batchId} IS NULL OR (${t.productId} IS NOT NULL AND ${t.sourceRecordId} IS NOT NULL))`,
@@ -372,6 +374,11 @@ export const relationships = pgTable(
         fields: [],
       }),
     contextSource: text("context_source"),
+    // Product-shared snapshots only; never private message bodies.
+    mergeHistory: jsonb("merge_history")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
     stageId: uuid("stage_id"),
     stagePipeline: text("stage_pipeline", { enum: ["outreach"] })
       .notNull()
@@ -587,7 +594,7 @@ export const touches = pgTable(
         enrollments.relationshipId,
         enrollments.id,
       ],
-    }),
+    }).onUpdate("cascade"),
     foreignKey({
       columns: [t.organizationId, t.senderId],
       foreignColumns: [memberships.organizationId, memberships.userId],
@@ -1045,7 +1052,7 @@ export const assets = pgTable(
       columns: [t.organizationId, t.uploadedBy],
       foreignColumns: [memberships.organizationId, memberships.userId],
     }),
-    check("asset_size_valid", sql`${t.size} > 0 AND ${t.size} <= 10485760`),
+    check("asset_size_valid", sql`${t.size} > 0 AND ${t.size} <= 104857600`),
   ],
 ).enableRLS();
 export const assetStages = pgTable(
@@ -1067,6 +1074,45 @@ export const assetStages = pgTable(
       columns: [t.organizationId, t.productId, t.stageId],
       foreignColumns: [stages.organizationId, stages.productId, stages.id],
     }),
+  ],
+).enableRLS();
+export const assetUpload = pgTable(
+  "asset_upload",
+  {
+    id: id(),
+    organizationId: organizationId(),
+    productId: productId(),
+    folderId: uuid("folder_id").notNull(),
+    stageIds: jsonb("stage_ids").$type<string[]>().notNull().default([]),
+    name: text("name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    storageKey: text("storage_key").notNull(),
+    sha256: text("sha256"),
+    uploadedBy: text("uploaded_by").notNull(),
+    completedAssetId: uuid("completed_asset_id"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    serverAccessPolicy(),
+    foreignKey({
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.uploadedBy],
+      foreignColumns: [memberships.organizationId, memberships.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.folderId],
+      foreignColumns: [folders.organizationId, folders.productId, folders.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.organizationId, t.productId, t.completedAssetId],
+      foreignColumns: [assets.organizationId, assets.productId, assets.id],
+    }),
+    check("asset_upload_size", sql`${t.size} > 0 AND ${t.size} <= 104857600`),
   ],
 ).enableRLS();
 export const evidence = pgTable(

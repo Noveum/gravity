@@ -97,7 +97,13 @@ test("credentials are authenticated, encrypted and bound to the organization, ow
   expect(() => unseal(stored, "another:owner:row")).toThrow(
     "CONNECTION_UNAVAILABLE",
   );
-  expect(() => unseal(`${stored.slice(0, -2)}xx`, "org:owner:row")).toThrow(
+  const parts = stored.split(".");
+  const ciphertext = Buffer.from(parts[2], "base64url");
+  // Change actual bytes, not base64 padding bits. Flip within the token's
+  // string value so JSON parsing alone cannot reject the modified plaintext.
+  ciphertext[ciphertext.length - 3] ^= 1;
+  parts[2] = ciphertext.toString("base64url");
+  expect(() => unseal(parts.join("."), "org:owner:row")).toThrow(
     "CONNECTION_UNAVAILABLE",
   );
   vi.stubEnv("INTEGRATION_ENCRYPTION_KEY", "");

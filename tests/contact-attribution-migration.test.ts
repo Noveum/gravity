@@ -35,8 +35,13 @@ test("0023/0024 preserve populated records and enforce import isolation without 
     `);
     const beforePeople = (await client.query("SELECT * FROM people")).rows;
     const beforeRelationships = (
-      await client.query("SELECT * FROM relationships")
+      await client.query<Record<string, unknown>>("SELECT * FROM relationships")
     ).rows;
+    // The latest schema adds empty merge history without changing legacy values.
+    const expectedRelationships = beforeRelationships.map((row) => ({
+      ...row,
+      merge_history: [],
+    }));
     await writeFile(path, JSON.stringify(journal));
     await migrate(db, { migrationsFolder: folder });
     await migrate(db, { migrationsFolder: folder });
@@ -44,7 +49,7 @@ test("0023/0024 preserve populated records and enforce import isolation without 
       beforePeople,
     );
     expect((await client.query("SELECT * FROM relationships")).rows).toEqual(
-      beforeRelationships,
+      expectedRelationships,
     );
     expect(
       (await client.query("SELECT * FROM contact_contributions")).rows,
@@ -107,7 +112,7 @@ test("0023/0024 preserve populated records and enforce import isolation without 
       ).rows,
     ).toEqual(beforePeople);
     expect((await client.query("SELECT * FROM relationships")).rows).toEqual(
-      beforeRelationships,
+      expectedRelationships,
     );
   } finally {
     await client.close();

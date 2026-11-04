@@ -62,6 +62,11 @@ import {
   workspaceSchema,
 } from "../core/crm";
 import {
+  CsvImportService,
+  csvImportPreviewSchema,
+  csvImportSchema,
+} from "../core/csv-import";
+import {
   changeInternalTaskSchema,
   createInternalTaskSchema,
   InternalTaskService,
@@ -149,6 +154,7 @@ import {
   companyArchiveSchema,
   companySchema,
   meetingSchema,
+  mergeRecordsSchema,
   opportunityChangeSchema,
   opportunityCreateSchema,
   opportunityRemovalSchema,
@@ -170,7 +176,14 @@ import {
   MAX_UPLOAD_BYTES,
   publicFileTokenSchema,
 } from "../files/validators";
-import { downloadAsset, maxFileSize, uploadAsset } from "../storage/files";
+import {
+  completeAssetUpload,
+  downloadAsset,
+  maxFileSize,
+  putLocalMaterialUpload,
+  reserveAssetUpload,
+  uploadAsset,
+} from "../storage/files";
 
 export interface OperationContext {
   db: Database;
@@ -180,6 +193,7 @@ export interface Operation {
   name: string;
   api: "crm" | "outreach" | "integrations" | "materials" | "grants" | "files";
   method: "GET" | "POST" | "DELETE";
+  access: "read" | "write";
   operation: string;
   description: string;
   schema: z.ZodObject;
@@ -194,23 +208,27 @@ export interface Operation {
 function operation<S extends z.ZodObject>(
   definition: Omit<
     Operation,
-    "schema" | "execute" | "idempotent" | "destructive"
+    "schema" | "execute" | "idempotent" | "destructive" | "access"
   > & {
     schema: S;
     run: (context: OperationContext, input: z.output<S>) => Promise<unknown>;
     idempotent?: boolean;
     destructive?: boolean;
     publish?: boolean;
+    access?: Operation["access"];
   },
 ): Operation {
+  const access =
+    definition.access ?? (definition.method === "GET" ? "read" : "write");
   return {
     ...definition,
-    idempotent: definition.idempotent ?? definition.method === "GET",
-    destructive: definition.destructive ?? definition.method !== "GET",
+    access,
+    idempotent: definition.idempotent ?? access === "read",
+    destructive: definition.destructive ?? access === "write",
     async execute(context, input) {
       const parsed = definition.schema.parse(input);
       const value = await definition.run(context, parsed);
-      if (definition.method !== "GET" && definition.publish !== false) {
+      if (access === "write" && definition.publish !== false) {
         const fields = parsed as { organizationId?: string };
         const output = value as
           | { organizationId?: string; id?: string }
@@ -247,16 +265,29 @@ const overviewSchema = scopeSchema.extend({
   ownerId: z.string().optional(),
   channel: z.enum(["gmail", "linkedin"]).optional(),
 });
-export const materialUploadSchema = scopeSchema.extend({
+export const materialReserveSchema = scopeSchema.extend({
   productId: z.uuid(),
   folderId: z.uuid(),
   stageIds: z.array(z.uuid()).max(100).default([]),
   name: z.string().trim().min(1).max(200),
   mimeType: z.string().min(1).max(100),
-  dataBase64: z
+  size: z.number().int().min(1).max(maxFileSize),
+  sha256: z
     .string()
-    .min(1)
-    .max(Math.ceil(maxFileSize / 3) * 4),
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+});
+export const materialUploadSchema = materialReserveSchema
+  .omit({ size: true, sha256: true })
+  .extend({
+    dataBase64: z
+      .string()
+      .min(1)
+      .max(Math.ceil(maxFileSize / 3) * 4),
+  });
+export const materialCompleteSchema = scopeSchema.extend({
+  productId: z.uuid(),
+  uploadId: z.uuid(),
 });
 export function materialBytes(value: string) {
   const bytes = Buffer.from(value, "base64");
@@ -958,6 +989,32 @@ export const operations: Operation[] = [
   }),
   operation({
     api: "crm",
+    method: "POST",
+    operation: "csv-import-preview",
+    name: "preview_csv_import",
+    access: "read",
+    idempotent: true,
+    destructive: false,
+    publish: false,
+    description:
+      "Preview CSV with mode=contacts (default) or mode=companies for company-only files. Map each field once. Returns structured validation codes and organization-wide email/alias, LinkedIn and company-domain collisions without disclosing stored records. No writes.",
+    schema: csvImportPreviewSchema,
+    run: (c, input) => new CsvImportService(c.db).preview(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "csv-import",
+    name: "import_contacts_csv",
+    idempotent: false,
+    destructive: true,
+    description:
+      "Import CSV with mode=contacts (default) to create people and product relationships, or mode=companies to create organization companies without people or relationships. Preview first with preview_csv_import. Duplicate identities require review: by default they reject with PERSON_EXISTS or COMPANY_EXISTS; skipDuplicates imports only valid non-duplicate rows. Authenticated attribution is recorded for contacts. This operation is not idempotent; inspect state after an unknown outcome before attempting another import.",
+    schema: csvImportSchema,
+    run: (c, input) => new CsvImportService(c.db).importCsv(c.principal, input),
+  }),
+  operation({
+    api: "crm",
     method: "GET",
     operation: "context",
     name: "get_person_context",
@@ -1249,6 +1306,16 @@ export const operations: Operation[] = [
     description: "Archive or restore a company using its current version.",
     schema: companyArchiveSchema,
     run: (c, input) => records(c).archiveCompany(c.principal, input),
+  }),
+  operation({
+    api: "crm",
+    method: "POST",
+    operation: "merge-records",
+    name: "merge_records",
+    description:
+      "Merge duplicate people or companies atomically using current versions and write access to every affected source and target product, including archived products. Fetch full person/company context before choosing fields; compact empty fields are not evidence of absent notes. Empty relationship notes are filled from the source; conflicting original values are retained in product-shared mergeHistory. Preserves creator attribution, private owners, all child history and durable delivery claims. Stops duplicate active sequence enrollments and skips their pending touches. Preserves the union of email aliases and tags; over-limit unions reject without changes. Review aliases with update_person and tags with update_record_metadata before retrying. Amounts retain the selected record’s currency. Invalidates approvals; never sends or retries messages.",
+    schema: mergeRecordsSchema,
+    run: (c, input) => records(c).mergeRecords(c.principal, input),
   }),
   operation({
     api: "crm",
@@ -1695,10 +1762,10 @@ export const operations: Operation[] = [
     operation: "download",
     name: "download_material",
     description:
-      "Download an authorized PDF/text/Markdown file as base64 with its metadata. Includes contract PDFs stored as materials; no contract-signature workflow exists.",
+      "Authorize and return a private download URL and metadata for an authorized PDF/text/Markdown file.",
     schema: scopeSchema.extend({ assetId: z.uuid() }),
     run: async (c, input) => {
-      const { asset, bytes } = await downloadAsset(
+      const { asset, url } = await downloadAsset(
         c.db,
         c.principal,
         input.organizationId,
@@ -1709,9 +1776,9 @@ export const operations: Operation[] = [
         name: asset.name,
         version: asset.version,
         mimeType: asset.mimeType,
-        size: bytes.length,
+        size: asset.size,
         sha256: asset.sha256,
-        dataBase64: Buffer.from(bytes).toString("base64"),
+        url,
       };
     },
   }),
@@ -1721,12 +1788,55 @@ export const operations: Operation[] = [
     operation: "upload",
     name: "upload_material",
     description:
-      "Upload a PDF/text/Markdown document as canonical base64 into an authorized product folder, with optional stage associations. Stored as a draft. Maximum decoded size is 10 MiB; hosting request limits also apply.",
+      "Upload a small PDF/text/Markdown material as canonical base64 into an authorized product folder. Use reserve_material_upload and complete_material_upload for larger files up to 100 MiB.",
     schema: materialUploadSchema,
     destructive: false,
     run: (c, input) =>
       uploadAsset(c.db, c.principal, {
         ...input,
+        bytes: materialBytes(input.dataBase64),
+      }),
+  }),
+  operation({
+    api: "materials",
+    method: "POST",
+    operation: "reserve",
+    name: "reserve_material_upload",
+    description:
+      "Reserve a private stage-linked document upload up to 100 MiB. PUT bytes directly to the returned storage URL, then complete.",
+    schema: materialReserveSchema,
+    destructive: false,
+    run: (c, input) => reserveAssetUpload(c.db, c.principal, input),
+  }),
+  operation({
+    api: "materials",
+    method: "POST",
+    operation: "complete",
+    name: "complete_material_upload",
+    description:
+      "Seal a reserved material upload into an immutable asset after streamed size, content and SHA256 verification.",
+    schema: materialCompleteSchema,
+    destructive: false,
+    run: (c, input) => completeAssetUpload(c.db, c.principal, input),
+  }),
+  operation({
+    api: "materials",
+    method: "POST",
+    operation: "upload-bytes",
+    name: "put_local_material_upload",
+    publish: false,
+    description:
+      "Local demo transport for an owned material upload. Disabled in production; production uses the reservation signed PUT URL.",
+    schema: scopeSchema.extend({
+      productId: z.uuid(),
+      uploadId: z.uuid(),
+      dataBase64: z.string().max(Math.ceil(maxFileSize / 3) * 4),
+    }),
+    run: (c, input) =>
+      putLocalMaterialUpload(c.db, c.principal, {
+        organizationId: input.organizationId,
+        productId: input.productId,
+        uploadId: input.uploadId,
         bytes: materialBytes(input.dataBase64),
       }),
   }),
@@ -1865,7 +1975,7 @@ const ownerOperations = new Set([
 export function operationRequirements(item: Operation) {
   return {
     scopes:
-      item.method === "GET"
+      item.access === "read"
         ? ["crm:read"]
         : [
             "crm:read",
@@ -1886,7 +1996,7 @@ export function operationAvailable(
 ) {
   const requirements = operationRequirements(item);
   return (
-    (item.method === "GET" ||
+    (item.access === "read" ||
       principal.source === "session" ||
       principal.readOnly === false) &&
     (!item.permission ||
@@ -1930,6 +2040,7 @@ export async function permissionAudit(
       name: item.name,
       api: `/api/${item.api}`,
       method: item.method,
+      access: item.access,
       operation: item.operation,
       available: operationAvailable(item, context.principal, membership.role),
       requirements: operationRequirements(item),
@@ -1950,7 +2061,7 @@ export async function executeMcpOperation(
     context.principal,
     organizationId,
     undefined,
-    item.method !== "GET",
+    item.access === "write",
   );
   const parsed = operationInput(item).parse(input);
   return item.execute(context, {

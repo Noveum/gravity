@@ -18,7 +18,6 @@ import { flowKey, withOAuthRequest } from "../packages/auth/flow";
 import { authPlugins } from "../packages/auth/options";
 import { CrmService } from "../packages/core/crm";
 import { errorResponse } from "../packages/core/http";
-import { createLocalDatabase } from "../packages/database/client";
 import * as schema from "../packages/database/schema";
 import { agentGuideOutputSchema } from "../packages/mcp/guidance";
 import {
@@ -36,8 +35,9 @@ vi.mock("@crm/database/client", async (importOriginal) => ({
 }));
 
 import { POST as mcpPost } from "../src/app/mcp/route";
+import { createOAuthDatabase } from "./support/oauth-database";
 
-let local: Awaited<ReturnType<typeof createLocalDatabase>>;
+let local: Awaited<ReturnType<typeof createOAuthDatabase>>;
 let auth: ReturnType<typeof createTestAuth>;
 let origin: string;
 let cookie = "";
@@ -154,7 +154,7 @@ function createTestAuth() {
   });
 }
 beforeAll(async () => {
-  local = await createLocalDatabase();
+  local = await createOAuthDatabase();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string")
@@ -177,7 +177,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  await local.client.close();
+  await local?.close();
   vi.unstubAllEnvs();
 });
 test("OAuth PKCE binds each simultaneous flow to its own organization and product grant", async () => {

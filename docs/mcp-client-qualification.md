@@ -14,6 +14,14 @@ Gravity exposes CRM read/write/send Streamable HTTP at `<APP_URL>/mcp`. OAuth is
 
 The automated fixture uses a fictional email/password test identity and in-memory credentials; it does not send email, configure a personal assistant or access a live inbox. Production login remains Google/GitHub configuration. Client Metadata Document support is configured through the official Better Auth CIMD plugin but is **not yet exercised against Codex's live metadata document**. Do not describe the DCR SDK test as CIMD qualification.
 
+## Better Auth package compatibility
+
+Keep `better-auth`, `@better-auth/cimd`, and `@better-auth/mcp` on the reviewed 1.7.15 family. The OAuth provider is constrained to 1.7.15 in package overrides so its caret range cannot select a newer provider with a newer core/auth peer requirement. Updating MCP alone left a nested provider on an incompatible core and prevented OAuth from starting (`encodeDeterministicId` / `isNativePrivateUseRedirectUri` imports). A clean frozen install exercises discovery, PKCE, consent, token exchange/refresh and verified MCP calls through the application handler.
+
+The family uses 1.7.15 rather than downgrading the PR's already resolved OAuth provider to 1.7.14: upstream 1.7.15 hardens the enabled Node CIMD transport against malformed metadata response crashes and stops built-in social providers from following redirects on token/refresh/JWKS requests. The published package manifests require compatible core/auth >=1.7.15 and `better-call` 1.4.4; the lock resolves one matching family.
+
+Reviewed upstream metadata and changes: [Better Auth 1.7.15 release](https://github.com/better-auth/better-auth/releases/tag/v1.7.15), [MCP package manifest](https://github.com/better-auth/better-auth/blob/v1.7.15/packages/mcp/package.json), [CIMD package manifest](https://github.com/better-auth/better-auth/blob/v1.7.15/packages/cimd/package.json), [OAuth provider package manifest](https://github.com/better-auth/better-auth/blob/v1.7.15/packages/oauth-provider/package.json).
+
 ## Connect after staging is configured
 
 Use a current Codex CLI:

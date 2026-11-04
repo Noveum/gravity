@@ -13,6 +13,7 @@ import { useState } from "react";
 import { useCrm } from "../crm/crm-context";
 import { ImportedContext } from "./imported-context";
 import { InlineField } from "./inline-field";
+import { MergeHistory } from "./merge-history";
 import { RecordText } from "./record-text";
 import { RelationshipContextDialog } from "./relationship-context-dialog";
 
@@ -221,6 +222,7 @@ export function RelationshipContext({
             source={relationship.contextSource}
           />
         )}
+      <MergeHistory entries={relationship.mergeHistory ?? []} />
       {editing && (
         <RelationshipContextDialog
           relationship={relationship}

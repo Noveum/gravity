@@ -109,9 +109,53 @@ export function Materials({
           }),
         });
       else {
-        fields.set("organizationId", organizationId);
-        fields.set("productId", formProduct);
-        await requestJson("/api/materials", { method: "POST", body: fields });
+        const file = fields.get("file");
+        if (!(file instanceof File)) throw new Error("File is required");
+        const stageIds = fields.getAll("stageIds").map(String);
+        const folderIdVal = String(fields.get("folderId") ?? "");
+        const reservation = (await requestJson("/api/materials", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            operation: "reserve",
+            organizationId,
+            productId: formProduct,
+            folderId: folderIdVal,
+            stageIds,
+            name: file.name,
+            mimeType: file.type || "application/octet-stream",
+            size: file.size,
+          }),
+        })) as { uploadId: string; url: string };
+        const uploadUrl = reservation.url.startsWith("/")
+          ? `${reservation.url}&${new URLSearchParams({ organizationId, productId: formProduct })}`
+          : reservation.url;
+        await new Promise<void>((resolve, reject) => {
+          const req = new XMLHttpRequest();
+          req.open("PUT", uploadUrl);
+          req.setRequestHeader(
+            "Content-Type",
+            file.type || "application/octet-stream",
+          );
+          req.timeout = 600_000;
+          req.onload = () =>
+            req.status >= 200 && req.status < 300
+              ? resolve()
+              : reject(new Error("Upload failed"));
+          req.onerror = () => reject(new Error("Upload failed"));
+          req.ontimeout = () => reject(new Error("Upload failed"));
+          req.send(file);
+        });
+        await requestJson("/api/materials", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            operation: "complete",
+            organizationId,
+            productId: formProduct,
+            uploadId: reservation.uploadId,
+          }),
+        });
       }
       await refresh();
       setDialog(null);

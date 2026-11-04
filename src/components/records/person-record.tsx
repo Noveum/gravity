@@ -119,6 +119,13 @@ export function PersonRecord({ personId }: { personId: string }) {
           busy={crm.busy}
           onEdit={() => crm.openRecordDialog({ kind: "person", id: person.id })}
           onArchive={() => void archive.archive("person", person)}
+          onMerge={() =>
+            crm.openRecordDialog({
+              kind: "merge",
+              id: person.id,
+              entity: "person",
+            })
+          }
         />
       </div>
       <section className="record-timeline" aria-label={t.activity}>

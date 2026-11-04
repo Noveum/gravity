@@ -1,23 +1,30 @@
-import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../database/client";
 import * as s from "../database/schema";
+import t from "../i18n/translations/en.json";
+import { publishChange } from "./changes";
 import { recordContactSubmission } from "./contact-attribution";
 import { lockContactDirectory } from "./contact-history";
 import { scopeSchema } from "./crm";
 import { authorize, DomainError, type Principal } from "./policy";
 import { assertProductActive } from "./products";
+import { recordMetadataSchema } from "./record-metadata";
+import { tagsSchema } from "./record-tags";
 import {
   activeCompany,
   assertActiveRelationships,
   clearApprovals,
   companyVisible,
   emailTaken,
+  linkedinKey,
   linkedinTaken,
   lockOrganization,
   personVisible,
   shareLockStage,
 } from "./visibility";
+
+import { ianaTimeZoneSchema } from "./workspace";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -146,6 +153,84 @@ export const opportunityChangeSchema = scopeSchema
       value.amountMinor !== undefined ||
       value.currency !== undefined,
   );
+
+export const mergeRecordsSchema = scopeSchema.extend({
+  entity: z.enum(["person", "company"]),
+  targetId: z.uuid(),
+  targetVersion: version,
+  sourceId: z.uuid(),
+  sourceVersion: version,
+  name: z.string().trim().min(1).max(100).optional(),
+  title: z.string().trim().max(150).optional(),
+  email: emailAddress.nullable().optional(),
+  otherEmails: z
+    .array(emailAddress)
+    .max(10)
+    .optional()
+    .describe(
+      "Additional aliases. Both original primary and secondary addresses are retained; merge rejects a union exceeding 10 secondary addresses. Review aliases with update_person before retrying.",
+    ),
+  phone: z
+    .string()
+    .trim()
+    .max(40)
+    .regex(/^[+\d\s().-]*$/)
+    .optional(),
+  linkedinUrl: linkedinUrl.optional(),
+  companyId: z.uuid().nullable().optional(),
+  summary: z.string().trim().max(10000).optional(),
+  doNotContact: z.boolean().optional(),
+  timeZone: ianaTimeZoneSchema.nullable().optional(),
+  domain: companyDomain.nullable().optional(),
+  description: z.string().trim().max(2000).optional(),
+  tags: tagsSchema
+    .optional()
+    .describe(
+      "Additional tags. Both records’ tags are retained; merge rejects a union exceeding 30 tags. Review tags with update_record_metadata before retrying.",
+    ),
+  amountMinor: amountMinor.optional(),
+  currency: currency.optional(),
+});
+
+/** Merge lists are additive: removing identities/tags needs a separate reviewed edit. */
+function mergeTags(
+  target: string[],
+  source: string[],
+  additions: string[] = [],
+) {
+  const unique = new Map<string, string>();
+  for (const tag of [...target, ...source, ...additions]) {
+    if (!unique.has(tag.toLowerCase())) unique.set(tag.toLowerCase(), tag);
+  }
+  const parsed = tagsSchema.safeParse([...unique.values()]);
+  if (!parsed.success) throw new DomainError("MERGE_TAG_LIMIT", 409);
+  return parsed.data;
+}
+
+function mergeEstimate(
+  target: { amountMinor: number | null; currency: string },
+  source: { amountMinor: number | null; currency: string },
+  input: { amountMinor?: number | null; currency?: string },
+) {
+  const selected =
+    target.amountMinor === null && source.amountMinor !== null
+      ? source
+      : target;
+  const estimate = {
+    amountMinor:
+      input.amountMinor !== undefined
+        ? input.amountMinor
+        : selected.amountMinor,
+    currency: input.currency ?? selected.currency,
+  };
+  if (
+    !recordMetadataSchema
+      .pick({ amountMinor: true, currency: true })
+      .safeParse(estimate).success
+  )
+    throw new DomainError("MERGE_REVIEW_REQUIRED", 409);
+  return estimate;
+}
 
 function requireWriteActor(principal: Principal) {
   if (principal.source === "mcp" && principal.readOnly !== false)
@@ -1012,5 +1097,702 @@ export class RecordService {
       });
       return updated;
     });
+  }
+
+  async mergeRecords(
+    principal: Principal,
+    input: z.infer<typeof mergeRecordsSchema>,
+  ) {
+    requireWriteActor(principal);
+    const result = await this.db.transaction(async (tx) => {
+      await lockOrganization(tx, input.organizationId);
+      const permission = await authorize(
+        tx,
+        principal,
+        input.organizationId,
+        input.productId,
+        true,
+      );
+      if (input.targetId === input.sourceId)
+        throw new DomainError("CONFLICT", 409);
+
+      const writable = new Set(
+        permission.products.map((product) => product.id),
+      );
+
+      if (input.entity === "person") {
+        const [target] = await tx
+          .select()
+          .from(s.people)
+          .where(
+            and(
+              eq(s.people.id, input.targetId),
+              eq(s.people.organizationId, input.organizationId),
+            ),
+          )
+          .for("update");
+        const [source] = await tx
+          .select()
+          .from(s.people)
+          .where(
+            and(
+              eq(s.people.id, input.sourceId),
+              eq(s.people.organizationId, input.organizationId),
+            ),
+          )
+          .for("update");
+        if (!target || !source) throw new DomainError("NOT_FOUND", 404);
+        if (
+          target.version !== input.targetVersion ||
+          source.version !== input.sourceVersion
+        )
+          throw new DomainError("CONFLICT", 409);
+        if (target.archivedAt || source.archivedAt)
+          throw new DomainError("RECORD_ARCHIVED", 409);
+        if (
+          !(await personVisible(
+            tx,
+            [...writable],
+            input.organizationId,
+            target.id,
+          )) ||
+          !(await personVisible(
+            tx,
+            [...writable],
+            input.organizationId,
+            source.id,
+          ))
+        )
+          throw new DomainError("NOT_FOUND", 404);
+
+        const sourceRelationships = await tx
+          .select()
+          .from(s.relationships)
+          .where(
+            and(
+              eq(s.relationships.organizationId, input.organizationId),
+              eq(s.relationships.personId, source.id),
+            ),
+          )
+          .for("update");
+        const targetRelationships = await tx
+          .select()
+          .from(s.relationships)
+          .where(
+            and(
+              eq(s.relationships.organizationId, input.organizationId),
+              eq(s.relationships.personId, target.id),
+            ),
+          )
+          .for("update");
+
+        const blockedProducts = [...sourceRelationships, ...targetRelationships]
+          .map((r) => r.productId)
+          .filter((pId) => !writable.has(pId));
+        if (blockedProducts.length > 0) throw new DomainError("FORBIDDEN", 403);
+
+        const chosenName = input.name ?? target.name;
+        const chosenTitle =
+          input.title !== undefined
+            ? input.title
+            : target.title || source.title;
+        const chosenEmail =
+          input.email !== undefined
+            ? input.email
+            : target.email || source.email || null;
+        const mergedOther = [
+          ...new Set(
+            [
+              ...target.otherEmails,
+              ...source.otherEmails,
+              ...(input.otherEmails ?? []),
+              ...(target.email && target.email !== chosenEmail
+                ? [target.email]
+                : []),
+              ...(source.email && source.email !== chosenEmail
+                ? [source.email]
+                : []),
+            ].map((email) => email.trim().toLowerCase()),
+          ),
+        ].filter((email) => email && email !== chosenEmail?.toLowerCase());
+        const aliases =
+          personUpdateSchema.shape.otherEmails.safeParse(mergedOther);
+        if (!aliases.success) throw new DomainError("MERGE_EMAIL_LIMIT", 409);
+        const chosenOtherEmails = aliases.data;
+        const chosenPhone =
+          input.phone !== undefined
+            ? input.phone
+            : target.phone || source.phone;
+        const chosenLinkedin =
+          input.linkedinUrl !== undefined
+            ? input.linkedinUrl
+            : target.linkedinUrl || source.linkedinUrl;
+        const chosenCompanyId =
+          input.companyId !== undefined
+            ? input.companyId
+            : target.companyId || source.companyId || null;
+        const chosenSummary =
+          input.summary !== undefined
+            ? input.summary
+            : target.summary || source.summary;
+        const chosenDoNotContact =
+          input.doNotContact !== undefined
+            ? input.doNotContact
+            : target.doNotContact || source.doNotContact;
+        const chosenTimeZone =
+          input.timeZone !== undefined
+            ? input.timeZone
+            : target.timeZone || source.timeZone || null;
+        const chosenTags = mergeTags(target.tags, source.tags, input.tags);
+        const { amountMinor: chosenAmount, currency: chosenCurrency } =
+          mergeEstimate(target, source, input);
+
+        if (
+          !personUpdateSchema.safeParse({
+            organizationId: input.organizationId,
+            personId: target.id,
+            version: target.version,
+            name: chosenName,
+            title: chosenTitle,
+            email: chosenEmail,
+            otherEmails: chosenOtherEmails,
+            phone: chosenPhone,
+            linkedinUrl: chosenLinkedin,
+            companyId: chosenCompanyId,
+            summary: chosenSummary,
+          }).success
+        )
+          throw new DomainError("MERGE_REVIEW_REQUIRED", 409);
+
+        const allEmails = [
+          ...new Set([
+            ...(chosenEmail ? [chosenEmail] : []),
+            ...chosenOtherEmails,
+          ]),
+        ];
+        if (allEmails.length > 0) {
+          const emailTakenOther = await tx
+            .select({ id: s.people.id })
+            .from(s.people)
+            .where(
+              and(
+                eq(s.people.organizationId, input.organizationId),
+                ne(s.people.id, target.id),
+                ne(s.people.id, source.id),
+                or(
+                  inArray(
+                    sql`lower(${s.people.email})`,
+                    allEmails.map((e) => e.toLowerCase()),
+                  ),
+                  sql`${s.people.otherEmails} ?| array[${sql.join(
+                    allEmails.map((e) => sql`${e.toLowerCase()}`),
+                    sql`, `,
+                  )}]::text[]`,
+                ),
+              ),
+            )
+            .limit(1);
+          if (emailTakenOther.length > 0)
+            throw new DomainError("PERSON_EXISTS", 409);
+        }
+
+        if (chosenLinkedin) {
+          const [linkedinTakenOther] = await tx
+            .select({ id: s.people.id })
+            .from(s.people)
+            .where(
+              and(
+                eq(s.people.organizationId, input.organizationId),
+                ne(s.people.id, target.id),
+                ne(s.people.id, source.id),
+                ne(s.people.linkedinUrl, ""),
+                sql`${linkedinKey(s.people.linkedinUrl)} = ${linkedinKey(sql`${chosenLinkedin}`)}`,
+              ),
+            )
+            .limit(1);
+          if (linkedinTakenOther) throw new DomainError("PERSON_EXISTS", 409);
+        }
+
+        if (chosenCompanyId && chosenCompanyId !== target.companyId) {
+          await activeCompany(
+            tx,
+            [...writable],
+            input.organizationId,
+            chosenCompanyId,
+          );
+        }
+
+        for (const sr of sourceRelationships) {
+          const tr = targetRelationships.find(
+            (r) => r.productId === sr.productId && r.purpose === sr.purpose,
+          );
+          if (tr) {
+            // A canonical choice must never erase the losing product context.
+            // Retain every source field (including ownership/version) in its
+            // existing product visibility scope before deleting the duplicate.
+            const { mergeHistory: priorHistory, ...original } = sr;
+            const contextDetails = { ...tr.contextDetails };
+            for (const key of [
+              "background",
+              "needs",
+              "timing",
+              "budget",
+              "decisionProcess",
+              "risks",
+              "history",
+            ] as const)
+              contextDetails[key] ||= sr.contextDetails[key];
+            // Keep the editable arrays within their full schema bounds;
+            // every overflow/conflict remains available in the source snapshot.
+            const combine = <T extends { id: string }>(
+              canonical: T[],
+              incoming: T[],
+              limit: number,
+            ) => {
+              const ids = new Set(canonical.map((item) => item.id));
+              return [
+                ...canonical,
+                ...incoming.filter((item) => !ids.has(item.id)),
+              ].slice(0, limit);
+            };
+            contextDetails.signals = combine(
+              tr.contextDetails.signals,
+              sr.contextDetails.signals,
+              100,
+            );
+            contextDetails.fields = combine(
+              tr.contextDetails.fields,
+              sr.contextDetails.fields,
+              50,
+            );
+            const latest = (a: Date | null, b: Date | null) =>
+              !a ? b : !b ? a : a > b ? a : b;
+            await tx
+              .update(s.relationships)
+              .set({
+                context: tr.context || sr.context,
+                contextDetails,
+                contextSource: tr.contextSource || sr.contextSource,
+                nextStep: tr.nextStep || sr.nextStep,
+                nextStepDueAt: tr.nextStep
+                  ? tr.nextStepDueAt
+                  : sr.nextStep
+                    ? sr.nextStepDueAt
+                    : (tr.nextStepDueAt ?? sr.nextStepDueAt),
+                stageId: tr.stageId ?? sr.stageId,
+                tags: [...new Set([...tr.tags, ...sr.tags])].slice(0, 30),
+                amountMinor: tr.amountMinor ?? sr.amountMinor,
+                currency:
+                  tr.amountMinor === null && sr.amountMinor !== null
+                    ? sr.currency
+                    : tr.currency,
+                lastOutboundAt: latest(tr.lastOutboundAt, sr.lastOutboundAt),
+                lastInboundAt: latest(tr.lastInboundAt, sr.lastInboundAt),
+                touchCount: tr.touchCount + sr.touchCount,
+                mergeHistory: [
+                  ...tr.mergeHistory,
+                  ...priorHistory,
+                  {
+                    ...original,
+                    mergedAt: new Date().toISOString(),
+                    mergedBy: principal.userId,
+                  },
+                ],
+                version: tr.version + 1,
+              })
+              .where(eq(s.relationships.id, tr.id));
+            await tx
+              .update(s.conversations)
+              .set({ relationshipId: tr.id })
+              .where(eq(s.conversations.relationshipId, sr.id));
+            await tx
+              .update(s.actions)
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.actions.version} + 1`,
+              })
+              .where(eq(s.actions.relationshipId, sr.id));
+            await tx
+              .update(s.meetings)
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.meetings.version} + 1`,
+              })
+              .where(eq(s.meetings.relationshipId, sr.id));
+            await tx
+              .update(s.opportunities)
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.opportunities.version} + 1`,
+              })
+              .where(eq(s.opportunities.relationshipId, sr.id));
+            await tx
+              .update(s.internalTasks)
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.internalTasks.version} + 1`,
+              })
+              .where(eq(s.internalTasks.relationshipId, sr.id));
+            await tx
+              .update(s.nativeDrafts)
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.nativeDrafts.version} + 1`,
+              })
+              .where(eq(s.nativeDrafts.relationshipId, sr.id));
+            await tx
+              .update(s.evidence)
+              .set({ relationshipId: tr.id })
+              .where(eq(s.evidence.relationshipId, sr.id));
+            await tx
+              .update(s.integrationItems)
+              .set({ relationshipId: tr.id })
+              .where(eq(s.integrationItems.relationshipId, sr.id));
+            await tx
+              .update(s.yoduBindings)
+              .set({
+                relationshipId: tr.id,
+                version: sql`${s.yoduBindings.version} + 1`,
+              })
+              .where(eq(s.yoduBindings.relationshipId, sr.id));
+
+            await tx
+              .update(s.deliveries)
+              .set({ relationshipId: tr.id })
+              .where(eq(s.deliveries.relationshipId, sr.id));
+            // Invalidate captured touch versions before enrollment updates
+            // cascade the composite FK's relationship ID atomically.
+            await tx
+              .update(s.touches)
+              .set({ version: sql`${s.touches.version} + 1` })
+              .where(eq(s.touches.relationshipId, sr.id));
+            const targetActiveSequences = new Set(
+              (
+                await tx
+                  .select({ sequenceId: s.enrollments.sequenceId })
+                  .from(s.enrollments)
+                  .where(
+                    and(
+                      eq(s.enrollments.relationshipId, tr.id),
+                      inArray(s.enrollments.status, ["running", "paused"]),
+                    ),
+                  )
+              ).map((e) => e.sequenceId),
+            );
+            const sourceEnrollments = await tx
+              .select()
+              .from(s.enrollments)
+              .where(eq(s.enrollments.relationshipId, sr.id));
+            for (const enc of sourceEnrollments) {
+              if (
+                targetActiveSequences.has(enc.sequenceId) &&
+                (enc.status === "running" || enc.status === "paused")
+              ) {
+                await tx
+                  .update(s.touches)
+                  .set({
+                    status: "skipped",
+                    skipReason: t.mergeDuplicateEnrollmentReason,
+                    closedAt: new Date(),
+                    approvedHash: null,
+                    approvedBy: null,
+                  })
+                  .where(
+                    and(
+                      eq(s.touches.enrollmentId, enc.id),
+                      inArray(s.touches.status, [
+                        "planned",
+                        "drafted",
+                        "approved",
+                      ]),
+                    ),
+                  );
+                await tx
+                  .update(s.enrollments)
+                  .set({
+                    status: "stopped",
+                    pauseReason: null,
+                    relationshipId: tr.id,
+                    version: enc.version + 1,
+                  })
+                  .where(eq(s.enrollments.id, enc.id));
+              } else {
+                await tx
+                  .update(s.enrollments)
+                  .set({ relationshipId: tr.id, version: enc.version + 1 })
+                  .where(eq(s.enrollments.id, enc.id));
+              }
+            }
+
+            await tx
+              .delete(s.relationships)
+              .where(eq(s.relationships.id, sr.id));
+          } else {
+            await tx
+              .update(s.relationships)
+              .set({ personId: target.id, version: sr.version + 1 })
+              .where(eq(s.relationships.id, sr.id));
+          }
+        }
+
+        await tx
+          .update(s.contactContributions)
+          .set({
+            personId: target.id,
+            mergedFromPersonId: sql`coalesce(${s.contactContributions.mergedFromPersonId}, ${source.id}::uuid)`,
+          })
+          .where(eq(s.contactContributions.personId, source.id));
+
+        // The LinkedIn identity index is immediate, so release the source
+        // key inside this transaction before assigning it to the survivor.
+        await tx
+          .update(s.people)
+          .set({ linkedinUrl: "" })
+          .where(eq(s.people.id, source.id));
+
+        const [updated] = await tx
+          .update(s.people)
+          .set({
+            name: chosenName,
+            title: chosenTitle,
+            email: chosenEmail,
+            otherEmails: chosenOtherEmails,
+            phone: chosenPhone,
+            linkedinUrl: chosenLinkedin,
+            companyId: chosenCompanyId,
+            summary: chosenSummary,
+            doNotContact: chosenDoNotContact,
+            timeZone: chosenTimeZone,
+            tags: chosenTags,
+            amountMinor: chosenAmount,
+            currency: chosenCurrency,
+            version: target.version + 1,
+          })
+          .where(
+            and(
+              eq(s.people.id, target.id),
+              eq(s.people.version, target.version),
+            ),
+          )
+          .returning();
+        if (!updated) throw new DomainError("CONFLICT", 409);
+
+        await tx.delete(s.people).where(eq(s.people.id, source.id));
+
+        await recordContactSubmission(tx, principal, {
+          organizationId: input.organizationId,
+          personId: target.id,
+          kind: "updated",
+        });
+
+        await tx.insert(s.changeEvents).values({
+          organizationId: input.organizationId,
+          actorId: principal.userId,
+          type: "person.merged",
+          entityId: target.id,
+        });
+
+        // Both people and relationship IDs/context changed. Even a retained
+        // recipient requires a fresh review; this never permits dispatch.
+        await clearApprovals(tx, principal, input.organizationId, target.id);
+
+        return updated;
+      }
+
+      // Company merge
+      const [target] = await tx
+        .select()
+        .from(s.companies)
+        .where(
+          and(
+            eq(s.companies.id, input.targetId),
+            eq(s.companies.organizationId, input.organizationId),
+          ),
+        )
+        .for("update");
+      const [source] = await tx
+        .select()
+        .from(s.companies)
+        .where(
+          and(
+            eq(s.companies.id, input.sourceId),
+            eq(s.companies.organizationId, input.organizationId),
+          ),
+        )
+        .for("update");
+      if (!target || !source) throw new DomainError("NOT_FOUND", 404);
+      if (
+        target.version !== input.targetVersion ||
+        source.version !== input.sourceVersion
+      )
+        throw new DomainError("CONFLICT", 409);
+      if (target.archivedAt || source.archivedAt)
+        throw new DomainError("RECORD_ARCHIVED", 409);
+      if (
+        !(await companyVisible(
+          tx,
+          [...writable],
+          input.organizationId,
+          target.id,
+        )) ||
+        !(await companyVisible(
+          tx,
+          [...writable],
+          input.organizationId,
+          source.id,
+        ))
+      )
+        throw new DomainError("NOT_FOUND", 404);
+
+      const affectedRelationships = await tx
+        .select({ productId: s.relationships.productId })
+        .from(s.relationships)
+        .innerJoin(
+          s.people,
+          and(
+            eq(s.people.id, s.relationships.personId),
+            eq(s.people.organizationId, s.relationships.organizationId),
+          ),
+        )
+        .where(
+          and(
+            eq(s.people.organizationId, input.organizationId),
+            inArray(s.people.companyId, [source.id, target.id]),
+          ),
+        );
+      if (
+        affectedRelationships.some(
+          (relationship) => !writable.has(relationship.productId),
+        )
+      )
+        throw new DomainError("FORBIDDEN", 403);
+
+      const chosenName = input.name ?? target.name;
+      const chosenDomain =
+        input.domain !== undefined
+          ? input.domain || null
+          : target.domain || source.domain || null;
+      const chosenDescription =
+        input.description !== undefined
+          ? input.description
+          : target.description || source.description;
+      const chosenTags = mergeTags(target.tags, source.tags, input.tags);
+      const { amountMinor: chosenAmount, currency: chosenCurrency } =
+        mergeEstimate(target, source, input);
+
+      if (
+        !companySchema.safeParse({
+          organizationId: input.organizationId,
+          companyId: target.id,
+          version: target.version,
+          name: chosenName,
+          domain: chosenDomain ?? "",
+          description: chosenDescription,
+        }).success
+      )
+        throw new DomainError("MERGE_REVIEW_REQUIRED", 409);
+
+      if (chosenDomain) {
+        const [duplicateDomain] = await tx
+          .select({ id: s.companies.id })
+          .from(s.companies)
+          .where(
+            and(
+              eq(s.companies.organizationId, input.organizationId),
+              eq(s.companies.domain, chosenDomain),
+              isNull(s.companies.archivedAt),
+              ne(s.companies.id, target.id),
+              ne(s.companies.id, source.id),
+            ),
+          );
+        if (duplicateDomain) throw new DomainError("COMPANY_EXISTS", 409);
+      }
+
+      const employees = await tx
+        .select({ id: s.people.id, version: s.people.version })
+        .from(s.people)
+        .where(
+          and(
+            eq(s.people.organizationId, input.organizationId),
+            eq(s.people.companyId, source.id),
+          ),
+        );
+      if (employees.length) {
+        await tx
+          .update(s.people)
+          .set({
+            companyId: target.id,
+            version: sql`${s.people.version} + 1`,
+          })
+          .where(
+            and(
+              eq(s.people.organizationId, input.organizationId),
+              eq(s.people.companyId, source.id),
+            ),
+          );
+        for (const emp of employees) {
+          await clearApprovals(tx, principal, input.organizationId, emp.id);
+        }
+      }
+
+      await tx
+        .update(s.companies)
+        .set({ domain: null })
+        .where(eq(s.companies.id, source.id));
+
+      const [updated] = await tx
+        .update(s.companies)
+        .set({
+          name: chosenName,
+          domain: chosenDomain,
+          description: chosenDescription,
+          tags: chosenTags,
+          amountMinor: chosenAmount,
+          currency: chosenCurrency,
+          version: target.version + 1,
+        })
+        .where(
+          and(
+            eq(s.companies.id, target.id),
+            eq(s.companies.version, target.version),
+          ),
+        )
+        .returning();
+      if (!updated) throw new DomainError("CONFLICT", 409);
+
+      await tx.delete(s.companies).where(eq(s.companies.id, source.id));
+
+      await tx.insert(s.changeEvents).values({
+        organizationId: input.organizationId,
+        actorId: principal.userId,
+        type: "company.merged",
+        entityId: target.id,
+      });
+
+      if (target.name !== updated.name) {
+        const allEmployees = await tx
+          .select({ id: s.people.id })
+          .from(s.people)
+          .where(
+            and(
+              eq(s.people.organizationId, input.organizationId),
+              eq(s.people.companyId, target.id),
+            ),
+          );
+        for (const employee of allEmployees) {
+          await clearApprovals(
+            tx,
+            principal,
+            input.organizationId,
+            employee.id,
+          );
+        }
+      }
+
+      return updated;
+    });
+
+    publishChange(input.organizationId);
+    return result;
   }
 }

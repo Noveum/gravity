@@ -75,9 +75,10 @@ export type ViewVerb =
   | "list-layout";
 export type ViewVerbs = Partial<Record<ViewVerb, () => boolean>>;
 export interface RecordDialogState {
-  kind: "person" | "company" | "meeting" | "opportunity";
+  kind: "person" | "company" | "meeting" | "opportunity" | "merge";
   id?: string;
   relationshipId?: string;
+  entity?: "person" | "company";
 }
 interface Origin {
   path: string;
@@ -139,6 +140,7 @@ function useCrmState({
   const [expanded, setExpanded] = useState(false);
   const [searchState, setSearchState] = useState({ path: pathname, text: "" });
   const [personDialog, setPersonDialogState] = useState(false);
+  const [importDialog, setImportDialogState] = useState(false);
   const [recordDialog, setRecordDialog] = useState<RecordDialogState | null>(
     null,
   );
@@ -207,6 +209,10 @@ function useCrmState({
   const setPersonDialog = (open: boolean) => {
     if (open && !canLeaveEditor()) return;
     setPersonDialogState(open);
+  };
+  const setImportDialog = (open: boolean) => {
+    if (open && !canLeaveEditor()) return;
+    setImportDialogState(open);
   };
   const setSearch = (text: string) => setSearchState({ path: pathname, text });
   const currentOrg =
@@ -762,6 +768,8 @@ function useCrmState({
     setExpanded,
     personDialog,
     setPersonDialog,
+    importDialog,
+    setImportDialog,
     recordDialog,
     openRecordDialog,
     closeRecordDialog: () => setRecordDialog(null),
@@ -794,7 +802,8 @@ function useCrmState({
 }
 
 export type Crm = ReturnType<typeof useCrmState>;
-const CrmContext = createContext<Crm | null>(null);
+export type CrmContextValue = Crm;
+export const CrmContext = createContext<Crm | null>(null);
 
 function CrmState({ children, ...props }: CrmProps & { children: ReactNode }) {
   const crm = useCrmState(props);

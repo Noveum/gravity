@@ -44,7 +44,9 @@ test("the generated upgrade preserves populated actions/provider history and is 
       INSERT INTO contact_contributions (organization_id,person_id,product_id,actor_id,kind,transport,batch_id,source_record_id,request_hash) VALUES ('10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000200','10000000-0000-4000-8000-000000000010','fictional-upgrade-owner','created','demo','10000000-0000-4000-8000-000000000800','fictional-row-1','fictional-source-hash');
     `);
     const beforeAttribution = (
-      await client.query("SELECT * FROM contact_contributions ORDER BY id")
+      await client.query<Record<string, unknown>>(
+        "SELECT * FROM contact_contributions ORDER BY id",
+      )
     ).rows;
     const beforeBatches = (
       await client.query("SELECT * FROM contact_import_batches ORDER BY id")
@@ -82,7 +84,13 @@ test("the generated upgrade preserves populated actions/provider history and is 
     expect(
       (await client.query("SELECT * FROM contact_contributions ORDER BY id"))
         .rows,
-    ).toEqual(beforeAttribution);
+    ).toEqual(
+      beforeAttribution.map((row) => ({
+        ...row,
+        // Existing contributions have no merge origin; all original fields survive.
+        merged_from_person_id: null,
+      })),
+    );
     expect(
       (await client.query("SELECT * FROM contact_import_batches ORDER BY id"))
         .rows,

@@ -143,126 +143,126 @@
     },
     {
       "name": "@aws-sdk/checksums",
-      "version": "3.1001.1",
+      "version": "3.1002.1",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/client-s3",
-      "version": "3.1147.0",
+      "version": "3.1161.0",
       "license": "Apache-2.0",
       "direct": true,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/core",
-      "version": "3.978.1",
+      "version": "3.979.1",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/credential-provider-env",
-      "version": "3.972.72",
+      "version": "3.972.80",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/credential-provider-http",
-      "version": "3.972.74",
+      "version": "3.972.82",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/credential-provider-ini",
-      "version": "3.973.17",
+      "version": "3.973.25",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/credential-provider-login",
-      "version": "3.972.79",
+      "version": "3.972.87",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/credential-provider-node",
-      "version": "3.972.84",
+      "version": "3.972.92",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/credential-provider-process",
-      "version": "3.972.72",
+      "version": "3.972.80",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/credential-provider-sso",
-      "version": "3.973.16",
+      "version": "3.973.24",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/credential-provider-web-identity",
-      "version": "3.972.78",
+      "version": "3.972.86",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/middleware-sdk-s3",
-      "version": "3.972.77",
+      "version": "3.972.85",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/nested-clients",
-      "version": "3.997.46",
+      "version": "3.997.54",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/s3-request-presigner",
-      "version": "3.1147.0",
+      "version": "3.1161.0",
       "license": "Apache-2.0",
       "direct": true,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/signature-v4-multi-region",
-      "version": "3.996.47",
+      "version": "3.996.51",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/token-providers",
-      "version": "3.1138.0",
+      "version": "3.1161.0",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/types",
-      "version": "3.974.6",
+      "version": "3.975.0",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
     },
     {
       "name": "@aws-sdk/xml-builder",
-      "version": "3.972.41",
+      "version": "3.972.42",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/aws/aws-sdk-js-v3.git"
@@ -912,6 +912,13 @@
       "repository": "https://github.com/smithy-lang/smithy-typescript.git"
     },
     {
+      "name": "@smithy/core",
+      "version": "3.38.1",
+      "license": "Apache-2.0",
+      "direct": false,
+      "repository": "https://github.com/smithy-lang/smithy-typescript.git"
+    },
+    {
       "name": "@smithy/credential-provider-imds",
       "version": "4.5.2",
       "license": "Apache-2.0",
@@ -927,14 +934,14 @@
     },
     {
       "name": "@smithy/node-http-handler",
-      "version": "4.12.1",
+      "version": "4.14.1",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/smithy-lang/smithy-typescript.git"
     },
     {
       "name": "@smithy/signature-v4",
-      "version": "5.7.4",
+      "version": "5.7.5",
       "license": "Apache-2.0",
       "direct": false,
       "repository": "https://github.com/smithy-lang/smithy-typescript.git"

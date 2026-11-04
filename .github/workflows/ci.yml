@@ -86,7 +86,7 @@ jobs:
         with:
           bun-version: '1.3.14'
       - run: bun install --frozen-lockfile
-      - run: bun run test tests/outreach-postgres.test.ts tests/material-upload-postgres.test.ts tests/merge-safety.test.ts
+      - run: bun run test tests/database-postgres.test.ts tests/outreach-postgres.test.ts tests/material-upload-postgres.test.ts tests/merge-safety.test.ts
 
   build:
     name: Build and public smoke test

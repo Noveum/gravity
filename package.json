@@ -33,7 +33,7 @@
     "@aws-sdk/client-s3": "3.1161.0",
     "@aws-sdk/s3-request-presigner": "3.1161.0",
     "@better-auth/cimd": "1.7.15",
-    "@better-auth/mcp": "1.7.15",
+    "@better-auth/mcp": "1.7.17",
     "@electric-sql/pglite": "0.5.8",
     "@modelcontextprotocol/server": "2.3.0",
     "@radix-ui/react-dropdown-menu": "2.1.25",

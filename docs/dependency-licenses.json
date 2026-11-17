@@ -2226,7 +2226,7 @@
     },
     {
       "name": "fflate",
-      "version": "0.7.3",
+      "version": "0.7.5",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/101arrowz/fflate"

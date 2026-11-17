@@ -13,3 +13,9 @@ next-env.d.ts
 
 # Vercel links, tokens and pulled environment files.
 .vercel/
+/dist/
+.vinext/
+.cloudflare/
+
+# Local Worker secrets for cf/vite dev and preview.
+.dev.vars*

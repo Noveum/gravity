@@ -22,6 +22,7 @@ user guides are at [gravity.noveum.ai/docs](https://gravity.noveum.ai/docs).
 | Guide | What it covers |
 | --- | --- |
 | [Deploy on Vercel](vercel.md) | One-click clone, environment values, callbacks and scheduled sync |
+| [Deploy on Cloudflare Workers](cloudflare.md) | The Worker build, Hyperdrive, Cron Trigger, R2 storage and how it differs from Vercel |
 | [Supabase PostgreSQL](supabase.md) | Migrations, restricted runtime role, TLS and recovery |
 | [CI and deployment](ci-and-deployment.md) | What CI checks and how preview deployments are gated |
 

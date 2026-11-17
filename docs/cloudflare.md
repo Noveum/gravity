@@ -80,7 +80,7 @@ GRAVITY_HYPERDRIVE_LOCAL_URL=postgres://user:password@localhost:5432/gravity \
   bun run build:vinext && bun run start:vinext
 ```
 
-The local runtime passes only the names listed in `.dev.vars`, and a deploy from the same checkout then requires each of those names on the Worker, so move the file away before deploying. The production build requires an `https` `APP_URL`, so put a local TLS proxy in front of the preview port when exercising sign-in. `bun run dev` remains the quickest loop for interface work and is the only way to run the fictional demo, which needs a local disk.
+The local runtime passes only the names listed in `.dev.vars`, and a deploy from the same checkout then requires each of those names on the Worker, so move the file away before deploying. The production build requires an `https` `APP_URL`, so put a local TLS proxy in front of the preview port when exercising sign-in. Set `GRAVITY_HYPERDRIVE_LOCAL_URL` only for local runs: the build writes it into `.cloudflare/output`, so do not hand that directory on as a deploy artifact. `bun run dev` remains the quickest loop for interface work and is the only way to run the fictional demo, which needs a local disk.
 
 ## Differences from Vercel
 

@@ -26,7 +26,7 @@ export default {
     const response = await runWithInvocationDatabase(
       () =>
         handler.fetch(
-          new Request(`${env.APP_URL}/api/integrations/cron`, {
+          new Request(new URL("/api/integrations/cron", env.APP_URL), {
             headers: { authorization: `Bearer ${env.CRON_SECRET}` },
           }),
           env,

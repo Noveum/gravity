@@ -88,3 +88,16 @@ test("sign-in limits read the client address only from the header the platform o
   vi.unstubAllGlobals();
   expect(await headersOn("node")).toBeUndefined();
 });
+
+test("a Worker without DATABASE_URL is never the fictional demo", async () => {
+  const demoOn = async (runtime: "node" | "workers") => {
+    if (runtime === "workers") await workersRuntime();
+    else vi.resetModules();
+    vi.stubEnv("DATABASE_URL", "");
+    vi.stubEnv("CRM_DEMO_MODE", "true");
+    return (await import("../packages/database/client")).isDemoMode();
+  };
+  expect(await demoOn("workers")).toBe(false);
+  vi.unstubAllGlobals();
+  expect(await demoOn("node")).toBe(true);
+});

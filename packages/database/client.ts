@@ -13,8 +13,14 @@ import { allowIdleDatabaseRelease } from "./lifecycle";
 import * as schema from "./schema";
 
 export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
+// A Workers isolate serves many requests but may only use a socket inside the
+// request that opened it, so there the connection belongs to one invocation.
+export const isWorkersRuntime =
+  globalThis.navigator?.userAgent === "Cloudflare-Workers";
 export function isDemoMode() {
   return (
+    // With Hyperdrive a Worker has no DATABASE_URL, which must not read as demo.
+    !isWorkersRuntime &&
     process.env.NODE_ENV !== "production" &&
     process.env.CRM_DEMO_MODE !== "false" &&
     !process.env.DATABASE_URL
@@ -64,10 +70,6 @@ function connect(connectionUrl: string, pooled = false): Database {
     { schema },
   );
 }
-// A Workers isolate serves many requests but may only use a socket inside the
-// request that opened it, so there the connection belongs to one invocation.
-export const isWorkersRuntime =
-  globalThis.navigator?.userAgent === "Cloudflare-Workers";
 const invocations = new AsyncLocalStorage<{
   hyperdriveUrl?: string;
   db?: Database;

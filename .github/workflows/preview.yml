@@ -35,7 +35,9 @@ jobs:
           test -n "$VERCEL_ORG_ID"
           test -n "$VERCEL_PROJECT_ID"
       - run: bun install --frozen-lockfile
-      - run: bun audit
+      # picomatch has no patched release for GHSA-fc5q-39xc-vjpf. Remove the
+      # ignore when one ships. See CONTRIBUTING.md.
+      - run: bun audit --ignore=GHSA-fc5q-39xc-vjpf
       - run: bun run licenses:check
       - run: bun run typecheck
       - run: bun run lint

@@ -213,6 +213,8 @@ and [`AGENTS.md`](AGENTS.md) gives coding assistants the same rules.
 
 ## Contributors
 
+Repository maintainer: [Shashank Agarwal](https://www.linkedin.com/in/shashankagarwal2/). See [CODEOWNERS](.github/CODEOWNERS) for code review ownership.
+
 <a href="https://github.com/Noveum/gravity/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=Noveum/gravity" alt="Contributors" />
 </a>

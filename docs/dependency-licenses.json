@@ -72,13 +72,13 @@
     "@napi-rs/canvas-linux-x64-musl@1.0.10",
     "@napi-rs/canvas-win32-arm64-msvc@1.0.10",
     "@napi-rs/canvas-win32-x64-msvc@1.0.10",
-    "@next/swc-darwin-x64@16.4.3",
-    "@next/swc-linux-arm64-gnu@16.4.3",
-    "@next/swc-linux-arm64-musl@16.4.3",
-    "@next/swc-linux-x64-gnu@16.4.3",
-    "@next/swc-linux-x64-musl@16.4.3",
-    "@next/swc-win32-arm64-msvc@16.4.3",
-    "@next/swc-win32-x64-msvc@16.4.3",
+    "@next/swc-darwin-x64@16.4.6",
+    "@next/swc-linux-arm64-gnu@16.4.6",
+    "@next/swc-linux-arm64-musl@16.4.6",
+    "@next/swc-linux-x64-gnu@16.4.6",
+    "@next/swc-linux-x64-musl@16.4.6",
+    "@next/swc-win32-arm64-msvc@16.4.6",
+    "@next/swc-win32-x64-msvc@16.4.6",
     "@rolldown/binding-android-arm-eabi@1.2.15",
     "@rolldown/binding-android-arm64@1.2.15",
     "@rolldown/binding-darwin-x64@1.2.15",
@@ -310,7 +310,7 @@
       "name": "@better-auth/core",
       "version": "1.7.15",
       "license": "MIT",
-      "direct": false,
+      "direct": true,
       "repository": "git+https://github.com/better-auth/better-auth.git"
     },
     {
@@ -700,14 +700,14 @@
     },
     {
       "name": "@next/env",
-      "version": "16.4.3",
+      "version": "16.4.6",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/vercel/next.js"
     },
     {
       "name": "@next/swc-darwin-arm64",
-      "version": "16.4.3",
+      "version": "16.4.6",
       "license": "MIT",
       "direct": false,
       "repository": "https://github.com/vercel/next.js"
@@ -1617,13 +1617,6 @@
     },
     {
       "name": "baseline-browser-mapping",
-      "version": "2.11.27",
-      "license": "Apache-2.0",
-      "direct": false,
-      "repository": "git+https://github.com/web-platform-dx/baseline-browser-mapping.git"
-    },
-    {
-      "name": "baseline-browser-mapping",
       "version": "2.11.38",
       "license": "Apache-2.0",
       "direct": false,
@@ -1726,13 +1719,6 @@
       "license": "MIT",
       "direct": false,
       "repository": "git://github.com/ljharb/camelize.git"
-    },
-    {
-      "name": "caniuse-lite",
-      "version": "1.0.30001814",
-      "license": "CC-BY-4.0",
-      "direct": false,
-      "repository": "browserslist/caniuse-lite"
     },
     {
       "name": "caniuse-lite",
@@ -3122,7 +3108,7 @@
     },
     {
       "name": "next",
-      "version": "16.4.3",
+      "version": "16.4.6",
       "license": "MIT",
       "direct": true,
       "repository": "vercel/next.js"

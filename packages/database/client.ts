@@ -61,19 +61,41 @@ export async function migrateDatabase() {
 declare global {
   var crmDatabase: Promise<Database> | undefined;
 }
+type Client = ReturnType<typeof postgres>;
+// Through Hyperdrive, unprepared queries sent together never answer, so a page
+// that loads several at once hangs. postgres.js names a statement only when
+// both the client and the query ask for it, and Drizzle sends every query
+// through unsafe(), whose default is unprepared. Transactions hand Drizzle a
+// new client, so it is wrapped as well.
+function prepared(client: Client): Client {
+  return new Proxy(client, {
+    get(target, property) {
+      if (property === "unsafe")
+        return (query: string, args: unknown[] = [], options: object = {}) =>
+          target.unsafe(query, args as never[], { prepare: true, ...options });
+      if (property === "begin" || property === "savepoint")
+        return (...args: unknown[]) => {
+          const run = args.pop() as (client: Client) => unknown;
+          // savepoint exists only on a transaction's client.
+          const open = Reflect.get(target, property) as (
+            ...rest: unknown[]
+          ) => unknown;
+          return open(...args, (scoped: Client) => run(prepared(scoped)));
+        };
+      return Reflect.get(target, property);
+    },
+  });
+}
 function connect(connectionUrl: string, pooled = false): Database {
   const options = databaseOptions(connectionUrl);
   // Hyperdrive verifies the database certificate on its own connection; the
   // hop from the Worker to Hyperdrive stays inside Cloudflare without TLS.
-  // It needs prepared statements: without them postgres.js first asks for
-  // parameter types, an exchange Hyperdrive can leave unanswered.
-  return postgresDrizzle(
-    postgres(
-      connectionUrl,
-      pooled ? { ...options, ssl: false, prepare: true } : options,
-    ),
-    { schema },
-  );
+  const client = pooled
+    ? prepared(
+        postgres(connectionUrl, { ...options, ssl: false, prepare: true }),
+      )
+    : postgres(connectionUrl, options);
+  return postgresDrizzle(client, { schema });
 }
 const invocations = new AsyncLocalStorage<{
   hyperdriveUrl?: string;

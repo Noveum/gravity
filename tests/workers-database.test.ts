@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-type Client = { options: { ssl: unknown; prepare: boolean } };
+type Query = { options: { prepare?: boolean } };
+type Client = {
+  options: { ssl: unknown; prepare: boolean };
+  unsafe(query: string, args?: unknown[]): Query;
+  begin: unknown;
+  savepoint: unknown;
+};
 const clientOf = (db: unknown) => (db as { $client: Client }).$client;
 
 async function workersRuntime() {
@@ -60,20 +66,38 @@ test("only the Hyperdrive hop drops TLS; a direct Workers connection verifies it
   expect(pooled.options.ssl).toBe(false);
 });
 
-test("the Hyperdrive hop uses prepared statements; a direct connection keeps them off", async () => {
+test("queries on the Hyperdrive hop are prepared, also inside transactions; direct ones are not", async () => {
   const { database } = await workersRuntime();
   const { getDatabase, runWithInvocationDatabase } = database;
-  const direct = await runWithInvocationDatabase(async () =>
-    clientOf(await getDatabase()),
-  );
-  expect(direct.options.prepare).toBe(false);
-  // Without them postgres.js asks for parameter types first, and Hyperdrive
-  // can leave that exchange unanswered, which hangs the query.
+  // Drizzle sends every query through unsafe(). Unprepared, several at once
+  // through Hyperdrive never answer, which hung every signed-in page.
   const pooled = await runWithInvocationDatabase(
     async () => clientOf(await getDatabase()),
     "postgresql://app:secret@pool.hyperdrive.local:5432/gravity",
   );
+  // postgres.js prepares only when the client and the query both ask.
   expect(pooled.options.prepare).toBe(true);
+  expect(pooled.unsafe("select 1", []).options.prepare).toBe(true);
+  const inner: Query[] = [];
+  // A transaction's client keeps postgres.js's default: unprepared.
+  const scoped = {
+    unsafe: (_query: string, _args: unknown[], options?: Query["options"]) =>
+      ({ options: options ?? { prepare: false } }) as Query,
+  };
+  for (const method of ["begin", "savepoint"] as const) {
+    // Stand-ins for a real transaction, which needs a server.
+    pooled[method] = (...args: unknown[]) =>
+      (args.at(-1) as (tx: typeof scoped) => unknown)(scoped);
+    await (
+      pooled[method] as (run: (tx: Client) => unknown) => Promise<unknown>
+    )((tx) => inner.push(tx.unsafe("select 1", [])));
+  }
+  expect(inner.map((query) => query.options.prepare)).toEqual([true, true]);
+  const direct = await runWithInvocationDatabase(async () =>
+    clientOf(await getDatabase()),
+  );
+  expect(direct.options.prepare).toBe(false);
+  expect(direct.unsafe("select 1", []).options.prepare).toBe(false);
 });
 
 test("a change published by one Workers request never runs another request's listener", async () => {

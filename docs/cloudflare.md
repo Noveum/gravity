@@ -26,7 +26,7 @@ A Worker opens TLS only to a server whose certificate chains to a public certifi
 
 Each open request holds one database connection for as long as it runs, and a live-update stream runs for 25 seconds at a time. Without Hyperdrive every open browser tab therefore holds a connection of the runtime role. With Hyperdrive the Worker holds a connection to the pool, and the database only sees the pool.
 
-Create the Hyperdrive configuration once, with the restricted runtime role from [Supabase setup](supabase.md). Use the direct connection string, not a Supabase pooler. Query caching must stay off: Gravity reads its own writes and checks permissions on every read.
+Create the Hyperdrive configuration once, with the restricted runtime role from [Supabase setup](supabase.md). Use the direct connection string, not a Supabase pooler. Query caching must stay off: Gravity reads its own writes and checks permissions on every read. On the Hyperdrive connection the driver uses prepared statements, which Hyperdrive requires of postgres.js; without them queries can hang. A direct connection keeps them off, as on Vercel.
 
 ```sh
 npx wrangler cert upload certificate-authority --ca-cert supabase-ca.pem --name gravity-database-ca
@@ -40,7 +40,7 @@ Keep the origin connection limit below the connection limit of the runtime role,
 
 ## Settings
 
-Set the same names as in [the Vercel guide](vercel.md#environment) as Worker secrets. `APP_URL`, `BETTER_AUTH_SECRET`, `INTEGRATION_ENCRYPTION_KEY` and `CRON_SECRET` are required, plus `DATABASE_URL` when Hyperdrive is not used; a deploy fails while one of them is missing. Leave out `DATABASE_URL`, `DATABASE_SSL_MODE` and `DATABASE_SSL_CA` when Hyperdrive is used. Reuse the existing `BETTER_AUTH_SECRET` and `INTEGRATION_ENCRYPTION_KEY` when moving an installation: new values sign every user out and make stored provider credentials unreadable.
+Set the same names as in [the Vercel guide](vercel.md#environment) as Worker secrets. `APP_URL`, `BETTER_AUTH_SECRET`, `INTEGRATION_ENCRYPTION_KEY` and `CRON_SECRET` are required, plus `DATABASE_URL` when Hyperdrive is not used; a deploy fails while one of them is missing. Leave out `DATABASE_URL`, `DATABASE_SSL_MODE` and `DATABASE_SSL_CA` when Hyperdrive is used. Reuse the existing `BETTER_AUTH_SECRET` and `INTEGRATION_ENCRYPTION_KEY` when moving an installation: new values sign every user out, make the stored signing keys unreadable so that session checks fail until the `jwks` rows are removed, and make stored provider credentials unreadable.
 
 Put the values in a JSON file outside the repository, as one object of names to strings, and upload them with the first deploy. Prefer JSON to a dotenv file: `cf` expands `$NAME` inside dotenv values, which corrupts a password that contains a dollar sign. Change a single value later with `npx cf workers secrets update`.
 

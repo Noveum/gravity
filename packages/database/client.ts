@@ -65,8 +65,13 @@ function connect(connectionUrl: string, pooled = false): Database {
   const options = databaseOptions(connectionUrl);
   // Hyperdrive verifies the database certificate on its own connection; the
   // hop from the Worker to Hyperdrive stays inside Cloudflare without TLS.
+  // It needs prepared statements: without them postgres.js first asks for
+  // parameter types, an exchange Hyperdrive can leave unanswered.
   return postgresDrizzle(
-    postgres(connectionUrl, pooled ? { ...options, ssl: false } : options),
+    postgres(
+      connectionUrl,
+      pooled ? { ...options, ssl: false, prepare: true } : options,
+    ),
     { schema },
   );
 }

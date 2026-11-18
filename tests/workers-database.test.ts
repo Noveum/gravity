@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-type Client = { options: { ssl: unknown } };
+type Client = { options: { ssl: unknown; prepare: boolean } };
 const clientOf = (db: unknown) => (db as { $client: Client }).$client;
 
 async function workersRuntime() {
@@ -58,6 +58,22 @@ test("only the Hyperdrive hop drops TLS; a direct Workers connection verifies it
     "postgresql://app:secret@pool.hyperdrive.local:5432/gravity",
   );
   expect(pooled.options.ssl).toBe(false);
+});
+
+test("the Hyperdrive hop uses prepared statements; a direct connection keeps them off", async () => {
+  const { database } = await workersRuntime();
+  const { getDatabase, runWithInvocationDatabase } = database;
+  const direct = await runWithInvocationDatabase(async () =>
+    clientOf(await getDatabase()),
+  );
+  expect(direct.options.prepare).toBe(false);
+  // Without them postgres.js asks for parameter types first, and Hyperdrive
+  // can leave that exchange unanswered, which hangs the query.
+  const pooled = await runWithInvocationDatabase(
+    async () => clientOf(await getDatabase()),
+    "postgresql://app:secret@pool.hyperdrive.local:5432/gravity",
+  );
+  expect(pooled.options.prepare).toBe(true);
 });
 
 test("a change published by one Workers request never runs another request's listener", async () => {

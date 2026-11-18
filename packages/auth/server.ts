@@ -9,7 +9,7 @@ import * as schema from "../database/schema";
 import { demoUser } from "../database/seed";
 import t from "../i18n/translations/en.json";
 import { emailSignInEnabled } from "./config";
-import { emailSignInPlugin } from "./email";
+import { emailSignInPlugin, signInCodeFailure } from "./email";
 import { appUrl, authPlugins } from "./options";
 import { databaseRateLimit } from "./rate-limit";
 
@@ -85,6 +85,10 @@ export function createAuthForDatabase(db: Database) {
             message: t.errors.RATE_LIMITED,
           });
         ctx.body.email = email.data;
+      }),
+      after: createAuthMiddleware(async (ctx) => {
+        const failure = signInCodeFailure(ctx.context);
+        if (failure) throw failure;
       }),
     },
     advanced: { useSecureCookies: appUrl().startsWith("https://") },

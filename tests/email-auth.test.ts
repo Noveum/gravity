@@ -15,6 +15,7 @@ import { databaseRateLimit } from "../packages/auth/rate-limit";
 import { createAuthForDatabase } from "../packages/auth/server";
 import { createLocalDatabase } from "../packages/database/client";
 import * as schema from "../packages/database/schema";
+import t from "../packages/i18n/translations/en.json";
 
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let auth: ReturnType<typeof createAuthForDatabase>;
@@ -209,6 +210,58 @@ test("untrusted origins and malformed recipient types cannot dispatch codes", as
       })
     ).status,
   ).toBe(400);
+  expect(delivered).toEqual([]);
+});
+function rejectNextEmail() {
+  vi.mocked(fetch).mockResolvedValueOnce(
+    Response.json({ message: "private provider body" }, { status: 403 }),
+  );
+}
+function requestSignInCode(email: string) {
+  return call("/email-otp/send-verification-otp", { email, type: "sign-in" });
+}
+test("a code the provider refused is reported as unsent and leaves nothing to redeem", async () => {
+  const email = "undelivered@example.test";
+  rejectNextEmail();
+  const response = await requestSignInCode(email);
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({
+    code: "EMAIL_DELIVERY_UNAVAILABLE",
+    message: t.errors.EMAIL_DELIVERY_UNAVAILABLE,
+  });
+  expect(
+    await local.db
+      .select()
+      .from(schema.verification)
+      .where(eq(schema.verification.identifier, `sign-in-otp-${email}`)),
+  ).toEqual([]);
+});
+test("one refused code does not fail the next request", async () => {
+  rejectNextEmail();
+  expect((await requestSignInCode("refused@example.test")).status).toBe(503);
+  expect(await requestCode("next@example.test")).toMatch(/^\d{6}$/);
+});
+test("a refused code answers the same for a known and an unknown address", async () => {
+  const known = "known@example.test";
+  const otp = await requestCode(known);
+  expect((await call("/sign-in/email-otp", { email: known, otp })).status).toBe(
+    200,
+  );
+  await local.db.delete(schema.verification);
+  const answers = [];
+  for (const email of [known, "unknown@example.test"]) {
+    rejectNextEmail();
+    const response = await requestSignInCode(email);
+    answers.push({ status: response.status, body: await response.json() });
+  }
+  expect(answers[0].status).toBe(503);
+  expect(answers[1]).toEqual(answers[0]);
+});
+test("a refused code still counts against the one send per minute for that address", async () => {
+  const email = "refused-then-retried@example.test";
+  rejectNextEmail();
+  expect((await requestSignInCode(email)).status).toBe(503);
+  expect((await requestSignInCode(email)).status).toBe(429);
   expect(delivered).toEqual([]);
 });
 test("provider rejection is recoverable and logs contain no code, address or key", async () => {

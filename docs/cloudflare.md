@@ -87,5 +87,7 @@ The local runtime passes only the names listed in `.dev.vars`, and a deploy from
 - **Durations.** `maxDuration` is ignored. A request runs for as long as its caller stays connected; CPU time is limited to 30 seconds per request. The Cron Trigger gets 15 minutes of wall time and 30 seconds of CPU time.
 - **Disconnects.** When a caller disconnects, the Worker keeps a started request alive for up to 30 more seconds, then stops it. A sync or send interrupted that way is left as it would be after a crash: the lease expires, and an unclear delivery is recorded as unknown and never retried automatically.
 - **Live updates.** A change reaches other open tabs within one second through the stream's SQL check. The same-process wake-up that made it immediate on a single Node server does not exist across Worker requests.
+- **Assistant client metadata.** When an assistant registers by a client metadata URL, the Node build resolves the host once, requires a public address and pins it for the connection. A Worker cannot pin an address. It checks that every DNS answer is public, then fetches over HTTPS without following redirects.
+- **Back-channel logout.** The OAuth library cannot deliver back-channel logout notices from a Worker. Sign-out itself is unaffected.
 - **Region.** Smart Placement runs the Worker near the database instead of a fixed `hnd1` region.
 - **Caching and images.** No response or data cache and no image optimizer are configured; the application uses none.

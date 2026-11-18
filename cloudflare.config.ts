@@ -33,7 +33,11 @@ export default defineConfig({
       runWorkerFirst: ["/*", "!/_next/static/*", "!/*/_next/static/*"],
     },
     // Every request talks to PostgreSQL; run beside it, not beside the visitor.
-    placement: { mode: "smart" },
+    // Smart Placement learns where that is from traffic. A deployment that
+    // knows its database region, such as "aws:us-east-1", pins it from the start.
+    placement: process.env.GRAVITY_PLACEMENT_REGION
+      ? { region: process.env.GRAVITY_PLACEMENT_REGION }
+      : { mode: "smart" },
     triggers: [triggers.scheduled({ schedule: "*/5 * * * *" })],
     observability: { enabled: true },
     env: {

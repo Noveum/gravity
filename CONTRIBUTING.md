@@ -110,13 +110,7 @@ bun run test tests/records.test.ts
 
 CI additionally runs:
 
-- `bun audit` for known vulnerabilities in locked dependencies. It ignores one
-  advisory, GHSA-fc5q-39xc-vjpf (picomatch, a slow regular expression when an
-  attacker supplies the glob). picomatch 4.0.7 is the latest release and has no
-  fix. It is installed only for build and test tooling (Vite, Vitest, vinext),
-  which match globs from this repository's own configuration, and it is in
-  neither the Next.js build nor the Worker bundle. Remove the `--ignore` from
-  `ci.yml` and `preview.yml` once a patched picomatch exists.
+- `bun audit` for known vulnerabilities in locked dependencies.
 - `bun run test:files`, the Playwright end-to-end suite in `tests/browser/`. Run
   `bunx playwright install chromium` once before the first local run.
 - `tests/outreach-postgres.test.ts` against a real PostgreSQL server. Locally it

@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { isWorkersRuntime } from "../database/client";
 
 const runtime = globalThis as typeof globalThis & {
   gravityChanges?: EventEmitter;
@@ -11,6 +12,9 @@ export function publishChange(organizationId: string) {
   bus.emit(organizationId);
 }
 export function subscribeChanges(organizationId: string, listener: () => void) {
+  // A Workers listener would run inside the publishing request, which cannot
+  // touch another request's stream; subscribers there rely on reconciliation.
+  if (isWorkersRuntime) return () => {};
   bus.on(organizationId, listener);
   return () => {
     bus.off(organizationId, listener);

@@ -806,6 +806,24 @@ test("expired history cursors reset only for documented 404/410 responses; outag
   ).rejects.not.toThrow("secret");
 });
 
+test("provider requests refuse a redirect with a mode every runtime accepts", async () => {
+  const moved = vi.fn<typeof fetch>(
+    async () =>
+      new Response(null, {
+        status: 302,
+        headers: { Location: "https://elsewhere.example.test" },
+      }),
+  );
+  const refused = await providerJson("https://example.test", {}, moved).catch(
+    (error) => error,
+  );
+  expect(refused).toMatchObject({ code: "PROVIDER_UNAVAILABLE" });
+  // A provider status would let a send be recorded as definitely rejected.
+  expect(refused).not.toHaveProperty("providerStatus");
+  // Workers throws on "error" before any request is made.
+  expect(moved.mock.calls[0][1]?.redirect).toBe("manual");
+});
+
 test("LinkedIn signed callback retries are idempotent and cannot revive a disconnected account", async () => {
   const transport = vi.fn<typeof fetch>(async () =>
     json({ link: "https://auth.unipile.com/temporary-link" }),

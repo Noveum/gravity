@@ -107,6 +107,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build
       - run: bun run test:public
+      # The Cloudflare Workers bundle is built from the same source by vinext.
+      - run: bun run build:vinext
 
   file-browser:
     name: File browser end-to-end

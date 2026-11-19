@@ -4,7 +4,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod";
 import { DomainError, type Principal } from "../core/policy";
 import type { Database } from "../database/client";
-import { getDatabase, isDemoMode } from "../database/client";
+import { getDatabase, isDemoMode, isWorkersRuntime } from "../database/client";
 import * as schema from "../database/schema";
 import { demoUser } from "../database/seed";
 import t from "../i18n/translations/en.json";
@@ -87,7 +87,14 @@ export function createAuthForDatabase(db: Database) {
         ctx.body.email = email.data;
       }),
     },
-    advanced: { useSecureCookies: appUrl().startsWith("https://") },
+    advanced: {
+      useSecureCookies: appUrl().startsWith("https://"),
+      // Cloudflare sets this header itself on every request. Elsewhere a
+      // caller could forge it, so only the Workers runtime reads it.
+      ...(isWorkersRuntime
+        ? { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } }
+        : {}),
+    },
   });
 }
 let authPromise: ReturnType<typeof createAuth> | undefined;

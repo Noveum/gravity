@@ -1,5 +1,4 @@
 import { cimd } from "@better-auth/cimd";
-import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { mcp } from "@better-auth/mcp";
 import { jwt } from "better-auth/plugins";
 import { and, eq } from "drizzle-orm";
@@ -7,6 +6,7 @@ import { DomainError } from "../core/policy";
 import type { Database } from "../database/client";
 import { mcpGrants, oauthSelections } from "../database/schema";
 import { currentFlowKey } from "./flow";
+import { metadataTransport } from "./metadata-transport";
 
 export function appUrl() {
   const configured = process.env.APP_URL;
@@ -117,6 +117,9 @@ export function authPlugins(db?: Database) {
           }
         : {}),
     }),
-    cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
+    cimd({
+      fetchClientMetadataResource: metadataTransport,
+      metadataProfile: "mcp-2026-07-28",
+    }),
   ];
 }

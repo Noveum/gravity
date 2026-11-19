@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const config: NextConfig = {
+const config = {
   output: "standalone",
   agentRules: false,
   turbopack: { root: process.cwd() },
@@ -17,5 +17,5 @@ const config: NextConfig = {
       },
     ];
   },
-};
+} satisfies NextConfig;
 export default config;

@@ -63,6 +63,7 @@ vi.mock("../src/components/client-api", async (importOriginal) => ({
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let service: CrmService;
 let snapshot: ClientSnapshot;
+let liveFeed: EventTarget;
 const principal = { userId: demoUser, source: "demo" as const };
 const organizations = [
   {
@@ -92,6 +93,10 @@ beforeAll(async () => {
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
+      constructor() {
+        super();
+        liveFeed = this;
+      }
       static OPEN = 1;
       readyState = 1;
       onopen = null;
@@ -157,6 +162,8 @@ beforeEach(() => {
     const params = new URL(url, "http://localhost").searchParams;
     const organizationId = params.get("organizationId") || demoId(1);
     const operation = params.get("operation");
+    if (operation === "revision")
+      return { revision: await service.revision(principal, organizationId) };
     if (
       ["native-drafts", "internal-tasks", "messages"].includes(operation ?? "")
     )
@@ -260,6 +267,40 @@ function mount(
 }
 const heading = (name: string, level = 1) =>
   screen.getByRole("heading", { name, level });
+
+test("matching initial revisions share one snapshot and later changes refresh in order", async () => {
+  const fallback = request.getMockImplementation();
+  const baseline = Promise.withResolvers<{ revision: string }>();
+  const second = Promise.withResolvers<ClientSnapshot>();
+  const snapshots = vi.fn(async () => snapshot);
+  snapshots.mockImplementationOnce(async () => snapshot);
+  snapshots.mockImplementationOnce(() => second.promise);
+  request.mockImplementation(async (url, options) => {
+    const params = new URL(url, "http://localhost").searchParams;
+    if (params.get("operation") === "revision") return baseline.promise;
+    if (params.has("compact")) return snapshots();
+    return fallback?.(url, options);
+  });
+  const emit = (revision: string) =>
+    liveFeed.dispatchEvent(
+      new MessageEvent("revision", { data: JSON.stringify({ revision }) }),
+    );
+  mount("/actions", true, null);
+  await act(async () => {
+    emit("3");
+    baseline.resolve({ revision: "2" });
+    emit("3");
+  });
+  await screen.findByRole("complementary", { name: t.recordDetails });
+  expect(snapshots).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    emit("4");
+    emit("5");
+  });
+  expect(snapshots).toHaveBeenCalledTimes(2);
+  await act(async () => second.resolve(snapshot));
+  expect(snapshots).toHaveBeenCalledTimes(3);
+});
 
 test("navigation width is keyboard adjustable, persisted and restored after collapse", () => {
   mount();
@@ -403,17 +444,15 @@ test("product switching changes records synchronously without another snapshot r
 });
 
 test("a delayed previous-organization snapshot cannot reappear after switching organizations", async () => {
-  let release!: (data: ClientSnapshot) => void;
+  const oldSnapshot = Promise.withResolvers<ClientSnapshot>();
+  const oldUrl = `/api/crm?organizationId=${demoId(1)}&compact=true`;
   const regular = request.getMockImplementation();
   if (!regular) throw new Error("Missing request implementation");
   request.mockImplementation((url, init) =>
-    url === `/api/crm?organizationId=${demoId(1)}&compact=true`
-      ? new Promise((resolve) => {
-          release = resolve;
-        })
-      : regular(url, init),
+    url === oldUrl ? oldSnapshot.promise : regular(url, init),
   );
   mount();
+  await waitFor(() => expect(request).toHaveBeenCalledWith(oldUrl));
   fireEvent.keyDown(
     screen.getByRole("button", {
       name: `${t.switchOrganization}: Northstar Collective`,
@@ -422,7 +461,7 @@ test("a delayed previous-organization snapshot cannot reappear after switching o
   );
   fireEvent.click(screen.getByRole("menuitemradio", { name: "Lunar Studio" }));
   expect(screen.queryByText("Mira Chen")).toBeNull();
-  await act(async () => release(snapshot));
+  await act(async () => oldSnapshot.resolve(snapshot));
   await waitFor(() =>
     expect(screen.getByRole("combobox", { name: t.product }).textContent).toBe(
       t.allProducts,

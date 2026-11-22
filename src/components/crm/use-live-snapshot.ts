@@ -61,14 +61,17 @@ export function useLiveSnapshot({
     [organizationId, refreshCoordinator, notify],
   );
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  useEffect(() => {
     if (!organizationId) return;
     let stopped = false;
     const feed = new EventSource(
       `/api/events?organizationId=${organizationId}`,
     );
+    function refreshForRevision(next: string) {
+      if (!stopped && revision.current !== next) {
+        revision.current = next;
+        void refresh();
+      }
+    }
     feed.onopen = () => {
       if (!stopped) setSyncState("live");
     };
@@ -79,10 +82,7 @@ export function useLiveSnapshot({
       const result = JSON.parse((event as MessageEvent).data) as {
         revision: string;
       };
-      if (!stopped && revision.current !== result.revision) {
-        revision.current = result.revision;
-        void refresh();
-      }
+      refreshForRevision(result.revision);
     });
     feed.addEventListener("access-changed", () => {
       feed.close();
@@ -92,30 +92,35 @@ export function useLiveSnapshot({
       }
     });
     const recover = async () => {
-      if (stopped || document.visibilityState !== "visible") return;
+      if (stopped) return;
+      const previous = revision.current;
       try {
         const result = await requestJson<{ revision: string }>(
           `/api/crm?operation=revision&organizationId=${organizationId}`,
         );
-        if (!stopped && revision.current !== result.revision) {
-          revision.current = result.revision;
-          void refresh();
-        }
+        // A stream event that arrived during this request takes precedence.
+        if (revision.current === previous) refreshForRevision(result.revision);
       } catch {
-        if (!stopped) void refresh();
+        if (!stopped && revision.current === previous) void refresh();
       }
     };
+    // Either the stream or this read starts the first snapshot. When both
+    // report the same revision, only one full workspace download is needed.
+    void recover();
+    const recoverIfVisible = () => {
+      if (document.visibilityState === "visible") void recover();
+    };
     const interval = setInterval(() => {
-      if (feed.readyState !== EventSource.OPEN) void recover();
+      if (feed.readyState !== EventSource.OPEN) recoverIfVisible();
     }, 5000);
-    window.addEventListener("focus", recover);
-    document.addEventListener("visibilitychange", recover);
+    window.addEventListener("focus", recoverIfVisible);
+    document.addEventListener("visibilitychange", recoverIfVisible);
     return () => {
       stopped = true;
       feed.close();
       clearInterval(interval);
-      window.removeEventListener("focus", recover);
-      document.removeEventListener("visibilitychange", recover);
+      window.removeEventListener("focus", recoverIfVisible);
+      document.removeEventListener("visibilitychange", recoverIfVisible);
     };
   }, [organizationId, refresh]);
   return {

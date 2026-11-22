@@ -302,6 +302,23 @@ test("matching initial revisions share one snapshot and later changes refresh in
   expect(snapshots).toHaveBeenCalledTimes(3);
 });
 
+test("a transient snapshot failure retries on focus at the same revision", async () => {
+  const regular = request.getMockImplementation();
+  const compact = vi.fn(async () => snapshot);
+  compact.mockRejectedValueOnce(new Error("NETWORK_ERROR"));
+  request.mockImplementation(async (url, options) => {
+    const params = new URL(url, "http://localhost").searchParams;
+    if (params.get("operation") === "revision") return { revision: "3" };
+    if (params.has("compact")) return compact();
+    return regular?.(url, options);
+  });
+  mount("/actions", true, null);
+  await screen.findByText(t.errors.NETWORK_ERROR);
+  await act(async () => fireEvent.focus(window));
+  await screen.findByRole("complementary", { name: t.recordDetails });
+  expect(compact).toHaveBeenCalledTimes(2);
+});
+
 test("navigation width is keyboard adjustable, persisted and restored after collapse", () => {
   mount();
   const resize = screen.getByRole("separator", { name: t.resizeNavigation });

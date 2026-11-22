@@ -25,6 +25,7 @@ import {
   installCrmHarness,
   mountCrm,
   organizations,
+  viaCatalog,
 } from "./support/crm-harness";
 
 vi.mock("next/navigation", () => import("./support/memory-router"));
@@ -874,14 +875,13 @@ test("live outreach refreshes preserve the draft's original version and expose a
     .where(eq(s.touches.id, demoId(1307)));
   if (!original) throw new Error("Missing touch fixture");
   fireEvent.change(field, { target: { value: "Local unsaved draft" } });
-  await harness.local.db
-    .update(s.touches)
-    .set({
-      draft: "Remote saved draft",
-      version: original.version + 1,
-      updatedAt: new Date(),
-    })
-    .where(eq(s.touches.id, original.id));
+  await viaCatalog(harness, "outreach", "POST", {
+    operation: "draft",
+    organizationId: demoId(1),
+    touchId: original.id,
+    version: original.version,
+    draft: "Remote saved draft",
+  });
   fireEvent.focus(window);
   await waitFor(
     () =>

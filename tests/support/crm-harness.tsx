@@ -114,7 +114,7 @@ function Routed() {
   return page(routeFor(usePathname()));
 }
 
-async function viaCatalog(
+export async function viaCatalog(
   harness: Harness,
   api: Operation["api"],
   method: Operation["method"],
@@ -304,6 +304,7 @@ async function respond(harness: Harness, url: string, init?: RequestInit) {
   const listed = params.get("operation");
   if (
     [
+      "revision",
       "contact-attribution",
       "native-drafts",
       "internal-tasks",

@@ -27,6 +27,7 @@ export function useLiveSnapshot({
   activeOrganization.current = organizationId;
   const fetchGeneration = useRef(0);
   const revision = useRef("");
+  const retrySnapshot = useRef(false);
   const accessLost = useRef(onAccessLost);
   accessLost.current = onAccessLost;
   const refreshCoordinator = useMemo(() => createRefreshCoordinator(), []);
@@ -36,6 +37,7 @@ export function useLiveSnapshot({
         if (!organizationId || activeOrganization.current !== organizationId)
           return;
         const generation = ++fetchGeneration.current;
+        const requestedRevision = revision.current;
         const current = () =>
           activeOrganization.current === organizationId &&
           generation === fetchGeneration.current;
@@ -44,11 +46,14 @@ export function useLiveSnapshot({
             `/api/crm?organizationId=${organizationId}&compact=true`,
           );
           if (current()) {
+            retrySnapshot.current = false;
             setData(snapshot);
             setLoadFailed(false);
           }
         } catch (error) {
           if (current()) {
+            retrySnapshot.current =
+              revision.current === requestedRevision && !isAccessError(error);
             setLoadFailed(true);
             notify(errorText(error), "danger");
             if (isAccessError(error)) {
@@ -67,7 +72,8 @@ export function useLiveSnapshot({
       `/api/events?organizationId=${organizationId}`,
     );
     function refreshForRevision(next: string) {
-      if (!stopped && revision.current !== next) {
+      if (!stopped && (revision.current !== next || retrySnapshot.current)) {
+        retrySnapshot.current = false;
         revision.current = next;
         void refresh();
       }
@@ -111,7 +117,8 @@ export function useLiveSnapshot({
       if (document.visibilityState === "visible") void recover();
     };
     const interval = setInterval(() => {
-      if (feed.readyState !== EventSource.OPEN) recoverIfVisible();
+      if (feed.readyState !== EventSource.OPEN || retrySnapshot.current)
+        recoverIfVisible();
     }, 5000);
     window.addEventListener("focus", recoverIfVisible);
     document.addEventListener("visibilitychange", recoverIfVisible);

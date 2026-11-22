@@ -1,7 +1,7 @@
 "use client";
 import { createRefreshCoordinator } from "@crm/core/client-state";
 import type { ClientSnapshot } from "@crm/core/dto";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { errorText, requestJson } from "../client-api";
 import type { Notify } from "../ui/toaster";
 
@@ -26,13 +26,15 @@ export function useLiveSnapshot({
   const activeOrganization = useRef(organizationId);
   activeOrganization.current = organizationId;
   const fetchGeneration = useRef(0);
-  const revision = useRef("");
+  // A denied snapshot needs a successful revision check before automatic retry.
+  const revision = useRef<string | null>("");
   const retrySnapshot = useRef(false);
   const accessLost = useRef(onAccessLost);
   accessLost.current = onAccessLost;
-  const refreshCoordinator = useMemo(() => createRefreshCoordinator(), []);
-  const refresh = useCallback(
-    () =>
+  const refresh = useMemo(() => {
+    // A slow request in the previous workspace must not queue the new one behind it.
+    const refreshCoordinator = createRefreshCoordinator();
+    return () =>
       refreshCoordinator(async () => {
         if (!organizationId || activeOrganization.current !== organizationId)
           return;
@@ -57,14 +59,14 @@ export function useLiveSnapshot({
             setLoadFailed(true);
             notify(errorText(error), "danger");
             if (isAccessError(error)) {
+              revision.current = null;
               setData(null);
               accessLost.current();
             }
           }
         }
-      }),
-    [organizationId, refreshCoordinator, notify],
-  );
+      });
+  }, [organizationId, notify]);
   useEffect(() => {
     if (!organizationId) return;
     let stopped = false;
@@ -107,7 +109,8 @@ export function useLiveSnapshot({
         // A stream event that arrived during this request takes precedence.
         if (revision.current === previous) refreshForRevision(result.revision);
       } catch {
-        if (!stopped && revision.current === previous) void refresh();
+        if (!stopped && previous !== null && revision.current === previous)
+          void refresh();
       }
     };
     // Either the stream or this read starts the first snapshot. When both

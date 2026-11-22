@@ -319,6 +319,30 @@ test("a transient snapshot failure retries on focus at the same revision", async
   expect(compact).toHaveBeenCalledTimes(2);
 });
 
+test("restored access reloads the snapshot even when the revision has not changed", async () => {
+  const regular = request.getMockImplementation();
+  const revision = vi.fn(async () => ({ revision: "3" }));
+  const compact = vi.fn(async () => snapshot);
+  compact.mockRejectedValueOnce(new Error("UNAUTHORIZED"));
+  request.mockImplementation(async (url, options) => {
+    const params = new URL(url, "http://localhost").searchParams;
+    if (params.get("operation") === "revision") return revision();
+    if (params.has("compact")) return compact();
+    return regular?.(url, options);
+  });
+  mount("/actions", true, null);
+  await screen.findByText(t.errors.UNAUTHORIZED);
+  revision.mockRejectedValueOnce(new Error("UNAUTHORIZED"));
+  await act(async () => fireEvent.focus(window));
+  expect(compact).toHaveBeenCalledTimes(1);
+  expect(
+    screen.queryByRole("complementary", { name: t.recordDetails }),
+  ).toBeNull();
+  await act(async () => fireEvent.focus(window));
+  await screen.findByRole("complementary", { name: t.recordDetails });
+  expect(compact).toHaveBeenCalledTimes(2);
+});
+
 test("navigation width is keyboard adjustable, persisted and restored after collapse", () => {
   mount();
   const resize = screen.getByRole("separator", { name: t.resizeNavigation });
@@ -460,7 +484,7 @@ test("product switching changes records synchronously without another snapshot r
   ).toHaveLength(0);
 });
 
-test("a delayed previous-organization snapshot cannot reappear after switching organizations", async () => {
+test("a new organization loads before the previous snapshot finishes and stays visible afterward", async () => {
   const oldSnapshot = Promise.withResolvers<ClientSnapshot>();
   const oldUrl = `/api/crm?organizationId=${demoId(1)}&compact=true`;
   const regular = request.getMockImplementation();
@@ -468,7 +492,7 @@ test("a delayed previous-organization snapshot cannot reappear after switching o
   request.mockImplementation((url, init) =>
     url === oldUrl ? oldSnapshot.promise : regular(url, init),
   );
-  mount();
+  mount("/actions", true, null);
   await waitFor(() => expect(request).toHaveBeenCalledWith(oldUrl));
   fireEvent.keyDown(
     screen.getByRole("button", {
@@ -478,7 +502,6 @@ test("a delayed previous-organization snapshot cannot reappear after switching o
   );
   fireEvent.click(screen.getByRole("menuitemradio", { name: "Lunar Studio" }));
   expect(screen.queryByText("Mira Chen")).toBeNull();
-  await act(async () => oldSnapshot.resolve(snapshot));
   await waitFor(() =>
     expect(screen.getByRole("combobox", { name: t.product }).textContent).toBe(
       t.allProducts,
@@ -488,6 +511,8 @@ test("a delayed previous-organization snapshot cannot reappear after switching o
     key: "ArrowDown",
   });
   await screen.findByRole("option", { name: "Design Partners" });
+  await act(async () => oldSnapshot.resolve(snapshot));
+  expect(screen.getByRole("option", { name: "Design Partners" })).toBeTruthy();
   expect(screen.queryByText("Mira Chen")).toBeNull();
   expect(screen.queryByRole("option", { name: "AI Platform" })).toBeNull();
 });

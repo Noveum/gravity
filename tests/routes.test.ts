@@ -99,6 +99,40 @@ function read(query: string, user = demoUser) {
     }),
   );
 }
+test("the compact snapshot streams complete private JSON in bounded chunks", async () => {
+  const organizationId = demoId(1);
+  const companyId = randomUUID();
+  const description = "Fictional 🪐".repeat(20000);
+  await db.insert(s.companies).values({
+    id: companyId,
+    organizationId,
+    name: "Fictional large record",
+    description,
+  });
+  try {
+    const response = await read(
+      `organizationId=${organizationId}&compact=true`,
+    );
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("content-type")).toBe("application/json");
+    const chunks: Uint8Array[] = [];
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Expected a streamed workspace");
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.length <= 64 * 1024)).toBe(true);
+    const snapshot = JSON.parse(Buffer.concat(chunks).toString());
+    expect(snapshot.companies).toContainEqual(
+      expect.objectContaining({ id: companyId, description }),
+    );
+  } finally {
+    await db.delete(s.companies).where(eq(s.companies.id, companyId));
+  }
+});
 test("HTTP contact updates preserve an omitted summary and allow explicit clearing", async () => {
   const createdResponse = await crm({
     operation: "person",

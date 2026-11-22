@@ -118,23 +118,10 @@ function useCrmState({
     // Convert existing persistent product cookies to the current browser session.
     rememberBrand(productId);
   }, [productId]);
-  const [peekState, setPeekState] = useState(() => {
-    const blocked =
-      pathname === homePath && unfiltered
-        ? initial?.actions.find(
-            (action) =>
-              action.status === "blocked" &&
-              (!initialProductId || action.productId === initialProductId),
-          )
-        : undefined;
-    return {
-      ...noPeek,
-      path: pathname,
-      relationshipId: blocked?.relationshipId ?? "",
-      companyId: "",
-      actionId: blocked?.id ?? "",
-    };
-  });
+  const [peekState, setPeekState] = useState({ ...noPeek, path: pathname });
+  const [pendingHomePeek, setPendingHomePeek] = useState(
+    pathname === homePath && unfiltered,
+  );
   const [recordHistory, setRecordHistory] = useState<Peek[]>([]);
   const [tab, setTab] = useState<RecordTab>("timeline");
   const [expanded, setExpanded] = useState(false);
@@ -184,6 +171,24 @@ function useCrmState({
     () => (sourceData ? productSnapshot(sourceData, productId) : null),
     [sourceData, productId],
   );
+  const onInitialHome =
+    pathname === homePath &&
+    unfiltered &&
+    organizationId === initialOrganizationId &&
+    productId === initialProductId;
+  if (pendingHomePeek && (data || !onInitialHome)) {
+    setPendingHomePeek(false);
+    const blocked = onInitialHome
+      ? data?.actions.find((action) => action.status === "blocked")
+      : undefined;
+    if (blocked)
+      setPeekState({
+        ...noPeek,
+        path: pathname,
+        relationshipId: blocked.relationshipId,
+        actionId: blocked.id,
+      });
+  }
   const peek: Peek =
     peekState.path === pathname
       ? {

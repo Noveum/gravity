@@ -1,8 +1,7 @@
 import { resourceUrl } from "@crm/auth/options";
 import { currentPrincipal } from "@crm/auth/server";
 import { CrmService } from "@crm/core/crm";
-import { serialize } from "@crm/core/dto";
-import { DomainError, type Principal } from "@crm/core/policy";
+import { authorize, DomainError, type Principal } from "@crm/core/policy";
 import { getDatabase, isDemoMode } from "@crm/database/client";
 import { demoId } from "@crm/database/seed";
 import { cookies, headers } from "next/headers";
@@ -28,7 +27,8 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
       redirect(signInPath(request.get(requestPathHeader)));
     throw error;
   }
-  const service = new CrmService(await getDatabase());
+  const db = await getDatabase();
+  const service = new CrmService(db);
   const organizations = await service.organizations(principal);
   if (!organizations.length) redirect("/onboarding");
   const store = await cookies();
@@ -37,23 +37,20 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
     store.get(workspaceCookie)?.value,
     isDemoMode() ? demoId(1) : "",
   );
-  const snapshot = organization
-    ? await service.snapshot(
-        principal,
-        { organizationId: organization.id },
-        true,
-      )
-    : null;
+  const preferredBrand = store.get(brandCookie)?.value;
+  const products =
+    organization && preferredBrand
+      ? (await authorize(db, principal, organization.id)).products.filter(
+          (product) => !product.archivedAt,
+        )
+      : [];
   return (
     <CrmApp
-      initial={snapshot ? serialize(snapshot) : null}
+      initial={null}
       organizations={organizations}
       mcpEndpoint={resourceUrl()}
       initialOrganizationId={organization?.id ?? ""}
-      initialProductId={chooseBrand(
-        snapshot?.products ?? [],
-        store.get(brandCookie)?.value,
-      )}
+      initialProductId={chooseBrand(products, preferredBrand)}
       userId={principal.userId}
       demo={isDemoMode()}
     >

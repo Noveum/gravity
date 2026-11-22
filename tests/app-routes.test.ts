@@ -297,9 +297,7 @@ describe("workspace preference", () => {
     const lunar = await Layout({ children: null });
     expect(lunar.props.initialOrganizationId).toBe(demoId(2));
     expect(lunar.props.initialProductId).toBe(demoId(13));
-    expect(
-      lunar.props.initial.products.map((p: { id: string }) => p.id),
-    ).toEqual([demoId(13)]);
+    expect(lunar.props.initial).toBeNull();
     requestCookies = new Map([[brandCookie, demoId(13)]]);
     const fallback = await Layout({ children: null });
     expect(fallback.props.initialOrganizationId).toBe(demoId(1));

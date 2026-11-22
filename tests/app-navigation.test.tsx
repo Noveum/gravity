@@ -240,11 +240,15 @@ function page(route: Route | null): ReactNode {
 function Routed() {
   return page(routeFor(usePathname()));
 }
-function mount(path = "", demo = true) {
+function mount(
+  path = "",
+  demo = true,
+  initial: ClientSnapshot | null = snapshot,
+) {
   if (path) visit(path);
   render(
     <CrmApp
-      initial={snapshot}
+      initial={initial}
       organizations={organizations}
       initialOrganizationId={demoId(1)}
       userId={demoUser}
@@ -358,6 +362,23 @@ test("go-to navigation lands on a title from which J moves, Space and Enter open
     await screen.findByRole("complementary", { name: t.recordDetails }),
   ).toBeTruthy();
 });
+
+test.each([
+  ["/actions", true],
+  ["/actions?kind=reply", false],
+] as const)(
+  "loads %s without an embedded snapshot and respects the initial inspector",
+  async (path, opensInspector) => {
+    mount(path, true, null);
+    await screen.findAllByRole("button", {
+      name: /Ellis Park.*Verify role and buying context|Jonah Reed|Mira Chen/,
+    });
+    const inspector = screen.queryByRole("complementary", {
+      name: t.recordDetails,
+    });
+    expect(Boolean(inspector)).toBe(opensInspector);
+  },
+);
 
 test("product switching changes records synchronously without another snapshot read or blank view", async () => {
   mount();

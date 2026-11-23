@@ -124,14 +124,33 @@ export function emailSignInPlugin() {
     allowedAttempts: 3,
     storeOTP: "hashed",
     rateLimit: { window: 60, max: 5 },
-    async sendVerificationOTP({ email, otp, type }) {
+    async sendVerificationOTP({ email, otp, type }, ctx) {
       if (type !== "sign-in")
         throw new APIError("BAD_REQUEST", {
           code: "INVALID_INPUT",
           message: t.errors.INVALID_INPUT,
         });
       // Await delivery acceptance so serverless execution cannot drop the send.
-      await sendSignInCode({ email, otp });
+      await sendSignInCode({ email, otp }).catch(async (error) => {
+        if (ctx) {
+          unsent.set(ctx.context, error);
+          await ctx.context.internalAdapter
+            .deleteVerificationByIdentifier(`sign-in-otp-${email}`)
+            .catch(() =>
+              // Database errors can contain the identifier, which holds the address.
+              console.error(
+                JSON.stringify({
+                  event: "gravity.auth_email_cleanup",
+                  status: "failed",
+                }),
+              ),
+            );
+        }
+        throw error;
+      });
     },
   });
 }
+// better-auth logs and discards a rejected send, then answers success.
+const unsent = new WeakMap<object, unknown>();
+export const signInCodeFailure = (context: object) => unsent.get(context);

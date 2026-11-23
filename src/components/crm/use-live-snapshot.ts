@@ -1,7 +1,7 @@
 "use client";
 import { createRefreshCoordinator } from "@crm/core/client-state";
 import type { ClientSnapshot } from "@crm/core/dto";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { errorText, requestJson } from "../client-api";
 import type { Notify } from "../ui/toaster";
 
@@ -26,16 +26,24 @@ export function useLiveSnapshot({
   const activeOrganization = useRef(organizationId);
   activeOrganization.current = organizationId;
   const fetchGeneration = useRef(0);
-  const revision = useRef("");
+  // A denied snapshot needs a successful revision check before automatic retry.
+  const revision = useRef<string | null>("");
+  const retrySnapshot = useRef(false);
+  // A snapshot that keeps failing is retried after 5 s, doubling to 60 s.
+  const retryDelay = useRef(0);
+  const retryAfter = useRef(0);
+  const retryOrganization = useRef(organizationId);
   const accessLost = useRef(onAccessLost);
   accessLost.current = onAccessLost;
-  const refreshCoordinator = useMemo(() => createRefreshCoordinator(), []);
-  const refresh = useCallback(
-    () =>
+  const refresh = useMemo(() => {
+    // A slow request in the previous workspace must not queue the new one behind it.
+    const refreshCoordinator = createRefreshCoordinator();
+    return () =>
       refreshCoordinator(async () => {
         if (!organizationId || activeOrganization.current !== organizationId)
           return;
         const generation = ++fetchGeneration.current;
+        const requestedRevision = revision.current;
         const current = () =>
           activeOrganization.current === organizationId &&
           generation === fetchGeneration.current;
@@ -44,31 +52,52 @@ export function useLiveSnapshot({
             `/api/crm?organizationId=${organizationId}&compact=true`,
           );
           if (current()) {
+            retrySnapshot.current = false;
+            retryDelay.current = 0;
             setData(snapshot);
             setLoadFailed(false);
           }
         } catch (error) {
           if (current()) {
+            retrySnapshot.current =
+              revision.current === requestedRevision && !isAccessError(error);
+            const repeated = retrySnapshot.current && retryDelay.current > 0;
+            retryDelay.current = retrySnapshot.current
+              ? Math.min(repeated ? retryDelay.current * 2 : 5000, 60000)
+              : 0;
+            retryAfter.current = Date.now() + retryDelay.current;
             setLoadFailed(true);
-            notify(errorText(error), "danger");
+            if (!repeated) notify(errorText(error), "danger");
             if (isAccessError(error)) {
+              revision.current = null;
               setData(null);
               accessLost.current();
             }
           }
         }
-      }),
-    [organizationId, refreshCoordinator, notify],
-  );
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+      });
+  }, [organizationId, notify]);
   useEffect(() => {
     if (!organizationId) return;
     let stopped = false;
+    // Each organization starts its own run of snapshot retries.
+    if (retryOrganization.current !== organizationId) {
+      retryOrganization.current = organizationId;
+      retrySnapshot.current = false;
+      retryDelay.current = 0;
+    }
     const feed = new EventSource(
-      `/api/events?organizationId=${organizationId}`,
+      `/api/crm/live?organizationId=${organizationId}`,
     );
+    function refreshForRevision(next: string, retryNow: boolean) {
+      const retry =
+        retrySnapshot.current && (retryNow || Date.now() >= retryAfter.current);
+      if (!stopped && (revision.current !== next || retry)) {
+        retrySnapshot.current = false;
+        revision.current = next;
+        void refresh();
+      }
+    }
     feed.onopen = () => {
       if (!stopped) setSyncState("live");
     };
@@ -79,10 +108,7 @@ export function useLiveSnapshot({
       const result = JSON.parse((event as MessageEvent).data) as {
         revision: string;
       };
-      if (!stopped && revision.current !== result.revision) {
-        revision.current = result.revision;
-        void refresh();
-      }
+      refreshForRevision(result.revision, false);
     });
     feed.addEventListener("access-changed", () => {
       feed.close();
@@ -91,31 +117,43 @@ export function useLiveSnapshot({
         void refresh();
       }
     });
-    const recover = async () => {
-      if (stopped || document.visibilityState !== "visible") return;
+    const recover = async (retryNow = true) => {
+      if (stopped) return;
+      const previous = revision.current;
       try {
         const result = await requestJson<{ revision: string }>(
           `/api/crm?operation=revision&organizationId=${organizationId}`,
         );
-        if (!stopped && revision.current !== result.revision) {
-          revision.current = result.revision;
-          void refresh();
-        }
+        // A stream event that arrived during this request takes precedence.
+        if (revision.current === previous)
+          refreshForRevision(result.revision, retryNow);
       } catch {
-        if (!stopped) void refresh();
+        if (!stopped && previous !== null && revision.current === previous)
+          void refresh();
       }
     };
+    // Either the stream or this read starts the first snapshot. When both
+    // report the same revision, only one full workspace download is needed.
+    void recover();
+    const recoverIfVisible = (retryNow = true) => {
+      if (document.visibilityState === "visible") void recover(retryNow);
+    };
+    const onReturn = () => recoverIfVisible();
     const interval = setInterval(() => {
-      if (feed.readyState !== EventSource.OPEN) void recover();
+      if (
+        feed.readyState !== EventSource.OPEN ||
+        (retrySnapshot.current && Date.now() >= retryAfter.current)
+      )
+        recoverIfVisible(false);
     }, 5000);
-    window.addEventListener("focus", recover);
-    document.addEventListener("visibilitychange", recover);
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
     return () => {
       stopped = true;
       feed.close();
       clearInterval(interval);
-      window.removeEventListener("focus", recover);
-      document.removeEventListener("visibilitychange", recover);
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
     };
   }, [organizationId, refresh]);
   return {

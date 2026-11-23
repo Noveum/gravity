@@ -12,7 +12,7 @@ import * as s from "../packages/database/schema";
 import { demoId, demoUser } from "../packages/database/seed";
 import t from "../packages/i18n/translations/en.json";
 import { archiveRecord, contactTab } from "./support/contact-workspace";
-import { installCrmHarness, mountCrm } from "./support/crm-harness";
+import { installCrmHarness, mountCrm, viaCatalog } from "./support/crm-harness";
 import { visit } from "./support/memory-router";
 import { chooseSelect } from "./support/select-control";
 
@@ -168,10 +168,14 @@ describe("browsing records", () => {
       if (!form) throw new Error("Missing inline field");
       fireEvent.change(field, { target: { value: "Local edit" } });
       const table = entity === "person" ? s.people : s.companies;
-      await harness.local.db
-        .update(table)
-        .set({ name: "External edit", version: 2 })
-        .where(eq(table.id, id));
+      await viaCatalog(harness, "crm", "POST", {
+        organizationId: demoId(1),
+        ...(entity === "person"
+          ? { operation: "person-update", personId: id }
+          : { operation: "company", companyId: id }),
+        version: 1,
+        name: "External edit",
+      });
       fireEvent.focus(window);
       await inspector().findByRole(
         "heading",
@@ -207,10 +211,16 @@ describe("browsing records", () => {
     const form = field.closest("form");
     if (!form) throw new Error("Missing tag form");
     fireEvent.change(field, { target: { value: "Local" } });
-    await harness.local.db
-      .update(s.people)
-      .set({ tags: ["External"], version: 2 })
-      .where(eq(s.people.id, demoId(201)));
+    await viaCatalog(harness, "crm", "POST", {
+      operation: "record-metadata",
+      organizationId: demoId(1),
+      entity: "person",
+      recordId: demoId(201),
+      version: 1,
+      tags: ["External"],
+      amountMinor: null,
+      currency: "USD",
+    });
     fireEvent.focus(window);
     await inspector().findByText("External", {}, { timeout: 5000 });
     expect(field).toHaveProperty("value", "Local");

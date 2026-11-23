@@ -63,6 +63,8 @@ vi.mock("../src/components/client-api", async (importOriginal) => ({
 let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let service: CrmService;
 let snapshot: ClientSnapshot;
+let liveFeed: EventTarget;
+let liveFeedUrl = "";
 const principal = { userId: demoUser, source: "demo" as const };
 const organizations = [
   {
@@ -92,6 +94,11 @@ beforeAll(async () => {
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
+      constructor(url: string) {
+        super();
+        liveFeed = this;
+        liveFeedUrl = url;
+      }
       static OPEN = 1;
       readyState = 1;
       onopen = null;
@@ -157,6 +164,8 @@ beforeEach(() => {
     const params = new URL(url, "http://localhost").searchParams;
     const organizationId = params.get("organizationId") || demoId(1);
     const operation = params.get("operation");
+    if (operation === "revision")
+      return { revision: await service.revision(principal, organizationId) };
     if (
       ["native-drafts", "internal-tasks", "messages"].includes(operation ?? "")
     )
@@ -240,11 +249,15 @@ function page(route: Route | null): ReactNode {
 function Routed() {
   return page(routeFor(usePathname()));
 }
-function mount(path = "", demo = true) {
+function mount(
+  path = "",
+  demo = true,
+  initial: ClientSnapshot | null = snapshot,
+) {
   if (path) visit(path);
   render(
     <CrmApp
-      initial={snapshot}
+      initial={initial}
       organizations={organizations}
       initialOrganizationId={demoId(1)}
       userId={demoUser}
@@ -256,6 +269,189 @@ function mount(path = "", demo = true) {
 }
 const heading = (name: string, level = 1) =>
   screen.getByRole("heading", { name, level });
+
+test("matching initial revisions share one snapshot and later changes refresh in order", async () => {
+  const fallback = request.getMockImplementation();
+  const baseline = Promise.withResolvers<{ revision: string }>();
+  const second = Promise.withResolvers<ClientSnapshot>();
+  const snapshots = vi.fn(async () => snapshot);
+  snapshots.mockImplementationOnce(async () => snapshot);
+  snapshots.mockImplementationOnce(() => second.promise);
+  request.mockImplementation(async (url, options) => {
+    const params = new URL(url, "http://localhost").searchParams;
+    if (params.get("operation") === "revision") return baseline.promise;
+    if (params.has("compact")) return snapshots();
+    return fallback?.(url, options);
+  });
+  const emit = (revision: string) =>
+    liveFeed.dispatchEvent(
+      new MessageEvent("revision", { data: JSON.stringify({ revision }) }),
+    );
+  mount("/actions", true, null);
+  await act(async () => {
+    emit("3");
+    baseline.resolve({ revision: "2" });
+    emit("3");
+  });
+  await screen.findByRole("complementary", { name: t.recordDetails });
+  expect(snapshots).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    emit("4");
+    emit("5");
+  });
+  expect(snapshots).toHaveBeenCalledTimes(2);
+  await act(async () => second.resolve(snapshot));
+  expect(snapshots).toHaveBeenCalledTimes(3);
+});
+
+test("a transient snapshot failure retries on focus at the same revision", async () => {
+  const regular = request.getMockImplementation();
+  const compact = vi.fn(async () => snapshot);
+  compact.mockRejectedValueOnce(new Error("NETWORK_ERROR"));
+  request.mockImplementation(async (url, options) => {
+    const params = new URL(url, "http://localhost").searchParams;
+    if (params.get("operation") === "revision") return { revision: "3" };
+    if (params.has("compact")) return compact();
+    return regular?.(url, options);
+  });
+  mount("/actions", true, null);
+  await screen.findByText(t.errors.NETWORK_ERROR);
+  await act(async () => fireEvent.focus(window));
+  await screen.findByRole("complementary", { name: t.recordDetails });
+  expect(compact).toHaveBeenCalledTimes(2);
+});
+
+test("the live feed uses the CRM route that content blockers leave alone", async () => {
+  mount("/actions");
+  await waitFor(() =>
+    expect(liveFeedUrl).toBe(`/api/crm/live?organizationId=${demoId(1)}`),
+  );
+});
+
+test("a snapshot that keeps failing is retried with growing delays", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  try {
+    const regular = request.getMockImplementation();
+    const compact = vi.fn(async () => {
+      throw new Error("NETWORK_ERROR");
+    });
+    request.mockImplementation(async (url, options) => {
+      const params = new URL(url, "http://localhost").searchParams;
+      if (params.get("operation") === "revision") return { revision: "3" };
+      if (params.has("compact")) return compact();
+      return regular?.(url, options);
+    });
+    mount("/actions", true, null);
+    await screen.findByText(t.errors.NETWORK_ERROR);
+    expect(compact).toHaveBeenCalledTimes(1);
+    const wait = (ms: number) =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    await wait(5000);
+    await waitFor(() => expect(compact).toHaveBeenCalledTimes(2));
+    // The stream resends the current revision on every reconnect.
+    await act(async () =>
+      liveFeed.dispatchEvent(
+        new MessageEvent("revision", {
+          data: JSON.stringify({ revision: "3" }),
+        }),
+      ),
+    );
+    await wait(5000);
+    expect(compact).toHaveBeenCalledTimes(2);
+    await wait(5000);
+    await waitFor(() => expect(compact).toHaveBeenCalledTimes(3));
+    await wait(15000);
+    expect(compact).toHaveBeenCalledTimes(3);
+    await act(async () => fireEvent.focus(window));
+    await waitFor(() => expect(compact).toHaveBeenCalledTimes(4));
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("another organization starts its own snapshot retry delays", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  try {
+    const regular = request.getMockImplementation();
+    const calls = { [demoId(1)]: 0, [demoId(2)]: 0 };
+    request.mockImplementation(async (url, options) => {
+      const params = new URL(url, "http://localhost").searchParams;
+      if (params.get("operation") === "revision") return { revision: "3" };
+      if (params.has("compact")) {
+        calls[params.get("organizationId") ?? ""] += 1;
+        throw new Error("NETWORK_ERROR");
+      }
+      return regular?.(url, options);
+    });
+    const wait = (ms: number) =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    mount("/actions", true, null);
+    await screen.findByText(t.errors.NETWORK_ERROR);
+    await wait(5000);
+    await waitFor(() => expect(calls[demoId(1)]).toBe(2));
+    fireEvent.keyDown(
+      screen.getByRole("button", {
+        name: `${t.switchOrganization}: Northstar Collective`,
+      }),
+      { key: "Enter" },
+    );
+    fireEvent.click(
+      screen.getByRole("menuitemradio", { name: "Lunar Studio" }),
+    );
+    await waitFor(() => expect(calls[demoId(2)]).toBe(1));
+    await wait(5000);
+    await waitFor(() => expect(calls[demoId(2)]).toBe(2));
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a loaded workspace is cleared when a refresh is refused", async () => {
+  const regular = request.getMockImplementation();
+  request.mockImplementation(async (url, options) => {
+    const params = new URL(url, "http://localhost").searchParams;
+    if (params.get("operation") === "revision") return { revision: "3" };
+    if (params.has("compact")) throw new Error("FORBIDDEN");
+    return regular?.(url, options);
+  });
+  mount("/people");
+  expect(screen.getAllByText("Mira Chen").length).toBeGreaterThan(0);
+  await act(async () =>
+    liveFeed.dispatchEvent(
+      new MessageEvent("revision", { data: JSON.stringify({ revision: "4" }) }),
+    ),
+  );
+  await screen.findByText(t.errors.FORBIDDEN);
+  expect(screen.queryByText("Mira Chen")).toBeNull();
+});
+
+test("restored access reloads the snapshot even when the revision has not changed", async () => {
+  const regular = request.getMockImplementation();
+  const revision = vi.fn(async () => ({ revision: "3" }));
+  const compact = vi.fn(async () => snapshot);
+  compact.mockRejectedValueOnce(new Error("UNAUTHORIZED"));
+  request.mockImplementation(async (url, options) => {
+    const params = new URL(url, "http://localhost").searchParams;
+    if (params.get("operation") === "revision") return revision();
+    if (params.has("compact")) return compact();
+    return regular?.(url, options);
+  });
+  mount("/actions", true, null);
+  await screen.findByText(t.errors.UNAUTHORIZED);
+  revision.mockRejectedValueOnce(new Error("UNAUTHORIZED"));
+  await act(async () => fireEvent.focus(window));
+  expect(compact).toHaveBeenCalledTimes(1);
+  expect(
+    screen.queryByRole("complementary", { name: t.recordDetails }),
+  ).toBeNull();
+  await act(async () => fireEvent.focus(window));
+  await screen.findByRole("complementary", { name: t.recordDetails });
+  expect(compact).toHaveBeenCalledTimes(2);
+});
 
 test("navigation width is keyboard adjustable, persisted and restored after collapse", () => {
   mount();
@@ -359,6 +555,23 @@ test("go-to navigation lands on a title from which J moves, Space and Enter open
   ).toBeTruthy();
 });
 
+test.each([
+  ["/actions", true],
+  ["/actions?kind=reply", false],
+] as const)(
+  "loads %s without an embedded snapshot and respects the initial inspector",
+  async (path, opensInspector) => {
+    mount(path, true, null);
+    await screen.findAllByRole("button", {
+      name: /Ellis Park.*Verify role and buying context|Jonah Reed|Mira Chen/,
+    });
+    const inspector = screen.queryByRole("complementary", {
+      name: t.recordDetails,
+    });
+    expect(Boolean(inspector)).toBe(opensInspector);
+  },
+);
+
 test("product switching changes records synchronously without another snapshot read or blank view", async () => {
   mount();
   fireEvent.click(screen.getByRole("link", { name: t.people }));
@@ -381,18 +594,16 @@ test("product switching changes records synchronously without another snapshot r
   ).toHaveLength(0);
 });
 
-test("a delayed previous-organization snapshot cannot reappear after switching organizations", async () => {
-  let release!: (data: ClientSnapshot) => void;
+test("a new organization loads before the previous snapshot finishes and stays visible afterward", async () => {
+  const oldSnapshot = Promise.withResolvers<ClientSnapshot>();
+  const oldUrl = `/api/crm?organizationId=${demoId(1)}&compact=true`;
   const regular = request.getMockImplementation();
   if (!regular) throw new Error("Missing request implementation");
   request.mockImplementation((url, init) =>
-    url === `/api/crm?organizationId=${demoId(1)}&compact=true`
-      ? new Promise((resolve) => {
-          release = resolve;
-        })
-      : regular(url, init),
+    url === oldUrl ? oldSnapshot.promise : regular(url, init),
   );
-  mount();
+  mount("/actions", true, null);
+  await waitFor(() => expect(request).toHaveBeenCalledWith(oldUrl));
   fireEvent.keyDown(
     screen.getByRole("button", {
       name: `${t.switchOrganization}: Northstar Collective`,
@@ -401,7 +612,6 @@ test("a delayed previous-organization snapshot cannot reappear after switching o
   );
   fireEvent.click(screen.getByRole("menuitemradio", { name: "Lunar Studio" }));
   expect(screen.queryByText("Mira Chen")).toBeNull();
-  await act(async () => release(snapshot));
   await waitFor(() =>
     expect(screen.getByRole("combobox", { name: t.product }).textContent).toBe(
       t.allProducts,
@@ -411,6 +621,8 @@ test("a delayed previous-organization snapshot cannot reappear after switching o
     key: "ArrowDown",
   });
   await screen.findByRole("option", { name: "Design Partners" });
+  await act(async () => oldSnapshot.resolve(snapshot));
+  expect(screen.getByRole("option", { name: "Design Partners" })).toBeTruthy();
   expect(screen.queryByText("Mira Chen")).toBeNull();
   expect(screen.queryByRole("option", { name: "AI Platform" })).toBeNull();
 });

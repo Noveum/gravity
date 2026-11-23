@@ -99,6 +99,64 @@ function read(query: string, user = demoUser) {
     }),
   );
 }
+test("the compact snapshot streams complete private JSON in bounded chunks", async () => {
+  const organizationId = demoId(1);
+  const companyId = randomUUID();
+  const description = "Fictional 🪐".repeat(20000);
+  await db.insert(s.companies).values({
+    id: companyId,
+    organizationId,
+    name: "Fictional large record",
+    description,
+  });
+  try {
+    const response = await read(
+      `organizationId=${organizationId}&compact=true`,
+    );
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("content-type")).toBe("application/json");
+    const chunks: Uint8Array[] = [];
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Expected a streamed workspace");
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.length <= 64 * 1024)).toBe(true);
+    const plain = Buffer.concat(chunks);
+    const snapshot = JSON.parse(plain.toString());
+    expect(response.headers.get("content-encoding")).toBeNull();
+    // Next.js drops Content-Encoding from route handler responses, so the
+    // route must send plain JSON and leave compression to the server or host.
+    for (const accepted of [
+      "gzip, deflate, br",
+      "gzip, identity;q=0",
+      "*;q=0",
+    ]) {
+      const negotiated = await GET(
+        new Request(
+          `http://localhost/api/crm?organizationId=${organizationId}&compact=true`,
+          { headers: { "x-test-user": demoUser, "Accept-Encoding": accepted } },
+        ),
+      );
+      expect(negotiated.status).toBe(200);
+      expect(negotiated.headers.get("cache-control")).toBe("private, no-store");
+      expect(negotiated.headers.get("content-encoding")).toBeNull();
+      expect(
+        JSON.parse(await negotiated.text()).companies.find(
+          (c: { id: string }) => c.id === companyId,
+        )?.description,
+      ).toBe(description);
+    }
+    expect(snapshot.companies).toContainEqual(
+      expect.objectContaining({ id: companyId, description }),
+    );
+  } finally {
+    await db.delete(s.companies).where(eq(s.companies.id, companyId));
+  }
+});
 test("HTTP contact updates preserve an omitted summary and allow explicit clearing", async () => {
   const createdResponse = await crm({
     operation: "person",

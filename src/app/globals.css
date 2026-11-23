@@ -2637,7 +2637,7 @@ ul.timeline {
   display: grid;
   place-items: center;
   height: 54px;
-  border: 1px solid var(--orbit-border);
+  border: 1px solid var(--gravity-field-border);
   background: var(--bg);
   border-radius: 8px;
   font-size: 22px;
@@ -2655,7 +2655,7 @@ ul.timeline {
   background: var(--accent);
 }
 .auth-code-control[data-invalid="true"] .auth-code-slot {
-  border-color: var(--orbit-danger);
+  border-color: var(--gravity-danger);
 }
 .auth-code-control[data-disabled="true"] {
   opacity: 0.55;
@@ -3496,7 +3496,7 @@ tbody tr[data-selected] td:first-child::before {
   margin-top: 20px;
 }
 .provider-settings .danger-link {
-  color: var(--orbit-danger);
+  color: var(--gravity-danger);
   background: transparent;
   border-color: transparent;
   padding-left: 0;
@@ -5448,7 +5448,7 @@ nav.list-pagination > label:has(select) {
   padding: 12px;
   background: var(--gravity-surface-2);
   border: 1px solid var(--gravity-border-subtle);
-  border-radius: var(--gravity-radius-md);
+  border-radius: var(--gravity-radius);
 }
 .forecast-preview :where(small),
 .record-forecast :where(small) {
@@ -6303,8 +6303,8 @@ nav.list-pagination > label:has(select) {
   gap: 12px;
 }
 .candidate-list {
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--gravity-border);
+  border-radius: var(--gravity-radius);
   max-height: 260px;
   overflow-y: auto;
   display: flex;
@@ -6317,7 +6317,7 @@ nav.list-pagination > label:has(select) {
   padding: 10px 14px;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--gravity-border);
   cursor: pointer;
   text-align: left;
   transition: background var(--duration-fast);
@@ -6327,7 +6327,7 @@ nav.list-pagination > label:has(select) {
 }
 @media (hover: hover) {
   .candidate-item:hover {
-    background: var(--surface-hover);
+    background: var(--gravity-hover);
   }
 }
 .candidate-name {
@@ -6346,10 +6346,10 @@ nav.list-pagination > label:has(select) {
   margin-bottom: 12px;
 }
 .record-header-card {
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--gravity-border);
+  border-radius: var(--gravity-radius);
   padding: 12px;
-  background: var(--surface);
+  background: var(--gravity-surface);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -6374,8 +6374,8 @@ nav.list-pagination > label:has(select) {
   cursor: pointer;
 }
 .field-comparisons-table {
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--gravity-border);
+  border-radius: var(--gravity-radius);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -6383,7 +6383,7 @@ nav.list-pagination > label:has(select) {
 .comparison-row {
   display: grid;
   grid-template-columns: 150px 1fr;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--gravity-border);
   padding: 8px 12px;
   align-items: center;
   gap: 12px;
@@ -6392,7 +6392,7 @@ nav.list-pagination > label:has(select) {
   border-bottom: none;
 }
 .comparison-row.conflict {
-  background: var(--surface-subtle);
+  background: var(--gravity-surface-2);
 }
 .field-label {
   display: flex;
@@ -6404,7 +6404,7 @@ nav.list-pagination > label:has(select) {
 .conflict-tag {
   font-size: 10px;
   text-transform: uppercase;
-  color: var(--amber);
+  color: var(--gravity-warning);
   font-weight: 600;
   letter-spacing: 0.05em;
 }
@@ -6414,13 +6414,13 @@ nav.list-pagination > label:has(select) {
   gap: 8px;
 }
 .field-option {
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--gravity-border);
+  border-radius: var(--gravity-radius);
   padding: 6px 10px;
   display: flex;
   align-items: center;
   gap: 6px;
-  background: var(--surface);
+  background: var(--gravity-surface);
   color: inherit;
   font-size: var(--text-dense);
   cursor: pointer;
@@ -6428,8 +6428,8 @@ nav.list-pagination > label:has(select) {
   transition: all var(--duration-fast);
 }
 .field-option.selected {
-  border-color: var(--color-brand);
-  background: var(--brand-wash);
+  border-color: var(--gravity-accent);
+  background: var(--gravity-accent-soft);
   font-weight: 500;
 }
 .option-value {

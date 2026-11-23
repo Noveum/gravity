@@ -363,6 +363,45 @@ test("a snapshot that keeps failing is retried with growing delays", async () =>
   }
 });
 
+test("another organization starts its own snapshot retry delays", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  try {
+    const regular = request.getMockImplementation();
+    const calls = { [demoId(1)]: 0, [demoId(2)]: 0 };
+    request.mockImplementation(async (url, options) => {
+      const params = new URL(url, "http://localhost").searchParams;
+      if (params.get("operation") === "revision") return { revision: "3" };
+      if (params.has("compact")) {
+        calls[params.get("organizationId") ?? ""] += 1;
+        throw new Error("NETWORK_ERROR");
+      }
+      return regular?.(url, options);
+    });
+    const wait = (ms: number) =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    mount("/actions", true, null);
+    await screen.findByText(t.errors.NETWORK_ERROR);
+    await wait(5000);
+    await waitFor(() => expect(calls[demoId(1)]).toBe(2));
+    fireEvent.keyDown(
+      screen.getByRole("button", {
+        name: `${t.switchOrganization}: Northstar Collective`,
+      }),
+      { key: "Enter" },
+    );
+    fireEvent.click(
+      screen.getByRole("menuitemradio", { name: "Lunar Studio" }),
+    );
+    await waitFor(() => expect(calls[demoId(2)]).toBe(1));
+    await wait(5000);
+    await waitFor(() => expect(calls[demoId(2)]).toBe(2));
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("restored access reloads the snapshot even when the revision has not changed", async () => {
   const regular = request.getMockImplementation();
   const revision = vi.fn(async () => ({ revision: "3" }));

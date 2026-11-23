@@ -32,6 +32,7 @@ export function useLiveSnapshot({
   // A snapshot that keeps failing is retried after 5 s, doubling to 60 s.
   const retryDelay = useRef(0);
   const retryAfter = useRef(0);
+  const retryOrganization = useRef(organizationId);
   const accessLost = useRef(onAccessLost);
   accessLost.current = onAccessLost;
   const refresh = useMemo(() => {
@@ -79,6 +80,12 @@ export function useLiveSnapshot({
   useEffect(() => {
     if (!organizationId) return;
     let stopped = false;
+    // Each organization starts its own run of snapshot retries.
+    if (retryOrganization.current !== organizationId) {
+      retryOrganization.current = organizationId;
+      retrySnapshot.current = false;
+      retryDelay.current = 0;
+    }
     const feed = new EventSource(
       `/api/crm/live?organizationId=${organizationId}`,
     );

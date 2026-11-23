@@ -6,7 +6,10 @@ let demo = false;
 vi.mock("@crm/auth/server", () => ({
   currentPrincipal: (...args: unknown[]) => principal(...args),
 }));
-vi.mock("@crm/database/client", () => ({ isDemoMode: () => demo }));
+vi.mock("@crm/database/client", () => ({
+  isDemoMode: () => demo,
+  isWorkersRuntime: false,
+}));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("next/navigation", () => ({
   redirect: (target: string) => {

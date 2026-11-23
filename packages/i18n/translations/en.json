@@ -795,7 +795,7 @@
             "id": "target",
             "title": "Choose the target deliberately",
             "paragraphs": [
-              "The hosted app at https://gravity.noveum.ai is available without local setup. This guide is for teams deploying their own Gravity instance. Use a dedicated Vercel project, managed PostgreSQL database and private object bucket.",
+              "The hosted app at https://gravity.noveum.ai is available without local setup. This guide is for teams deploying their own Gravity instance. Use a Cloudflare Worker of your own, a managed PostgreSQL database and a private object bucket.",
               "Review migrations and the database target before applying them. Use separate migration and runtime roles, isolated staging records and provider-approved TLS/pooling. Never seed fictional demo identities into a real database."
             ]
           },
@@ -812,7 +812,7 @@
             "title": "Restore, rather than just export",
             "paragraphs": [
               "Choose backup retention and recovery targets with the database provider. Rehearse restoring an isolated backup and record the result. A CSV export is useful but does not replace recovery.",
-              "Check private storage access from an unauthorized tenant. Direct authenticated storage transfer must replace the local function-proxied large-file path before Vercel file uploads are enabled."
+              "Check private storage access from an unauthorized tenant. Uploads and downloads go between the browser and the bucket through short-lived signed URLs, so allow only your application origin in the bucket's CORS rule."
             ]
           },
           {
@@ -827,23 +827,23 @@
             "id": "ci",
             "title": "Use the verified source artifact",
             "paragraphs": [
-              "CI runs frozen install, audit, types, lint, tests, license coverage and production build on pull requests and main. The opt-in Vercel preview workflow is target-bound and does not migrate an external database.",
+              "CI runs frozen install, audit, types, lint, tests, license coverage, the Next.js build and the Worker build on pull requests and main. Branch previews run on a separate preview Worker with its own database and secrets and never migrate a database.",
               "Enable deployment only after its project, secrets and stable origin are ready. Passing CI verifies code packaging and the tested contracts; it does not verify your live provider accounts or restore plan."
             ]
           }
         ]
       },
       {
-        "slug": "deploy-on-vercel",
-        "title": "Deploy Gravity on Vercel",
-        "description": "Create your own Gravity instance with managed PostgreSQL, email or social login, and your own provider accounts.",
+        "slug": "deploy-on-cloudflare",
+        "title": "Deploy Gravity on Cloudflare Workers",
+        "description": "Run your own Gravity instance as a Cloudflare Worker with managed PostgreSQL, email or social login, and your own provider accounts.",
         "sections": [
           {
             "id": "choose",
             "title": "Choose hosted access or your own instance",
             "paragraphs": [
-              "To use the hosted app, sign in at https://gravity.noveum.ai. These steps are for an independent installation in your own Vercel account.",
-              "The Deploy with Vercel button clones the public repository and creates your project. It asks for your own environment values; it does not copy Noveum credentials or migrate your database. The guided button uses Resend email-code login. For Google/GitHub-only login, import your fork in Vercel and configure the appropriate client instead."
+              "To use the hosted app, sign in at https://gravity.noveum.ai. These steps are for an independent installation in your own Cloudflare account.",
+              "Gravity runs as one Worker, built from the repository with vinext. The Worker is larger than the free plan allows, so the account needs the Workers Paid plan. Building needs Node.js 22 and Bun. Nothing is copied from Noveum: you bring the database, secrets and provider accounts."
             ]
           },
           {
@@ -851,33 +851,34 @@
             "title": "Prepare managed PostgreSQL",
             "paragraphs": [
               "Use a separate PostgreSQL database for your installation. Review the target and backup policy, clone the repository, and run bun run db:migrate with DATABASE_MIGRATION_URL in an ignored local environment file. Do not seed fictional demo records in production.",
-              "The migrations create gravity_app as the protected server group. Create a dedicated login role inheriting gravity_app and use its connection URL as DATABASE_URL. The runtime user must not own tables, create schemas, truncate tables or bypass RLS. Keep the migration URL outside the deployed application. For Supabase, use the session pooler on port 5432 and the provider CA in DATABASE_SSL_CA; the transaction pooler on 6543 is unsupported."
+              "The migrations create gravity_app as the protected server group. Create a dedicated login role inheriting gravity_app and use its connection URL at runtime. The runtime user must not own tables, create schemas, truncate tables or bypass RLS. Keep the migration URL off the Worker.",
+              "A Worker only accepts a database certificate issued by a public certificate authority. For a database behind a private one, such as Supabase, create a Hyperdrive configuration with the runtime connection, the provider CA, verify-full and caching disabled, and pass its ID to every build as GRAVITY_HYPERDRIVE_ID. Any other database is reached directly with the DATABASE_URL secret."
             ],
             "code": "git clone https://github.com/Noveum/gravity.git\ncd gravity\nbun install --frozen-lockfile\n# Set DATABASE_MIGRATION_URL and required TLS configuration in .env.local.\nbun run db:migrate\n# Set DATABASE_URL to your restricted runtime role.\nbun run db:check"
           },
           {
             "id": "environment",
-            "title": "Supply your own environment values",
+            "title": "Supply your own secrets",
             "paragraphs": [
-              "Set APP_URL to your stable HTTPS origin and BETTER_AUTH_SECRET to a random secret of at least 32 characters. DATABASE_URL is the restricted runtime connection. The guided deploy button requests RESEND_API_KEY and EMAIL_FROM for email-code sign-in with a verified sender.",
-              "INTEGRATION_ENCRYPTION_KEY must be a persistent 64-character hexadecimal key. CRON_SECRET is a random bearer secret of at least 32 characters. Keep both stable and private. The button defaults CRM_DEMO_MODE=false, DATABASE_SSL_MODE=verify-full and PUBLIC_SITE_INDEXING=false; none of its defaults contains a secret.",
-              "For a provider that needs a custom certificate authority, add DATABASE_SSL_CA. Set PUBLIC_SITE_URL to the same HTTPS origin as APP_URL before enabling indexing. Supply optional Google/GitHub and private object-storage settings in Vercel when you enable those features."
+              "APP_URL is your stable HTTPS origin and BETTER_AUTH_SECRET a random secret of at least 32 characters. INTEGRATION_ENCRYPTION_KEY must be a persistent 64-character hexadecimal key, and CRON_SECRET a random bearer secret of at least 32 characters. Without Hyperdrive, DATABASE_URL is the restricted runtime connection. A deploy fails while one of these is missing.",
+              "Put these values in a JSON file outside the repository and upload it with the first deploy; only these names are read from the file. Add each optional setting afterwards as a Worker secret: RESEND_API_KEY and EMAIL_FROM for email-code sign-in with a verified sender, the Google and GitHub client pairs, the S3 storage settings, PUBLIC_SITE_URL and PUBLIC_SITE_INDEXING. Secrets stay on the Worker across later deploys."
             ],
             "code": "# Generate each value separately, then save it in your secret manager.\nopenssl rand -hex 32"
           },
           {
             "id": "deploy",
-            "title": "Create the Vercel project",
+            "title": "Build and deploy the Worker",
             "paragraphs": [
-              "Choose Deploy with Vercel on the landing page, fill in your environment values and create the cloned repository. Use the root application, Next.js and the committed Bun install/build commands. Select Node.js 22 in your Vercel project settings. If you already have a fork, import it as a project instead.",
-              "The default vercel.json has no scheduled cron and works with manual sync. For automatic five-minute sync on a compatible Vercel plan, copy vercel.scheduled.json over vercel.json in your deployment source before deploying. Otherwise call GET /api/integrations/cron from your own scheduler with Authorization: Bearer <CRON_SECRET>. Do not put the secret in a query string."
-            ]
+              "Build once and deploy that build. The first deploy carries the secrets file. Later releases are bun run build:worker followed by bun run deploy:worker, with the same GRAVITY_HYPERDRIVE_ID.",
+              "The Worker has a Cron Trigger every five minutes that calls GET /api/integrations/cron with Authorization: Bearer <CRON_SECRET>, so provider sync needs no external scheduler. Set GRAVITY_PLACEMENT_REGION, for example aws:us-east-1, to run the Worker beside a database in a known region from the first request."
+            ],
+            "code": "GRAVITY_HYPERDRIVE_ID=<id> bun run build:worker\nGRAVITY_HYPERDRIVE_ID=<id> npx cf deploy --prebuilt --mode production --secrets-file ../gravity.secrets.json"
           },
           {
             "id": "domain",
             "title": "Bind the domain and login callbacks",
             "paragraphs": [
-              "Add your domain to the Vercel project, configure its DNS, and set APP_URL and PUBLIC_SITE_URL to that HTTPS origin. Redeploy after changing environment values.",
+              "Add your domain to the Worker as a Custom Domain, then set APP_URL and PUBLIC_SITE_URL to that HTTPS origin.",
               "For Google login, register <APP_URL>/api/auth/callback/google and set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET. For GitHub, use <APP_URL>/api/auth/callback/github with GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET. Email-code login needs no social callback. Google mailbox/calendar consent uses the separate <APP_URL>/api/integrations/callback/google callback."
             ]
           },
@@ -902,8 +903,8 @@
             "id": "updates",
             "title": "Release reviewed updates",
             "paragraphs": [
-              "Gravity CI runs checks on pull requests and main. Automatic Git deployments are disabled in the template so a push cannot silently publish unchecked code. Use a reviewed CI deployment or the Vercel CLI to deploy the tested source. Review database migrations separately; they never run from the web build or runtime.",
-              "Build a production artifact with vercel deploy --prod --skip-domain, verify it, then use vercel promote to switch the domain. If you enable Git deployments in your fork, configure deployment checks that enforce your CI before production promotion."
+              "Gravity CI runs checks on pull requests and main. Connect Workers Builds so that main is built and deployed after it merges, and give branches a separate preview Worker with its own database and secrets. The repository's docs/cloudflare.md has the exact settings.",
+              "Review database migrations separately; they never run from the build or the Worker. Apply them from a trusted workstation before deploying code that needs them."
             ]
           }
         ]
@@ -1097,18 +1098,17 @@
     "signInToGravity": "Sign in to Gravity",
     "brandHome": "Gravity home",
     "deployNav": "Deploy",
-    "deployWithVercel": "Deploy with Vercel",
+    "deployOnCloudflare": "Deploy on Cloudflare",
     "deploymentGuide": "Deployment guide",
-    "deployEnvironmentDescription": "Use your own PostgreSQL database, auth and encryption secrets, and verified Resend sender. Follow the guide to migrate the database and configure the HTTPS origin.",
     "deploymentEyebrow": "Hosted or self-hosted",
     "deploymentTitle": "Your team. Your choice of deployment.",
-    "deploymentDescription": "Use Gravity in your browser today, or run your own instance on Vercel with your database and accounts.",
+    "deploymentDescription": "Use Gravity in your browser today, or run your own instance on Cloudflare Workers with your database and accounts.",
     "hostedTitle": "Use the hosted app",
     "hostedDescription": "Sign in with Google, GitHub or an email code. Create a workspace and connect the accounts you use for sales. No installation required.",
     "hostedNote": "Organizations and product permissions keep each workspace separate.",
-    "vercelTitle": "Run your own Gravity",
-    "vercelDescription": "Deploy the open-source app to your Vercel account. Bring your PostgreSQL database, login configuration and provider accounts.",
-    "vercelNote": "The deploy button starts setup. Database migrations and your own credentials are required.",
+    "selfHostTitle": "Run your own Gravity",
+    "selfHostDescription": "Deploy the open-source app as a Worker in your own Cloudflare account. Bring your PostgreSQL database, login configuration and provider accounts.",
+    "selfHostNote": "Database migrations and your own credentials are required.",
     "workflowEyebrow": "A day in Gravity",
     "workflowTitle": "From the first message to the next meeting.",
     "workflowSteps": [

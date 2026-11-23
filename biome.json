@@ -4,7 +4,8 @@
     "includes": [
       "**",
       "!!.next",
-      "!!.vercel",
+      "!!.cloudflare",
+      "!!dist",
       "!!.data",
       "!!.claude",
       "!!node_modules",

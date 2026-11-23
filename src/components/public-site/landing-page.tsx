@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { GravityMark } from "@/components/gravity-logo";
-import { DeployButton } from "./deploy-button";
 import { ProductTour } from "./product-tour";
 
 const icons = [MessageSquare, GitBranch, ShieldCheck, Command];
@@ -37,7 +36,10 @@ export function LandingPage() {
               {t.signInToGravity}
               <ArrowRight size={16} />
             </Link>
-            <DeployButton />
+            <Link className="site-button site-secondary" href={deploymentGuide}>
+              <Server size={16} aria-hidden="true" />
+              {t.deployOnCloudflare}
+            </Link>
           </div>
           <p className="site-note">{t.heroNote}</p>
           <a className="site-inline-link" href={gravityRepository}>
@@ -139,14 +141,13 @@ export function LandingPage() {
           </article>
           <article>
             <Server size={23} aria-hidden="true" />
-            <h3>{t.vercelTitle}</h3>
-            <p>{t.vercelDescription}</p>
-            <DeployButton />
+            <h3>{t.selfHostTitle}</h3>
+            <p>{t.selfHostDescription}</p>
             <Link className="site-inline-link" href={deploymentGuide}>
               {t.deploymentGuide}
               <ArrowRight size={15} aria-hidden="true" />
             </Link>
-            <small>{t.vercelNote}</small>
+            <small>{t.selfHostNote}</small>
           </article>
         </div>
       </section>

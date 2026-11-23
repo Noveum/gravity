@@ -1,18 +1,35 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "vitest";
+import config from "../cloudflare.config";
 import { gravityIdentity } from "../packages/brand/identity";
 import t from "../packages/i18n/translations/en.json";
 import manifest from "../src/app/manifest";
 
-test("basic deployments do not require scheduled cron while the hosted profile preserves its schedule", async () => {
-  const basic = JSON.parse(await readFile("vercel.json", "utf8"));
-  const scheduled = JSON.parse(await readFile("vercel.scheduled.json", "utf8"));
-  const { crons, ...settings } = scheduled;
-  expect(basic).toEqual(settings);
-  expect(crons).toEqual([
-    { path: "/api/integrations/cron", schedule: "*/5 * * * *" },
+test("production runs the five-minute sync and the preview Worker is separate and unscheduled", async () => {
+  const resolve = async (mode: string) =>
+    (await config({ mode, isPreview: false })).worker as {
+      name: string;
+      triggers: unknown[];
+      workersDev?: boolean;
+      previewUrls?: boolean;
+      env: Record<string, unknown>;
+    };
+  const production = await resolve("production");
+  expect(production.name).toBe("gravity");
+  expect(production.triggers).toEqual([
+    { type: "scheduled", schedule: "*/5 * * * *" },
   ]);
-  expect(basic.git.deploymentEnabled).toBe(false);
+  expect(production.env.PREVIEW_ALIASES).toBeUndefined();
+  const preview = await resolve("pr");
+  expect(preview.name).toBe("gravity-pr");
+  expect(preview.triggers).toEqual([]);
+  expect(preview).toMatchObject({ workersDev: true, previewUrls: true });
+  expect(preview.env.PREVIEW_ALIASES).toBeDefined();
+  const declared = (env: Record<string, unknown>) =>
+    Object.keys(env).filter((name) => env[name] !== undefined);
+  expect(declared(preview.env).sort()).toEqual(
+    [...declared(production.env), "PREVIEW_ALIASES"].sort(),
+  );
 });
 
 test("the fallback favicon contains valid PNGs in four browser sizes", async () => {

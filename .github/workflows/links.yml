@@ -28,7 +28,6 @@ jobs:
           args: >-
             "**/*.md" --exclude-path "(^|/)node_modules/" --exclude-all-private
             --exclude 'github\.com/[^/]+/[^/]+/(stargazers|security/advisories/new|discussions/new)'
-            --exclude 'vercel\.com/new/clone'
           fail: false
       - name: Fail only if lychee itself broke
         if: ${{ !cancelled() }}

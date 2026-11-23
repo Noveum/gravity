@@ -20,12 +20,15 @@ export async function providerJson(
     response = await transport(url, {
       ...init,
       cache: "no-store",
-      redirect: "error",
+      // Workers rejects "error" before sending, so the redirect is refused below.
+      redirect: "manual",
       signal: AbortSignal.timeout(12000),
     });
   } catch {
     throw new DomainError("PROVIDER_UNAVAILABLE", 502);
   }
+  if (response.status >= 300 && response.status < 400)
+    throw new DomainError("PROVIDER_UNAVAILABLE", 502);
   if (!response.ok)
     throw Object.assign(
       new DomainError(

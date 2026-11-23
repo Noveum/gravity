@@ -24,7 +24,7 @@ Browser verification through the in-app browser:
 
 HTTP verification uploaded a valid small fictional PDF through the actual application endpoint (201), downloaded identical bytes (200, private/no-store), rejected a cross-organization download (404), and rejected an unauthorized mutation origin (403). The UI showed the PDF under its product/folder, included it for Evaluation and excluded it for Proposal.
 
-These results do not establish cloud PostgreSQL/S3 operation, production backups, Google/GitHub login, live Gmail or LinkedIn synchronization, Fireflies import, actual Codex/Claude OAuth compatibility, Vercel deployment, large files there, high-volume queue performance, or outbound reliability. Those are recorded in the roadmap. GitHub Actions repeats these checks remotely after publication; remote run results are recorded below.
+These results do not establish cloud PostgreSQL/S3 operation, production backups, Google/GitHub login, live Gmail or LinkedIn synchronization, Fireflies import, actual Codex/Claude OAuth compatibility, a hosted deployment, large files there, high-volume queue performance, or outbound reliability. Those are recorded in the roadmap. GitHub Actions repeats these checks remotely after publication; remote run results are recorded below.
 
 ## Gravity UI and live update checks
 
@@ -56,7 +56,7 @@ Final local checks passed with Node 22.15.1/Bun 1.3.14: TypeScript, Biome, all 4
 
 ## Remote GitHub verification
 
-The initial publication commit `8e1f85942977192597d8ac66ed57c672924a1492` passed the [first GitHub CI run](https://github.com/Noveum/gravity/actions/runs/37134125466) on a fresh Ubuntu runner: pinned checkout/runtime setup, frozen install, dependency audit, TypeScript, Biome, all 40 tests and production build. This verifies clean Linux packaging in addition to local macOS checks. The manual preview workflow remains disabled and has not deployed to Vercel.
+The initial publication commit `8e1f85942977192597d8ac66ed57c672924a1492` passed the [first GitHub CI run](https://github.com/Noveum/gravity/actions/runs/37134125466) on a fresh Ubuntu runner: pinned checkout/runtime setup, frozen install, dependency audit, TypeScript, Biome, all 40 tests and production build. This verifies clean Linux packaging in addition to local macOS checks.
 
 The refreshed local browser verified that opening Appearance then pressing physical Escape closed it and returned focus to its summary; clicking Companies outside the open menu also closed it. The app was restarted successfully after its production build.
 
@@ -84,7 +84,7 @@ The actual unconfigured demo returned 503 `AUTH_UNAVAILABLE` for MCP initialize 
 
 TypeScript, Biome without warnings, all 76 tests, Bun dependency audit (no vulnerabilities) and production build passed. The `/onboarding` route is included in the build. Credential-pattern screening of 112 text files found no matches before publication; this remains a limited pattern check. No dependencies, schema migrations, provider accounts, external database, paid subscription or production deployment were added.
 
-The detailed [flow matrix](flow-review-2026-10-04.md) records outstanding record editing/invites, live mailbox/calendar/transcript adapters, durable jobs/backfill, Vercel file transfer, recovery, high-volume and actual Codex/Claude qualification. The source repository remains private.
+The detailed [flow matrix](flow-review-2026-10-04.md) records outstanding record editing/invites, live mailbox/calendar/transcript adapters, durable jobs/backfill, hosted file transfer, recovery, high-volume and actual Codex/Claude qualification. The source repository remains private.
 
 
 ## Visible keyboard actions (2026-10-05)

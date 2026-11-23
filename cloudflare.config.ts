@@ -46,7 +46,9 @@ export default defineConfig(({ mode }) => {
       triggers: preview
         ? []
         : [triggers.scheduled({ schedule: "*/5 * * * *" })],
-      ...(preview ? { workersDev: true, previewUrls: true } : {}),
+      ...(preview
+        ? { workersDev: true, previewUrls: true }
+        : { workersDev: false }),
       observability: { enabled: true },
       env: {
         ASSETS: bindings.assets(),

@@ -1,5 +1,4 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { gunzipSync } from "node:zlib";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { seal } from "../packages/connectors/security";
@@ -129,30 +128,24 @@ test("the compact snapshot streams complete private JSON in bounded chunks", asy
     const plain = Buffer.concat(chunks);
     const snapshot = JSON.parse(plain.toString());
     expect(response.headers.get("content-encoding")).toBeNull();
-    expect(response.headers.get("vary")).toContain("Accept-Encoding");
-    for (const [accepted, encoded] of [
-      ["gzip, deflate, br", true],
-      ["GZIP;q=0.5", true],
-      ["*", true],
-      ["gzip;q=0, *;q=1", false],
-      ["identity;q=1, gzip;q=0.5", false],
-      ["br", false],
-    ] as const) {
+    // Next.js drops Content-Encoding from route handler responses, so the
+    // route must send plain JSON and leave compression to the server or host.
+    for (const accepted of [
+      "gzip, deflate, br",
+      "gzip, identity;q=0",
+      "*;q=0",
+    ]) {
       const negotiated = await GET(
         new Request(
           `http://localhost/api/crm?organizationId=${organizationId}&compact=true`,
           { headers: { "x-test-user": demoUser, "Accept-Encoding": accepted } },
         ),
       );
+      expect(negotiated.status).toBe(200);
       expect(negotiated.headers.get("cache-control")).toBe("private, no-store");
-      expect(negotiated.headers.get("content-encoding")).toBe(
-        encoded ? "gzip" : null,
-      );
-      const body = Buffer.from(await negotiated.arrayBuffer());
-      if (encoded) expect(body.length).toBeLessThan(plain.length);
-      const decoded = encoded ? gunzipSync(body) : body;
+      expect(negotiated.headers.get("content-encoding")).toBeNull();
       expect(
-        JSON.parse(decoded.toString()).companies.find(
+        JSON.parse(await negotiated.text()).companies.find(
           (c: { id: string }) => c.id === companyId,
         )?.description,
       ).toBe(description);
@@ -162,28 +155,6 @@ test("the compact snapshot streams complete private JSON in bounded chunks", asy
     );
   } finally {
     await db.delete(s.companies).where(eq(s.companies.id, companyId));
-  }
-});
-test("small private snapshots honor explicit coding exclusions", async () => {
-  const query = `http://localhost/api/crm?organizationId=${demoId(2)}&compact=true`;
-  async function request(acceptEncoding: string) {
-    return GET(
-      new Request(query, {
-        headers: { "x-test-user": demoUser, "Accept-Encoding": acceptEncoding },
-      }),
-    );
-  }
-  const gzipOnly = await request("gzip, identity;q=0");
-  expect(gzipOnly.headers.get("content-encoding")).toBe("gzip");
-  const decoded = gunzipSync(Buffer.from(await gzipOnly.arrayBuffer()));
-  expect(decoded.length).toBeLessThan(64 * 1024);
-  expect(JSON.parse(decoded.toString()).people).toHaveLength(1);
-  for (const header of ["*;q=0", "gzip;q=0, identity;q=0"]) {
-    const rejected = await request(header);
-    expect(rejected.status).toBe(406);
-    expect(rejected.headers.get("cache-control")).toBe("private, no-store");
-    expect(rejected.headers.get("vary")).toBe("Accept-Encoding");
-    expect(await rejected.text()).toBe("");
   }
 });
 test("HTTP contact updates preserve an omitted summary and allow explicit clearing", async () => {

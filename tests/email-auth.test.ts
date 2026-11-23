@@ -212,6 +212,14 @@ test("untrusted origins and malformed recipient types cannot dispatch codes", as
   ).toBe(400);
   expect(delivered).toEqual([]);
 });
+// JSON.stringify turns Error arguments into {}, hiding their messages.
+function loggedErrors() {
+  return vi
+    .mocked(console.error)
+    .mock.calls.flat()
+    .map((value) => (value instanceof Error ? value.message : String(value)))
+    .join("\n");
+}
 function rejectNextEmail() {
   vi.mocked(fetch).mockResolvedValueOnce(
     Response.json({ message: "private provider body" }, { status: 403 }),
@@ -278,7 +286,7 @@ test("a failed cleanup still answers 503 and logs no address", async () => {
     code: "EMAIL_DELIVERY_UNAVAILABLE",
     message: t.errors.EMAIL_DELIVERY_UNAVAILABLE,
   });
-  const logs = JSON.stringify(vi.mocked(console.error).mock.calls);
+  const logs = loggedErrors();
   expect(logs).toContain("gravity.auth_email_cleanup");
   expect(logs).not.toContain(email);
 });
@@ -289,7 +297,7 @@ test("provider rejection is recoverable and logs contain no code, address or key
   await expect(
     sendSignInCode({ email: "private@example.test", otp: "654321" }),
   ).rejects.toMatchObject({ statusCode: 503 });
-  const logs = JSON.stringify(vi.mocked(console.error).mock.calls);
+  const logs = loggedErrors();
   expect(logs).toContain("gravity.auth_email");
   for (const privateValue of [
     "private@example.test",

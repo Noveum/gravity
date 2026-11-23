@@ -350,6 +350,14 @@ test("a snapshot that keeps failing is retried with growing delays", async () =>
       });
     await wait(5000);
     await waitFor(() => expect(compact).toHaveBeenCalledTimes(2));
+    // The stream resends the current revision on every reconnect.
+    await act(async () =>
+      liveFeed.dispatchEvent(
+        new MessageEvent("revision", {
+          data: JSON.stringify({ revision: "3" }),
+        }),
+      ),
+    );
     await wait(5000);
     expect(compact).toHaveBeenCalledTimes(2);
     await wait(5000);
@@ -400,6 +408,25 @@ test("another organization starts its own snapshot retry delays", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+test("a loaded workspace is cleared when a refresh is refused", async () => {
+  const regular = request.getMockImplementation();
+  request.mockImplementation(async (url, options) => {
+    const params = new URL(url, "http://localhost").searchParams;
+    if (params.get("operation") === "revision") return { revision: "3" };
+    if (params.has("compact")) throw new Error("FORBIDDEN");
+    return regular?.(url, options);
+  });
+  mount("/people");
+  expect(screen.getAllByText("Mira Chen").length).toBeGreaterThan(0);
+  await act(async () =>
+    liveFeed.dispatchEvent(
+      new MessageEvent("revision", { data: JSON.stringify({ revision: "4" }) }),
+    ),
+  );
+  await screen.findByText(t.errors.FORBIDDEN);
+  expect(screen.queryByText("Mira Chen")).toBeNull();
 });
 
 test("restored access reloads the snapshot even when the revision has not changed", async () => {

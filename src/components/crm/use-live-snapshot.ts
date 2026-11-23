@@ -80,7 +80,7 @@ export function useLiveSnapshot({
     if (!organizationId) return;
     let stopped = false;
     const feed = new EventSource(
-      `/api/events?organizationId=${organizationId}`,
+      `/api/crm/live?organizationId=${organizationId}`,
     );
     function refreshForRevision(next: string, retryNow: boolean) {
       const retry =

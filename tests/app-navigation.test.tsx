@@ -64,6 +64,7 @@ let local: Awaited<ReturnType<typeof createLocalDatabase>>;
 let service: CrmService;
 let snapshot: ClientSnapshot;
 let liveFeed: EventTarget;
+let liveFeedUrl = "";
 const principal = { userId: demoUser, source: "demo" as const };
 const organizations = [
   {
@@ -93,9 +94,10 @@ beforeAll(async () => {
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
-      constructor() {
+      constructor(url: string) {
         super();
         liveFeed = this;
+        liveFeedUrl = url;
       }
       static OPEN = 1;
       readyState = 1;
@@ -317,6 +319,13 @@ test("a transient snapshot failure retries on focus at the same revision", async
   await act(async () => fireEvent.focus(window));
   await screen.findByRole("complementary", { name: t.recordDetails });
   expect(compact).toHaveBeenCalledTimes(2);
+});
+
+test("the live feed uses the CRM route that content blockers leave alone", async () => {
+  mount("/actions");
+  await waitFor(() =>
+    expect(liveFeedUrl).toBe(`/api/crm/live?organizationId=${demoId(1)}`),
+  );
 });
 
 test("a snapshot that keeps failing is retried with growing delays", async () => {

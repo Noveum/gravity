@@ -301,70 +301,70 @@
     },
     {
       "name": "@better-auth/cimd",
-      "version": "1.7.15",
+      "version": "1.7.17",
       "license": "MIT",
       "direct": true,
       "repository": "git+https://github.com/better-auth/better-auth.git"
     },
     {
       "name": "@better-auth/core",
-      "version": "1.7.15",
+      "version": "1.7.17",
       "license": "MIT",
       "direct": true,
       "repository": "git+https://github.com/better-auth/better-auth.git"
     },
     {
       "name": "@better-auth/drizzle-adapter",
-      "version": "1.7.15",
+      "version": "1.7.17",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/better-auth/better-auth.git"
     },
     {
       "name": "@better-auth/kysely-adapter",
-      "version": "1.7.15",
+      "version": "1.7.17",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/better-auth/better-auth.git"
     },
     {
       "name": "@better-auth/mcp",
-      "version": "1.7.15",
+      "version": "1.7.17",
       "license": "MIT",
       "direct": true,
       "repository": "git+https://github.com/better-auth/better-auth.git"
     },
     {
       "name": "@better-auth/memory-adapter",
-      "version": "1.7.15",
+      "version": "1.7.17",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/better-auth/better-auth.git"
     },
     {
       "name": "@better-auth/mongo-adapter",
-      "version": "1.7.15",
+      "version": "1.7.17",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/better-auth/better-auth.git"
     },
     {
       "name": "@better-auth/oauth-provider",
-      "version": "1.7.15",
+      "version": "1.7.17",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/better-auth/better-auth.git"
     },
     {
       "name": "@better-auth/prisma-adapter",
-      "version": "1.7.15",
+      "version": "1.7.17",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/better-auth/better-auth.git"
     },
     {
       "name": "@better-auth/telemetry",
-      "version": "1.7.15",
+      "version": "1.7.17",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/better-auth/better-auth.git"
@@ -1624,14 +1624,14 @@
     },
     {
       "name": "better-auth",
-      "version": "1.7.15",
+      "version": "1.7.17",
       "license": "MIT",
       "direct": true,
       "repository": "git+https://github.com/better-auth/better-auth.git"
     },
     {
       "name": "better-call",
-      "version": "1.4.4",
+      "version": "1.4.5",
       "license": "MIT",
       "direct": false,
       "repository": "git+https://github.com/better-auth/better-call.git"

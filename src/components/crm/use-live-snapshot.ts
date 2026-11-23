@@ -29,6 +29,9 @@ export function useLiveSnapshot({
   // A denied snapshot needs a successful revision check before automatic retry.
   const revision = useRef<string | null>("");
   const retrySnapshot = useRef(false);
+  // A snapshot that keeps failing is retried after 5 s, doubling to 60 s.
+  const retryDelay = useRef(0);
+  const retryAfter = useRef(0);
   const accessLost = useRef(onAccessLost);
   accessLost.current = onAccessLost;
   const refresh = useMemo(() => {
@@ -49,6 +52,7 @@ export function useLiveSnapshot({
           );
           if (current()) {
             retrySnapshot.current = false;
+            retryDelay.current = 0;
             setData(snapshot);
             setLoadFailed(false);
           }
@@ -56,8 +60,13 @@ export function useLiveSnapshot({
           if (current()) {
             retrySnapshot.current =
               revision.current === requestedRevision && !isAccessError(error);
+            const repeated = retrySnapshot.current && retryDelay.current > 0;
+            retryDelay.current = retrySnapshot.current
+              ? Math.min(repeated ? retryDelay.current * 2 : 5000, 60000)
+              : 0;
+            retryAfter.current = Date.now() + retryDelay.current;
             setLoadFailed(true);
-            notify(errorText(error), "danger");
+            if (!repeated) notify(errorText(error), "danger");
             if (isAccessError(error)) {
               revision.current = null;
               setData(null);
@@ -73,8 +82,10 @@ export function useLiveSnapshot({
     const feed = new EventSource(
       `/api/events?organizationId=${organizationId}`,
     );
-    function refreshForRevision(next: string) {
-      if (!stopped && (revision.current !== next || retrySnapshot.current)) {
+    function refreshForRevision(next: string, retryNow: boolean) {
+      const retry =
+        retrySnapshot.current && (retryNow || Date.now() >= retryAfter.current);
+      if (!stopped && (revision.current !== next || retry)) {
         retrySnapshot.current = false;
         revision.current = next;
         void refresh();
@@ -90,7 +101,7 @@ export function useLiveSnapshot({
       const result = JSON.parse((event as MessageEvent).data) as {
         revision: string;
       };
-      refreshForRevision(result.revision);
+      refreshForRevision(result.revision, false);
     });
     feed.addEventListener("access-changed", () => {
       feed.close();
@@ -99,7 +110,7 @@ export function useLiveSnapshot({
         void refresh();
       }
     });
-    const recover = async () => {
+    const recover = async (retryNow = true) => {
       if (stopped) return;
       const previous = revision.current;
       try {
@@ -107,7 +118,8 @@ export function useLiveSnapshot({
           `/api/crm?operation=revision&organizationId=${organizationId}`,
         );
         // A stream event that arrived during this request takes precedence.
-        if (revision.current === previous) refreshForRevision(result.revision);
+        if (revision.current === previous)
+          refreshForRevision(result.revision, retryNow);
       } catch {
         if (!stopped && previous !== null && revision.current === previous)
           void refresh();
@@ -116,21 +128,25 @@ export function useLiveSnapshot({
     // Either the stream or this read starts the first snapshot. When both
     // report the same revision, only one full workspace download is needed.
     void recover();
-    const recoverIfVisible = () => {
-      if (document.visibilityState === "visible") void recover();
+    const recoverIfVisible = (retryNow = true) => {
+      if (document.visibilityState === "visible") void recover(retryNow);
     };
+    const onReturn = () => recoverIfVisible();
     const interval = setInterval(() => {
-      if (feed.readyState !== EventSource.OPEN || retrySnapshot.current)
-        recoverIfVisible();
+      if (
+        feed.readyState !== EventSource.OPEN ||
+        (retrySnapshot.current && Date.now() >= retryAfter.current)
+      )
+        recoverIfVisible(false);
     }, 5000);
-    window.addEventListener("focus", recoverIfVisible);
-    document.addEventListener("visibilitychange", recoverIfVisible);
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
     return () => {
       stopped = true;
       feed.close();
       clearInterval(interval);
-      window.removeEventListener("focus", recoverIfVisible);
-      document.removeEventListener("visibilitychange", recoverIfVisible);
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
     };
   }, [organizationId, refresh]);
   return {

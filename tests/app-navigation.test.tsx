@@ -319,6 +319,41 @@ test("a transient snapshot failure retries on focus at the same revision", async
   expect(compact).toHaveBeenCalledTimes(2);
 });
 
+test("a snapshot that keeps failing is retried with growing delays", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  try {
+    const regular = request.getMockImplementation();
+    const compact = vi.fn(async () => {
+      throw new Error("NETWORK_ERROR");
+    });
+    request.mockImplementation(async (url, options) => {
+      const params = new URL(url, "http://localhost").searchParams;
+      if (params.get("operation") === "revision") return { revision: "3" };
+      if (params.has("compact")) return compact();
+      return regular?.(url, options);
+    });
+    mount("/actions", true, null);
+    await screen.findByText(t.errors.NETWORK_ERROR);
+    expect(compact).toHaveBeenCalledTimes(1);
+    const wait = (ms: number) =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    await wait(5000);
+    await waitFor(() => expect(compact).toHaveBeenCalledTimes(2));
+    await wait(5000);
+    expect(compact).toHaveBeenCalledTimes(2);
+    await wait(5000);
+    await waitFor(() => expect(compact).toHaveBeenCalledTimes(3));
+    await wait(15000);
+    expect(compact).toHaveBeenCalledTimes(3);
+    await act(async () => fireEvent.focus(window));
+    await waitFor(() => expect(compact).toHaveBeenCalledTimes(4));
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("restored access reloads the snapshot even when the revision has not changed", async () => {
   const regular = request.getMockImplementation();
   const revision = vi.fn(async () => ({ revision: "3" }));

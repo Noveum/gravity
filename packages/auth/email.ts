@@ -134,9 +134,17 @@ export function emailSignInPlugin() {
       await sendSignInCode({ email, otp }).catch(async (error) => {
         if (ctx) {
           unsent.set(ctx.context, error);
-          await ctx.context.internalAdapter.deleteVerificationByIdentifier(
-            `sign-in-otp-${email}`,
-          );
+          await ctx.context.internalAdapter
+            .deleteVerificationByIdentifier(`sign-in-otp-${email}`)
+            .catch(() =>
+              // Database errors can contain the identifier, which holds the address.
+              console.error(
+                JSON.stringify({
+                  event: "gravity.auth_email_cleanup",
+                  status: "failed",
+                }),
+              ),
+            );
         }
         throw error;
       });

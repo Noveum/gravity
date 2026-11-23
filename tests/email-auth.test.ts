@@ -264,6 +264,24 @@ test("a refused code still counts against the one send per minute for that addre
   expect((await requestSignInCode(email)).status).toBe(429);
   expect(delivered).toEqual([]);
 });
+test("a failed cleanup still answers 503 and logs no address", async () => {
+  const email = "cleanup-fails@example.test";
+  const context = await auth.$context;
+  vi.spyOn(
+    context.internalAdapter,
+    "deleteVerificationByIdentifier",
+  ).mockRejectedValueOnce(new Error(`delete failed for sign-in-otp-${email}`));
+  rejectNextEmail();
+  const response = await requestSignInCode(email);
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({
+    code: "EMAIL_DELIVERY_UNAVAILABLE",
+    message: t.errors.EMAIL_DELIVERY_UNAVAILABLE,
+  });
+  const logs = JSON.stringify(vi.mocked(console.error).mock.calls);
+  expect(logs).toContain("gravity.auth_email_cleanup");
+  expect(logs).not.toContain(email);
+});
 test("provider rejection is recoverable and logs contain no code, address or key", async () => {
   vi.mocked(fetch).mockResolvedValueOnce(
     Response.json({ message: "private provider body" }, { status: 403 }),

@@ -50,6 +50,8 @@ export default defineConfig(({ mode }) => {
       observability: { enabled: true },
       env: {
         ASSETS: bindings.assets(),
+        // Requests to the app's own URL go here; see worker/self-fetch.ts.
+        SELF: bindings.worker({ worker: preview ? "gravity-pr" : "gravity" }),
         HYPERDRIVE: hyperdriveId
           ? bindings.hyperdrive({
               id: hyperdriveId,

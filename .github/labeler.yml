@@ -73,7 +73,7 @@ ci:
       - any-glob-to-any-file:
           - ".github/**"
           - "scripts/**"
-          - "vercel*.json"
+          - "cloudflare.config.ts"
 
 dependencies:
   - changed-files:

@@ -143,13 +143,11 @@ clients, and lists every tool.
 Gravity is one Next.js application backed by PostgreSQL and, for file uploads, an
 S3-compatible bucket.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FNoveum%2Fgravity&project-name=gravity&repository-name=gravity&env=APP_URL%2CDATABASE_URL%2CBETTER_AUTH_SECRET%2CRESEND_API_KEY%2CEMAIL_FROM%2CINTEGRATION_ENCRYPTION_KEY%2CCRON_SECRET%2CCRM_DEMO_MODE%2CDATABASE_SSL_MODE%2CPUBLIC_SITE_INDEXING&envDefaults=%7B%22CRM_DEMO_MODE%22%3A%22false%22%2C%22DATABASE_SSL_MODE%22%3A%22verify-full%22%2C%22PUBLIC_SITE_INDEXING%22%3A%22false%22%7D&envLink=https%3A%2F%2Fgithub.com%2FNoveum%2Fgravity%2Fblob%2Fmain%2Fdocs%2Fvercel.md%23environment)
-
-The button creates your own repository and Vercel project. You bring the database,
-secrets and a verified email sender; nothing is shared with the hosted instance.
+Gravity runs as a Cloudflare Worker in your own Cloudflare account. You bring the
+database, secrets and a sign-in method; nothing is shared with the hosted instance.
 Migrations are applied separately, by you, with a dedicated migration role.
 
-- [Deploy on Vercel](docs/vercel.md): environment values, callbacks, scheduled sync
+- [Deploy on Cloudflare Workers](docs/cloudflare.md): database, secrets, callbacks, scheduled sync, branch previews
 - [Supabase PostgreSQL](docs/supabase.md): migrations, restricted runtime role, TLS
 - [Setup and OAuth MCP](docs/setup-and-mcp.md): every environment variable
 

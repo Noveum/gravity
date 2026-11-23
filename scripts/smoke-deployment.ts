@@ -1,4 +1,5 @@
 import { publicPaths, siteCopy } from "../packages/public-site/content";
+import { deploymentGuide } from "../packages/public-site/deployment";
 
 const supplied = process.argv[2];
 if (!supplied) throw new Error("DEPLOYMENT_ORIGIN_REQUIRED");
@@ -30,7 +31,7 @@ for (const path of publicPaths) {
     throw new Error(`DEPLOYMENT_PUBLIC_PAGE_FAILED: ${path}`);
   if (!html.includes('href="/sign-in"'))
     throw new Error(`DEPLOYMENT_LOGIN_LINK_MISSING: ${path}`);
-  if (path === "/" && !html.includes("https://vercel.com/new/clone?"))
+  if (path === "/" && !html.includes(`href="${deploymentGuide}"`))
     throw new Error("DEPLOYMENT_DEPLOY_LINK_MISSING");
   if (!html.includes('rel="apple-touch-icon"') || !html.includes("favicon.ico"))
     throw new Error(`DEPLOYMENT_ICON_METADATA_MISSING: ${path}`);

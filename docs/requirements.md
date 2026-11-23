@@ -20,7 +20,7 @@ This consolidates the conversation through October 4, 2026. “Local” means im
 | Review and approval before sending | Draft hashes, user or verified assistant approval and version checks | No dispatch today; opt-outs, limits, ambiguous-send recovery before execution |
 | Meetings, calendar and Fireflies notes | Meeting outcome and reviewed commitment creation; Calendar status/setup guide | Calendar/Fireflies connection, source citations and idempotent transcript imports |
 | Who/when/what to follow up | Persisted next actions, promises, waiting views and conversation timeline | Due-date editing, snooze, recurrence and saved filters in URLs |
-| Product enablement materials | Private PDF/Markdown/text upload, nested folders, stage associations and download | Direct object-store transfer for Vercel, extraction, scanning, versions/approval and stage/persona kits |
+| Product enablement materials | Private PDF/Markdown/text upload, nested folders, stage associations and download | Extraction, scanning, versions/approval and stage/persona kits |
 | Codex and Claude access via MCP from day one | OAuth CRM read/write tools over the same SQL services and permissions, including analytics, deals and pipelines; tested consent/refresh | Qualify each assistant client and installation; outbound sending remains unfinished |
 | Sales and outreach analytics | Clickable Overview with live pipeline values, deal outcomes, synced message counts, follow-ups, owner/product filters and multiple pipelines | Historical stage conversion, time in stage, delivery/open tracking and custom report builder |
 | Prefer OAuth without a personal API key | PKCE, resource-bound tokens, immutable org/product grants, revocation | Live Google/GitHub client configuration and signing-key operations; webhook HMAC is separate |
@@ -29,8 +29,8 @@ This consolidates the conversation through October 4, 2026. “Local” means im
 | Keyboard map | Search, command menu, safe navigation, queue movement, task creation and native modal Escape | Screen-reader/manual qualification and further shortcuts guided by real use |
 | Use screen space well | Compact desktop toolbar; persistent, resizable navigation and inspector; expanded detail mode; independent scrolling and responsive drawer | Larger-display and screen-reader qualification |
 | Cron/agents can add context and follow-up work | Domain model supports reviewed promises and change records | Audited ingestion/write tools and durable scheduled jobs; no automation created |
-| Vercel deployment, supplied database later | Single Node application and portable PostgreSQL/S3 interfaces | Identify supplied database, backup/restore and runtime-role review; staging and HTTPS deployment |
-| Keep cost modest for two initial users | Local demo requires no paid provider; no Kubernetes infrastructure | Account-specific Vercel/DB/storage/provider estimates before subscribing |
+| Cloudflare Workers deployment, supplied database | One application built for Workers, with portable PostgreSQL/S3 interfaces | Identify supplied database, backup/restore and runtime-role review; staging and HTTPS deployment |
+| Keep cost modest for two initial users | Local demo requires no paid provider; no Kubernetes infrastructure | Account-specific Cloudflare/DB/storage/provider estimates before subscribing |
 
 The earlier RepoCloud/Twenty setup and Cloud Run MCP endpoint are historical infrastructure, not Gravity's endpoint. Nothing in this implementation modifies them. Gravity's future production MCP URL will be its deployed HTTPS origin plus `/mcp`; the local route is not a verified live assistant connection.
 

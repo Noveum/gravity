@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { publicPaths, siteCopy } from "../packages/public-site/content";
+import { deploymentGuide } from "../packages/public-site/deployment";
 
 // Exercise the built application without auth credentials, SQL, or a demo identity.
 const socket = createServer();
@@ -83,7 +84,7 @@ try {
       throw new Error("SMOKE_COPY_MISSING");
     if (!html.includes('href="/sign-in"'))
       throw new Error(`SMOKE_LOGIN_LINK_MISSING: ${path}`);
-    if (path === "/" && !html.includes("https://vercel.com/new/clone?"))
+    if (path === "/" && !html.includes(`href="${deploymentGuide}"`))
       throw new Error("SMOKE_DEPLOY_LINK_MISSING");
     if (
       !html.includes('rel="apple-touch-icon"') ||

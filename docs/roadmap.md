@@ -8,7 +8,7 @@ The app supports fictional local review and an authenticated managed-database de
 
 ## Provider connection slice, 5 October 2026
 
-Gmail/primary-calendar OAuth, Fireflies owner API-key import, Unipile V2 hosted LinkedIn binding, encrypted credentials, durable signed webhook receipts, bounded historical/incremental polling and explicit unmatched review are implemented. The five-minute Vercel schedule requires a compatible plan. See [connectors](connectors.md) for setup and remaining qualifications. This changes the implementation status of slices 4 and 5 below; live account evidence is recorded separately.
+Gmail/primary-calendar OAuth, Fireflies owner API-key import, Unipile V2 hosted LinkedIn binding, encrypted credentials, durable signed webhook receipts, bounded historical/incremental polling and explicit unmatched review are implemented. The Worker's Cron Trigger runs the sync every five minutes. See [connectors](connectors.md) for setup and remaining qualifications. This changes the implementation status of slices 4 and 5 below; live account evidence is recorded separately.
 
 ## Next slices, in order
 
@@ -31,7 +31,7 @@ The queue and connector slices deserve the most effort. A polished board cannot 
 - Automatic backups and retention configured; point-in-time recovery if required by the chosen recovery target; a real restore rehearsal. Record recovery point and recovery time targets. Export is useful but is not the backup system.
 - RLS or equivalently reviewed least-privileged database access; tests covering tenant/product/private-source boundaries across queries, jobs, MCP and storage. Current composite FKs/application permissions are necessary but do not replace this review.
 - Production HTTPS origin, auth secrets, Google/GitHub callbacks, invite rules, distributed abuse limits for auth/DCR/API, signing-key rotation, session/grant revocation and secret handling verified.
-- Private object bucket and lifecycle, authenticated short-lived upload/download grants, upload finalization and cleanup, file validation/scanning and no public object keys. The current local route accepts 10 MB; Vercel functions have a 4.5 MB request/response payload limit. Use direct object storage transfer before enabling large uploads/downloads there. [Vercel function limits](https://vercel.com/docs/functions/limitations)
+- Private object bucket and lifecycle, authenticated short-lived upload/download grants, upload finalization and cleanup, file validation/scanning and no public object keys. Uploads and downloads already go straight between the browser and the bucket through signed URLs.
 - Durable webhook receipts, worker retries and dead letters, unmatched classification, historical-event handling, connector gap reconciliation and visible sync health.
 - Actual Codex/Claude OAuth consent tested from the deployed URL. Synthetic tests do not substitute for client compatibility checks.
 - Mail scopes/verification qualified, supported LinkedIn account connection and restrictions qualified, credentials encrypted, disconnect revocation tested.
@@ -43,4 +43,4 @@ The queue and connector slices deserve the most effort. A polished board cannot 
 
 Apache-2.0 matches Orbit's permissive direction. The source is newly written, with fictional fixtures only; the installed dependency license inventory is recorded with explicit platform coverage. Review secrets and business data before pushing a new GitHub repository. Keep brand/trademark assets and source licensing distinct. Publish a Preview with an honest capability matrix; do not label unconnected providers as working integrations.
 
-Keep PostgreSQL, object storage, connector and execution interfaces portable. Built-in AI should be optional: the core queue and external MCP clients work without an app-owned model subscription. Select any paid provider after pricing/account qualification; do not promise a fixed hosting price until the supplied database and existing Vercel account are known.
+Keep PostgreSQL, object storage, connector and execution interfaces portable. Built-in AI should be optional: the core queue and external MCP clients work without an app-owned model subscription. Select any paid provider after pricing/account qualification; do not promise a fixed hosting price until the supplied database and Cloudflare account are known.

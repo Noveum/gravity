@@ -21,7 +21,6 @@ export function canIndexPublicSite() {
   return (
     !!publicOrigin() &&
     process.env.PUBLIC_SITE_INDEXING === "true" &&
-    (!process.env.VERCEL_ENV || process.env.VERCEL_ENV === "production") &&
     process.env.NODE_ENV === "production"
   );
 }

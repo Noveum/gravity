@@ -97,13 +97,20 @@ export function createAuthForDatabase(db: Database) {
     },
   });
 }
-let authPromise: ReturnType<typeof createAuth> | undefined;
+// One instance per origin: a preview Worker serves each version's preview URL
+// as its own origin. Every other deployment has only APP_URL.
+const auths = new Map<string, ReturnType<typeof createAuth>>();
 export async function getAuth() {
-  authPromise ??= createAuth().catch((error) => {
-    authPromise = undefined;
-    throw error;
-  });
-  return authPromise;
+  const origin = appUrl();
+  let auth = auths.get(origin);
+  if (!auth) {
+    auth = createAuth().catch((error) => {
+      auths.delete(origin);
+      throw error;
+    });
+    auths.set(origin, auth);
+  }
+  return auth;
 }
 export async function currentPrincipal(headers: Headers): Promise<Principal> {
   if (isDemoMode()) return { userId: demoUser, source: "demo" };

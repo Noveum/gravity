@@ -42,7 +42,7 @@ export default function PublicLayout({
       {children}
       <footer className="site-footer">
         <span>{copy.footer}</span>
-        <Link href={deploymentGuide}>{copy.deployWithVercel}</Link>
+        <Link href={deploymentGuide}>{copy.deployOnCloudflare}</Link>
         <a href={gravityRepository}>{copy.source}</a>
       </footer>
     </div>

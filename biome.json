@@ -4,7 +4,6 @@
     "includes": [
       "**",
       "!!.next",
-      "!!.vercel",
       "!!.cloudflare",
       "!!dist",
       "!!.data",

@@ -6,12 +6,7 @@ import {
   publicPaths,
   siteCopy,
 } from "../packages/public-site/content";
-import {
-  deploymentEnvironment,
-  deploymentGuide,
-  gravityRepository,
-  vercelDeployUrl,
-} from "../packages/public-site/deployment";
+import { deploymentGuide } from "../packages/public-site/deployment";
 import {
   canIndexPublicSite,
   publicMetadata,
@@ -36,17 +31,14 @@ test.each([
   expect(canIndexPublicSite()).toBe(false);
   expect(sitemap()).toEqual([]);
 });
-test("indexing requires an explicit production opt-in and never applies to previews", () => {
+test("indexing requires an explicit production opt-in, which previews never set", () => {
   vi.stubEnv("PUBLIC_SITE_URL", "https://gravity.example.test");
   vi.stubEnv("NODE_ENV", "production");
+  vi.stubEnv("PUBLIC_SITE_INDEXING", "");
+  expect(canIndexPublicSite()).toBe(false);
   vi.stubEnv("PUBLIC_SITE_INDEXING", "false");
   expect(canIndexPublicSite()).toBe(false);
   vi.stubEnv("PUBLIC_SITE_INDEXING", "true");
-  vi.stubEnv("VERCEL_ENV", "preview");
-  expect(canIndexPublicSite()).toBe(false);
-  vi.stubEnv("VERCEL_ENV", "development");
-  expect(canIndexPublicSite()).toBe(false);
-  vi.stubEnv("VERCEL_ENV", "production");
   expect(canIndexPublicSite()).toBe(true);
   vi.stubEnv("NODE_ENV", "development");
   expect(canIndexPublicSite()).toBe(false);
@@ -55,7 +47,6 @@ test("production discovery includes only public content, keeping CRM and auth ou
   vi.stubEnv("PUBLIC_SITE_URL", "https://gravity.example.test");
   vi.stubEnv("NODE_ENV", "production");
   vi.stubEnv("PUBLIC_SITE_INDEXING", "true");
-  vi.stubEnv("VERCEL_ENV", "production");
   expect(sitemap().map((item) => item.url)).toEqual(
     publicPaths.map((path) => `https://gravity.example.test${path}`),
   );
@@ -100,36 +91,19 @@ test("every content route has a unique slug and anchor; missing articles stay mi
   expect(findArticle("articles", "missing")).toBeUndefined();
 });
 
-test("the landing page offers explicit login and an independently configured Vercel deployment", () => {
+test("the landing page offers explicit login and a self-hosted Cloudflare deployment", () => {
   const html = renderToStaticMarkup(createElement(LandingPage));
   expect(html).toContain(siteCopy.heroTitle);
   expect(html).toContain(siteCopy.heroNote);
   expect((html.match(/href="\/sign-in"/g) ?? []).length).toBe(3);
   expect(html).not.toContain("Run Gravity locally");
   expect(html).toContain(siteCopy.signInToGravity);
-  expect(html).toContain(siteCopy.deployWithVercel);
+  expect(html).toContain(siteCopy.deployOnCloudflare);
   expect(html).toContain(`href="${deploymentGuide}"`);
-  expect(html).toContain(siteCopy.vercelNote);
-});
-
-test("the deploy URL clones public source and includes no credential defaults", () => {
-  const url = new URL(vercelDeployUrl());
-  expect(url.origin).toBe("https://vercel.com");
-  expect(url.pathname).toBe("/new/clone");
-  expect(url.searchParams.get("repository-url")).toBe(gravityRepository);
-  expect(url.searchParams.get("env")?.split(",")).toEqual(
-    deploymentEnvironment,
-  );
-  expect(JSON.parse(url.searchParams.get("envDefaults") ?? "{}")).toEqual({
-    CRM_DEMO_MODE: "false",
-    DATABASE_SSL_MODE: "verify-full",
-    PUBLIC_SITE_INDEXING: "false",
-  });
-  expect(url.searchParams.has("DATABASE_URL")).toBe(false);
-  expect(deploymentEnvironment).not.toContain("DATABASE_MIGRATION_URL");
-  expect(url.searchParams.get("envLink")).toBe(
-    `${gravityRepository}/blob/main/docs/vercel.md#environment`,
-  );
+  expect(html).toContain(siteCopy.selfHostNote);
+  expect(
+    findArticle("docs", deploymentGuide.split("/").pop() ?? ""),
+  ).toBeDefined();
 });
 
 test("getting started leads with hosted access and leaves development setup optional", () => {

@@ -7,9 +7,10 @@ import type { Database } from "../database/client";
 import { mcpGrants, oauthSelections } from "../database/schema";
 import { currentFlowKey } from "./flow";
 import { metadataTransport } from "./metadata-transport";
+import { requestAppUrl } from "./origin";
 
 export function appUrl() {
-  const configured = process.env.APP_URL;
+  const configured = requestAppUrl() ?? process.env.APP_URL;
   if (process.env.NODE_ENV === "production" && !configured)
     throw new DomainError("AUTH_UNAVAILABLE", 503);
   const url = new URL(configured ?? "http://127.0.0.1:3014");

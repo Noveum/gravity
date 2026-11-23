@@ -9,7 +9,6 @@ import { drizzle as postgresDrizzle } from "drizzle-orm/postgres-js";
 import { migrate as postgresMigrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { databaseOptions } from "./config";
-import { allowIdleDatabaseRelease } from "./lifecycle";
 import * as schema from "./schema";
 
 export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
@@ -131,7 +130,6 @@ const invocationDatabase = new Proxy({} as Database, {
 });
 export async function getDatabase(): Promise<Database> {
   if (isWorkersRuntime) return invocationDatabase;
-  allowIdleDatabaseRelease();
   if (!globalThis.crmDatabase) {
     globalThis.crmDatabase = (async () => {
       if (process.env.DATABASE_URL) return connect(process.env.DATABASE_URL);
